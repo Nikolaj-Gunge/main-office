@@ -1,0 +1,86 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+#game {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  image-rendering: pixelated;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud-text {
+  font:
+    12px / 1.4 ui-monospace,
+    Menlo,
+    monospace;
+  color: #e8e8e8;
+  text-shadow: 1px 1px 0 #000;
+  white-space: pre;
+}
+
+.debug {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #000;
+}
+
+.click-to-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-family: ui-monospace, Menlo, monospace;
+  text-align: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.click-to-play[hidden] {
+  display: none;
+}
+
+.click-to-play h1 {
+  font-size: 48px;
+  letter-spacing: 4px;
+  text-shadow: 4px 4px 0 #b33831;
+}
+
+.click-to-play .hint {
+  font-size: 12px;
+  opacity: 0.7;
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun"],
+    // Shared code is also loaded by Node's strip-only TS (e.g. vite.config.ts).
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,28 @@
+/** Button bitmask carried in every input command. */
+export const Button = {
+  Forward: 1 << 0,
+  Back: 1 << 1,
+  Left: 1 << 2,
+  Right: 1 << 3,
+  Jump: 1 << 4,
+  Crouch: 1 << 5,
+  Sprint: 1 << 6,
+  Fire: 1 << 7,
+  Aim: 1 << 8,
+  Reload: 1 << 9,
+  Use: 1 << 10,
+} as const
+export type Button = (typeof Button)[keyof typeof Button]
+
+/** One simulation tick worth of player intent. */
+export interface PlayerInput {
+  buttons: number
+  /** Radians. 0 looks down -Z, positive turns left. */
+  yaw: number
+  /** Radians. Positive looks up. */
+  pitch: number
+}
+
+export function hasButton(buttons: number, button: Button): boolean {
+  return (buttons & button) !== 0
+}
