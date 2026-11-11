@@ -3,17 +3,20 @@ import {
   Button,
   createPhysicsWorld,
   createWeaponState,
+  DEFAULT_RULES,
   DebugFlag,
   decodeServerMessage,
   HitZone,
   initPhysics,
+  loadMap,
   MapBuilder,
+  mergeRules,
   type ServerMessage,
   ServerMsg,
   TICK_RATE,
   WeaponId,
 } from '@office-fps/shared'
-import { Game, MAX_HEALTH, RESPAWN_SECONDS } from './game.ts'
+import { Game, MAX_HEALTH } from './game.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -91,7 +94,8 @@ const idle = (seq: number) => ({ seq, buttons: 0, yaw: 0, pitch: 0, viewTick: 0 
 function shootAt(s: Setup, target: { x: number; y: number; z: number }, viewTick?: number) {
   const p = s.game.players.get(s.shooter)
   if (!p) throw new Error('no shooter')
-  const eye = { x: p.state.pos.x, y: p.state.pos.y + 1.65, z: p.state.pos.z }
+  const eyeHeight = p.body.config.standEyeHeight
+  const eye = { x: p.state.pos.x, y: p.state.pos.y + eyeHeight, z: p.state.pos.z }
   const dx = target.x - eye.x
   const dy = target.y - eye.y
   const dz = target.z - eye.z
@@ -173,7 +177,7 @@ describe('combat', () => {
     shootAt(s, { x: 0, y: 1.64, z: -5 })
     const victim = s.game.players.get(s.victim)
     expect(victim?.state.alive).toBe(false)
-    for (let t = 0; t < RESPAWN_SECONDS * TICK_RATE + 2; t++) s.game.step()
+    for (let t = 0; t < DEFAULT_RULES.respawnSeconds * TICK_RATE + 2; t++) s.game.step()
     expect(victim?.state.alive).toBe(true)
     expect(victim?.health).toBe(MAX_HEALTH)
     expect(Math.hypot(victim?.state.pos.x ?? 0, victim?.state.pos.z ?? 0)).toBeGreaterThan(40)
@@ -298,5 +302,77 @@ describe('arsenal', () => {
     arm(s, WeaponId.Sniper)
     aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.5)
     expect(s.b.all(ServerMsg.ShotFired).at(-1)?.weapon).toBe(WeaponId.Sniper)
+  })
+})
+
+describe('game rules', () => {
+  const chest = { x: 0, y: 1.32, z: -5 }
+  const head = { x: 0, y: 1.64, z: -5 }
+
+  test('one-shot: any hit kills', () => {
+    const s = duel()
+    s.game.setRules(mergeRules(DEFAULT_RULES, { oneShot: true }))
+    shootAt(s, chest)
+    expect(health(s)).toBe(0)
+  })
+
+  test('headshots only: body shots do nothing, a headshot still kills', () => {
+    const s = duel()
+    s.game.setRules(mergeRules(DEFAULT_RULES, { headshotsOnly: true }))
+    shootAt(s, chest)
+    expect(health(s)).toBe(MAX_HEALTH)
+    shootAt(s, head)
+    expect(health(s)).toBe(0)
+  })
+
+  test('damage multiplier scales body shots', () => {
+    const normal = duel()
+    shootAt(normal, chest)
+    const lost = MAX_HEALTH - health(normal)
+    const doubled = duel()
+    doubled.game.setRules(mergeRules(DEFAULT_RULES, { damage: 2 }))
+    shootAt(doubled, chest)
+    expect(MAX_HEALTH - health(doubled)).toBe(Math.min(MAX_HEALTH, lost * 2))
+  })
+
+  test('tiny people have tiny hitboxes', () => {
+    const s = duel()
+    s.game.setRules(mergeRules(DEFAULT_RULES, { playerScale: 0.5 }))
+    shootAt(s, chest) // where a normal chest would be: over a tiny player's head
+    expect(health(s)).toBe(MAX_HEALTH)
+    shootAt(s, { x: 0, y: 1.32 * 0.5, z: -5 })
+    expect(health(s)).toBeLessThan(MAX_HEALTH)
+  })
+
+  test('respawn time follows the rules', () => {
+    const s = duel()
+    s.game.setRules(mergeRules(DEFAULT_RULES, { respawnSeconds: 1 }))
+    shootAt(s, head)
+    const victim = s.game.players.get(s.victim)
+    expect(victim?.state.alive).toBe(false)
+    for (let t = 0; t < TICK_RATE; t++) s.game.step()
+    expect(s.game.players.get(s.victim)?.state.alive).toBe(true)
+  })
+
+  test('everyone is told the rules on join and on every change', () => {
+    const s = duel()
+    expect(s.b.all(ServerMsg.Rules).at(-1)?.rules).toEqual(DEFAULT_RULES)
+    s.game.setRules(mergeRules(DEFAULT_RULES, { gravity: 0.2, skin: 'robot' }))
+    const last = s.b.all(ServerMsg.Rules).at(-1)?.rules
+    expect(last?.gravity).toBe(0.2)
+    expect(last?.skin).toBe('robot')
+    expect(s.game.players.get(s.victim)?.body.config.gravity).toBeCloseTo(20 * 0.2)
+  })
+
+  test('changing map respawns everyone in it and re-sends the world', () => {
+    const s = duel()
+    const map = loadMap('gym')
+    s.game.changeMap(map, createPhysicsWorld(map))
+    expect(s.game.mapId).toBe('gym')
+    expect(s.game.rules.map).toBe('gym')
+    expect(s.a.all(ServerMsg.Welcome).at(-1)?.mapId).toBe('gym')
+    for (const p of s.game.players.values()) expect(p.state.alive).toBe(true)
+    // The game keeps running in the new world.
+    for (let t = 0; t < 30; t++) s.game.step()
   })
 })

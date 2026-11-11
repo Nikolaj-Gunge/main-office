@@ -10,9 +10,11 @@ import { Button, hasButton, type PlayerInput } from './input.ts'
 import type { MovementConfig } from './movement-config.ts'
 import {
   createWeaponState,
+  DEFAULT_WEAPON_RULES,
   stepWeapon,
   switchWeapons,
   type WeaponEvents,
+  type WeaponRules,
   type WeaponState,
 } from './weapon-sim.ts'
 import { WEAPONS, WeaponId } from './weapons.ts'
@@ -118,6 +120,8 @@ export class PlayerBody {
   private readonly physics: PhysicsWorld
   private height: number
   config: MovementConfig
+  /** Server rules for shooting (spread, infinite ammo); set alongside `config`. */
+  weaponRules: WeaponRules = DEFAULT_WEAPON_RULES
 
   constructor(physics: PhysicsWorld, config: MovementConfig) {
     this.physics = physics
@@ -519,6 +523,7 @@ export function stepPlayer(
     grounded: state.grounded,
     crouched: state.crouched,
     speedFactor: Math.hypot(state.vel.x, state.vel.z) / c.walkSpeed,
+    rules: body.weaponRules,
   })
   const shot = events.weapon.shot
   if (shot) {

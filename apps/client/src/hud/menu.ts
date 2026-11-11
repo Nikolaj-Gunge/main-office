@@ -167,6 +167,11 @@ export class Menu {
     })
   }
 
+  /** The name typed in the join form. */
+  get name(): string {
+    return this.nameInput.value
+  }
+
   onPlay(handler: (name: string) => void): void {
     this.onPlayHandler = handler
   }

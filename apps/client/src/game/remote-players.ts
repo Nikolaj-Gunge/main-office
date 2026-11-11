@@ -3,6 +3,7 @@ import {
   InterpolationBuffer,
   type RemotePlayerState,
   ServerClock,
+  type SkinId,
   TICK_RATE,
 } from '@office-fps/shared'
 import * as THREE from 'three'
@@ -39,6 +40,9 @@ export class RemotePlayers {
   private readonly scene: THREE.Scene
   private lastUpdateMs = 0
   private readonly poses = new Map<number, HitPose>()
+  /** Game rules: what everyone looks like and how big they are. */
+  private skin: SkinId = 'slime'
+  private scale = 1
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
   onLand?: (at: THREE.Vector3) => void
@@ -53,7 +57,7 @@ export class RemotePlayers {
 
   add(id: number, name: string, color: number): void {
     this.remove(id)
-    const avatar = new Avatar(name, color)
+    const avatar = new Avatar(name, color, this.skin)
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)
     this.players.set(id, {
@@ -75,6 +79,22 @@ export class RemotePlayers {
     this.players.delete(id)
   }
 
+  /** Applies the server's skin and body size; rebuilds the models if the skin changed. */
+  setLook(skin: SkinId, scale: number): void {
+    this.scale = scale
+    if (skin === this.skin) return
+    this.skin = skin
+    for (const [id, p] of [...this.players]) {
+      const visible = p.avatar.root.visible
+      this.scene.remove(p.avatar.root)
+      p.avatar.dispose()
+      p.avatar = new Avatar(p.name, p.color, skin)
+      p.avatar.root.visible = visible
+      this.scene.add(p.avatar.root)
+      this.players.set(id, p)
+    }
+  }
+
   clear(): void {
     for (const id of [...this.players.keys()]) this.remove(id)
   }
@@ -94,13 +114,22 @@ export class RemotePlayers {
       const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
-      if (p.shown) p.avatar.update(p.shown, nowMs, viewer)
+      if (p.shown) p.avatar.update(p.shown, nowMs, viewer, this.scale)
       if (before && p.shown && dt > 0) this.detectSteps(p, before, p.shown, dt)
     }
     this.poses.clear()
     for (const [id, p] of this.players) {
       const s = p.shown
-      if (s?.alive) this.poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch })
+      if (s?.alive) {
+        this.poses.set(id, {
+          x: s.x,
+          y: s.y,
+          z: s.z,
+          yaw: s.yaw,
+          crouch: s.crouch,
+          scale: this.scale,
+        })
+      }
     }
   }
 

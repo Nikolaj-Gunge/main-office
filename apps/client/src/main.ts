@@ -4,6 +4,7 @@ import {
   createPhysicsWorld,
   DEFAULT_MAP_ID,
   DebugFlag,
+  type GameRules,
   INPUT_BATCH_TICKS,
   type InputCommand,
   initPhysics,
@@ -56,6 +57,9 @@ function requireElement<T extends Element>(selector: string): T {
   if (!el) throw new Error(`Missing element ${selector}`)
   return el
 }
+
+/** Set before reloading into a new map so the next page load rejoins on its own. */
+const AUTOJOIN_KEY = 'office-fps:autojoin'
 
 const canvas = requireElement<HTMLCanvasElement>('#game')
 const hudRoot = requireElement<HTMLDivElement>('#hud')
@@ -205,7 +209,9 @@ const net = new Connection({
     switch (msg.type) {
       case ServerMsg.Welcome:
         if (msg.mapId !== map.id && msg.mapId in MAPS) {
-          // Server runs another map: reload into it (keeps ?mute and other params).
+          // Server runs another map (or the admin just switched it): reload into it and
+          // rejoin straight away (keeps ?mute and other params).
+          if (joined) sessionStorage.setItem(AUTOJOIN_KEY, '1')
           params.set('map', msg.mapId)
           location.search = params.toString()
           return
@@ -246,6 +252,9 @@ const net = new Connection({
       case ServerMsg.ItemRemove:
         worldItems.remove(msg.id)
         break
+      case ServerMsg.Rules:
+        applyRules(msg.rules)
+        break
       case ServerMsg.ShotFired: {
         // Shooting gives your position away on the minimap.
         const at = remotes.muzzleOf(msg.shooterId)
@@ -255,6 +264,21 @@ const net = new Connection({
     }
   },
 })
+
+/** Server game rules (admin page): movement, shooting, looks and kill jingles. */
+function applyRules(rules: GameRules) {
+  player.applyRules(rules)
+  recoil.amount = rules.recoil
+  remotes.setLook(rules.skin, rules.playerScale)
+  combat.jingles = rules.jingles
+}
+
+// After the admin switches map the page reloads into it: rejoin without the Play click (the
+// mouse still needs one click to lock — browsers require it).
+if (sessionStorage.getItem(AUTOJOIN_KEY)) {
+  sessionStorage.removeItem(AUTOJOIN_KEY)
+  net.connect(menu.name)
+}
 
 menu.onPlay((name) => {
   audio.unlock() // browsers only allow audio after a click

@@ -1,12 +1,15 @@
 import { DurableObject } from 'cloudflare:workers'
+import { AdminApi } from '@office-fps/server/admin'
 import { Game } from '@office-fps/server/game'
 import { GameLoop } from '@office-fps/server/loop'
 import { createSession } from '@office-fps/server/session'
 import {
   createPhysicsWorld,
   DEFAULT_MAP_ID,
+  DEFAULT_RULES,
   initPhysics,
   loadMap,
+  mergeRules,
   TICK_RATE,
 } from '@office-fps/shared'
 
@@ -24,6 +27,7 @@ const IDLE_PAUSE_MS = 5000
 export class GameRoom extends DurableObject {
   private game: Game | null = null
   private loop: GameLoop | null = null
+  private admin: AdminApi | null = null
   private sockets = 0
   private lastInput = 0
 
@@ -34,16 +38,25 @@ export class GameRoom extends DurableObject {
       const map = loadMap(DEFAULT_MAP_ID)
       this.game = new Game(map, createPhysicsWorld(map))
       this.loop = new GameLoop(TICK_RATE, () => this.tick())
-      console.log(`[room] map "${map.name}" ready, ${this.game.spawnPointCount} spawn spots`)
+      this.admin = new AdminApi(this.game, {
+        password: env.ADMIN_PASSWORD,
+        // Rules survive the room being evicted while the office is empty, and deploys.
+        onRulesChanged: (rules) => void ctx.storage.put('rules', rules),
+      })
+      const saved = await ctx.storage.get('rules')
+      if (saved) this.admin.apply(mergeRules(DEFAULT_RULES, saved))
+      console.log(`[room] map "${this.game.mapId}" ready, ${this.game.spawnPointCount} spawn spots`)
     })
   }
 
   override async fetch(request: Request): Promise<Response> {
     const game = this.game
     const loop = this.loop
-    if (!game || !loop) return new Response('Room not ready', { status: 503 })
+    if (!game || !loop || !this.admin) return new Response('Room not ready', { status: 503 })
 
-    if (new URL(request.url).pathname === '/healthz') {
+    const { pathname } = new URL(request.url)
+    if (pathname.startsWith('/admin/api/')) return this.admin.handle(request)
+    if (pathname === '/healthz') {
       return Response.json({
         ok: true,
         tick: game.tick,

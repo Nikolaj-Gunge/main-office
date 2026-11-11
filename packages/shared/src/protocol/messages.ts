@@ -1,3 +1,4 @@
+import { DEFAULT_RULES, type GameRules, mergeRules } from '../rules.ts'
 import type { HitPose, HitZone } from '../sim/hitboxes.ts'
 import type { PlayerInput } from '../sim/input.ts'
 import type { PlayerState } from '../sim/player.ts'
@@ -30,6 +31,7 @@ export const ServerMsg = {
   Scoreboard: 0x8b,
   ItemSpawn: 0x8c,
   ItemRemove: 0x8d,
+  Rules: 0x8e,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -117,6 +119,8 @@ export type ServerMessage =
       players: RemotePlayerState[]
     }
   | { type: typeof ServerMsg.PlayerJoined; id: number; color: number; name: string }
+  /** The server's game rules (admin page); sent on join and whenever they change. */
+  | { type: typeof ServerMsg.Rules; rules: GameRules }
   | { type: typeof ServerMsg.PlayerLeft; id: number }
   | { type: typeof ServerMsg.Pong; clientTime: number; serverTime: number; tickMs: number }
   | {
@@ -431,6 +435,9 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
     case ServerMsg.ItemRemove:
       w.u16(msg.id)
       break
+    case ServerMsg.Rules:
+      w.str16(JSON.stringify(msg.rules))
+      break
     case ServerMsg.Scoreboard:
       w.u8(msg.entries.length)
       for (const e of msg.entries) {
@@ -522,6 +529,8 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       }
     case ServerMsg.ItemRemove:
       return { type, id: r.u16() }
+    case ServerMsg.Rules:
+      return { type, rules: mergeRules(DEFAULT_RULES, JSON.parse(r.str16())) }
     case ServerMsg.Scoreboard: {
       const count = r.u8()
       const entries: ScoreEntry[] = []

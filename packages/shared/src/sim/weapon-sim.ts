@@ -36,7 +36,19 @@ export interface WeaponContext {
   crouched: boolean
   /** Horizontal speed relative to walk speed (1 = walking). */
   speedFactor: number
+  /** Server rules (admin page); defaults to normal play. */
+  rules?: WeaponRules
 }
+
+/** The weapon side of the game rules that the shared simulation needs (client and server). */
+export interface WeaponRules {
+  /** Multiplies every spread cone: 0 = perfectly accurate. */
+  spreadScale: number
+  /** Reloading never uses up spare ammo. */
+  infiniteAmmo: boolean
+}
+
+export const DEFAULT_WEAPON_RULES: WeaponRules = { spreadScale: 1, infiniteAmmo: false }
 
 export interface WeaponEvents {
   /** Set when a shot was fired this tick: the offsets to apply to the view direction. */
@@ -94,7 +106,7 @@ export function currentSpread(w: WeaponState, ctx: WeaponContext): number {
   spread += def.moveSpread * Math.min(ctx.speedFactor, 1.5)
   if (!ctx.grounded) spread += def.airSpread
   if (ctx.crouched) spread *= 0.8
-  return spread
+  return spread * (ctx.rules?.spreadScale ?? 1)
 }
 
 /**
@@ -158,7 +170,7 @@ export function stepWeapon(
     if (w.reload <= EPS) {
       const take = Math.min(def.magSize - w.ammo, w.reserve)
       w.ammo += take
-      w.reserve -= take
+      if (!ctx.rules?.infiniteAmmo) w.reserve -= take
       w.reload = 0
       events.reloaded = true
     }

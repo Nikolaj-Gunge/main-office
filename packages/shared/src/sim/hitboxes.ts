@@ -33,6 +33,8 @@ export interface HitPose {
   yaw: number
   /** 0 = standing, 1 = crouched. */
   crouch: number
+  /** Body size (game rules: tiny people); 1 when omitted. */
+  scale?: number
 }
 
 export type Hitbox =
@@ -51,21 +53,36 @@ const LAYOUT = {
   arm: { x: 0.3, top: 1.48, bottom: 0.95, radius: 0.07 },
   leg: { x: 0.1, top: 0.8, bottom: 0.1, radius: 0.09 },
 }
+/** Sizes (radii, half extents) of the layout at body size `s`; positions scale in `world`. */
+function scaledLayout(s: number): typeof LAYOUT {
+  if (s === 1) return LAYOUT
+  const L = LAYOUT
+  const half = (h: Point3) => ({ x: h.x * s, y: h.y * s, z: h.z * s })
+  return {
+    head: { ...L.head, radius: L.head.radius * s },
+    chest: { ...L.chest, half: half(L.chest.half) },
+    stomach: { ...L.stomach, half: half(L.stomach.half) },
+    arm: { ...L.arm, radius: L.arm.radius * s },
+    leg: { ...L.leg, radius: L.leg.radius * s },
+  }
+}
+
 /** Crouched height / standing height: vertical positions scale by this when crouched. */
 const CROUCH_SCALE = 1.2 / 1.8
 
 /** World-space hitboxes for a pose. */
 export function poseHitboxes(pose: HitPose): Hitbox[] {
   const k = 1 + (CROUCH_SCALE - 1) * pose.crouch
-  const cos = Math.cos(pose.yaw)
-  const sin = Math.sin(pose.yaw)
-  // Local → world: rotate about Y by yaw (Three.js convention), then translate.
+  const s = pose.scale ?? 1
+  const cos = Math.cos(pose.yaw) * s
+  const sin = Math.sin(pose.yaw) * s
+  // Local → world: scale, rotate about Y by yaw (Three.js convention), then translate.
   const world = (x: number, y: number, z: number): Point3 => ({
     x: pose.x + x * cos + z * sin,
-    y: pose.y + y * k,
+    y: pose.y + y * k * s,
     z: pose.z - x * sin + z * cos,
   })
-  const L = LAYOUT
+  const L = scaledLayout(s)
   return [
     {
       zone: HitZone.Head,
@@ -110,7 +127,8 @@ export function poseHitboxes(pose: HitPose): Hitbox[] {
 
 /** Rough bounding sphere of a pose, to skip far-away players before precise tests. */
 export function poseBounds(pose: HitPose): { center: Point3; radius: number } {
-  return { center: { x: pose.x, y: pose.y + 0.9, z: pose.z }, radius: 1.1 }
+  const s = pose.scale ?? 1
+  return { center: { x: pose.x, y: pose.y + 0.9 * s, z: pose.z }, radius: 1.1 * s }
 }
 
 const dot = (a: Point3, b: Point3) => a.x * b.x + a.y * b.y + a.z * b.z

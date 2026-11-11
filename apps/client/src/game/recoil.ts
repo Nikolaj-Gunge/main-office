@@ -28,8 +28,11 @@ export class Recoil {
     this.random = random
   }
 
+  /** Server rules: 0 = no recoil, 2 = double. */
+  amount = 1
+
   kick(def: WeaponDef, aiming: boolean): void {
-    const scale = aiming ? 0.75 : 1
+    const scale = (aiming ? 0.75 : 1) * this.amount
     const automatic = def.fireMode === 'auto'
     if (this.sinceKick > def.fireInterval * 1.6) this.sprayIndex = 0
     const pattern = def.recoilPattern

@@ -75,6 +75,16 @@ export class BinaryWriter {
     return this
   }
 
+  /** UTF-8 string prefixed with a u16 byte length (max 65535 bytes, truncated). */
+  str16(value: string): this {
+    const bytes = textEncoder.encode(value).subarray(0, 0xffff)
+    this.u16(bytes.length)
+    this.ensure(bytes.length)
+    new Uint8Array(this.buffer, this.offset, bytes.length).set(bytes)
+    this.offset += bytes.length
+    return this
+  }
+
   /** Returns a copy of the written bytes. */
   finish(): Uint8Array<ArrayBuffer> {
     return new Uint8Array(this.buffer.slice(0, this.offset))
@@ -131,6 +141,14 @@ export class BinaryReader {
     const v = this.view.getFloat64(this.offset, true)
     this.offset += 8
     return v
+  }
+
+  str16(): string {
+    const length = this.u16()
+    if (length > this.remaining) throw new RangeError('str16 length exceeds buffer')
+    const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, length)
+    this.offset += length
+    return textDecoder.decode(bytes)
   }
 
   str8(): string {

@@ -90,6 +90,24 @@ bun run deploy        # builds client + worker, uploads → https://office-fps.<
 bun run preview       # same thing locally in Cloudflare's runtime (http://localhost:8787)
 ```
 
+**Admin page:** `/admin` (e.g. https://office-fps.office-fps-cloudflare.workers.dev/admin). From there you can:
+- switch map;
+- pick everyone's skin and the kill jingle;
+- change gravity, jump, speed, body size (tiny people), spread, recoil, damage and respawn time;
+- turn on one-shot, headshots only and infinite ammo;
+- apply presets;
+- see who's online and reset scores.
+
+Set its password once; Cloudflare asks for it without showing it:
+
+```sh
+cd apps/cloudflare && bunx wrangler secret put ADMIN_PASSWORD
+```
+
+Locally: `ADMIN_PASSWORD=… bun dev`. Without a password the admin page is disabled. After 5 wrong
+tries, that address is locked out for 10 minutes. Rules are saved in the room and survive
+restarts and deploys.
+
 Free plan budget: about **100,000 Durable Object requests per day**, resetting at 01:00
 Copenhagen time (00:00 UTC). Each player sends 30 input messages a second. If Cloudflare counts
 WebSocket messages 20:1, as it does for billing, that is roughly **18 player-hours of play a day**;

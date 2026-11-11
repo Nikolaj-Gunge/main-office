@@ -7,6 +7,7 @@ import {
   TICK_RATE,
   WS_PATH,
 } from '@office-fps/shared'
+import { AdminApi } from './admin.ts'
 import { createConnections, type SocketData } from './connections.ts'
 import { Game } from './game.ts'
 import { GameLoop } from './loop.ts'
@@ -23,6 +24,9 @@ console.log(
   `[server] map "${map.name}": ${physics.mapColliders.length} colliders, ` +
     `${game.spawnPointCount} spawn spots, ${map.pickups?.length ?? 0} weapon pickups`,
 )
+
+const admin = new AdminApi(game, { password: process.env.ADMIN_PASSWORD })
+if (!process.env.ADMIN_PASSWORD) console.log('[server] admin page disabled (set ADMIN_PASSWORD)')
 
 const loop = new GameLoop(TICK_RATE, () => game.step())
 const connections = createConnections(game, () => loop.tickMs)
@@ -43,6 +47,9 @@ const server = Bun.serve<SocketData>({
         snapshotMs: Number(game.timing.snapshotMs.toFixed(3)),
       })
     }
+
+    if (url.pathname.startsWith('/admin/api/')) return admin.handle(req)
+    if (url.pathname === '/admin') return serveStatic(clientDist, '/admin.html')
 
     if (url.pathname === WS_PATH) {
       const upgraded = server.upgrade(req, { data: { session: null } })

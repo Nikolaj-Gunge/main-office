@@ -3,11 +3,12 @@ import {
   Button,
   createPlayerState,
   createWeaponState,
-  DEFAULT_MOVEMENT,
+  DEFAULT_RULES,
   DebugFlag,
   damageAtDistance,
   encodeServerMessage,
   findSpawnPoints,
+  type GameRules,
   type HitPose,
   HitZone,
   hasButton,
@@ -16,6 +17,8 @@ import {
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   type MapDef,
+  type MovementConfig,
+  movementFor,
   type PhysicsWorld,
   PLAYER_COLORS,
   PLAYER_QUERY_GROUPS,
@@ -35,7 +38,9 @@ import {
   USE_PICKUP_RADIUS,
   WEAPONS,
   WeaponId,
+  type WeaponRules,
   type WeaponState,
+  weaponRulesFor,
   ZONE_MULTIPLIER,
 } from '@office-fps/shared'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
@@ -86,7 +91,6 @@ const MAX_COMMANDS_PER_MESSAGE = 16
 const TICKS_PER_SNAPSHOT = Math.max(1, Math.round(TICK_RATE / SNAPSHOT_RATE))
 
 export const MAX_HEALTH = 100
-export const RESPAWN_SECONDS = 3
 export const SPAWN_PROTECTION_SECONDS = 2
 /**
  * How far back a shot may be checked (s). Covers ~300 ms RTT + 100 ms interpolation; beyond
@@ -105,25 +109,93 @@ export class Game {
   /** Smoothed cost of simulation and of building + sending snapshots (ms), for /healthz. */
   readonly timing = { simMs: 0, snapshotMs: 0 }
   private nextId = 1
-  private readonly map: MapDef
-  private readonly physics: PhysicsWorld
+  private map: MapDef
+  private physics: PhysicsWorld
   private readonly history = new PoseHistory(
     Math.ceil((1 * TICK_RATE) / TICKS_PER_SNAPSHOT),
     TICKS_PER_SNAPSHOT,
   )
-  private readonly spawns: SpawnPicker
-  readonly items: WorldItems
+  private spawns: SpawnPicker
+  items: WorldItems
+  private readonly random: () => number
+  private rulesValue: GameRules = DEFAULT_RULES
+  private movement: MovementConfig = movementFor(DEFAULT_RULES)
+  private weaponRules: WeaponRules = weaponRulesFor(DEFAULT_RULES)
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
     this.physics = physics
+    this.random = random
+    this.rulesValue = { ...DEFAULT_RULES, map: map.id }
     this.spawns = new SpawnPicker(findSpawnPoints(map, physics), physics, random)
-    this.items = new WorldItems(
+    this.items = this.createItems(map)
+  }
+
+  get mapId(): string {
+    return this.map.id
+  }
+
+  get rules(): GameRules {
+    return this.rulesValue
+  }
+
+  /**
+   * Applies new game rules to everyone, live. The map is not switched here (the caller builds
+   * the new world and calls `changeMap`), so `rules.map` is kept as the map actually running.
+   */
+  setRules(rules: GameRules): void {
+    this.rulesValue = { ...rules, map: this.map.id }
+    this.movement = movementFor(this.rulesValue)
+    this.weaponRules = weaponRulesFor(this.rulesValue)
+    for (const p of this.players.values()) this.applyRules(p.body)
+    this.broadcast({ type: ServerMsg.Rules, rules: this.rulesValue })
+  }
+
+  /**
+   * Swaps in another map: everyone respawns in it with a handgun and gets a fresh Welcome
+   * (clients reload into the new map). Scores are kept. Frees the old physics world.
+   */
+  changeMap(map: MapDef, physics: PhysicsWorld): void {
+    const old = this.physics
+    for (const p of this.players.values()) p.body.free()
+    this.map = map
+    this.physics = physics
+    this.spawns = new SpawnPicker(findSpawnPoints(map, physics), physics, this.random)
+    this.items = this.createItems(map)
+    this.history.clear()
+    this.rulesValue = { ...this.rulesValue, map: map.id }
+    for (const p of this.players.values()) {
+      p.body = new PlayerBody(physics, this.movement)
+      this.applyRules(p.body)
+      p.queue = []
+      this.respawn(p)
+    }
+    old.world.free()
+    for (const p of this.players.values()) this.sendWorld(p)
+  }
+
+  /** Zeroes everyone's kills and deaths. */
+  resetScores(): void {
+    for (const p of this.players.values()) {
+      p.kills = 0
+      p.deaths = 0
+    }
+    this.sendScoreboard()
+  }
+
+  private applyRules(body: PlayerBody): void {
+    body.configure(this.movement)
+    body.weaponRules = this.weaponRules
+  }
+
+  private createItems(map: MapDef): WorldItems {
+    const items = new WorldItems(
       map.pickups ?? [],
       (item) => this.broadcast(itemSpawnMessage(item)),
       (id) => this.broadcast({ type: ServerMsg.ItemRemove, id }),
     )
-    this.items.step(0)
+    items.step(this.tick)
+    return items
   }
 
   /** Number of possible random spawn spots (for the startup log). */
@@ -137,12 +209,14 @@ export class Game {
     const id = this.nextId
     this.nextId = (this.nextId % 0xffff) + 1
     const name = sanitizeName(rawName) || `Player ${id}`
+    const body = new PlayerBody(this.physics, this.movement)
+    this.applyRules(body)
     const player: ServerPlayer = {
       id,
       name,
       color: this.pickColor(),
       client,
-      body: new PlayerBody(this.physics, DEFAULT_MOVEMENT),
+      body,
       state: this.freshState(0),
       queue: [],
       lastQueuedSeq: 0,
@@ -156,14 +230,7 @@ export class Game {
       ping: 0,
     }
 
-    send(client, {
-      type: ServerMsg.Welcome,
-      playerId: id,
-      serverTick: this.tick,
-      tickRate: TICK_RATE,
-      snapshotRate: SNAPSHOT_RATE,
-      mapId: this.map.id,
-    })
+    this.sendWorld(player)
     for (const other of this.players.values()) {
       send(client, {
         type: ServerMsg.PlayerJoined,
@@ -172,10 +239,23 @@ export class Game {
         name: other.name,
       })
     }
-    for (const item of this.items.items.values()) send(client, itemSpawnMessage(item))
     this.players.set(id, player)
     this.broadcast({ type: ServerMsg.PlayerJoined, id, color: player.color, name })
     return id
+  }
+
+  /** Welcome (which map, your id), the rules and the weapons lying around. */
+  private sendWorld(player: ServerPlayer): void {
+    send(player.client, {
+      type: ServerMsg.Welcome,
+      playerId: player.id,
+      serverTick: this.tick,
+      tickRate: TICK_RATE,
+      snapshotRate: SNAPSHOT_RATE,
+      mapId: this.map.id,
+    })
+    send(player.client, { type: ServerMsg.Rules, rules: this.rulesValue })
+    for (const item of this.items.items.values()) send(player.client, itemSpawnMessage(item))
   }
 
   leave(id: number): void {
@@ -269,7 +349,8 @@ export class Game {
       const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target.state)
       if (!pose.alive) continue
       debugPoses.push({ id: target.id, ...pose })
-      const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, pose)
+      const scaled = { ...pose, scale: this.rulesValue.playerScale }
+      const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, scaled)
       if (result) hit = { victim: target, ...result }
     }
 
@@ -311,10 +392,16 @@ export class Game {
   private damage(victim: ServerPlayer, attacker: ServerPlayer, zone: HitZone, distance: number) {
     if (this.tick < victim.protectedUntil) return
     const weapon = WEAPONS[attacker.state.weapon.id]
+    const rules = this.rulesValue
     const headshot = zone === HitZone.Head
-    const amount = headshot
-      ? victim.health
-      : Math.round(damageAtDistance(weapon, distance) * ZONE_MULTIPLIER[zone])
+    if (rules.headshotsOnly && !headshot) return
+    const amount =
+      headshot || rules.oneShot
+        ? victim.health
+        : Math.max(
+            1,
+            Math.round(damageAtDistance(weapon, distance) * ZONE_MULTIPLIER[zone] * rules.damage),
+          )
     victim.health = Math.max(0, victim.health - amount)
     const killed = victim.health === 0
 
@@ -343,7 +430,7 @@ export class Game {
       this.items.drop(primary.id, this.floorBelow(victim.state.pos), victim.state.yaw, this.tick)
     victim.state.alive = false
     victim.state.vel = { x: 0, y: 0, z: 0 }
-    victim.respawnAt = this.tick + RESPAWN_SECONDS * TICK_RATE
+    victim.respawnAt = this.tick + Math.round(this.rulesValue.respawnSeconds * TICK_RATE)
     victim.deaths++
     if (killer !== victim) killer.kills++
     this.broadcast({

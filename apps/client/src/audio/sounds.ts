@@ -41,6 +41,10 @@ export const SOUNDS = {
   'impact.flesh': { variants: 3, recipe: impactFlesh },
   casing: { variants: 4, recipe: casing },
   heartbeat: { variants: 1, recipe: heartbeat },
+  // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
+  'jingle.arcade': { variants: 3, recipe: jingleArcade },
+  'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
+  'jingle.airhorn': { variants: 3, recipe: jingleAirhorn },
 } satisfies Record<string, { variants: number; recipe: (rate: number, v: number) => Signal }>
 
 export type SoundId = keyof typeof SOUNDS
@@ -166,6 +170,80 @@ function killDing(rate: number): Signal {
     0.09,
   )
   return fadeEdges(normalize(mix(rate, a, [b, 0.08]), 0.6), rate)
+}
+
+/** Frequency of the note `semitones` above A4. */
+const pitch = (semitones: number) => 440 * 2 ** (semitones / 12)
+
+/** Plays notes [semitones from A4, start s, length s] with the given voice. */
+function melody(
+  rate: number,
+  notes: [number, number, number][],
+  voice: (freq: number, seconds: number) => Signal,
+): Signal {
+  return mix(rate, ...notes.map(([n, at, len]): [Signal, number] => [voice(pitch(n), len), at]))
+}
+
+/** 8-bit arpeggio up the major chord; streaks climb higher and add a trill. */
+function jingleArcade(rate: number, v: number): Signal {
+  const square = (f: number, len: number) =>
+    envelope(saturate(tone(len, rate, f), 6), rate, 0.002, len * 0.8)
+  const root = 3 + v * 5 // C5, F5, A#5
+  const notes: [number, number, number][] = [0, 4, 7, 12].map((n, i) => [root + n, i * 0.065, 0.09])
+  if (v >= 1) notes.push([root + 16, 0.26, 0.09], [root + 19, 0.32, 0.16])
+  if (v >= 2)
+    for (let i = 0; i < 4; i++) notes.push([root + 24 - (i % 2) * 5, 0.42 + i * 0.05, 0.06])
+  return fadeEdges(normalize(melody(rate, notes, square), 0.55), rate)
+}
+
+/** Short brass fanfare: ta-ta-taaa; streaks go up a step and get longer. */
+function jingleFanfare(rate: number, v: number): Signal {
+  const brass = (f: number, len: number) =>
+    envelope(
+      lowpass(
+        mix(
+          rate,
+          tone(len, rate, f),
+          gain(tone(len, rate, f * 2), 0.5),
+          gain(tone(len, rate, f * 3), 0.3),
+        ),
+        rate,
+        2400,
+      ),
+      rate,
+      0.015,
+      len * 0.9,
+    )
+  const k = -2 + v * 2
+  const notes: [number, number, number][] = [
+    [k, 0, 0.1],
+    [k, 0.12, 0.1],
+    [k + 5, 0.24, v >= 1 ? 0.18 : 0.38],
+  ]
+  if (v >= 1) notes.push([k + 9, 0.44, v >= 2 ? 0.18 : 0.4])
+  if (v >= 2) notes.push([k + 12, 0.64, 0.45], [k + 16, 0.64, 0.45])
+  return fadeEdges(normalize(saturate(melody(rate, notes, brass), 1.5), 0.6), rate)
+}
+
+/** The party airhorn: one blast per kill in the streak (BWAA, BWA-BWAA, BWA-BWA-BWAAA). */
+function jingleAirhorn(rate: number, v: number): Signal {
+  const horn = (f: number, len: number) => {
+    const detuned = mix(
+      rate,
+      sweep(len, rate, f * 0.97, f),
+      gain(sweep(len, rate, f * 1.5 * 0.98, f * 1.5), 0.6),
+      gain(tone(len, rate, f * 2.01), 0.4),
+    )
+    return envelope(lowpass(saturate(detuned, 4), rate, 3200), rate, 0.01, len)
+  }
+  const blasts: [number, number, number][] = []
+  let at = 0
+  for (let i = 0; i <= v; i++) {
+    const last = i === v
+    blasts.push([-3, at, last ? 0.45 : 0.14])
+    at += 0.18
+  }
+  return fadeEdges(normalize(melody(rate, blasts, horn), 0.5), rate)
 }
 
 function hurt(rate: number, v: number): Signal {

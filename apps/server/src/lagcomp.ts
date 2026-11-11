@@ -31,6 +31,11 @@ export class PoseHistory {
     if (this.frames.length > this.capacity) this.frames.shift()
   }
 
+  /** Forgets everything (after a map change, old positions mean nothing). */
+  clear(): void {
+    this.frames.length = 0
+  }
+
   get oldestTick(): number {
     return this.frames[0]?.tick ?? 0
   }

@@ -437,7 +437,24 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - SQLite stats: all-time kills/deaths/headshots per name, leaderboard page.
 - **Done when:** server ran for 7 days without manual intervention.
 
-### Phase 11 — Polish & extensions (backlog, pick freely)
+### Phase 11 — Admin page, game rules, modes, maps (user request)
+
+Built in 3 testable parts on `phase-11`:
+
+1. **Admin + rules + skins + jingles** ✅ (built, awaiting test)
+   - `/admin` page with a password (the `ADMIN_PASSWORD` secret), using the `AdminApi` in `apps/server/src/admin.ts`. The Bun server and the Durable Object share it.
+   - `GameRules` (`packages/shared/src/rules.ts`) cover: map, skin, jingles, gravity, speed, jump, playerScale, spread, recoil, damage, oneShot, headshotsOnly, infiniteAmmo, respawnSeconds.
+     - The server sends them (`ServerMsg.Rules`, protocol v8).
+     - Movement and weapon rules apply on both sides via `movementFor` and `weaponRulesFor`, so prediction stays exact.
+     - Damage rules are server-only.
+     - Hitboxes scale with `HitPose.scale`.
+   - Skins: slime, office worker and robot, all with the same hitboxes. Kill jingles are synthesized (arcade, fanfare, airhorn) and escalate on streaks.
+   - Map switch: `Game.changeMap` respawns everyone and re-sends Welcome. Clients reload into the new map and rejoin automatically.
+   - Rules persist in Durable Object storage.
+2. **Game modes with rounds**: free-for-all, team deathmatch, last man standing.
+3. **Two new maps.**
+
+### Phase 12 — Polish & extensions (backlog, pick freely)
 
 - Slide and mantle; lean (Q/E).
 - Wall penetration for thin materials; destructible glass.

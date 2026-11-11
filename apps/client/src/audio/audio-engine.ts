@@ -13,6 +13,8 @@ export interface PlayOptions {
   /** Low-pass cutoff (Hz) — distance and walls dull sounds. */
   lowpass?: number
   bus?: 'sfx' | 'ui'
+  /** Which variant to play (clamped); random when omitted. */
+  variant?: number
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
@@ -158,7 +160,11 @@ export class AudioEngine {
     const ctx = this.ctx
     if (ctx?.state !== 'running') return
     const variants = this.buffers.get(id)
-    const buffer = variants?.[Math.floor(Math.random() * variants.length)]
+    const index =
+      opts.variant === undefined
+        ? Math.floor(Math.random() * (variants?.length ?? 0))
+        : Math.min(opts.variant, (variants?.length ?? 1) - 1)
+    const buffer = variants?.[index]
     const bus = opts.bus === 'ui' ? this.ui : this.sfx
     if (!buffer || !bus) return
     const volume = opts.volume ?? 1

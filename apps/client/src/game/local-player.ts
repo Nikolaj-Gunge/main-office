@@ -4,9 +4,11 @@ import {
   createWeaponState,
   DEFAULT_MOVEMENT,
   eyeHeight,
+  type GameRules,
   type InputCommand,
   type MapSpawn,
   type MovementConfig,
+  movementFor,
   type PhysicsWorld,
   PlayerBody,
   type PlayerInput,
@@ -15,6 +17,7 @@ import {
   type StepEvents,
   TICK_DT,
   WeaponId,
+  weaponRulesFor,
 } from '@office-fps/shared'
 import type { PerspectiveCamera } from 'three'
 import { CameraFeel } from './camera-feel.ts'
@@ -55,6 +58,13 @@ export class LocalPlayer {
 
   get state(): PlayerState {
     return this.predictor.state
+  }
+
+  /** Server game rules: movement (gravity, speed, size…) and shooting (spread, ammo). */
+  applyRules(rules: GameRules): void {
+    Object.assign(this.movement, movementFor(rules))
+    this.body.configure(this.movement)
+    this.body.weaponRules = weaponRulesFor(rules)
   }
 
   /** Re-applies `movement` after live edits. */

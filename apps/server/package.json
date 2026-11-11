@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./admin": "./src/admin.ts",
     "./game": "./src/game.ts",
     "./loop": "./src/loop.ts",
     "./session": "./src/session.ts"

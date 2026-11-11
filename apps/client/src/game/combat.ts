@@ -2,6 +2,7 @@ import {
   aimProgress,
   currentSpread,
   HitZone,
+  type JingleId,
   MAX_BREATH,
   type PhysicsWorld,
   PLAYER_COLORS,
@@ -32,6 +33,8 @@ import type { ScreenShake } from './screen-shake.ts'
 const HOVER_RANGE = 80
 
 /** A bullet passing within this distance of your head makes the supersonic crack. */
+/** Kills closer together than this count as a streak (double kill, triple kill). */
+const STREAK_MS = 4000
 const NEAR_MISS_DISTANCE = 1.6
 
 interface CombatDeps {
@@ -56,6 +59,10 @@ export class ClientCombat {
   private readonly d: CombatDeps
   private readonly names = new Map<number, string>()
   private lastDeath: { killer: string | null; weapon: string; headshot: boolean } | null = null
+  /** Kill jingle set from the game rules ('off' = just the ding). */
+  jingles: JingleId = 'arcade'
+  /** Your recent kill times (ms), for double / triple kill jingles. */
+  private streak: number[] = []
   private wasAlive = true
   private isProtected = false
   /** Your feet, refreshed every frame (for your own death effects). */
@@ -133,6 +140,21 @@ export class ClientCombat {
       audio.play('reload.in', { volume: 0.75, delay: Math.max(0.3, total - (empty ? 0.7 : 0.45)) })
       if (empty) audio.play('reload.slide', { volume: 0.75, delay: Math.max(0.5, total - 0.28) })
     }
+  }
+
+  /** Plays the rules' jingle after the kill ding; kills within 4 s of each other escalate it. */
+  private killJingle(): void {
+    if (this.jingles === 'off') return
+    const now = performance.now()
+    this.streak = this.streak.filter((t) => now - t < STREAK_MS)
+    this.streak.push(now)
+    this.d.audio.play(`jingle.${this.jingles}`, {
+      bus: 'ui',
+      rate: 1,
+      volume: 0.8,
+      delay: 0.12,
+      variant: this.streak.length - 1,
+    })
   }
 
   private impactSound(at: THREE.Vector3, kind: 'world' | 'player' | 'nothing'): void {
@@ -219,7 +241,9 @@ export class ClientCombat {
           msg.headshot,
           msg.killerId === me || msg.victimId === me,
         )
+        if (msg.killerId === me && msg.victimId !== me) this.killJingle()
         if (msg.victimId === me) {
+          this.streak = []
           this.lastDeath = {
             killer: msg.killerId === me ? null : this.name(msg.killerId),
             weapon,
