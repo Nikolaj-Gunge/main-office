@@ -98,7 +98,8 @@ async function api(path: string, body?: unknown): Promise<AdminState> {
   const response = await fetch(`/admin/api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
-      Authorization: `Bearer ${password}`,
+      // URI-encoded: headers can't carry æ, ø, å reliably (the server decodes it).
+      'X-Admin-Password': encodeURIComponent(password),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? null : JSON.stringify(body),

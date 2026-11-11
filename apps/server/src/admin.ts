@@ -24,7 +24,8 @@ export interface AdminOptions {
 
 /**
  * The admin page's API (`/admin/api/*`), in plain Fetch API terms so the Bun server and the
- * Cloudflare Durable Object share it. Every request carries the password as a Bearer token.
+ * Cloudflare Durable Object share it. Every request carries the password in `X-Admin-Password`,
+ * URI-encoded (HTTP headers can't carry æ, ø, å and other non-ASCII characters reliably).
  *
  *   GET  /admin/api/state         rules, choices and who's online
  *   POST /admin/api/rules         partial rules JSON → applied live (map switch included)
@@ -50,8 +51,7 @@ export class AdminApi {
     if (record && record.count >= MAX_FAILURES && now < record.until) {
       return json({ error: 'Too many wrong passwords — try again in a few minutes' }, 429)
     }
-    const given = (request.headers.get('Authorization') ?? '').replace(/^Bearer /, '')
-    if (!(await samePassword(given, password))) {
+    if (!(await samePassword(passwordFrom(request), password))) {
       const count = record && now < record.until ? record.count + 1 : 1
       this.failures.set(client, { count, until: now + LOCKOUT_MS })
       return json({ error: 'Wrong password' }, 401)
@@ -113,12 +113,25 @@ export class AdminApi {
   }
 }
 
+/** The password a request carries (see the class comment); '' if missing or malformed. */
+function passwordFrom(request: Request): string {
+  const raw = request.headers.get('X-Admin-Password') ?? ''
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return ''
+  }
+}
+
+/** Same text either way: Unicode-normalized (æ typed vs pasted) and without stray spaces. */
+const normalize = (password: string) => password.normalize('NFC').trim()
+
 /** Compares SHA-256 digests in constant time, so response timing doesn't leak the password. */
 async function samePassword(given: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder()
   const [a, b] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(given)),
-    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+    crypto.subtle.digest('SHA-256', encoder.encode(normalize(given))),
+    crypto.subtle.digest('SHA-256', encoder.encode(normalize(expected))),
   ])
   const x = new Uint8Array(a)
   const y = new Uint8Array(b)

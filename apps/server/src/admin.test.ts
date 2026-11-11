@@ -25,7 +25,7 @@ function setup(password = 'hunter2') {
 function request(path: string, password: string, body?: unknown, ip = '1.2.3.4') {
   return new Request(`http://office/admin/api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${password}`, 'CF-Connecting-IP': ip },
+    headers: { 'X-Admin-Password': encodeURIComponent(password), 'CF-Connecting-IP': ip },
     body: body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body),
   })
 }
@@ -84,6 +84,12 @@ describe('admin API', () => {
     expect(game.mapId).toBe('gym')
     await admin.handle(request('rules', 'hunter2', { map: 'nowhere' }))
     expect(game.mapId).toBe('gym')
+  })
+
+  test('accepts passwords with æøå and ignores stray spaces around them', async () => {
+    const { admin } = setup('Rødgrød med fløde ')
+    const res = await admin.handle(request('state', ' Rødgrød med fløde'))
+    expect(res.status).toBe(200)
   })
 
   test('rejects a body that is not JSON', async () => {
