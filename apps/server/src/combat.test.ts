@@ -376,3 +376,50 @@ describe('game rules', () => {
     for (let t = 0; t < 30; t++) s.game.step()
   })
 })
+
+describe('shotgun', () => {
+  /** Duel with the shooter holding a shotgun, `distance` m from the victim. */
+  function shotgunDuel(distance: number) {
+    const s = duel()
+    const pa = s.game.players.get(s.shooter)
+    const pb = s.game.players.get(s.victim)
+    if (!pa || !pb) throw new Error('setup')
+    pa.state.weapon = createWeaponState(WeaponId.Shotgun, 99)
+    pb.state.pos = { x: 0, y: 0, z: -distance }
+    for (let t = 0; t < TICK_RATE; t++) {
+      s.game.handleInput(s.shooter, [idle(s.seq.n)])
+      s.game.handleInput(s.victim, [idle(s.seq.n)])
+      s.seq.n++
+      s.game.step()
+    }
+    return s
+  }
+
+  test('point blank to the chest is a one-shot kill', () => {
+    const s = shotgunDuel(3)
+    shootAt(s, { x: 0, y: 1.25, z: -3 })
+    expect(health(s)).toBe(0)
+  })
+
+  test('far away the pellets barely hurt', () => {
+    const s = shotgunDuel(30)
+    shootAt(s, { x: 0, y: 1.25, z: -30 })
+    expect(health(s)).toBeGreaterThan(80)
+  })
+
+  test('one shot fires a tracer per pellet, but only the first is the "real" shot', () => {
+    const s = shotgunDuel(10)
+    const before = s.b.all(ServerMsg.ShotFired).length
+    shootAt(s, { x: 0, y: 1.25, z: -10 })
+    const shots = s.b.all(ServerMsg.ShotFired).slice(before)
+    expect(shots.length).toBe(8)
+    expect(shots.filter((m) => !m.pellet).length).toBe(1)
+  })
+
+  test('a pellet in the head hurts more but is not an instant kill at range', () => {
+    const s = shotgunDuel(15)
+    shootAt(s, { x: 0, y: 1.64, z: -15 })
+    expect(health(s)).toBeGreaterThan(0)
+    expect(health(s)).toBeLessThan(MAX_HEALTH)
+  })
+})

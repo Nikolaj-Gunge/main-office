@@ -376,12 +376,13 @@ export function buildOffice(): MapDef {
   // ─── Weapons lying around (you spawn with only the handgun) ────────────────────────────
   const RIFLE = 1
   const SNIPER = 2
+  const SHOTGUN = 3
   m.pickup(22, 1, 6.6, RIFLE) // kitchen island
-  m.pickup(-20.5, 1.1, 4, RIFLE) // reception desk
+  m.pickup(-20.5, 1.1, 4, SHOTGUN) // reception desk
   m.pickup(-3, 0, 7, RIFLE) // open-plan aisle
   m.pickup(8, 0, -10.5, RIFLE) // quiet room
-  m.pickup(-22, UP, -15, RIFLE) // games room
-  m.pickup(-15, 0.75, -13.3, RIFLE) // boardroom table, near the edge
+  m.pickup(-22, UP, -15, SHOTGUN) // games room
+  m.pickup(-15, 0.75, -13.3, SHOTGUN) // boardroom table, near the edge
   m.pickup(23, UP + 0.78, -17.5, SNIPER) // CEO desk
   m.pickup(8.5, UP + 0.45, -18.5, SNIPER) // upper lounge table
   m.pickup(-5, 0, -2.5, SNIPER) // under the gallery beside the grand stairs, in the open — risky

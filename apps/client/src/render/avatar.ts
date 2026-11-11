@@ -16,6 +16,7 @@ const sharedGeometry = {
     [WeaponId.Handgun]: new THREE.BoxGeometry(0.05, 0.08, 0.22),
     [WeaponId.Rifle]: new THREE.BoxGeometry(0.06, 0.1, 0.7),
     [WeaponId.Sniper]: new THREE.BoxGeometry(0.06, 0.1, 0.95),
+    [WeaponId.Shotgun]: new THREE.BoxGeometry(0.07, 0.1, 0.8),
   } as Record<WeaponId, THREE.BoxGeometry>,
 }
 const visorMaterial = new THREE.MeshLambertMaterial({ color: 0x1b1d2a })

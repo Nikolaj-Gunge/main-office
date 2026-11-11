@@ -322,10 +322,13 @@ export class Effects {
     hit: 'world' | 'player' | 'nothing',
     heavy = false,
     own = false,
+    /** False for a shotgun's extra pellets: one flash and one smoke cloud per shot. */
+    muzzleEffects = true,
   ): void {
-    this.flashLight(from)
-    const aim = to.clone().sub(from).normalize()
-    this.muzzleSmoke(from, aim, heavy, own)
+    if (muzzleEffects) {
+      this.flashLight(from)
+      this.muzzleSmoke(from, to.clone().sub(from).normalize(), heavy, own)
+    }
     const dir = to.clone().sub(from)
     const distance = dir.length()
     if (distance > 0.5) {

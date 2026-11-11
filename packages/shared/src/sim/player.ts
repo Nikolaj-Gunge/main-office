@@ -11,6 +11,7 @@ import type { MovementConfig } from './movement-config.ts'
 import {
   createWeaponState,
   DEFAULT_WEAPON_RULES,
+  pelletDirections,
   stepWeapon,
   switchWeapons,
   type WeaponEvents,
@@ -56,7 +57,10 @@ export interface PlayerState {
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
 export interface ShotEvent {
   origin: MutVec3
+  /** Where the gun points (the first pellet's direction). */
   dir: MutVec3
+  /** Every ray of the shot: just `dir` for most guns, one per pellet for the shotgun. */
+  pellets: MutVec3[]
   shotIndex: number
 }
 
@@ -527,9 +531,18 @@ export function stepPlayer(
   })
   const shot = events.weapon.shot
   if (shot) {
+    const dir = viewDirection(state.yaw + shot.yawOffset, state.pitch + shot.pitchOffset)
+    const w = state.weapon
     events.shot = {
       origin: { x: state.pos.x, y: state.pos.y + eyeHeight(state, c), z: state.pos.z },
-      dir: viewDirection(state.yaw + shot.yawOffset, state.pitch + shot.pitchOffset),
+      dir,
+      pellets: pelletDirections(
+        dir,
+        shot.pelletSpread,
+        WEAPONS[w.id].pellets ?? 1,
+        w.spreadSeed,
+        shot.shotIndex,
+      ),
       shotIndex: shot.shotIndex,
     }
   }

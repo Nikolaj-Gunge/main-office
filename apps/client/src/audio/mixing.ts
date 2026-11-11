@@ -35,6 +35,7 @@ export const GUN_VOICES: Record<number, { rate: number; volume: number; tail: nu
   0: { rate: 0.93, volume: 1.15, tail: 1.1 }, // handgun: deeper and louder, more punch
   1: { rate: 1.12, volume: 0.9, tail: 0.9 }, // rifle
   2: { rate: 0.72, volume: 1.35, tail: 1.6 }, // sniper
+  3: { rate: 0.62, volume: 1.4, tail: 1.4 }, // shotgun: low boom
 }
 
 export interface GunshotMix {

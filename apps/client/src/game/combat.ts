@@ -87,16 +87,52 @@ export class ClientCombat {
 
   /** A shot we just predicted: show it right away. */
   onLocalShot(shot: ShotEvent, weaponId: WeaponId, aiming: boolean): void {
-    const { origin, dir } = shot
     const weapon = WEAPONS[weaponId]
+    // Scoped, the gun is hidden: the tracer starts just below the eye instead of the muzzle.
+    const { origin } = shot
+    const muzzle = this.d.viewmodel.scoped
+      ? new THREE.Vector3(origin.x, origin.y - 0.08, origin.z)
+      : this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
+    const heavy = weapon.id === WeaponId.Sniper || weapon.id === WeaponId.Shotgun
+    // Every pellet gets its tracer and impact; the shot itself (smoke, sound, kick) once.
+    shot.pellets.forEach((dir, i) => {
+      const { end, kind } = this.localTracer(origin, dir, weapon.range, muzzle, heavy, i === 0)
+      if (i < 3) this.impactSound(end, kind) // a few impact sounds are plenty
+    })
+    this.d.viewmodel.onShot()
+    this.d.recoil.kick(weapon, aiming)
+    this.d.shake.add(
+      weapon.id === WeaponId.Shotgun
+        ? 0.55
+        : heavy
+          ? 0.5
+          : weapon.fireMode === 'auto'
+            ? 0.13
+            : 0.32,
+    )
+    this.d.audio.gunshot(undefined, weapon.id)
+    if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
+    if (weapon.fireMode === 'pump') this.d.audio.play('pump', { volume: 0.7, delay: 0.3 })
+    this.ejectCasing()
+  }
+
+  /** Draws one predicted bullet/pellet: tracer to the first wall or visible player. */
+  private localTracer(
+    origin: { x: number; y: number; z: number },
+    dir: { x: number; y: number; z: number },
+    range: number,
+    muzzle: THREE.Vector3,
+    heavy: boolean,
+    withMuzzleEffects: boolean,
+  ): { end: THREE.Vector3; kind: 'world' | 'player' | 'nothing' } {
     const wall = this.d.physics.world.castRayAndGetNormal(
       new RAPIER.Ray(origin, dir),
-      weapon.range,
+      range,
       true,
       undefined,
       PLAYER_QUERY_GROUPS,
     )
-    let distance = wall ? wall.timeOfImpact : weapon.range
+    let distance = wall ? wall.timeOfImpact : range
     let kind: 'world' | 'player' | 'nothing' = wall ? 'world' : 'nothing'
     // Ends the tracer on whoever we see in the way (the server decides if it actually counts).
     for (const pose of this.d.remotes.visiblePoses().values()) {
@@ -114,19 +150,8 @@ export class ClientCombat {
       kind === 'world' && wall
         ? new THREE.Vector3(wall.normal.x, wall.normal.y, wall.normal.z)
         : new THREE.Vector3(-dir.x, -dir.y, -dir.z)
-    // Scoped, the gun is hidden: the tracer starts just below the eye instead of the muzzle.
-    const muzzle = this.d.viewmodel.scoped
-      ? new THREE.Vector3(origin.x, origin.y - 0.08, origin.z)
-      : this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
-    const heavy = weapon.id === WeaponId.Sniper
-    this.d.effects.shot(muzzle, end, normal, kind, heavy, true)
-    this.d.viewmodel.onShot()
-    this.d.recoil.kick(weapon, aiming)
-    this.d.shake.add(heavy ? 0.5 : weapon.fireMode === 'auto' ? 0.13 : 0.32)
-    this.d.audio.gunshot(undefined, weapon.id)
-    if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
-    this.impactSound(end, kind)
-    this.ejectCasing()
+    this.d.effects.shot(muzzle, end, normal, kind, heavy, true, withMuzzleEffects)
+    return { end, kind }
   }
 
   /** Reload and dry-fire sounds from the predicted weapon (so they're instant). */
@@ -201,18 +226,25 @@ export class ClientCombat {
               ? 'world'
               : 'nothing'
         const end = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
-        const heavy = msg.weapon === WeaponId.Sniper
+        const heavy = msg.weapon === WeaponId.Sniper || msg.weapon === WeaponId.Shotgun
+        const first = !msg.pellet
         this.d.effects.shot(
           from,
           end,
           new THREE.Vector3(msg.normal.x, msg.normal.y, msg.normal.z),
           kind,
           heavy,
+          false,
+          first,
         )
-        this.d.audio.gunshot(from, msg.weapon)
-        if (heavy) this.d.audio.playNear('bolt', from, 0.6, 25)
-        this.impactSound(end, kind)
-        this.nearMiss(from, end)
+        // An extra shotgun pellet: tracer and impact only, the shot was already heard.
+        if (first) {
+          this.d.audio.gunshot(from, msg.weapon)
+          if (msg.weapon === WeaponId.Sniper) this.d.audio.playNear('bolt', from, 0.6, 25)
+          if (msg.weapon === WeaponId.Shotgun) this.d.audio.playNear('pump', from, 0.6, 25)
+          this.impactSound(end, kind)
+          this.nearMiss(from, end)
+        }
         break
       }
       case ServerMsg.HitConfirm:

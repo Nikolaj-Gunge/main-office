@@ -52,7 +52,13 @@ export const DEFAULT_WEAPON_RULES: WeaponRules = { spreadScale: 1, infiniteAmmo:
 
 export interface WeaponEvents {
   /** Set when a shot was fired this tick: the offsets to apply to the view direction. */
-  shot: { yawOffset: number; pitchOffset: number; shotIndex: number } | null
+  shot: {
+    yawOffset: number
+    pitchOffset: number
+    shotIndex: number
+    /** Pellet cone radius (radians) for multi-pellet weapons, else 0. */
+    pelletSpread: number
+  } | null
   reloadStarted: boolean
   reloaded: boolean
   dryFire: boolean
@@ -128,6 +134,44 @@ export function weaponSway(w: WeaponState): { yaw: number; pitch: number } {
 }
 
 /** 32-bit integer hash → [0, 1). Same on every JS engine. */
+/**
+ * Ray directions for every pellet of a shot: the first straight down `dir`, the rest spread
+ * evenly over the cone (`spread` radians), seeded so client and server get the same pattern.
+ */
+export function pelletDirections(
+  dir: { x: number; y: number; z: number },
+  spread: number,
+  count: number,
+  seed: number,
+  shotIndex: number,
+): { x: number; y: number; z: number }[] {
+  if (count <= 1 || spread <= 0) return [{ x: dir.x, y: dir.y, z: dir.z }]
+  // Basis around dir: `right` is horizontal, `up` completes it.
+  let rx = -dir.z
+  let rz = dir.x
+  const rl = Math.hypot(rx, rz) || 1
+  rx /= rl
+  rz /= rl
+  const ux = -rz * dir.y
+  const uy = rz * dir.x - rx * dir.z
+  const uz = rx * dir.y
+  const out = [{ x: dir.x, y: dir.y, z: dir.z }]
+  for (let i = 1; i < count; i++) {
+    const n = 1000 + shotIndex * 64 + i * 2
+    // Stratified rings so pellets cover the cone instead of clumping.
+    const r = Math.tan(spread * Math.sqrt((i - 1 + hash01(seed, n)) / (count - 1)))
+    const theta = Math.PI * 2 * ((i - 1) / (count - 1) + hash01(seed, n + 1) * 0.35)
+    const a = r * Math.cos(theta)
+    const b = r * Math.sin(theta)
+    const x = dir.x + rx * a + ux * b
+    const y = dir.y + uy * b
+    const z = dir.z + rz * a + uz * b
+    const len = Math.hypot(x, y, z)
+    out.push({ x: x / len, y: y / len, z: z / len })
+  }
+  return out
+}
+
 function hash01(seed: number, n: number): number {
   let h = (seed ^ Math.imul(n + 1, 0x9e3779b9)) >>> 0
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b)
@@ -191,14 +235,17 @@ export function stepWeapon(
   const ready = w.cooldown <= EPS && w.reload === 0 && w.draw <= EPS && w.sprintRecover <= EPS
   if (wantFire && ready && w.ammo > 0) {
     const spreadRad = (currentSpread(w, ctx) * Math.PI) / 180
-    // Uniform point in a disc: sqrt keeps it from bunching in the middle.
-    const r = spreadRad * Math.sqrt(hash01(w.spreadSeed, w.shotIndex * 2))
+    const multi = (def.pellets ?? 1) > 1
+    // Uniform point in a disc: sqrt keeps it from bunching in the middle. A shotgun aims its
+    // cone where you point; the spread decides how wide the pellets fan out (pelletDirections).
+    const r = multi ? 0 : spreadRad * Math.sqrt(hash01(w.spreadSeed, w.shotIndex * 2))
     const theta = Math.PI * 2 * hash01(w.spreadSeed, w.shotIndex * 2 + 1)
     const sway = weaponSway(w)
     events.shot = {
       yawOffset: r * Math.cos(theta) + sway.yaw,
       pitchOffset: r * Math.sin(theta) + sway.pitch,
       shotIndex: w.shotIndex,
+      pelletSpread: multi ? spreadRad : 0,
     }
     w.ammo--
     w.shotIndex++

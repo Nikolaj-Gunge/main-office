@@ -131,6 +131,8 @@ export type ServerMessage =
       end: { x: number; y: number; z: number }
       normal: { x: number; y: number; z: number }
       result: ShotResult
+      /** One of a shotgun's extra pellets: draw it, but the shot itself was already heard. */
+      pellet?: boolean
     }
   | {
       /** Your shot hit someone (server-confirmed). */
@@ -408,7 +410,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       w.u16(msg.shooterId).u8(msg.weapon)
       writeVec(w, msg.end)
       writeNormal(w, msg.normal)
-      w.u8(msg.result)
+      // Top bit: an extra shotgun pellet (no gunshot sound or muzzle effects for it).
+      w.u8(msg.result | (msg.pellet ? 0x80 : 0))
       break
     case ServerMsg.HitConfirm:
       w.u16(msg.victimId)
@@ -499,7 +502,11 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
         weapon: r.u8() as WeaponId,
         end: readVec(r),
         normal: readNormal(r),
-        result: r.u8() as ShotResult,
+        ...(() => {
+          const byte = r.u8()
+          const result = (byte & 0x7f) as ShotResult
+          return byte & 0x80 ? { result, pellet: true } : { result }
+        })(),
       }
     case ServerMsg.HitConfirm:
       return {

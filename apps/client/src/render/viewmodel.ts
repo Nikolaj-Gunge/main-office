@@ -17,6 +17,19 @@ function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0
   return mesh
 }
 
+/** Height of the rifle's red dot above its bore line (the sight sits on a riser). */
+const RED_DOT_Y = 0.09
+
+/** The glowing aiming dot: unlit, so it stays bright red in any light. */
+function dot(size: number, x: number, y: number, z: number) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size, size, size / 2),
+    new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
+  )
+  mesh.position.set(x, y, z)
+  return mesh
+}
+
 /** One first-person weapon: its meshes plus where it sits and where things come out of it. */
 interface GunModel {
   group: THREE.Group
@@ -27,6 +40,8 @@ interface GunModel {
   ads: THREE.Vector3
   /** How hard each shot shoves the model back/up (visual only). */
   kick: number
+  /** Shotgun: the pump grip, racked back and forward after each shot. */
+  pump?: THREE.Object3D
 }
 
 function marker(x: number, y: number, z: number): THREE.Object3D {
@@ -71,8 +86,13 @@ function rifle(): GunModel {
     box(0.045, 0.06, 0.3, FRAME, 0, 0, 0), // receiver
     box(0.05, 0.05, 0.2, STEEL, 0, -0.005, -0.24), // handguard
     box(0.018, 0.018, 0.16, STEEL, 0, 0.005, -0.42), // barrel
-    box(0.006, 0.03, 0.006, SIGHT, 0, 0.045, -0.32), // front sight post
-    box(0.025, 0.012, 0.012, SIGHT, 0, 0.038, 0.1), // rear sight
+    // Red-dot sight on a tall riser: you look through an open frame over the gun, so aiming
+    // keeps most of the view clear (iron sights put the whole rifle in your face).
+    box(0.03, 0.035, 0.07, STEEL, 0, 0.045, -0.02), // riser
+    box(0.005, 0.05, 0.012, STEEL, -0.026, 0.09, -0.04), // frame: left
+    box(0.005, 0.05, 0.012, STEEL, 0.026, 0.09, -0.04), // frame: right
+    box(0.057, 0.006, 0.012, STEEL, 0, 0.118, -0.04), // frame: top
+    dot(0.007, 0, RED_DOT_Y, -0.045),
     box(0.04, 0.07, 0.18, FRAME, 0, -0.02, 0.24), // stock
     mag,
     grip,
@@ -88,7 +108,8 @@ function rifle(): GunModel {
     muzzle,
     ejectPort,
     hip: new THREE.Vector3(0.16, -0.16, -0.44),
-    ads: new THREE.Vector3(0, -0.044, -0.2),
+    // The dot sits on screen centre, ~0.3 m in front of the eye; the gun itself stays low.
+    ads: new THREE.Vector3(0, -RED_DOT_Y, -0.26),
     kick: 0.7,
   }
 }
@@ -119,6 +140,39 @@ function sniper(): GunModel {
     hip: new THREE.Vector3(0.16, -0.17, -0.44),
     ads: new THREE.Vector3(0, -0.06, -0.12),
     kick: 1.6,
+  }
+}
+
+function shotgun(): GunModel {
+  const group = new THREE.Group()
+  // The pump: forend + support hand, slides back along the tube magazine after each shot.
+  const pump = new THREE.Group()
+  pump.add(
+    box(0.05, 0.045, 0.14, WOOD, 0, -0.035, -0.26), // forend
+    box(0.055, 0.04, 0.07, SKIN, -0.01, -0.06, -0.26), // support hand
+  )
+  group.add(
+    box(0.05, 0.06, 0.26, STEEL, 0, 0, 0), // receiver
+    box(0.026, 0.026, 0.46, STEEL, 0, 0.012, -0.34), // barrel
+    box(0.022, 0.022, 0.4, FRAME, 0, -0.02, -0.3), // tube magazine
+    box(0.006, 0.01, 0.006, SIGHT, 0, 0.03, -0.55), // bead sight
+    box(0.05, 0.075, 0.24, WOOD, 0, -0.03, 0.24), // stock
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.25), // forearm
+    pump,
+  )
+  const muzzle = marker(0, 0.012, -0.58)
+  const ejectPort = marker(0.03, 0.015, -0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.17, -0.44),
+    // Bead sight on screen centre, gun held low and a little away from the eye.
+    ads: new THREE.Vector3(0, -0.05, -0.2),
+    kick: 2.2,
+    pump,
   }
 }
 
@@ -158,6 +212,7 @@ export class Viewmodel {
     [WeaponId.Handgun]: handgun(),
     [WeaponId.Rifle]: rifle(),
     [WeaponId.Sniper]: sniper(),
+    [WeaponId.Shotgun]: shotgun(),
   }
   private active: GunModel
   private readonly flash: THREE.Mesh
@@ -266,6 +321,13 @@ export class Viewmodel {
       def.fireMode === 'bolt' && weapon.cooldown > 0
         ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)
         : 0
+
+    // Pump: rack back and forward in the middle of the cooldown (ka-chunk).
+    if (this.active.pump) {
+      const t = weapon.cooldown > 0 ? 1 - weapon.cooldown / def.fireInterval : 1
+      const rack = t > 0.25 && t < 0.85 ? Math.sin(((t - 0.25) / 0.6) * Math.PI) : 0
+      this.active.pump.position.z = rack * 0.09
+    }
 
     const bobX = Math.cos(bob.phase) * 0.008 * bob.weight * hipWeight
     const bobY = -Math.abs(Math.sin(bob.phase)) * 0.01 * bob.weight * hipWeight

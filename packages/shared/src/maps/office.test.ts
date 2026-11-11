@@ -184,7 +184,7 @@ describe('office map', () => {
   test('weapon pickups lie on surfaces inside the building', () => {
     expect(map.pickups?.length).toBeGreaterThanOrEqual(6)
     for (const p of map.pickups ?? []) {
-      expect([1, 2]).toContain(p.weapon)
+      expect([1, 2, 3]).toContain(p.weapon)
       expect(Math.abs(p.pos[0])).toBeLessThan(30)
       expect(Math.abs(p.pos[2])).toBeLessThan(20)
     }

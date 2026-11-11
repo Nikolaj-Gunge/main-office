@@ -3,11 +3,12 @@ export const WeaponId = {
   Handgun: 0,
   Rifle: 1,
   Sniper: 2,
+  Shotgun: 3,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
 /** Weapons you can pick as your primary (the handgun is always the secondary). */
-export const PRIMARY_WEAPONS = [WeaponId.Rifle, WeaponId.Sniper] as const
+export const PRIMARY_WEAPONS = [WeaponId.Rifle, WeaponId.Sniper, WeaponId.Shotgun] as const
 export type PrimaryWeapon = (typeof PRIMARY_WEAPONS)[number]
 
 export function isPrimary(id: number): id is PrimaryWeapon {
@@ -17,8 +18,11 @@ export function isPrimary(id: number): id is PrimaryWeapon {
 export interface WeaponDef {
   id: WeaponId
   name: string
-  /** semi: one shot per click · auto: hold to fire · bolt: one shot, then cycle the bolt. */
-  fireMode: 'semi' | 'auto' | 'bolt'
+  /**
+   * semi: one shot per click · auto: hold to fire · bolt: one shot, then cycle the bolt ·
+   * pump: one shot, then rack the pump.
+   */
+  fireMode: 'semi' | 'auto' | 'bolt' | 'pump'
   /** Seconds between shots. */
   fireInterval: number
   magSize: number
@@ -64,6 +68,16 @@ export interface WeaponDef {
    * of a spray (the last entry repeats). Fixed, so it can be learned and pulled against.
    */
   recoilPattern?: readonly (readonly [number, number])[]
+  /**
+   * Pellets per shot (shotgun). Each pellet is its own ray inside the spread cone and does
+   * `damage` (with falloff) on its own. Default 1.
+   */
+  pellets?: number
+  /**
+   * Damage multiplier for a pellet that hits the head. Only for multi-pellet weapons: one stray
+   * pellet shouldn't be an instant kill like a headshot with any other gun.
+   */
+  pelletHeadMultiplier?: number
 }
 
 /** Values mirror PLAN.md §5. */
@@ -118,7 +132,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     airSpread: 6,
     sprintToFire: 0.2,
     adsTime: 0.22,
-    aimZoom: 1.25,
+    // Red-dot sight: a light zoom, so you still see around your target.
+    aimZoom: 1.15,
     scoped: false,
     scopeSway: 0,
     moveSpeedFactor: 1,
@@ -182,6 +197,40 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kickPitch: 4,
     kickYaw: 0.8,
     recoverTime: 0.5,
+  },
+  [WeaponId.Shotgun]: {
+    id: WeaponId.Shotgun,
+    name: 'Shotgun',
+    fireMode: 'pump',
+    fireInterval: 0.8,
+    magSize: 6,
+    reserve: 24,
+    reloadTime: 2.6,
+    emptyReloadTime: 3.1,
+    drawTime: 0.6,
+    // Per pellet: 8 × 14 = 112 if every pellet lands in the chest up close — one shot at
+    // point blank, a few at mid range, useless far away.
+    damage: 14,
+    falloffStart: 6,
+    falloffEnd: 20,
+    minDamage: 3,
+    range: 80,
+    // The pellet cone (degrees): aiming tightens it a little, it never becomes a rifle.
+    hipSpread: 4.5,
+    aimSpread: 3.2,
+    moveSpread: 0.8,
+    airSpread: 1.5,
+    sprintToFire: 0.25,
+    adsTime: 0.2,
+    aimZoom: 1.1,
+    scoped: false,
+    scopeSway: 0,
+    moveSpeedFactor: 0.95,
+    kickPitch: 5,
+    kickYaw: 1.2,
+    recoverTime: 0.35,
+    pellets: 8,
+    pelletHeadMultiplier: 2.5,
   },
 }
 

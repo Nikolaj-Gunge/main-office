@@ -171,6 +171,7 @@ const PUSH_SPEED: Record<WeaponId, number> = {
   [WeaponId.Handgun]: 3,
   [WeaponId.Rifle]: 3.5,
   [WeaponId.Sniper]: 7,
+  [WeaponId.Shotgun]: 6,
 }
 const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()
 remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {

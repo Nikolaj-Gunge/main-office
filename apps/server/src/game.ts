@@ -321,102 +321,141 @@ export class Game {
 
   // --- Combat -------------------------------------------------------------------------------
 
-  /** Resolves one hitscan shot with everyone rewound to what the shooter saw. */
+  /**
+   * Resolves a hitscan shot — every pellet of it, for the shotgun — with everyone rewound to
+   * what the shooter saw. Damage is added up per victim and applied once.
+   */
   private fire(shooter: ServerPlayer, shot: ShotEvent, viewTick: number): void {
     shooter.protectedUntil = 0 // shooting ends spawn protection
     const weapon = WEAPONS[shooter.state.weapon.id]
-    const { origin, dir } = shot
-
-    const ray = new RAPIER.Ray(origin, dir)
-    const wall = this.physics.world.castRayAndGetNormal(
-      ray,
-      weapon.range,
-      true,
-      undefined,
-      PLAYER_QUERY_GROUPS,
-    )
-    const wallDistance = wall ? wall.timeOfImpact : weapon.range
-
+    const { origin } = shot
     const rewindTo = Math.max(
       this.tick - MAX_REWIND_SECONDS * TICK_RATE,
       this.history.oldestTick,
       Math.min(viewTick, this.tick),
     )
-    let hit: { victim: ServerPlayer; distance: number; zone: HitZone } | null = null
-    const debugPoses: (HitPose & { id: number })[] = []
+    const targets: { player: ServerPlayer; pose: HitPose & { id: number } }[] = []
     for (const target of this.players.values()) {
       if (target === shooter || !target.state.alive) continue
       const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target.state)
       if (!pose.alive) continue
-      debugPoses.push({ id: target.id, ...pose })
-      const scaled = { ...pose, scale: this.rulesValue.playerScale }
-      const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, scaled)
-      if (result) hit = { victim: target, ...result }
+      targets.push({ player: target, pose: { id: target.id, ...pose } })
     }
 
-    const distance = hit?.distance ?? wallDistance
-    const end = {
-      x: origin.x + dir.x * distance,
-      y: origin.y + dir.y * distance,
-      z: origin.z + dir.z * distance,
-    }
-    const normal = hit
-      ? { x: -dir.x, y: -dir.y, z: -dir.z }
-      : wall
-        ? { x: wall.normal.x, y: wall.normal.y, z: wall.normal.z }
-        : { x: 0, y: 1, z: 0 }
-    const result = hit ? ShotResult.Player : wall ? ShotResult.World : ShotResult.Nothing
-    const shotMsg = encodeServerMessage({
-      type: ServerMsg.ShotFired,
-      shooterId: shooter.id,
-      weapon: shooter.state.weapon.id,
-      end,
-      normal,
-      result,
+    const hits = new Map<ServerPlayer, { amount: number; headshot: boolean; zone: HitZone }>()
+    shot.pellets.forEach((dir, i) => {
+      const ray = new RAPIER.Ray(origin, dir)
+      const wall = this.physics.world.castRayAndGetNormal(
+        ray,
+        weapon.range,
+        true,
+        undefined,
+        PLAYER_QUERY_GROUPS,
+      )
+      const wallDistance = wall ? wall.timeOfImpact : weapon.range
+      let hit: { victim: ServerPlayer; distance: number; zone: HitZone } | null = null
+      for (const { player, pose } of targets) {
+        const scaled = { ...pose, scale: this.rulesValue.playerScale }
+        const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, scaled)
+        if (result) hit = { victim: player, ...result }
+      }
+
+      const distance = hit?.distance ?? wallDistance
+      const end = {
+        x: origin.x + dir.x * distance,
+        y: origin.y + dir.y * distance,
+        z: origin.z + dir.z * distance,
+      }
+      const normal = hit
+        ? { x: -dir.x, y: -dir.y, z: -dir.z }
+        : wall
+          ? { x: wall.normal.x, y: wall.normal.y, z: wall.normal.z }
+          : { x: 0, y: 1, z: 0 }
+      const result = hit ? ShotResult.Player : wall ? ShotResult.World : ShotResult.Nothing
+      const shotMsg = encodeServerMessage({
+        type: ServerMsg.ShotFired,
+        shooterId: shooter.id,
+        weapon: shooter.state.weapon.id,
+        end,
+        normal,
+        result,
+        ...(i > 0 ? { pellet: true } : {}),
+      })
+      for (const p of this.players.values()) if (p !== shooter) p.client.send(shotMsg)
+
+      if (!hit) return
+      const amount = this.hitDamage(weapon, hit.zone, hit.distance, hit.victim.health)
+      if (amount <= 0) return
+      const total = hits.get(hit.victim) ?? { amount: 0, headshot: false, zone: hit.zone }
+      total.amount += amount
+      if (hit.zone === HitZone.Head) {
+        total.headshot = true
+        total.zone = HitZone.Head
+      }
+      hits.set(hit.victim, total)
     })
-    for (const p of this.players.values()) if (p !== shooter) p.client.send(shotMsg)
 
     if (shooter.debugFlags & DebugFlag.LagComp) {
       send(shooter.client, {
         type: ServerMsg.DebugShot,
         origin,
-        dir,
+        dir: shot.dir,
         viewTick: rewindTo,
-        poses: debugPoses,
+        poses: targets.map((t) => t.pose),
       })
     }
 
-    if (hit) this.damage(hit.victim, shooter, hit.zone, hit.distance)
+    for (const [victim, total] of hits) {
+      this.damage(victim, shooter, total.zone, total.amount, total.headshot)
+    }
   }
 
-  private damage(victim: ServerPlayer, attacker: ServerPlayer, zone: HitZone, distance: number) {
-    if (this.tick < victim.protectedUntil) return
-    const weapon = WEAPONS[attacker.state.weapon.id]
+  /**
+   * Damage one bullet or pellet does under the current rules (0 = none). A headshot kills
+   * outright (enough to take all of `health`), except for shotgun pellets, which only hurt more.
+   */
+  private hitDamage(
+    weapon: (typeof WEAPONS)[WeaponId],
+    zone: HitZone,
+    distance: number,
+    health: number,
+  ): number {
     const rules = this.rulesValue
     const headshot = zone === HitZone.Head
-    if (rules.headshotsOnly && !headshot) return
-    const amount =
-      headshot || rules.oneShot
-        ? victim.health
-        : Math.max(
-            1,
-            Math.round(damageAtDistance(weapon, distance) * ZONE_MULTIPLIER[zone] * rules.damage),
-          )
-    victim.health = Math.max(0, victim.health - amount)
+    if (rules.headshotsOnly && !headshot) return 0
+    const multiPellet = (weapon.pellets ?? 1) > 1
+    if (rules.oneShot || (headshot && !multiPellet)) return health
+    const zoneMultiplier = headshot ? (weapon.pelletHeadMultiplier ?? 1) : ZONE_MULTIPLIER[zone]
+    return Math.max(
+      1,
+      Math.round(damageAtDistance(weapon, distance) * zoneMultiplier * rules.damage),
+    )
+  }
+
+  private damage(
+    victim: ServerPlayer,
+    attacker: ServerPlayer,
+    zone: HitZone,
+    amount: number,
+    headshot: boolean,
+  ) {
+    if (this.tick < victim.protectedUntil) return
+    const dealt = Math.min(victim.health, amount)
+    victim.health -= dealt
     const killed = victim.health === 0
 
     send(attacker.client, {
       type: ServerMsg.HitConfirm,
       victimId: victim.id,
       zone,
-      damage: amount,
+      damage: dealt,
       killed,
     })
     const s = attacker.state.pos
     send(victim.client, {
       type: ServerMsg.Damaged,
       attackerId: attacker.id,
-      damage: amount,
+      damage: dealt,
       health: victim.health,
       from: { x: s.x, y: s.y, z: s.z },
     })

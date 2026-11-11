@@ -31,6 +31,7 @@ export const SOUNDS = {
   'reload.in': { variants: 1, recipe: magIn },
   'reload.slide': { variants: 1, recipe: slide },
   bolt: { variants: 1, recipe: boltCycle },
+  pump: { variants: 1, recipe: pumpAction },
   dryfire: { variants: 1, recipe: dryFire },
   hit: { variants: 1, recipe: hitTick },
   'hit.head': { variants: 1, recipe: headTink },
@@ -137,6 +138,18 @@ function boltCycle(rate: number): Signal {
       mix(rate, lift, [gain(back, 0.6), 0.08], [gain(forward, 0.6), 0.3], [lock, 0.45]),
       0.65,
     ),
+    rate,
+  )
+}
+
+/** Shotgun pump: ka-chunk — the slide back (shell out), then forward (shell in, locked). */
+function pumpAction(rate: number): Signal {
+  const back = envelope(bandpass(noise(0.1, rate, 251), rate, 1500, 1.2), rate, 0.01, 0.045)
+  const clack = metalClick(rate, 252, 900, 0.06)
+  const forward = envelope(bandpass(noise(0.09, rate, 253), rate, 1300, 1.2), rate, 0.01, 0.04)
+  const lock = metalClick(rate, 254, 750, 0.09)
+  return fadeEdges(
+    normalize(mix(rate, back, [clack, 0.06], [forward, 0.2], [gain(lock, 1.2), 0.26]), 0.7),
     rate,
   )
 }
