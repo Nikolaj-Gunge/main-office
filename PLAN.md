@@ -421,6 +421,17 @@ Every phase ends with something you can run and feel. Don't start the next phase
 
 ### Phase 10 — Always-on deployment
 
+> **Implementation notes:**
+> - Host: Cloudflare free plan (user's choice).
+>   - `apps/cloudflare`: Workers Assets serve the client; one Durable Object (`GameRoom`, idFromName `office`, locationHint `weur`) runs the unchanged `Game`, `GameLoop` and session code.
+>   - `apps/server/src/session.ts` is the transport-agnostic connection handler, shared by Bun and the Durable Object.
+> - Rapier: Workers can't compile WASM from bytes. `build.ts` cuts the inlined base64 out of `rapier.mjs` and points it at a precompiled module uploaded next to the worker, giving a 264 KB worker plus 3 MB WASM.
+> - Free quota:
+>   - Clients batch inputs, 2 ticks per message, 30 msg/s.
+>   - The server takes 1 command per tick, and 2 only above a backlog.
+>   - The room loop stops when empty and pauses after 5 s with no input.
+> - Not done here: the Dockerfile and SQLite stats. On the free plan, scores are in-memory only.
+
 - Dockerfile (multi-stage: build client → run server), env config, `/healthz`, graceful shutdown (warn players, persist scores).
 - Deploy to chosen host, HTTPS (Caddy or platform TLS), restart policy, uptime alert.
 - SQLite stats: all-time kills/deaths/headshots per name, leaderboard page.

@@ -21,7 +21,13 @@ export class GameLoop {
     this.onTick = onTick
   }
 
+  get running(): boolean {
+    return this.timer !== null
+  }
+
   start(): void {
+    if (this.timer) return
+    this.accumulator = 0
     this.last = performance.now()
     this.schedule()
   }
@@ -55,6 +61,7 @@ export class GameLoop {
       this.maxTickMs = Math.max(this.maxTickMs, ms)
       this.accumulator -= this.stepMs
       steps++
+      if (!this.timer) return // stopped from inside a tick
     }
     if (steps === MAX_CATCH_UP_TICKS && this.accumulator >= this.stepMs) {
       console.warn(`[loop] fell behind, dropping ${this.accumulator.toFixed(1)} ms`)

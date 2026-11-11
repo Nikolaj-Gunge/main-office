@@ -2,6 +2,11 @@
   "name": "@office-fps/server",
   "private": true,
   "type": "module",
+  "exports": {
+    "./game": "./src/game.ts",
+    "./loop": "./src/loop.ts",
+    "./session": "./src/session.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/main.ts",
     "start": "NODE_ENV=production bun src/main.ts",

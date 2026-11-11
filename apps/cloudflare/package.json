@@ -1,0 +1,19 @@
+{
+  "name": "@office-fps/cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "preview": "bun build.ts && wrangler dev",
+    "deploy": "bun build.ts && wrangler deploy",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@office-fps/server": "workspace:*",
+    "@office-fps/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261110.1",
+    "wrangler": "^4.160.0"
+  }
+}

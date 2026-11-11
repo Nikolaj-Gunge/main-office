@@ -11,6 +11,7 @@ import {
   type HitPose,
   HitZone,
   hasButton,
+  INPUT_BATCH_TICKS,
   type InputCommand,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
@@ -72,10 +73,13 @@ interface ServerPlayer {
 }
 
 /**
- * Inputs simulated per player per tick. Normally 1 arrives per tick; allowing 2 drains bursts
- * after network hiccups, while still capping how fast a (cheating) client can move.
+ * Inputs simulated per player per tick. Clients send them in batches (INPUT_BATCH_TICKS), so we
+ * take 1 per tick to keep everyone's movement even, and 2 only once a backlog builds up (after
+ * a network hiccup) — still capping how fast a (cheating) client can move.
  */
 const MAX_COMMANDS_PER_TICK = 2
+/** Queue length above which we catch up at MAX_COMMANDS_PER_TICK. */
+const CATCH_UP_QUEUE = INPUT_BATCH_TICKS + 1
 /** Max buffered commands per player (~0.33 s). Beyond this the oldest are dropped. */
 const MAX_QUEUE = 20
 const MAX_COMMANDS_PER_MESSAGE = 16
@@ -209,7 +213,8 @@ export class Game {
     this.tick++
     const t0 = performance.now()
     for (const player of this.players.values()) {
-      const commands = player.queue.splice(0, MAX_COMMANDS_PER_TICK)
+      const take = player.queue.length > CATCH_UP_QUEUE ? MAX_COMMANDS_PER_TICK : 1
+      const commands = player.queue.splice(0, take)
       for (const command of commands) {
         const usePressed =
           hasButton(command.buttons, Button.Use) && !hasButton(player.state.prevButtons, Button.Use)

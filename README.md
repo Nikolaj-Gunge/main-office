@@ -77,11 +77,33 @@ settings and renderer for console debugging.
 | `bun start`         | Production server: serves `dist` + WebSocket on one port (`PORT`, default 3000) |
 | `bun run bots`      | Headless bots for load tests (`--count 20 --url ws://… --seconds 60`; add `--shoot` to make them shoot at the nearest player) |
 
+## Hosting on Cloudflare (free plan)
+
+The always-on office server runs on Cloudflare: Workers Assets serve the client, and one Durable
+Object (`GameRoom`, in `apps/cloudflare`) runs the same `Game` as the Bun server. Anyone with the
+link can join.
+
+```sh
+cd apps/cloudflare
+bunx wrangler login   # once, opens the browser
+bun run deploy        # builds client + worker, uploads → https://office-fps.<you>.workers.dev
+bun run preview       # same thing locally in Cloudflare's runtime (http://localhost:8787)
+```
+
+Free plan budget: about **100,000 Durable Object requests per day**, resetting at 01:00
+Copenhagen time (00:00 UTC). Each player sends 30 input messages a second. If Cloudflare counts
+WebSocket messages 20:1, as it does for billing, that is roughly **18 player-hours of play a day**;
+the docs don't say whether the free quota uses the same ratio. Static files are free and unlimited.
+When the quota runs out, new connections fail until the reset. Check usage in the Cloudflare
+dashboard → Workers → office-fps → Metrics. Deploying restarts the room: everyone reconnects
+automatically and scores reset.
+
 ## Layout
 
 ```
 apps/client      Vite + Three.js game client
 apps/server      Bun HTTP + WebSocket authoritative server
+apps/cloudflare  Cloudflare Worker + Durable Object wrapper around the same server code
 packages/shared  Code used by both: constants, binary protocol, maps, (soon) simulation
 ```
 

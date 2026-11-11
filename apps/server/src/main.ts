@@ -45,7 +45,7 @@ const server = Bun.serve<SocketData>({
     }
 
     if (url.pathname === WS_PATH) {
-      const upgraded = server.upgrade(req, { data: { playerId: 0 } })
+      const upgraded = server.upgrade(req, { data: { session: null } })
       return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 400 })
     }
 

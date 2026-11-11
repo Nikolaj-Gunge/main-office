@@ -4,6 +4,7 @@ import {
   createPhysicsWorld,
   DEFAULT_MAP_ID,
   DebugFlag,
+  INPUT_BATCH_TICKS,
   type InputCommand,
   initPhysics,
   loadMap,
@@ -391,7 +392,7 @@ pixels.renderer.setAnimationLoop(() => {
     ticks++
   }
   if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0
-  if (outgoing.length > 0) {
+  if (outgoing.length >= INPUT_BATCH_TICKS) {
     net.send({ type: ClientMsg.Input, commands: outgoing.splice(0, outgoing.length) })
   }
 

@@ -4,6 +4,12 @@ export const TICK_DT = 1 / TICK_RATE
 
 /** How often the server broadcasts snapshots (Hz). */
 export const SNAPSHOT_RATE = 30
+/**
+ * Client sends its input commands in batches of this many ticks (60 Hz / 2 = 30 messages/s).
+ * Halves the message count, which is what Cloudflare's free plan meters; costs ≤17 ms of
+ * server-side input delay (your own movement is predicted locally, so you don't feel it).
+ */
+export const INPUT_BATCH_TICKS = 2
 
 /** Default port the server listens on (HTTP + WebSocket). */
 export const DEFAULT_SERVER_PORT = 3000

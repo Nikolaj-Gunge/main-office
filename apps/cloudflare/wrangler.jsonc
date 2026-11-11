@@ -1,0 +1,20 @@
+// Cloudflare deployment (free plan): Workers Assets serve the client, one Durable Object runs the
+// office room. Build + deploy with `bun run deploy` from this folder (see README).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "office-fps",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-11-01",
+  // dist/ is already bundled by build.ts; wrangler only picks up the .wasm next to it (its
+  // default rule uploads *.wasm as a compiled module).
+  "no_bundle": true,
+  "find_additional_modules": true,
+  "base_dir": "dist",
+  "assets": { "directory": "../client/dist" },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "GameRoom" }]
+  },
+  // The free plan only allows SQLite-backed Durable Objects (we don't store anything).
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }],
+  "observability": { "enabled": true }
+}

@@ -116,8 +116,21 @@ describe('Game', () => {
     game.handleInput(id, burst)
     game.step()
     expect(game.players.get(id)?.ackSeq).toBe(2)
-    for (let i = 0; i < 7; i++) game.step()
+    // Catches up 2 per tick while there's a backlog, then settles to 1 per tick.
+    for (let i = 0; i < 5; i++) game.step()
+    expect(game.players.get(id)?.ackSeq).toBe(12)
+    for (let i = 0; i < 4; i++) game.step()
     expect(game.players.get(id)?.ackSeq).toBe(16)
+  })
+
+  test('a normal batch of inputs is spread over ticks, one per tick', () => {
+    const game = makeGame()
+    const id = game.join('Anna', fakeClient()) ?? 0
+    game.handleInput(id, [forward(1), forward(2)])
+    game.step()
+    expect(game.players.get(id)?.ackSeq).toBe(1)
+    game.step()
+    expect(game.players.get(id)?.ackSeq).toBe(2)
   })
 
   test('leave tells everyone and frees the slot', () => {
