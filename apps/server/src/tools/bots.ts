@@ -95,6 +95,15 @@ class Bot {
   }
 }
 
+// Fail fast with a useful message instead of N identical "Failed to connect" lines.
+const healthUrl = new URL('/healthz', url.replace(/^ws/, 'http'))
+try {
+  await fetch(healthUrl, { signal: AbortSignal.timeout(2000) })
+} catch {
+  console.error(`[bots] no game server at ${healthUrl.origin} — start it first with \`bun dev\``)
+  process.exit(1)
+}
+
 console.log(`[bots] connecting ${count} bots to ${url}`)
 const bots = Array.from({ length: count }, (_, i) => new Bot(i + 1))
 
