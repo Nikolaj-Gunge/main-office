@@ -19,6 +19,10 @@ export function createSettingsGui(settings: Settings, onChange: () => void): GUI
   camera.add(settings, 'fov', 60, 120, 1).name('fov (horizontal)')
   camera.add(settings, 'sensitivity', 0.1, 10, 0.05)
 
+  const audio = gui.addFolder('Audio')
+  audio.add(settings, 'masterVolume', 0, 1, 0.05).name('master volume')
+  audio.add(settings, 'sfxVolume', 0, 1, 0.05).name('effects volume')
+
   const debug = gui.addFolder('Debug')
   debug.add(settings, 'showStats').name('stats')
   debug.add(settings, 'showDebug').name('debug text (F3)')

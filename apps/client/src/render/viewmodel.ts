@@ -43,10 +43,13 @@ export class Viewmodel {
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 10)
   /** Muzzle position in view space, refreshed every frame (for tracers and the world flash light). */
   readonly muzzleView = new THREE.Vector3()
+  /** Ejection port in view space (where spent casings fly out). */
+  readonly ejectView = new THREE.Vector3()
 
   private readonly root = new THREE.Group()
   private readonly gun = new THREE.Group()
   private readonly muzzle = new THREE.Object3D()
+  private readonly ejectPort = new THREE.Object3D()
   private readonly flash: THREE.Mesh
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 1.5)
   private flashTime = 0
@@ -75,7 +78,8 @@ export class Viewmodel {
     )
     this.gun.children.at(-3)?.rotateX(0.18)
     this.muzzle.position.set(0, 0.012, -0.125)
-    this.gun.add(this.muzzle)
+    this.ejectPort.position.set(0.02, 0.02, -0.01)
+    this.gun.add(this.muzzle, this.ejectPort)
 
     this.flash = new THREE.Mesh(
       new THREE.PlaneGeometry(0.09, 0.09),
@@ -98,6 +102,11 @@ export class Viewmodel {
     const key = new THREE.DirectionalLight(0xfff1d6, 1.6)
     key.position.set(0.5, 1, 0.3)
     this.scene.add(key)
+  }
+
+  /** 0 = hip fire, 1 = fully aiming down sights (drives the FOV zoom). */
+  get aimProgress(): number {
+    return this.aim
   }
 
   setAspect(aspect: number): void {
@@ -168,5 +177,6 @@ export class Viewmodel {
 
     this.gun.updateMatrixWorld(true)
     this.muzzleView.setFromMatrixPosition(this.muzzle.matrixWorld)
+    this.ejectView.setFromMatrixPosition(this.ejectPort.matrixWorld)
   }
 }

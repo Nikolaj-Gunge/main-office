@@ -1,4 +1,5 @@
 import {
+  Button,
   ClientMsg,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
@@ -6,18 +7,24 @@ import {
   type InputCommand,
   initPhysics,
   loadMap,
+  PLAYER_QUERY_GROUPS,
+  RAPIER,
   ServerMsg,
   TICK_DT,
+  WEAPONS,
 } from '@office-fps/shared'
 import Stats from 'stats-gl'
 import * as THREE from 'three'
+import { AudioEngine } from './audio/audio-engine.ts'
 import { createSettingsGui } from './debug/gui.ts'
 import { addNetworkFolder } from './debug/network.ts'
 import { addTuningFolders } from './debug/tuning.ts'
 import { ClientCombat } from './game/combat.ts'
 import { FreeFly } from './game/free-fly.ts'
 import { LocalPlayer } from './game/local-player.ts'
+import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
+import { ScreenShake } from './game/screen-shake.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { Overlay } from './hud/overlay.ts'
 import { Keyboard } from './input/keyboard.ts'
@@ -64,11 +71,16 @@ const stats = new Stats({ trackGPU: true, horizontal: false })
 stats.init(pixels.renderer)
 document.body.appendChild(stats.dom)
 
-/** Horizontal FOV is what players configure; Three wants vertical. */
-function updateProjection() {
+/**
+ * Horizontal FOV is what players configure; Three wants vertical. `zoom` > 1 narrows it
+ * (aiming down sights).
+ */
+let currentZoom = 1
+function updateProjection(zoom = currentZoom) {
+  currentZoom = zoom
   const aspect = pixels.size.x / pixels.size.y
   const hfov = (settings.fov * Math.PI) / 180
-  camera.fov = (2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180) / Math.PI
+  camera.fov = (2 * Math.atan(Math.tan(hfov / 2) / aspect / zoom) * 180) / Math.PI
   camera.aspect = aspect
   camera.updateProjectionMatrix()
   viewmodel.setAspect(aspect)
@@ -85,8 +97,38 @@ let noclip = false
 
 // --- Combat ---------------------------------------------------------------------------
 const viewmodel = new Viewmodel()
-const effects = new Effects(scene)
+const audio = new AudioEngine()
+const recoil = new Recoil()
+const shake = new ScreenShake()
+const worldRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+const effects = new Effects(scene, (origin, dir, maxDistance) => {
+  worldRay.origin = origin
+  worldRay.dir = dir
+  const hit = physics.world.castRayAndGetNormal(
+    worldRay,
+    maxDistance,
+    true,
+    undefined,
+    PLAYER_QUERY_GROUPS,
+  )
+  return hit
+    ? {
+        distance: hit.timeOfImpact,
+        normal: new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z),
+      }
+    : null
+})
+effects.onCasingHit = (at) => audio.playNear('casing', at, 0.45, 15)
 const debugHitboxes = new DebugHitboxes(scene)
+
+// Footsteps: yours (from the camera bob cycle) and everyone else's (from their movement).
+player.feel.onFootstep = () => {
+  const s = player.state
+  const sprinting = Math.hypot(s.vel.x, s.vel.z) > player.movement.walkSpeed * 1.1
+  audio.play('step', { volume: s.crouched ? 0.1 : sprinting ? 0.32 : 0.22 })
+}
+remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 1 : 0.7, 28)
+remotes.onLand = (at) => audio.playNear('land', at, 0.8, 25)
 
 // --- Networking -----------------------------------------------------------------------
 /** True once the server has welcomed us: from then on the server owns our position. */
@@ -100,6 +142,9 @@ const combat = new ClientCombat({
   viewmodel,
   remotes,
   debug: debugHitboxes,
+  audio,
+  recoil,
+  shake,
   myId: () => net.playerId,
 })
 
@@ -142,6 +187,7 @@ const net = new Connection({
 })
 
 overlay.onPlay((name) => {
+  audio.unlock() // browsers only allow audio after a click
   if (net.state === 'idle') net.connect(name)
   void look.lock()
 })
@@ -151,6 +197,7 @@ look.onLockChange = (locked) => overlay.setLocked(locked)
 function applySettings() {
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
+  audio.setVolumes(settings.masterVolume, settings.sfxVolume)
   stats.dom.style.display = settings.showStats ? '' : 'none'
   overlay.setDebugVisible(settings.showDebug)
   updateProjection()
@@ -222,7 +269,12 @@ pixels.renderer.setAnimationLoop(() => {
       ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
       : samplePlayerInput(keys, look)
     const { command, events } = player.tick(input, remotes.renderTick)
-    if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id)
+    const aiming = (input.buttons & Button.Aim) !== 0
+    if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
+    if (events.weapon) combat.onWeaponEvents(events.weapon, player.state.weapon)
+    if (events.landed && events.landingSpeed > 3) {
+      audio.play('land', { volume: Math.min(0.6, events.landingSpeed / 14) })
+    }
     if (joined) outgoing.push(command)
     accumulator -= TICK_DT
     ticks++
@@ -233,7 +285,25 @@ pixels.renderer.setAnimationLoop(() => {
   }
 
   if (noclip) fly.update(dt)
-  else player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+  else {
+    // Recoil moves the real aim; shake only the camera.
+    const kick = recoil.update(dt)
+    look.addRotation(kick.yaw, kick.pitch)
+    player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+    const s = shake.update(dt)
+    camera.rotation.x += s.pitch
+    camera.rotation.y += s.yaw
+    camera.rotation.z += s.roll
+  }
+  if (!player.state.alive) recoil.reset()
+
+  // Aiming down sights zooms the view; sensitivity follows so aim speed feels the same.
+  const zoom = 1 + (WEAPONS[player.state.weapon.id].aimZoom - 1) * viewmodel.aimProgress
+  if (Math.abs(zoom - currentZoom) > 1e-4) updateProjection(zoom)
+  look.sensitivityScale = 1 / zoom
+  camera.updateMatrixWorld()
+  audio.setListener(camera)
+  audio.update(dt)
   remotes.update(now)
   combat.update(
     dt,
@@ -287,6 +357,10 @@ if (import.meta.env.DEV) {
       remotes,
       hud,
       debugHitboxes,
+      audio,
+      recoil,
+      effects,
+      viewmodel,
     },
   })
 }

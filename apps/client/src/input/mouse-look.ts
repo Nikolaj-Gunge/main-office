@@ -13,6 +13,8 @@ export class MouseLook {
   yaw = 0
   pitch = 0
   sensitivity = 2
+  /** Extra multiplier, e.g. lower while zoomed in so aiming feels the same. */
+  sensitivityScale = 1
   onLockChange?: (locked: boolean) => void
   /** Look movement (radians) since the last `takeDelta()` — drives weapon sway. */
   private dYaw = 0
@@ -40,11 +42,17 @@ export class MouseLook {
   private onMove(e: MouseEvent): void {
     if (!this.locked) return
     if (Math.abs(e.movementX) > MAX_DELTA || Math.abs(e.movementY) > MAX_DELTA) return
-    const k = this.sensitivity * M_YAW * DEG
+    const k = this.sensitivity * this.sensitivityScale * M_YAW * DEG
     this.yaw -= e.movementX * k
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch - e.movementY * k))
     this.dYaw -= e.movementX * k
     this.dPitch -= e.movementY * k
+  }
+
+  /** Rotates the view programmatically (recoil). Not counted as mouse movement for sway. */
+  addRotation(yaw: number, pitch: number): void {
+    this.yaw += yaw
+    this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + pitch))
   }
 
   takeDelta(): { yaw: number; pitch: number } {

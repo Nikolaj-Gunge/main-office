@@ -34,6 +34,15 @@ export interface WeaponDef {
   airSpread: number
   /** Seconds after sprinting before you can shoot. */
   sprintToFire: number
+  /** Field-of-view zoom while aiming down sights (1 = none). */
+  aimZoom: number
+  /**
+   * View kick per shot (degrees): up, and random left/right up to `kickYaw`. It moves your actual
+   * aim and springs back over `recoverTime` seconds — the client applies it to the look angles.
+   */
+  kickPitch: number
+  kickYaw: number
+  recoverTime: number
 }
 
 /** Values mirror PLAN.md §5. Rifle and sniper are filled in during phase 6. */
@@ -58,6 +67,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     moveSpread: 1.5,
     airSpread: 4,
     sprintToFire: 0.15,
+    aimZoom: 1.15,
+    kickPitch: 1.1,
+    kickYaw: 0.35,
+    recoverTime: 0.18,
   },
   [WeaponId.Rifle]: {
     id: WeaponId.Rifle,
@@ -79,6 +92,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     moveSpread: 2.5,
     airSpread: 6,
     sprintToFire: 0.2,
+    aimZoom: 1.25,
+    kickPitch: 0.55,
+    kickYaw: 0.25,
+    recoverTime: 0.25,
   },
   [WeaponId.Sniper]: {
     id: WeaponId.Sniper,
@@ -100,6 +117,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     moveSpread: 6,
     airSpread: 10,
     sprintToFire: 0.3,
+    aimZoom: 4,
+    kickPitch: 3,
+    kickYaw: 0.6,
+    recoverTime: 0.45,
   },
 }
 

@@ -17,6 +17,9 @@ export interface Settings {
   /** 0 = no outlines, 1 = black outlines. */
   outlines: number
   exposure: number
+  /** 0–1. */
+  masterVolume: number
+  sfxVolume: number
   showStats: boolean
   showDebug: boolean
 }
@@ -31,6 +34,8 @@ export const DEFAULT_SETTINGS: Settings = {
   dither: 1,
   outlines: 0.35,
   exposure: 1,
+  masterVolume: 0.8,
+  sfxVolume: 1,
   showStats: false,
   showDebug: true,
 }

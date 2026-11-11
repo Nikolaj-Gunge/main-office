@@ -382,6 +382,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - Hit markers (body/head/kill), damage direction indicator, screen shake, low-health vignette + heartbeat.
 - Decals, impact particles, shell casings (pooled).
 - **Done when:** blind test — shooting the handgun "feels right" to 3 colleagues.
+- **Implementation notes:** all sounds are synthesized at startup from noise/sweeps/filters (`apps/client/src/audio/sounds.ts`, ~18 sounds with variants) — no asset files or licences; recorded samples can replace them later under the same ids. Gunshots mix three layers by distance with speed-of-sound delay and distance low-pass; 3D sounds use HRTF panning with our own distance curves. Other players' footsteps are derived from their interpolated movement (no protocol change); crouch-walking is silent to others. Recoil moves the real look angles (so the server agrees automatically) and springs back; screen shake is visual only. Aiming zooms the FOV per weapon (`aimZoom`) and scales sensitivity by 1/zoom.
 
 ### Phase 6 — Rifle & sniper
 

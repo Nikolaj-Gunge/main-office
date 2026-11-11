@@ -1,12 +1,17 @@
 import { DEFAULT_SERVER_PORT, WS_PATH } from '@office-fps/shared'
 import { defineConfig } from 'vite'
 
+// Override to run a second, isolated dev instance: CLIENT_PORT=5200 SERVER_PORT=3200.
+const serverPort = Number(process.env.SERVER_PORT ?? DEFAULT_SERVER_PORT)
+const clientPort = Number(process.env.CLIENT_PORT ?? 5173)
+
 export default defineConfig({
   server: {
-    port: 5173,
+    port: clientPort,
+    strictPort: true,
     proxy: {
-      [WS_PATH]: { target: `ws://localhost:${DEFAULT_SERVER_PORT}`, ws: true },
-      '/healthz': `http://localhost:${DEFAULT_SERVER_PORT}`,
+      [WS_PATH]: { target: `ws://localhost:${serverPort}`, ws: true },
+      '/healthz': `http://localhost:${serverPort}`,
     },
   },
   build: {

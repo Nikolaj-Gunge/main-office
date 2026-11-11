@@ -4,7 +4,24 @@ const TRACER_SPEED = 300 // m/s — far slower than a real bullet, so you can se
 const TRACER_LENGTH = 3
 const MAX_DECALS = 128
 const MAX_PARTICLES = 160
+const MAX_CASINGS = 24
+const CASING_LIFE = 2.5
 const GRAVITY = 9.8
+
+/** Segment raycast against the level: distance along `dir` and the surface normal, or null. */
+export type WorldRaycast = (
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  maxDistance: number,
+) => { distance: number; normal: THREE.Vector3 } | null
+
+interface Casing {
+  mesh: THREE.Mesh
+  vel: THREE.Vector3
+  spin: THREE.Vector3
+  life: number
+  bounced: boolean
+}
 
 interface Tracer {
   mesh: THREE.Mesh
@@ -53,6 +70,11 @@ export class Effects {
   private particleIndex = 0
   private readonly lights: { light: THREE.PointLight; life: number }[] = []
   private lightIndex = 0
+  private readonly casings: Casing[] = []
+  private casingIndex = 0
+  private readonly raycast: WorldRaycast
+  /** Called the first time a casing hits something (for the clink sound). */
+  onCasingHit?: (at: THREE.Vector3) => void
 
   private readonly tracerGeometry = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, -0.5)
   private readonly tracerMaterial = new THREE.MeshBasicMaterial({
@@ -63,8 +85,9 @@ export class Effects {
   })
   private readonly scene: THREE.Scene
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, raycast: WorldRaycast) {
     this.scene = scene
+    this.raycast = raycast
 
     const holeGeometry = new THREE.PlaneGeometry(0.09, 0.09)
     const holeMaterial = new THREE.MeshBasicMaterial({
@@ -91,6 +114,21 @@ export class Effects {
       mesh.visible = false
       scene.add(mesh)
       this.particles.push({ mesh, vel: new THREE.Vector3(), life: 0, maxLife: 1 })
+    }
+
+    const casingGeometry = new THREE.BoxGeometry(0.012, 0.012, 0.03)
+    const brass = new THREE.MeshLambertMaterial({ color: 0xd9a441, emissive: 0x3a2a08 })
+    for (let i = 0; i < MAX_CASINGS; i++) {
+      const mesh = new THREE.Mesh(casingGeometry, brass)
+      mesh.visible = false
+      scene.add(mesh)
+      this.casings.push({
+        mesh,
+        vel: new THREE.Vector3(),
+        spin: new THREE.Vector3(),
+        life: 0,
+        bounced: false,
+      })
     }
 
     for (let i = 0; i < 4; i++) {
@@ -122,6 +160,19 @@ export class Effects {
     } else if (hit === 'player') {
       this.burst(to, normal, 0xb32e2e, 8, 2)
     }
+  }
+
+  /** Spits a spent casing out of the ejection port. */
+  ejectCasing(at: THREE.Vector3, velocity: THREE.Vector3): void {
+    const c = this.casings[this.casingIndex++ % MAX_CASINGS]
+    if (!c) return
+    c.mesh.position.copy(at)
+    c.mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0)
+    c.vel.copy(velocity)
+    c.spin.set((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30)
+    c.life = CASING_LIFE
+    c.bounced = false
+    c.mesh.visible = true
   }
 
   private flashLight(at: THREE.Vector3): void {
@@ -193,9 +244,45 @@ export class Effects {
       p.mesh.scale.setScalar(p.life / p.maxLife)
     }
 
+    this.updateCasings(dt)
+
     for (const slot of this.lights) {
       slot.life = Math.max(0, slot.life - dt)
       slot.light.intensity = slot.life > 0 ? 6 : 0
+    }
+  }
+
+  private updateCasings(dt: number): void {
+    const step = new THREE.Vector3()
+    for (const c of this.casings) {
+      if (c.life <= 0) continue
+      c.life -= dt
+      if (c.life <= 0) {
+        c.mesh.visible = false
+        continue
+      }
+      c.vel.y -= GRAVITY * dt
+      step.copy(c.vel).multiplyScalar(dt)
+      const length = step.length()
+      if (length > 1e-5) {
+        const hit = this.raycast(c.mesh.position, step.clone().divideScalar(length), length + 0.01)
+        if (hit) {
+          // Bounce: reflect off the surface, lose most of the energy.
+          c.mesh.position.addScaledVector(step, Math.max(0, hit.distance - 0.01) / length)
+          const into = c.vel.dot(hit.normal)
+          c.vel.addScaledVector(hit.normal, -1.4 * into).multiplyScalar(0.45)
+          c.spin.multiplyScalar(0.5)
+          if (!c.bounced) {
+            c.bounced = true
+            this.onCasingHit?.(c.mesh.position.clone())
+          }
+        } else {
+          c.mesh.position.add(step)
+        }
+      }
+      c.mesh.rotation.x += c.spin.x * dt
+      c.mesh.rotation.y += c.spin.y * dt
+      c.mesh.rotation.z += c.spin.z * dt
     }
   }
 }

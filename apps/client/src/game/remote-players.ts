@@ -15,7 +15,15 @@ interface Remote {
   buffer: InterpolationBuffer
   /** Last interpolated state drawn on screen. */
   shown: RemotePlayerState | null
+  /** Distance walked since the last footstep (m). */
+  stride: number
+  wasGrounded: boolean
 }
+
+/** Same stride as your own footsteps (CameraFeel) so everyone sounds alike. */
+const STRIDE = 1.9
+/** Below this speed (crouch-walking is 2.4 m/s) you move silently — sneaking is a tactic. */
+const SILENT_SPEED = 2.8
 
 /** Everyone else: roster, snapshot buffers and avatars drawn slightly in the past. */
 export class RemotePlayers {
@@ -29,6 +37,10 @@ export class RemotePlayers {
   renderTick = 0
   private readonly players = new Map<number, Remote>()
   private readonly scene: THREE.Scene
+  private lastUpdateMs = 0
+  /** Someone else's footstep (derived from their movement, no network traffic needed). */
+  onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
+  onLand?: (at: THREE.Vector3) => void
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -43,7 +55,15 @@ export class RemotePlayers {
     const avatar = new Avatar(name, color)
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)
-    this.players.set(id, { name, color, avatar, buffer: new InterpolationBuffer(), shown: null })
+    this.players.set(id, {
+      name,
+      color,
+      avatar,
+      buffer: new InterpolationBuffer(),
+      shown: null,
+      stride: 0,
+      wasGrounded: true,
+    })
   }
 
   remove(id: number): void {
@@ -66,10 +86,34 @@ export class RemotePlayers {
   update(nowMs: number): void {
     if (!this.clock.isSynced) return
     this.renderTick = this.clock.tick(nowMs) - (this.interpDelayMs * TICK_RATE) / 1000
+    const dt = Math.min(0.1, (nowMs - this.lastUpdateMs) / 1000)
+    this.lastUpdateMs = nowMs
     for (const p of this.players.values()) {
+      const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
       if (p.shown) p.avatar.update(p.shown, nowMs)
+      if (before && p.shown && dt > 0) this.detectSteps(p, before, p.shown, dt)
+    }
+  }
+
+  private detectSteps(p: Remote, a: RemotePlayerState, b: RemotePlayerState, dt: number): void {
+    const moved = Math.hypot(b.x - a.x, b.z - a.z)
+    const at = () => new THREE.Vector3(b.x, b.y + 0.05, b.z)
+    if (!b.alive || moved > 3) {
+      // Dead, or a respawn teleport: not a step.
+      p.stride = 0
+      p.wasGrounded = b.grounded
+      return
+    }
+    if (b.grounded && !p.wasGrounded) this.onLand?.(at())
+    p.wasGrounded = b.grounded
+    const speed = moved / dt
+    if (!b.grounded || speed < SILENT_SPEED) return
+    p.stride += moved
+    if (p.stride >= STRIDE) {
+      p.stride -= STRIDE
+      this.onFootstep?.(at(), speed > 6)
     }
   }
 

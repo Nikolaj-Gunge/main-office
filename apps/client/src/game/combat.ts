@@ -1,6 +1,7 @@
 import {
   Button,
   currentSpread,
+  HitZone,
   hasButton,
   type PhysicsWorld,
   PLAYER_QUERY_GROUPS,
@@ -12,14 +13,22 @@ import {
   type ShotEvent,
   ShotResult,
   WEAPONS,
+  type WeaponEvents,
   type WeaponId,
+  type WeaponState,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import type { AudioEngine } from '../audio/audio-engine.ts'
 import type { CombatHud } from '../hud/combat-hud.ts'
 import type { DebugHitboxes } from '../render/debug-hitboxes.ts'
 import type { Effects } from '../render/effects.ts'
 import type { Viewmodel } from '../render/viewmodel.ts'
+import type { Recoil } from './recoil.ts'
 import type { RemotePlayers } from './remote-players.ts'
+import type { ScreenShake } from './screen-shake.ts'
+
+/** A bullet passing within this distance of your head makes the supersonic crack. */
+const NEAR_MISS_DISTANCE = 1.6
 
 interface CombatDeps {
   camera: THREE.PerspectiveCamera
@@ -29,6 +38,9 @@ interface CombatDeps {
   viewmodel: Viewmodel
   remotes: RemotePlayers
   debug: DebugHitboxes
+  audio: AudioEngine
+  recoil: Recoil
+  shake: ScreenShake
   myId: () => number
 }
 
@@ -60,7 +72,7 @@ export class ClientCombat {
   }
 
   /** A shot we just predicted: show it right away. */
-  onLocalShot(shot: ShotEvent, weaponId: WeaponId): void {
+  onLocalShot(shot: ShotEvent, weaponId: WeaponId, aiming: boolean): void {
     const { origin, dir } = shot
     const weapon = WEAPONS[weaponId]
     const wall = this.d.physics.world.castRayAndGetNormal(
@@ -91,6 +103,56 @@ export class ClientCombat {
     const muzzle = this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
     this.d.effects.shot(muzzle, end, normal, kind)
     this.d.viewmodel.onShot()
+    this.d.recoil.kick(weapon, aiming)
+    this.d.shake.add(0.18)
+    this.d.audio.gunshot()
+    this.impactSound(end, kind)
+    this.ejectCasing()
+  }
+
+  /** Reload and dry-fire sounds from the predicted weapon (so they're instant). */
+  onWeaponEvents(events: WeaponEvents, weapon: WeaponState): void {
+    const audio = this.d.audio
+    if (events.dryFire) audio.play('dryfire', { volume: 0.6 })
+    if (events.reloadStarted) {
+      const total = weapon.reload
+      const empty = weapon.ammo === 0
+      audio.play('reload.out', { volume: 0.7, delay: 0.12 })
+      audio.play('reload.in', { volume: 0.75, delay: Math.max(0.3, total - (empty ? 0.7 : 0.45)) })
+      if (empty) audio.play('reload.slide', { volume: 0.75, delay: Math.max(0.5, total - 0.28) })
+    }
+  }
+
+  private impactSound(at: THREE.Vector3, kind: 'world' | 'player' | 'nothing'): void {
+    if (kind === 'nothing') return
+    this.d.audio.playNear(kind === 'world' ? 'impact.world' : 'impact.flesh', at, 0.8, 45)
+  }
+
+  private ejectCasing(): void {
+    const cam = this.d.camera
+    const at = cam.localToWorld(this.d.viewmodel.ejectView.clone())
+    // Out to the right, up, slightly back — in view space, then into the world.
+    const v = new THREE.Vector3(
+      1.6 + Math.random() * 0.6,
+      1.4 + Math.random() * 0.6,
+      0.4 + Math.random() * 0.3,
+    ).applyQuaternion(cam.quaternion)
+    this.d.effects.ejectCasing(at, v)
+  }
+
+  /** Closest approach of a bullet path to your head: plays the crack if it passed close by. */
+  private nearMiss(from: THREE.Vector3, to: THREE.Vector3): void {
+    const head = this.d.camera.position
+    const seg = to.clone().sub(from)
+    const length = seg.length()
+    if (length < 0.01) return
+    const t = Math.max(0, Math.min(1, head.clone().sub(from).dot(seg) / (length * length)))
+    // Bullets that end right at us are hits, not misses (you get the hurt sound instead).
+    if (t >= 0.999) return
+    const closest = from.clone().addScaledVector(seg, t)
+    if (closest.distanceTo(head) < NEAR_MISS_DISTANCE) {
+      this.d.audio.play('crack', { at: closest, volume: 0.9 })
+    }
   }
 
   onMessage(msg: ServerMessage): void {
@@ -104,20 +166,29 @@ export class ClientCombat {
             : msg.result === ShotResult.World
               ? 'world'
               : 'nothing'
+        const end = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
         this.d.effects.shot(
           from,
-          new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z),
+          end,
           new THREE.Vector3(msg.normal.x, msg.normal.y, msg.normal.z),
           kind,
         )
+        this.d.audio.gunshot(from)
+        this.impactSound(end, kind)
+        this.nearMiss(from, end)
         break
       }
       case ServerMsg.HitConfirm:
         this.d.hud.hitmarker(msg.zone, msg.killed)
+        this.d.audio.play(msg.zone === HitZone.Head ? 'hit.head' : 'hit', { bus: 'ui', rate: 1 })
+        if (msg.killed) this.d.audio.play('kill', { bus: 'ui', rate: 1, delay: 0.07 })
         break
       case ServerMsg.Damaged:
         this.d.hud.setHealth(msg.health)
         this.d.hud.damageFrom(msg.from)
+        this.d.audio.play('hurt', { volume: 0.8 })
+        this.d.audio.onHurt(msg.damage)
+        this.d.shake.add(Math.min(0.8, 0.25 + msg.damage / 60))
         break
       case ServerMsg.Kill: {
         const me = this.d.myId()
@@ -139,6 +210,7 @@ export class ClientCombat {
         break
       }
       case ServerMsg.Snapshot:
+        this.d.audio.setHealth(msg.health, msg.self?.alive ?? true)
         this.d.hud.setHealth(msg.health)
         this.d.hud.setDeathTimer(msg.respawnIn)
         this.isProtected = msg.protected
