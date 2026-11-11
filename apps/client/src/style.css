@@ -456,6 +456,35 @@ body {
   background: #fbb954;
 }
 
+.hud-toast {
+  position: absolute;
+  top: 30%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font:
+    bold 14px ui-monospace,
+    Menlo,
+    monospace;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000;
+  opacity: 0;
+}
+
+.hud-toast.show {
+  animation: hud-toast 1.4s steps(8) forwards;
+}
+
+@keyframes hud-toast {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Beats the display rules of the HUD classes above. */
 #hud [hidden] {
   display: none;

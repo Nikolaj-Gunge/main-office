@@ -6,6 +6,7 @@ const PRIMARY_KEY = 'office-fps:primary'
 /** Crosshair, debug text and the join / "click to play" screen. Plain DOM over the canvas. */
 export class Overlay {
   readonly debug: HTMLDivElement
+  private readonly toast: HTMLDivElement
   private readonly screen: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly status: HTMLParagraphElement
@@ -32,7 +33,7 @@ export class Overlay {
         <span class="loadout-note">+ handgun</span>
       </div>
       <p class="status"></p>
-      <p class="hint">WASD move · Space jump · C crouch · Shift sprint / hold breath · LMB shoot · RMB aim · R reload<br>1 / 2 / Q / wheel switch weapon · V noclip · F1 settings · F3 net debug · F4 hitboxes · Esc release mouse</p>
+      <p class="hint">WASD move · Space jump · C crouch · Shift sprint / hold breath · LMB shoot · RMB aim · R reload<br>1 / 2 / Q / wheel switch weapon · M mute · V noclip · F1 settings · F3 net debug · F4 hitboxes · Esc release mouse</p>
     `
     const form = this.screen.querySelector('form') as HTMLFormElement
     this.nameInput = form.querySelector('input') as HTMLInputElement
@@ -50,7 +51,9 @@ export class Overlay {
     }
     this.setPrimary(this.primary)
 
-    root.append(this.debug, this.screen)
+    this.toast = document.createElement('div')
+    this.toast.className = 'hud-toast'
+    root.append(this.debug, this.screen, this.toast)
     form.addEventListener('submit', (e) => e.preventDefault())
   }
 
@@ -80,6 +83,14 @@ export class Overlay {
   setJoined(joined: boolean): void {
     this.nameInput.disabled = joined
     this.playButton.textContent = joined ? 'RESUME' : 'PLAY'
+  }
+
+  /** Short message in the middle of the screen (e.g. "Sound off"). */
+  flash(text: string): void {
+    this.toast.textContent = text
+    this.toast.classList.remove('show')
+    void this.toast.offsetWidth // restart the fade
+    this.toast.classList.add('show')
   }
 
   setStatus(text: string): void {

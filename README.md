@@ -35,6 +35,7 @@ everyone opens `http://<your-ip>:3000`.
 | 1 / 2          | Primary / handgun (while dead: choose rifle / sniper for the next spawn) |
 | Q / wheel      | Switch to the other weapon                                 |
 | Shift (scoped) | Hold breath — steadies the sniper scope for 3 s            |
+| M              | Mute / unmute (or open the game with `?mute=1`)            |
 | V              | Toggle noclip (Space/Ctrl up/down); leaving it drops you there |
 | F1             | Settings + live movement / camera-feel tuning              |
 | F3             | Debug text (fps, position, speed, ping, bandwidth, prediction corrections) |

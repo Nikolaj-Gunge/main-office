@@ -33,6 +33,7 @@ export class AudioEngine {
   private heartbeatGain: GainNode | null = null
   private readonly listener = { x: 0, y: 0, z: 0 }
   private volumes = { master: 0.8, sfx: 1 }
+  private isMuted = false
   /** 0 = clear, 1 = fully muffled. Combines low health and a short "ringing" after hits. */
   private lowHealthMuffle = 0
   private hitMuffle = 0
@@ -63,7 +64,7 @@ export class AudioEngine {
       release: 0.15,
     })
     limiter.connect(ctx.destination)
-    this.master = new GainNode(ctx, { gain: this.volumes.master })
+    this.master = new GainNode(ctx, { gain: this.outputGain() })
     this.master.connect(limiter)
     this.muffle = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 20000, Q: 0.7 })
     this.muffle.connect(this.master)
@@ -98,8 +99,25 @@ export class AudioEngine {
 
   setVolumes(master: number, sfx: number): void {
     this.volumes = { master, sfx }
-    if (this.master) this.master.gain.value = master
+    if (this.master) this.master.gain.value = this.outputGain()
     if (this.sfx) this.sfx.gain.value = sfx
+  }
+
+  /**
+   * Mute silences the speakers only: everything still plays and mixes internally, so automated
+   * tests can measure the sound without anyone hearing it.
+   */
+  get muted(): boolean {
+    return this.isMuted
+  }
+
+  set muted(value: boolean) {
+    this.isMuted = value
+    if (this.master) this.master.gain.value = this.outputGain()
+  }
+
+  private outputGain(): number {
+    return this.isMuted ? 0 : this.volumes.master
   }
 
   /** Moves the listener to the camera. Call once per frame. */

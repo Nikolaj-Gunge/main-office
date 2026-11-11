@@ -101,6 +101,8 @@ let noclip = false
 // --- Combat ---------------------------------------------------------------------------
 const viewmodel = new Viewmodel()
 const audio = new AudioEngine()
+// `?mute=1` starts silent (used for automated test sessions); M toggles mute in game.
+audio.muted = new URLSearchParams(location.search).has('mute')
 const recoil = new Recoil()
 const shake = new ScreenShake()
 const worldRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
@@ -239,6 +241,10 @@ window.addEventListener('keydown', (e) => {
   // Dead: 1 / 2 pick the primary for your next spawn (you can't switch weapons while dead).
   if (!player.state.alive && (e.code === 'Digit1' || e.code === 'Digit2')) {
     chooseLoadout(e.code === 'Digit1' ? WeaponId.Rifle : WeaponId.Sniper)
+  }
+  if (e.code === 'KeyM') {
+    audio.muted = !audio.muted
+    overlay.flash(audio.muted ? 'Sound off (M)' : 'Sound on (M)')
   }
   if (e.code === 'F4') {
     e.preventDefault()
