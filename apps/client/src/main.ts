@@ -45,6 +45,7 @@ import { Effects } from './render/effects.ts'
 import { createLighting } from './render/lighting.ts'
 import { buildMapObject } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
+import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { WorldItemsView } from './render/world-items.ts'
@@ -163,6 +164,30 @@ player.feel.onFootstep = () => {
 remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
 
+// Ragdolls: players who die fall over instead of vanishing. The Kill message (which arrives
+// ~100 ms before we draw the death) says who shot them, so the body flies the right way.
+const ragdolls = new Ragdolls(scene, map)
+const PUSH_SPEED: Record<WeaponId, number> = {
+  [WeaponId.Handgun]: 3,
+  [WeaponId.Rifle]: 3.5,
+  [WeaponId.Sniper]: 7,
+}
+const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()
+remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
+  const kill = recentKills.get(id)
+  recentKills.delete(id)
+  const at = new THREE.Vector3(pose.x, pose.y, pose.z)
+  const dir = kill ? at.clone().sub(kill.from).setY(0) : new THREE.Vector3()
+  if (dir.lengthSq() < 1e-6) dir.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw)) // falls backwards
+  dir.normalize().setY(0.25).normalize()
+  const speed = (kill ? PUSH_SPEED[kill.weapon] : 2) + (kill?.headshot ? 1 : 0)
+  ragdolls.spawn(skin, colorIndex, pose, scale, velocity, {
+    dir,
+    speed,
+    headshot: kill?.headshot ?? false,
+  })
+}
+
 // --- Networking -----------------------------------------------------------------------
 /** True once the server has welcomed us: from then on the server owns our position. */
 let joined = false
@@ -255,6 +280,18 @@ const net = new Connection({
       case ServerMsg.Rules:
         applyRules(msg.rules)
         break
+      case ServerMsg.Kill: {
+        const killer =
+          msg.killerId === net.playerId ? camera.position.clone() : remotes.muzzleOf(msg.killerId)
+        if (killer) {
+          recentKills.set(msg.victimId, {
+            from: killer,
+            weapon: msg.weapon,
+            headshot: msg.headshot,
+          })
+        }
+        break
+      }
       case ServerMsg.ShotFired: {
         // Shooting gives your position away on the minimap.
         const at = remotes.muzzleOf(msg.shooterId)
@@ -271,6 +308,7 @@ function applyRules(rules: GameRules) {
   recoil.amount = rules.recoil
   remotes.setLook(rules.skin, rules.playerScale)
   combat.jingles = rules.jingles
+  ragdolls.setGravity(rules.gravity)
 }
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the
@@ -445,6 +483,7 @@ pixels.renderer.setAnimationLoop(() => {
   audio.setListener(camera)
   audio.update(dt)
   remotes.update(now, camera.position)
+  ragdolls.update(dt)
   worldItems.update(dt)
   minimap.setItems(worldItems.positions())
   updatePickups()
@@ -509,6 +548,7 @@ if (import.meta.env.DEV) {
       effects,
       viewmodel,
       worldItems,
+      ragdolls,
     },
   })
 }

@@ -18,6 +18,8 @@ interface Remote {
   shown: RemotePlayerState | null
   /** Distance walked since the last footstep (m). */
   stride: number
+  /** How fast they were moving as drawn (m/s), for their ragdoll when they die. */
+  velocity: THREE.Vector3
   wasGrounded: boolean
 }
 
@@ -46,6 +48,15 @@ export class RemotePlayers {
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
   onLand?: (at: THREE.Vector3) => void
+  /** Someone just died on screen: drop a ragdoll in the pose they were last drawn in. */
+  onDeath?: (
+    id: number,
+    pose: RemotePlayerState,
+    velocity: THREE.Vector3,
+    colorIndex: number,
+    skin: SkinId,
+    scale: number,
+  ) => void
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -67,6 +78,7 @@ export class RemotePlayers {
       buffer: new InterpolationBuffer(),
       shown: null,
       stride: 0,
+      velocity: new THREE.Vector3(),
       wasGrounded: true,
     })
   }
@@ -110,12 +122,23 @@ export class RemotePlayers {
     this.renderTick = this.clock.tick(nowMs) - (this.interpDelayMs * TICK_RATE) / 1000
     const dt = Math.min(0.1, (nowMs - this.lastUpdateMs) / 1000)
     this.lastUpdateMs = nowMs
-    for (const p of this.players.values()) {
+    for (const [id, p] of this.players) {
       const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
       if (p.shown) p.avatar.update(p.shown, nowMs, viewer, this.scale)
-      if (before && p.shown && dt > 0) this.detectSteps(p, before, p.shown, dt)
+      if (before && p.shown && dt > 0) {
+        if (before.alive && p.shown.alive) {
+          p.velocity.set(p.shown.x - before.x, p.shown.y - before.y, p.shown.z - before.z)
+          p.velocity.divideScalar(dt)
+          // A respawn teleport isn't a velocity.
+          if (p.velocity.length() > 20) p.velocity.set(0, 0, 0)
+        }
+        if (before.alive && !p.shown.alive) {
+          this.onDeath?.(id, before, p.velocity, p.color, this.skin, this.scale)
+        }
+        this.detectSteps(p, before, p.shown, dt)
+      }
     }
     this.poses.clear()
     for (const [id, p] of this.players) {

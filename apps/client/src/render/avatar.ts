@@ -213,6 +213,202 @@ function dress(
   head.add(makeHat(colorIndex))
 }
 
+type V3 = [number, number, number]
+
+/** One rigid piece of a ragdoll. */
+export interface RagdollPart {
+  /** Meshes in part-local space (origin = the part's centre). */
+  mesh: THREE.Group
+  /** Centre in the standing pose: feet at the origin, facing -z, size 1. */
+  center: V3
+  /** Half extents of its collision box (a capsule uses x as radius, y as half height). */
+  half: V3
+  shape: 'box' | 'capsule'
+}
+
+export interface RagdollSpec {
+  parts: RagdollPart[]
+  /** Ball joints between parts, at `anchor` in the standing pose. */
+  joints: { a: number; b: number; anchor: V3 }[]
+  /** The player-colored material (the one the ragdoll owns and disposes). */
+  material: THREE.MeshLambertMaterial
+}
+
+/** Builds the pieces of a ragdoll that looks like the avatar in this skin. */
+export function ragdollSpec(skin: SkinId, colorIndex: number): RagdollSpec {
+  const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
+  const material = new THREE.MeshLambertMaterial({ color })
+  const piece = (
+    center: V3,
+    half: V3,
+    children: THREE.Object3D[],
+    shape: 'box' | 'capsule' = 'box',
+  ) => {
+    const mesh = new THREE.Group()
+    mesh.add(...children)
+    return { mesh, center, half, shape }
+  }
+  /** `part()` placed relative to a part centre given in standing coordinates. */
+  const at = (
+    geometry: THREE.BufferGeometry,
+    mat: THREE.Material,
+    c: V3,
+    x: number,
+    y: number,
+    z: number,
+  ) => part(geometry, mat, x - c[0], y - c[1], z - c[2])
+
+  if (skin === 'slime') {
+    const bodyC: V3 = [0, m.standHeight / 2, 0]
+    const capsule = part(sharedGeometry.body, material, 0, 0, 0)
+    capsule.add(makeTie(colorIndex))
+    const visor = at(
+      sharedGeometry.visor,
+      visorMaterial,
+      bodyC,
+      0,
+      m.standEyeHeight,
+      -m.radius + 0.02,
+    )
+    const hatC: V3 = [0, m.standHeight + 0.06, 0]
+    const hat = makeHat(colorIndex)
+    hat.position.y = m.standEyeHeight - hatC[1]
+    return {
+      material,
+      parts: [
+        piece(
+          bodyC,
+          [m.radius, m.standHeight / 2 - m.radius, m.radius],
+          [capsule, visor],
+          'capsule',
+        ),
+        piece(hatC, [0.24, 0.1, 0.24], [hat]), // no joint: the hat flies off
+      ],
+      joints: [],
+    }
+  }
+
+  const eye = m.standEyeHeight
+  if (skin === 'worker') {
+    const skinTone = skinMaterials[colorIndex % skinMaterials.length] ?? material
+    const hair = hairMaterials[(colorIndex * 7) % hairMaterials.length] ?? material
+    const torsoC: V3 = [0, 1.17, 0]
+    const tie = makeTie(colorIndex)
+    tie.position.set(0, 0.93 - torsoC[1], m.radius - 0.135)
+    const headC: V3 = [0, eye, 0]
+    const parts = [
+      piece(torsoC, [0.23, 0.31, 0.13], [at(people.torso, material, torsoC, 0, 1.17, 0), tie]),
+      piece(
+        headC,
+        [0.16, 0.17, 0.16],
+        [
+          at(people.head, skinTone, headC, 0, eye, 0),
+          at(people.hair, hair, headC, 0, eye + 0.18, 0),
+          at(people.fringe, hair, headC, 0, eye + 0.13, -0.14),
+          at(people.eye, eyeMaterial, headC, -0.07, eye + 0.01, -0.151),
+          at(people.eye, eyeMaterial, headC, 0.07, eye + 0.01, -0.151),
+        ],
+      ),
+    ]
+    for (const side of [-1, 1]) {
+      const armC: V3 = [side * 0.3, 1.15, 0]
+      parts.push(
+        piece(
+          armC,
+          [0.06, 0.32, 0.07],
+          [
+            at(people.arm, material, armC, side * 0.3, 1.2, 0),
+            at(people.hand, skinTone, armC, side * 0.3, 0.87, 0),
+          ],
+        ),
+      )
+    }
+    for (const side of [-1, 1]) {
+      const legC: V3 = [side * 0.11, 0.45, 0]
+      parts.push(
+        piece(
+          legC,
+          [0.09, 0.45, 0.12],
+          [
+            at(people.leg, trouserMaterial, legC, side * 0.11, 0.45, 0),
+            at(people.shoe, shoeMaterial, legC, side * 0.11, 0.04, -0.03),
+          ],
+        ),
+      )
+    }
+    return { material, parts, joints: humanJoints(1.48, 0.3, 1.43, 0.11, 0.86) }
+  }
+
+  // Robot.
+  const torsoC: V3 = [0, 1.1, 0]
+  const headC: V3 = [0, eye, 0]
+  const parts = [
+    piece(
+      torsoC,
+      [0.25, 0.36, 0.15],
+      [
+        at(robot.hip, metalMaterial, torsoC, 0, 0.9, 0),
+        at(robot.torso, material, torsoC, 0, 1.2, 0),
+        at(robot.panel, metalMaterial, torsoC, 0, 1.25, -0.16),
+      ],
+    ),
+    piece(
+      headC,
+      [0.17, 0.15, 0.16],
+      [
+        at(robot.head, metalMaterial, headC, 0, eye, 0),
+        at(robot.visor, glowMaterial, headC, 0, eye + 0.01, -0.165),
+        at(robot.antenna, darkMetalMaterial, headC, 0.08, eye + 0.24, 0),
+        at(robot.bulb, material, headC, 0.08, eye + 0.34, 0),
+      ],
+    ),
+  ]
+  for (const side of [-1, 1]) {
+    const armC: V3 = [side * 0.32, 1.2, 0]
+    parts.push(
+      piece(
+        armC,
+        [0.08, 0.3, 0.09],
+        [
+          at(robot.shoulder, metalMaterial, armC, side * 0.32, 1.42, 0),
+          at(robot.arm, darkMetalMaterial, armC, side * 0.32, 1.12, 0),
+        ],
+      ),
+    )
+  }
+  for (const side of [-1, 1]) {
+    const legC: V3 = [side * 0.11, 0.45, 0]
+    parts.push(
+      piece(
+        legC,
+        [0.1, 0.45, 0.14],
+        [
+          at(robot.leg, darkMetalMaterial, legC, side * 0.11, 0.45, 0),
+          at(robot.foot, metalMaterial, legC, side * 0.11, 0.05, -0.03),
+        ],
+      ),
+    )
+  }
+  return { material, parts, joints: humanJoints(1.5, 0.32, 1.45, 0.11, 0.86) }
+}
+
+/** Neck, shoulders and hips for the parts order torso, head, arm L, arm R, leg L, leg R. */
+function humanJoints(
+  neckY: number,
+  shoulderX: number,
+  shoulderY: number,
+  hipX: number,
+  hipY: number,
+) {
+  return [
+    { a: 0, b: 1, anchor: [0, neckY, 0] as V3 },
+    { a: 0, b: 2, anchor: [-shoulderX, shoulderY, 0] as V3 },
+    { a: 0, b: 3, anchor: [shoulderX, shoulderY, 0] as V3 },
+    { a: 0, b: 4, anchor: [-hipX, hipY, 0] as V3 },
+    { a: 0, b: 5, anchor: [hipX, hipY, 0] as V3 },
+  ]
+}
+
 /**
  * A player as others see them, in the skin the admin picked (slime, office worker, robot) and
  * the player's color. Hitboxes are the same for every skin. Scaled as a whole for tiny people.

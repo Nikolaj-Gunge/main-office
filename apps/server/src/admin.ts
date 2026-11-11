@@ -60,7 +60,8 @@ export class AdminApi {
       )
       const count = record && now < record.until ? record.count + 1 : 1
       this.failures.set(client, { count, until: now + LOCKOUT_MS })
-      return json({ error: 'Wrong password' }, 401)
+      // The count of what arrived helps spot autofill or paste problems (it's your own input).
+      return json({ error: `Wrong password (${normalize(given).length} characters received)` }, 401)
     }
     this.failures.delete(client)
 
