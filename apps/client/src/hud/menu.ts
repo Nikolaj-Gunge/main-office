@@ -47,6 +47,8 @@ export class Menu {
   private onPlayHandler: ((name: string) => void) | null = null
   /** Action waiting for a key press (rebinding), if any. */
   private capturing: ActionId | null = null
+  /** Re-highlighters for choice rows (pixel size), run by refresh(). */
+  private readonly choiceRenderers: (() => void)[] = []
   private joined = false
 
   constructor(parent: HTMLElement, settings: Settings, onSettingsChange: () => void) {
@@ -117,6 +119,7 @@ export class Menu {
     const controls = h(
       'section',
       { class: 'menu-panel' },
+      this.toggle('Toggle aim (click to scope in / out — good for trackpads)', 'aimToggle'),
       h(
         'p',
         { class: 'menu-label' },
@@ -196,6 +199,7 @@ export class Menu {
       else input.value = String(this.settings[key])
       input.dispatchEvent(new Event('sync'))
     }
+    for (const render of this.choiceRenderers) render()
     this.renderControls()
   }
 
@@ -267,10 +271,11 @@ export class Menu {
       group.append(b)
     }
     render()
+    this.choiceRenderers.push(render)
     return h('div', { class: 'menu-row' }, h('span', {}, label), group)
   }
 
-  private toggle(label: string, key: 'showDebug'): HTMLElement {
+  private toggle(label: string, key: 'showDebug' | 'aimToggle'): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })
     input.checked = this.settings[key]
     input.addEventListener('change', () => {

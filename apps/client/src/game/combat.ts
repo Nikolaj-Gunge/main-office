@@ -58,6 +58,7 @@ export class ClientCombat {
   private lastDeath: { killer: string | null; weapon: string; headshot: boolean } | null = null
   private wasAlive = true
   private isProtected = false
+  private readonly hoverRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 })
 
   constructor(deps: CombatDeps) {
     this.d = deps
@@ -112,7 +113,7 @@ export class ClientCombat {
     this.d.effects.shot(muzzle, end, normal, kind, heavy)
     this.d.viewmodel.onShot()
     this.d.recoil.kick(weapon, aiming)
-    this.d.shake.add(heavy ? 0.45 : weapon.fireMode === 'auto' ? 0.1 : 0.18)
+    this.d.shake.add(heavy ? 0.5 : weapon.fireMode === 'auto' ? 0.13 : 0.32)
     this.d.audio.gunshot(undefined, weapon.id)
     if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
     this.impactSound(end, kind)
@@ -242,8 +243,10 @@ export class ClientCombat {
     const cam = this.d.camera
     const origin = cam.position
     const dir = cam.getWorldDirection(new THREE.Vector3())
+    this.hoverRay.origin = origin
+    this.hoverRay.dir = dir
     const wall = this.d.physics.world.castRay(
-      new RAPIER.Ray(origin, dir),
+      this.hoverRay,
       HOVER_RANGE,
       true,
       undefined,

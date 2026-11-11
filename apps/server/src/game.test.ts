@@ -78,7 +78,10 @@ describe('Game', () => {
     const game = makeGame()
     const a = fakeClient()
     const id = game.join('Anna', a) ?? 0
-    const startZ = game.players.get(id)?.state.pos.z ?? 0
+    // Spawns are random now: start from a known open spot so walking forward is never blocked.
+    const p = game.players.get(id)
+    if (p) p.state.pos = { x: 0, y: 0, z: 45 }
+    const startZ = 45
 
     for (let seq = 1; seq <= TICK_RATE; seq++) {
       game.handleInput(id, [forward(seq)])

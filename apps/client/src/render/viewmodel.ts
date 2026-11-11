@@ -57,7 +57,7 @@ function handgun(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.15, -0.15, -0.38),
     ads: new THREE.Vector3(0, -0.071, -0.24),
-    kick: 1,
+    kick: 1.8,
   }
 }
 
@@ -89,7 +89,7 @@ function rifle(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.16, -0.16, -0.44),
     ads: new THREE.Vector3(0, -0.044, -0.2),
-    kick: 0.55,
+    kick: 0.7,
   }
 }
 

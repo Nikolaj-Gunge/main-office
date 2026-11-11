@@ -22,7 +22,12 @@ export class MouseLook {
 
   constructor(private readonly element: HTMLElement) {
     document.addEventListener('pointerlockchange', () => this.onLockChange?.(this.locked))
-    document.addEventListener('mousemove', (e) => this.onMove(e))
+    // `pointerrawupdate` delivers movement as soon as the mouse reports it instead of batching
+    // it to the next animation frame (Chrome/Edge); other browsers use mousemove.
+    const raw = 'onpointerrawupdate' in window
+    document.addEventListener(raw ? ('pointerrawupdate' as 'mousemove') : 'mousemove', (e) =>
+      this.onMove(e),
+    )
   }
 
   get locked(): boolean {

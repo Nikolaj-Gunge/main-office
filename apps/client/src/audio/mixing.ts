@@ -32,7 +32,7 @@ export function distanceLowpass(distance: number): number {
  * much room/echo. The rifle is snappier, the sniper a deep boom that rolls across the map.
  */
 export const GUN_VOICES: Record<number, { rate: number; volume: number; tail: number }> = {
-  0: { rate: 1, volume: 1, tail: 1 }, // handgun
+  0: { rate: 0.93, volume: 1.15, tail: 1.1 }, // handgun: deeper and louder, more punch
   1: { rate: 1.12, volume: 0.9, tail: 0.9 }, // rifle
   2: { rate: 0.72, volume: 1.35, tail: 1.6 }, // sniper
 }

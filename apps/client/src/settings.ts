@@ -28,6 +28,8 @@ export interface Settings {
   sfxVolume: number
   showStats: boolean
   showDebug: boolean
+  /** Aim key toggles scope on/off instead of hold-to-aim (trackpads, two-finger click). */
+  aimToggle: boolean
   keybinds: Keybinds
 }
 
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showStats: false,
   // Off for players; developers turn it on with F3.
   showDebug: false,
+  aimToggle: false,
   keybinds: withDefaults(undefined),
 }
 

@@ -36,7 +36,7 @@ import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
 import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
-import { samplePlayerInput } from './input/player-input.ts'
+import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
@@ -81,6 +81,10 @@ const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 500)
 
 scene.add(buildMapObject(map))
 createLighting(map, scene)
+// The map never moves: draw the sun's (big) shadow map once instead of every frame — the
+// single most expensive thing a laptop GPU was doing each frame.
+pixels.renderer.shadowMap.autoUpdate = false
+pixels.renderer.shadowMap.needsUpdate = true
 const sky = createSky(map.lighting.skyColor, map.lighting.fogColor)
 scene.add(sky)
 if (map.skyline) scene.add(createSkyline())
@@ -111,6 +115,7 @@ const player = new LocalPlayer(physics, map.spawns[0])
 const remotes = new RemotePlayers(scene)
 look.yaw = player.state.yaw
 const fly = new FreeFly(camera, keys, look)
+const aim = new AimState()
 let noclip = false
 
 // --- Combat ---------------------------------------------------------------------------
@@ -263,6 +268,8 @@ function applySettings() {
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
+  aim.toggle = settings.aimToggle
+  if (!aim.toggle) aim.release()
   stats.dom.style.display = settings.showStats ? '' : 'none'
   overlay.setDebugVisible(settings.showDebug)
   updateProjection()
@@ -350,6 +357,9 @@ const MAX_TICKS_PER_FRAME = 8
 let last = performance.now()
 let accumulator = 0
 let fpsSmoothed = 60
+/** Last ~2 s of frame times (ms), for spotting stalls in the F3 readout. */
+const frameTimes = new Float32Array(120)
+let frameIndex = 0
 const outgoing: InputCommand[] = []
 
 pixels.renderer.setAnimationLoop(() => {
@@ -357,6 +367,7 @@ pixels.renderer.setAnimationLoop(() => {
   const dt = Math.min(0.25, (now - last) / 1000)
   last = now
   fpsSmoothed += (1 / Math.max(dt, 1e-4) - fpsSmoothed) * 0.05
+  frameTimes[frameIndex++ % frameTimes.length] = dt * 1000
 
   // The player keeps simulating in noclip while online (standing still), so the server and
   // prediction stay in step.
@@ -365,11 +376,13 @@ pixels.renderer.setAnimationLoop(() => {
   while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
     const input = noclip
       ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
-      : samplePlayerInput(keys, look, settings.keybinds)
+      : samplePlayerInput(keys, look, settings.keybinds, aim)
     const { command, events } = player.tick(input, remotes.renderTick)
     const aiming = (input.buttons & Button.Aim) !== 0
     if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
     if (events.weapon) combat.onWeaponEvents(events.weapon, player.state.weapon)
+    // Toggle-aim drops out of the scope like letting go would: reload, switch, death.
+    if (events.switched || events.weapon?.reloadStarted || !player.state.alive) aim.release()
     if (events.landed && events.landingSpeed > 3) {
       audio.play('land', { volume: Math.min(0.35, events.landingSpeed / 20) })
     }
@@ -431,6 +444,7 @@ pixels.renderer.setAnimationLoop(() => {
     const kb = (b: number) => (b / 1024).toFixed(1)
     overlay.debug.textContent = [
       `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale}`,
+      `worst frame ${Math.max(...frameTimes).toFixed(1)} ms (last 2 s)`,
       noclip
         ? `NOCLIP (V) · cam ${camera.position.x.toFixed(2)} ${camera.position.y.toFixed(2)} ${camera.position.z.toFixed(2)}`
         : `feet ${s.pos.x.toFixed(2)} ${s.pos.y.toFixed(2)} ${s.pos.z.toFixed(2)}`,

@@ -38,6 +38,7 @@ export class RemotePlayers {
   private readonly players = new Map<number, Remote>()
   private readonly scene: THREE.Scene
   private lastUpdateMs = 0
+  private readonly poses = new Map<number, HitPose>()
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
   onLand?: (at: THREE.Vector3) => void
@@ -96,6 +97,11 @@ export class RemotePlayers {
       if (p.shown) p.avatar.update(p.shown, nowMs, viewer)
       if (before && p.shown && dt > 0) this.detectSteps(p, before, p.shown, dt)
     }
+    this.poses.clear()
+    for (const [id, p] of this.players) {
+      const s = p.shown
+      if (s?.alive) this.poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch })
+    }
   }
 
   private detectSteps(p: Remote, a: RemotePlayerState, b: RemotePlayerState, dt: number): void {
@@ -118,14 +124,12 @@ export class RemotePlayers {
     }
   }
 
-  /** Hit poses of every living player as currently drawn (for local tracer ends and F4 debug). */
+  /**
+   * Hit poses of every living player as currently drawn (for local tracer ends, crosshair names
+   * and F4 debug). Rebuilt once per frame in update().
+   */
   visiblePoses(): Map<number, HitPose> {
-    const poses = new Map<number, HitPose>()
-    for (const [id, p] of this.players) {
-      const s = p.shown
-      if (s?.alive) poses.set(id, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, crouch: s.crouch })
-    }
-    return poses
+    return this.poses
   }
 
   /** Where player `id`'s gun is on screen, or null if unknown. */

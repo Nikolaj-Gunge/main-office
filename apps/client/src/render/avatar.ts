@@ -18,6 +18,65 @@ const sharedGeometry = {
   } as Record<WeaponId, THREE.BoxGeometry>,
 }
 const visorMaterial = new THREE.MeshLambertMaterial({ color: 0x1b1d2a })
+
+// Office wear: a tie on the chest and a hat, picked per player from these.
+const TIE_COLORS = [0x1f2a44, 0x7a1f2b, 0x2d4a3a, 0x3b2d4f, 0x8a6a1f, 0x1c1c1c]
+const HAT_COLORS = [0x2b2b2e, 0x4a3426, 0x2f3b4a, 0x5a5048]
+const tieMaterials = TIE_COLORS.map((color) => new THREE.MeshLambertMaterial({ color }))
+const hatMaterials = HAT_COLORS.map((color) => new THREE.MeshLambertMaterial({ color }))
+const bandMaterial = new THREE.MeshLambertMaterial({ color: 0x111111 })
+const collarMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f0ea })
+const wear = {
+  tie: new THREE.BoxGeometry(0.09, 0.42, 0.03),
+  knot: new THREE.BoxGeometry(0.11, 0.07, 0.04),
+  collar: new THREE.BoxGeometry(0.3, 0.06, 0.05),
+  brim: new THREE.CylinderGeometry(0.44, 0.44, 0.03, 12),
+  crown: new THREE.CylinderGeometry(0.25, 0.28, 0.2, 12),
+  band: new THREE.CylinderGeometry(0.285, 0.285, 0.045, 12),
+  bowler: new THREE.SphereGeometry(0.29, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+}
+
+/** Tie + collar on the chest, attached to the body so they squash with crouching. */
+function makeTie(colorIndex: number): THREE.Group {
+  const g = new THREE.Group()
+  const material = tieMaterials[colorIndex % tieMaterials.length] ?? tieMaterials[0]
+  // Body mesh is centred at half height: chest ≈ 0.3 m above its centre, front at -radius.
+  const front = -m.radius - 0.005
+  const tie = new THREE.Mesh(wear.tie, material)
+  tie.position.set(0, 0.24, front)
+  tie.rotation.x = -0.12 // follows the curve of the belly a little
+  const knot = new THREE.Mesh(wear.knot, material)
+  knot.position.set(0, 0.48, front - 0.005)
+  const collar = new THREE.Mesh(wear.collar, collarMaterial)
+  collar.position.set(0, 0.53, front + 0.01)
+  g.add(tie, knot, collar)
+  return g
+}
+
+/** A fedora or a bowler, sitting on top of the head (head group origin = eyes). */
+function makeHat(colorIndex: number): THREE.Group {
+  const g = new THREE.Group()
+  const material = hatMaterials[colorIndex % hatMaterials.length] ?? hatMaterials[0]
+  const top = m.standHeight - m.standEyeHeight // capsule top above the eyes
+  if (colorIndex % 2 === 0) {
+    const brim = new THREE.Mesh(wear.brim, material)
+    brim.position.y = top - 0.02
+    const crown = new THREE.Mesh(wear.crown, material)
+    crown.position.y = top + 0.09
+    const band = new THREE.Mesh(wear.band, bandMaterial)
+    band.position.y = top + 0.02
+    g.add(brim, crown, band)
+  } else {
+    const brim = new THREE.Mesh(wear.brim, material)
+    brim.scale.set(0.8, 1, 0.8)
+    brim.position.y = top - 0.02
+    const dome = new THREE.Mesh(wear.bowler, material)
+    dome.position.y = top - 0.02
+    g.add(brim, dome)
+  }
+  for (const part of g.children) part.castShadow = false
+  return g
+}
 const gunMaterial = new THREE.MeshLambertMaterial({ color: 0x2b2d33 })
 /** Gun held at the right, slightly below the eyes; its muzzle is at the far end. */
 const GUN_OFFSET = new THREE.Vector3(0.25, -0.2, -0.38)
@@ -52,8 +111,8 @@ const glintMaterial = new THREE.SpriteMaterial({
 })
 
 /**
- * Placeholder player model (phase 9 replaces it): a capsule in the player's color, a dark visor
- * showing where they look and a gun held at the right. No floating name tag — names appear when
+ * Placeholder player model: a capsule in the player's color dressed for the office — tie and
+ * collar, fedora or bowler hat — with a dark visor showing where they look and a gun at the right. No floating name tag — names appear when
  * your crosshair is on someone you can see (PLAN.md §6).
  */
 export class Avatar {
@@ -70,7 +129,8 @@ export class Avatar {
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.body = new THREE.Mesh(sharedGeometry.body, this.material)
-    this.body.castShadow = true
+    // No sun shadow: the shadow map is static (drawn once), and indoors the roof shades you anyway.
+    this.body.castShadow = false
     this.body.position.y = m.standHeight / 2
 
     const visor = new THREE.Mesh(sharedGeometry.visor, visorMaterial)
@@ -78,7 +138,8 @@ export class Avatar {
     this.gun = new THREE.Mesh(sharedGeometry.guns[this.weapon], gunMaterial)
     this.glint = new THREE.Sprite(glintMaterial.clone())
     this.glint.visible = false
-    this.head.add(visor, this.gun, this.muzzle, this.glint)
+    this.head.add(visor, this.gun, this.muzzle, this.glint, makeHat(colorIndex))
+    this.body.add(makeTie(colorIndex))
     this.setWeapon(WeaponId.Rifle)
 
     this.root.add(this.body, this.head)

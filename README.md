@@ -37,6 +37,8 @@ everyone opens `http://<your-ip>:3000`.
 | E              | Swap your rifle/sniper for the weapon on the floor         |
 | Shift (scoped) | Hold breath — steadies the sniper scope for 3 s            |
 | M              | Mute / unmute (or open the game with `?mute=1`)            |
+
+Trackpad? Esc → Controls → **Toggle aim**: one right / two-finger click scopes in, the next scopes out.
 | Tab (hold)     | Scoreboard                                                 |
 | Esc            | Menu: resume, loadout, settings, rebind controls           |
 | V              | Toggle noclip (Space/Ctrl up/down); leaving it drops you there |

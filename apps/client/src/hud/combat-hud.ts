@@ -4,6 +4,11 @@ const KILLFEED_SECONDS = 6
 const KILLFEED_MAX = 5
 const DAMAGE_INDICATOR_SECONDS = 1.5
 
+/** Writing textContent replaces the text node and forces layout work even when unchanged. */
+function setText(node: HTMLElement, text: string): void {
+  if (node.textContent !== text) node.textContent = text
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
@@ -34,6 +39,7 @@ export class CombatHud {
   private readonly vignette: HTMLDivElement
   private readonly death: HTMLDivElement
   private readonly prompt: HTMLDivElement
+  private lastGap = -1
   private readonly slots: HTMLDivElement
   private readonly scope: HTMLDivElement
   private readonly breathFill: HTMLDivElement
@@ -96,7 +102,7 @@ export class CombatHud {
   setHealth(health: number): void {
     const h = Math.max(0, Math.min(100, health))
     this.healthFill.style.width = `${h}%`
-    this.healthText.textContent = String(Math.ceil(h))
+    setText(this.healthText, String(Math.ceil(h)))
     this.healthBox.classList.toggle('low', h > 0 && h < 30)
     // Red vignette fades in below 50 HP.
     this.vignette.style.opacity = String(h <= 0 ? 0 : Math.max(0, (50 - h) / 50))
@@ -122,17 +128,19 @@ export class CombatHud {
         el('span', active ? 'slot active' : 'slot', this.slots).textContent = `${slot} ${name}`
       }
     }
-    this.ammoCount.textContent = String(w.ammo)
-    this.ammoReserve.textContent = ` / ${w.reserve}`
+    setText(this.ammoCount, String(w.ammo))
+    setText(this.ammoReserve, ` / ${w.reserve}`)
     this.ammo.classList.toggle('empty', w.ammo === 0)
-    this.ammoNote.textContent =
+    setText(
+      this.ammoNote,
       w.reload > 0
         ? 'RELOADING'
         : w.ammo === 0 && w.reserve === 0
           ? 'NO AMMO'
           : w.ammo <= Math.ceil(def.magSize / 4)
             ? 'R TO RELOAD'
-            : def.name.toUpperCase()
+            : def.name.toUpperCase(),
+    )
   }
 
   /** Name of the player under your crosshair (null = nobody). */
@@ -162,7 +170,11 @@ export class CombatHud {
     const half =
       (Math.tan((spreadDeg * Math.PI) / 360) / Math.tan((vfovDeg * Math.PI) / 360)) *
       window.innerHeight
-    this.crosshair.style.setProperty('--gap', `${Math.max(3, Math.round(half))}px`)
+    const gap = Math.max(3, Math.round(half))
+    if (gap !== this.lastGap) {
+      this.crosshair.style.setProperty('--gap', `${gap}px`)
+      this.lastGap = gap
+    }
     this.crosshair.classList.toggle('aiming', aiming)
   }
 
@@ -207,7 +219,7 @@ export class CombatHud {
   }
 
   setDeathTimer(seconds: number): void {
-    this.deathTimer.textContent = seconds > 0 ? `Respawn in ${Math.ceil(seconds)}` : ''
+    setText(this.deathTimer, seconds > 0 ? `Respawn in ${Math.ceil(seconds)}` : '')
   }
 
   hideDeath(): void {
