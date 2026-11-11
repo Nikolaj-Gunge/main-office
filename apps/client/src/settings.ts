@@ -1,3 +1,5 @@
+import { type Keybinds, withDefaults } from './input/bindings.ts'
+
 export const COLOR_MODES = { off: 0, levels: 1, palette: 2 } as const
 export type ColorMode = keyof typeof COLOR_MODES
 
@@ -22,6 +24,7 @@ export interface Settings {
   sfxVolume: number
   showStats: boolean
   showDebug: boolean
+  keybinds: Keybinds
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,7 +40,9 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.8,
   sfxVolume: 1,
   showStats: false,
-  showDebug: true,
+  // Off for players; developers turn it on with F3.
+  showDebug: false,
+  keybinds: withDefaults(undefined),
 }
 
 const STORAGE_KEY = 'office-fps:settings'
@@ -45,9 +50,9 @@ const STORAGE_KEY = 'office-fps:settings'
 export function loadSettings(): Settings {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<Settings>
-    return { ...DEFAULT_SETTINGS, ...stored }
+    return { ...DEFAULT_SETTINGS, ...stored, keybinds: withDefaults(stored.keybinds) }
   } catch {
-    return { ...DEFAULT_SETTINGS }
+    return { ...DEFAULT_SETTINGS, keybinds: withDefaults(undefined) }
   }
 }
 

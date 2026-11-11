@@ -29,7 +29,11 @@ import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { CombatHud } from './hud/combat-hud.ts'
+import { Menu } from './hud/menu.ts'
+import { Minimap } from './hud/minimap.ts'
 import { Overlay } from './hud/overlay.ts'
+import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
+import { actionFor } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { samplePlayerInput } from './input/player-input.ts'
@@ -42,6 +46,8 @@ import { PixelRenderer } from './render/pixel-renderer.ts'
 import { createSky } from './render/sky.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { loadSettings, saveSettings } from './settings.ts'
+import '@fontsource/pixelify-sans/400.css'
+import '@fontsource/pixelify-sans/700.css'
 
 function requireElement<T extends Element>(selector: string): T {
   const el = document.querySelector<T>(selector)
@@ -51,14 +57,17 @@ function requireElement<T extends Element>(selector: string): T {
 
 const canvas = requireElement<HTMLCanvasElement>('#game')
 const hudRoot = requireElement<HTMLDivElement>('#hud')
+const settings = loadSettings()
 const hud = new CombatHud(hudRoot)
 const overlay = new Overlay(hudRoot)
-const settings = loadSettings()
+const scoreboard = new Scoreboard(hudRoot)
+const menu = new Menu(hudRoot, settings, () => applySettings())
 
 // --- World ----------------------------------------------------------------------------
 await initPhysics()
 const map = loadMap(DEFAULT_MAP_ID)
 const physics = createPhysicsWorld(map)
+const minimap = new Minimap(hudRoot, map)
 
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
@@ -138,6 +147,10 @@ remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
 // --- Networking -----------------------------------------------------------------------
 /** True once the server has welcomed us: from then on the server owns our position. */
 let joined = false
+/** Have we ever been in a game this session? (Decides banner vs. menu status for problems.) */
+let everJoined = false
+/** Everyone's name and color, including ours (scoreboard, kill feed). */
+const roster = new Map<number, ScorePlayer>()
 
 const combat = new ClientCombat({
   camera,
@@ -158,10 +171,18 @@ const net = new Connection({
     if (state === 'closed') {
       joined = false
       remotes.clear()
-      overlay.setJoined(false)
-      overlay.setStatus(reason ? `Disconnected: ${reason}` : 'Connection lost — reconnecting…')
+      roster.clear()
+      menu.setJoined(false)
+      const fatal = reason?.includes('Protocol') ?? false
+      const text = reason
+        ? fatal
+          ? 'The game was updated — reload to keep playing.'
+          : `Disconnected: ${reason}`
+        : 'Connection lost — reconnecting…'
+      menu.setStatus(text)
+      if (everJoined || fatal) overlay.setBanner(text, fatal)
     }
-    if (state === 'connecting') overlay.setStatus('Connecting…')
+    if (state === 'connecting') menu.setStatus('Connecting…')
   },
   onMessage: (msg) => {
     combat.onMessage(msg)
@@ -171,42 +192,55 @@ const net = new Connection({
         noclip = false
         remotes.clear()
         player.resetPrediction()
-        overlay.setJoined(true)
-        overlay.setStatus('')
+        menu.setJoined(true)
+        menu.setStatus('')
+        overlay.setBanner(null)
+        everJoined = true
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
       case ServerMsg.PlayerJoined:
         combat.setName(msg.id, msg.name)
+        roster.set(msg.id, { name: msg.name, color: msg.color })
         if (msg.id !== net.playerId) remotes.add(msg.id, msg.name, msg.color)
         break
       case ServerMsg.PlayerLeft:
         combat.forget(msg.id)
+        roster.delete(msg.id)
         remotes.remove(msg.id)
         break
       case ServerMsg.Snapshot:
         if (msg.self) player.onServerState(msg.self, msg.ackSeq)
         remotes.onSnapshot(msg.tick, msg.players, performance.now())
         break
+      case ServerMsg.Scoreboard:
+        scoreboard.update(msg.entries)
+        break
+      case ServerMsg.ShotFired: {
+        // Shooting gives your position away on the minimap.
+        const at = remotes.muzzleOf(msg.shooterId)
+        if (at) minimap.ping(at.x, at.z)
+        break
+      }
     }
   },
 })
 
-/** Primary weapon for the next spawn; also remembered for the join screen. */
-function chooseLoadout(primary: PrimaryWeapon) {
-  overlay.setPrimary(primary)
+// Primary weapon for the next spawn: chosen in the menu, or with 1/2 on the death screen.
+menu.onLoadout((primary: PrimaryWeapon) => {
   net.primary = primary
   hud.setLoadoutChoice(primary)
   if (joined) net.send({ type: ClientMsg.SetLoadout, primary })
-}
-hud.setLoadoutChoice(overlay.primary)
+})
+net.primary = menu.primary
+hud.setLoadoutChoice(menu.primary)
 
-overlay.onPlay((name) => {
-  chooseLoadout(overlay.primary)
+menu.onPlay((name) => {
   audio.unlock() // browsers only allow audio after a click
-  if (net.state === 'idle') net.connect(name, overlay.primary)
+  if (net.state === 'idle') net.connect(name, menu.primary)
   void look.lock()
 })
-look.onLockChange = (locked) => overlay.setLocked(locked)
+// Esc releases the mouse: show the menu. Clicking Resume locks it again.
+look.onLockChange = (locked) => menu.setVisible(!locked)
 
 // --- Settings -------------------------------------------------------------------------
 function applySettings() {
@@ -219,11 +253,24 @@ function applySettings() {
   saveSettings(settings)
 }
 
-const gui = createSettingsGui(settings, applySettings)
+const gui = createSettingsGui(settings, () => {
+  applySettings()
+  menu.refresh()
+})
 addTuningFolders(gui, player)
 addNetworkFolder(gui, net, remotes)
 
+let scoreboardHeld = false
+window.addEventListener('keyup', (e) => {
+  if (actionFor(settings.keybinds, e.code) === 'scoreboard') scoreboardHeld = false
+})
 window.addEventListener('keydown', (e) => {
+  if (menu.isCapturing) return // rebinding a key in the menu
+  const action = actionFor(settings.keybinds, e.code)
+  if (action === 'scoreboard') {
+    e.preventDefault() // Tab would move focus
+    scoreboardHeld = true
+  }
   if (e.repeat) return
   if (e.code === 'F1') {
     e.preventDefault()
@@ -236,13 +283,14 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault()
     settings.showDebug = !settings.showDebug
     applySettings()
+    menu.refresh()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
   }
-  // Dead: 1 / 2 pick the primary for your next spawn (you can't switch weapons while dead).
-  if (!player.state.alive && (e.code === 'Digit1' || e.code === 'Digit2')) {
-    chooseLoadout(e.code === 'Digit1' ? WeaponId.Rifle : WeaponId.Sniper)
+  // Dead: primary / handgun keys pick the primary for your next spawn instead.
+  if (!player.state.alive && (action === 'primary' || action === 'secondary')) {
+    menu.setPrimary(action === 'primary' ? WeaponId.Rifle : WeaponId.Sniper)
   }
-  if (e.code === 'KeyM') {
+  if (action === 'mute') {
     audio.muted = !audio.muted
     overlay.flash(audio.muted ? 'Sound off (M)' : 'Sound on (M)')
   }
@@ -290,7 +338,7 @@ pixels.renderer.setAnimationLoop(() => {
   while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
     const input = noclip
       ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
-      : samplePlayerInput(keys, look)
+      : samplePlayerInput(keys, look, settings.keybinds)
     const { command, events } = player.tick(input, remotes.renderTick)
     const aiming = (input.buttons & Button.Aim) !== 0
     if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
@@ -332,6 +380,9 @@ pixels.renderer.setAnimationLoop(() => {
   audio.setListener(camera)
   audio.update(dt)
   remotes.update(now, camera.position)
+  minimap.update(dt, player.state.pos, look.yaw)
+  minimap.setVisible(joined && !noclip)
+  scoreboard.show(scoreboardHeld && joined, roster, net.playerId)
   combat.update(
     dt,
     player.state,

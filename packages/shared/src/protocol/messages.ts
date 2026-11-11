@@ -28,6 +28,7 @@ export const ServerMsg = {
   Damaged: 0x88,
   Kill: 0x89,
   DebugShot: 0x8a,
+  Scoreboard: 0x8b,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -83,10 +84,19 @@ export type ClientMessage =
       primary: PrimaryWeapon
     }
   | { type: typeof ClientMsg.Input; commands: InputCommand[] }
-  | { type: typeof ClientMsg.Ping; clientTime: number }
+  /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
+  | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
   /** Primary weapon for your next spawn. */
   | { type: typeof ClientMsg.SetLoadout; primary: PrimaryWeapon }
+
+export interface ScoreEntry {
+  id: number
+  kills: number
+  deaths: number
+  /** Round-trip time in ms, as reported by the player's client. */
+  ping: number
+}
 
 export type ServerMessage =
   | {
@@ -146,6 +156,7 @@ export type ServerMessage =
       weapon: WeaponId
       headshot: boolean
     }
+  | { type: typeof ServerMsg.Scoreboard; entries: ScoreEntry[] }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -326,7 +337,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
       w.u8(msg.flags)
       break
     case ClientMsg.Ping:
-      w.f64(msg.clientTime)
+      w.f64(msg.clientTime).u16(Math.max(0, Math.min(65535, Math.round(msg.rtt))))
       break
   }
   return w.finish()
@@ -362,7 +373,7 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
     case ClientMsg.SetDebug:
       return { type, flags: r.u8() }
     case ClientMsg.Ping:
-      return { type, clientTime: r.f64() }
+      return { type, clientTime: r.f64(), rtt: r.u16() }
     default:
       throw new Error(`Unknown client message type 0x${type.toString(16)}`)
   }
@@ -415,6 +426,15 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
         .u16(msg.victimId)
         .u8(msg.weapon)
         .u8(msg.headshot ? 1 : 0)
+      break
+    case ServerMsg.Scoreboard:
+      w.u8(msg.entries.length)
+      for (const e of msg.entries) {
+        w.u16(e.id)
+          .u16(e.kills)
+          .u16(e.deaths)
+          .u16(Math.min(65535, Math.round(e.ping)))
+      }
       break
     case ServerMsg.DebugShot:
       writeVec(w, msg.origin)
@@ -487,6 +507,14 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
         weapon: r.u8() as WeaponId,
         headshot: r.u8() === 1,
       }
+    case ServerMsg.Scoreboard: {
+      const count = r.u8()
+      const entries: ScoreEntry[] = []
+      for (let i = 0; i < count; i++) {
+        entries.push({ id: r.u16(), kills: r.u16(), deaths: r.u16(), ping: r.u16() })
+      }
+      return { type, entries }
+    }
     case ServerMsg.DebugShot: {
       const origin = readVec(r)
       const dir = readVec(r)

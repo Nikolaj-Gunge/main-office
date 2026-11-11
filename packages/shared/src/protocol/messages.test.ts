@@ -17,9 +17,9 @@ import { quantizeInput } from './quantize.ts'
 
 describe('client messages', () => {
   const cases: ClientMessage[] = [
-    { type: ClientMsg.Hello, protocolVersion: 4, name: 'Nikolaj', primary: WeaponId.Sniper },
+    { type: ClientMsg.Hello, protocolVersion: 5, name: 'Nikolaj', primary: WeaponId.Sniper },
     { type: ClientMsg.SetLoadout, primary: WeaponId.Rifle },
-    { type: ClientMsg.Ping, clientTime: 12345.678 },
+    { type: ClientMsg.Ping, clientTime: 12345.678, rtt: 23 },
     { type: ClientMsg.SetDebug, flags: 1 },
     {
       type: ClientMsg.Input,
@@ -55,7 +55,7 @@ describe('client messages', () => {
   })
 
   test('rejects truncated messages', () => {
-    const bytes = encodeClientMessage({ type: ClientMsg.Ping, clientTime: 1 })
+    const bytes = encodeClientMessage({ type: ClientMsg.Ping, clientTime: 1, rtt: 0 })
     expect(() => decodeClientMessage(bytes.subarray(0, 4))).toThrow()
   })
 })
@@ -109,6 +109,13 @@ describe('server messages', () => {
       from: { x: 1, y: 0, z: 2 },
     },
     { type: ServerMsg.Kill, killerId: 1, victimId: 2, weapon: WeaponId.Handgun, headshot: true },
+    {
+      type: ServerMsg.Scoreboard,
+      entries: [
+        { id: 1, kills: 12, deaths: 3, ping: 18 },
+        { id: 7, kills: 0, deaths: 9, ping: 140 },
+      ],
+    },
   ]
   for (const msg of cases) {
     test(`round-trips 0x${msg.type.toString(16)}`, () => {

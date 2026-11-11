@@ -123,6 +123,6 @@ export class Connection {
   }
 
   private sendPing(): void {
-    this.send({ type: ClientMsg.Ping, clientTime: performance.now() })
+    this.send({ type: ClientMsg.Ping, clientTime: performance.now(), rtt: this.rtt })
   }
 }

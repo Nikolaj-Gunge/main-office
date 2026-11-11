@@ -130,6 +130,10 @@ describe('combat', () => {
       })
     }
     expect(s.game.players.get(s.shooter)?.kills).toBe(1)
+    // The scoreboard goes out right after the kill.
+    const board = s.b.all(ServerMsg.Scoreboard).at(-1)
+    expect(board?.entries.find((e) => e.id === s.shooter)?.kills).toBe(1)
+    expect(board?.entries.find((e) => e.id === s.victim)?.deaths).toBe(1)
   })
 
   test('chest shots take 4 hits with the handgun', () => {

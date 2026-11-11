@@ -5,7 +5,6 @@ import {
   WeaponId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { createLabel } from './labels.ts'
 
 const m = DEFAULT_MOVEMENT
 const capsuleLength = m.standHeight - m.radius * 2
@@ -54,7 +53,8 @@ const glintMaterial = new THREE.SpriteMaterial({
 
 /**
  * Placeholder player model (phase 9 replaces it): a capsule in the player's color, a dark visor
- * showing where they look, a gun held at the right, and a name tag.
+ * showing where they look and a gun held at the right. No floating name tag — names appear when
+ * your crosshair is on someone you can see (PLAN.md §6).
  */
 export class Avatar {
   readonly root = new THREE.Group()
@@ -64,7 +64,6 @@ export class Avatar {
   private readonly muzzle = new THREE.Object3D()
   private readonly gun: THREE.Mesh
   private readonly glint: THREE.Sprite
-  private readonly label: THREE.Sprite
   private weapon: WeaponId = WeaponId.Rifle
 
   constructor(name: string, colorIndex: number) {
@@ -82,8 +81,7 @@ export class Avatar {
     this.head.add(visor, this.gun, this.muzzle, this.glint)
     this.setWeapon(WeaponId.Rifle)
 
-    this.label = createLabel(name)
-    this.root.add(this.body, this.head, this.label)
+    this.root.add(this.body, this.head)
     this.root.name = `avatar:${name}`
   }
 
@@ -111,7 +109,6 @@ export class Avatar {
     this.body.position.y = height / 2
     this.head.position.y = eye
     this.head.rotation.x = s.pitch
-    this.label.position.y = height + 0.35
     // Spawn protection: blink so attackers know shots won't count yet.
     this.material.opacity = s.protected && Math.floor(timeMs / 150) % 2 === 0 ? 0.35 : 1
 
@@ -144,8 +141,5 @@ export class Avatar {
   dispose(): void {
     this.material.dispose()
     ;(this.glint.material as THREE.SpriteMaterial).dispose()
-    const labelMaterial = this.label.material as THREE.SpriteMaterial
-    labelMaterial.map?.dispose()
-    labelMaterial.dispose()
   }
 }

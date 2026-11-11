@@ -399,6 +399,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - Join screen styling, controls help, connection-lost/reconnect handling.
 - Minimap.
 - **Done when:** a new colleague can open the URL and play without being told anything.
+- **Implementation notes:** one menu serves as join screen and Esc pause menu (PLAY / SETTINGS / CONTROLS tabs); every action is rebindable (keyboard, mouse buttons, wheel), stored with the other settings in localStorage. The server sends a scoreboard once a second and after every kill; clients report their measured RTT in pings for the ping column. Names show only for the player under your crosshair within line of sight (world raycast + hitboxes). Minimap is drawn once from the map boxes, rotated with the player; enemies appear only as red pings when they fire. Pixel font: Pixelify Sans (OFL), bundled — no external requests. lil-gui (F1) stays as the developer/tuning panel.
 
 ### Phase 8 — The office map
 

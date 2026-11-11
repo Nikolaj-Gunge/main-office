@@ -37,6 +37,7 @@ export class CombatHud {
   private readonly slots: HTMLDivElement
   private readonly scope: HTMLDivElement
   private readonly breathFill: HTMLDivElement
+  private readonly hoverName: HTMLDivElement
   private readonly deathText: HTMLDivElement
   private readonly deathTimer: HTMLDivElement
   private readonly protectedLabel: HTMLDivElement
@@ -82,6 +83,8 @@ export class CombatHud {
     const breath = el('div', 'hud-scope-breath', this.scope)
     this.breathFill = el('div', 'hud-scope-breath-fill', breath)
     this.scope.hidden = true
+    this.hoverName = el('div', 'hud-hover-name', root)
+    this.hoverName.hidden = true
     this.death.hidden = true
 
     this.setHealth(100)
@@ -123,6 +126,14 @@ export class CombatHud {
           : w.ammo <= Math.ceil(def.magSize / 4)
             ? 'R TO RELOAD'
             : def.name.toUpperCase()
+  }
+
+  /** Name of the player under your crosshair (null = nobody). */
+  setHoverName(name: string | null, color: number): void {
+    this.hoverName.hidden = name === null
+    if (name === null) return
+    if (this.hoverName.textContent !== name) this.hoverName.textContent = name
+    this.hoverName.style.color = `#${color.toString(16).padStart(6, '0')}`
   }
 
   /** Scope overlay while looking through a scope; the bar shows held breath (Shift). */

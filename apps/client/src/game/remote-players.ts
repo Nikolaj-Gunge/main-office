@@ -137,4 +137,8 @@ export class RemotePlayers {
   nameOf(id: number): string | undefined {
     return this.players.get(id)?.name
   }
+
+  colorOf(id: number): number | undefined {
+    return this.players.get(id)?.color
+  }
 }

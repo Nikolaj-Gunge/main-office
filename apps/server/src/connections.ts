@@ -60,6 +60,7 @@ export function createConnections(game: Game, getTickMs: () => number) {
           if (ws.data.playerId) game.setDebug(ws.data.playerId, msg.flags)
           break
         case ClientMsg.Ping:
+          if (ws.data.playerId) game.reportPing(ws.data.playerId, msg.rtt)
           ws.send(
             encodeServerMessage({
               type: ServerMsg.Pong,

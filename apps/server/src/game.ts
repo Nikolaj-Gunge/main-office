@@ -65,6 +65,8 @@ interface ServerPlayer {
   debugFlags: number
   /** Primary weapon for the next spawn (the handgun is always the secondary). */
   loadout: PrimaryWeapon
+  /** Round trip (ms) the client last reported. */
+  ping: number
 }
 
 /**
@@ -136,6 +138,7 @@ export class Game {
       deaths: 0,
       debugFlags: 0,
       loadout: isPrimary(primary) ? primary : WeaponId.Rifle,
+      ping: 0,
     }
 
     send(client, {
@@ -183,6 +186,12 @@ export class Game {
     if (player && isPrimary(primary)) player.loadout = primary
   }
 
+  /** Stores the round trip a client measured (for the scoreboard). */
+  reportPing(id: number, rtt: number): void {
+    const player = this.players.get(id)
+    if (player) player.ping = Math.min(9999, Math.max(0, rtt))
+  }
+
   setDebug(id: number, flags: number): void {
     const player = this.players.get(id)
     if (player) player.debugFlags = flags
@@ -206,6 +215,7 @@ export class Game {
     const t1 = performance.now()
     this.timing.simMs += (t1 - t0 - this.timing.simMs) * 0.05
 
+    if (this.tick % TICK_RATE === 0) this.sendScoreboard()
     if (this.tick % TICKS_PER_SNAPSHOT === 0) {
       this.history.record(this.tick, this.currentPoses())
       this.sendSnapshots()
@@ -323,6 +333,7 @@ export class Game {
       weapon: killer.state.weapon.id,
       headshot,
     })
+    this.sendScoreboard()
   }
 
   private respawn(player: ServerPlayer): void {
@@ -367,6 +378,19 @@ export class Game {
         players: everyone.filter((p) => p.id !== player.id),
       })
     }
+  }
+
+  /** Everyone's score, once a second (and right after each kill). */
+  sendScoreboard(): void {
+    this.broadcast({
+      type: ServerMsg.Scoreboard,
+      entries: [...this.players.values()].map((p) => ({
+        id: p.id,
+        kills: p.kills,
+        deaths: p.deaths,
+        ping: p.ping,
+      })),
+    })
   }
 
   private broadcast(msg: ServerMessage): void {

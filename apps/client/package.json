@@ -9,6 +9,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
     "@office-fps/shared": "workspace:*",
     "lil-gui": "^0.21.0",
     "stats-gl": "^4.2.3",

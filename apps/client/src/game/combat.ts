@@ -4,6 +4,7 @@ import {
   HitZone,
   MAX_BREATH,
   type PhysicsWorld,
+  PLAYER_COLORS,
   PLAYER_QUERY_GROUPS,
   type PlayerState,
   RAPIER,
@@ -26,6 +27,9 @@ import type { Viewmodel } from '../render/viewmodel.ts'
 import type { Recoil } from './recoil.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import type { ScreenShake } from './screen-shake.ts'
+
+/** Names show for players under the crosshair up to this far away (m). */
+const HOVER_RANGE = 80
 
 /** A bullet passing within this distance of your head makes the supersonic crack. */
 const NEAR_MISS_DISTANCE = 1.6
@@ -229,6 +233,37 @@ export class ClientCombat {
     }
   }
 
+  /** Shows the name of whoever is under the crosshair, if you can actually see them. */
+  private updateHover(alive: boolean): void {
+    if (!alive) {
+      this.d.hud.setHoverName(null, 0)
+      return
+    }
+    const cam = this.d.camera
+    const origin = cam.position
+    const dir = cam.getWorldDirection(new THREE.Vector3())
+    const wall = this.d.physics.world.castRay(
+      new RAPIER.Ray(origin, dir),
+      HOVER_RANGE,
+      true,
+      undefined,
+      PLAYER_QUERY_GROUPS,
+    )
+    let best: { id: number; distance: number } | null = null
+    for (const [id, pose] of this.d.remotes.visiblePoses()) {
+      const hit = raycastPose(
+        origin,
+        dir,
+        best?.distance ?? wall?.timeOfImpact ?? HOVER_RANGE,
+        pose,
+      )
+      if (hit) best = { id, distance: hit.distance }
+    }
+    const name = best ? this.d.remotes.nameOf(best.id) : undefined
+    const color = best ? (this.d.remotes.colorOf(best.id) ?? 0) : 0
+    this.d.hud.setHoverName(name ?? null, PLAYER_COLORS[color % PLAYER_COLORS.length] ?? 0xffffff)
+  }
+
   /** Per-frame HUD and viewmodel upkeep. */
   update(
     dt: number,
@@ -265,6 +300,7 @@ export class ClientCombat {
         )
       this.wasAlive = state.alive
     }
+    this.updateHover(state.alive)
     this.d.effects.update(dt)
     this.d.debug.updateLocal(this.d.remotes.visiblePoses())
     this.d.debug.update(dt)

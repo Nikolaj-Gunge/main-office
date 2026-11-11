@@ -25,6 +25,7 @@ body {
   inset: 0;
   pointer-events: none;
   user-select: none;
+  font-family: "Pixelify Sans", ui-monospace, Menlo, monospace;
 }
 
 .hud-text {
@@ -41,94 +42,6 @@ body {
   position: absolute;
   top: 8px;
   left: 8px;
-}
-
-.click-to-play {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
-  font-family: ui-monospace, Menlo, monospace;
-  text-align: center;
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-.click-to-play[hidden] {
-  display: none;
-}
-
-.click-to-play h1 {
-  font-size: 48px;
-  letter-spacing: 4px;
-  text-shadow: 4px 4px 0 #b33831;
-}
-
-.click-to-play .hint {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.click-to-play .join {
-  display: flex;
-  gap: 8px;
-}
-
-.click-to-play input,
-.click-to-play button {
-  font:
-    16px ui-monospace,
-    Menlo,
-    monospace;
-  padding: 8px 12px;
-  border: 2px solid #fff;
-  background: rgb(0 0 0 / 0.6);
-  color: #fff;
-}
-
-.click-to-play input {
-  width: 220px;
-}
-
-.click-to-play input:disabled {
-  opacity: 0.6;
-}
-
-.click-to-play button {
-  cursor: pointer;
-  background: #b33831;
-}
-
-.click-to-play .loadout {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.click-to-play .loadout button {
-  background: rgb(0 0 0 / 0.6);
-  opacity: 0.6;
-}
-
-.click-to-play .loadout button.chosen {
-  background: #b33831;
-  opacity: 1;
-}
-
-.click-to-play .loadout-note {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.click-to-play .status {
-  min-height: 1.4em;
-  font-size: 13px;
-  color: #fbb954;
 }
 
 /* --- Combat HUD -------------------------------------------------------------------------- */
@@ -483,6 +396,313 @@ body {
   100% {
     opacity: 0;
   }
+}
+
+/* --- Menu (join + Esc) ---------------------------------------------------------------- */
+
+.menu {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 10 14 / 0.72);
+  pointer-events: auto;
+  user-select: none;
+  color: #f2f2f2;
+}
+
+.menu-card {
+  width: min(560px, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 24px 28px;
+  background: #1b1d2a;
+  border: 3px solid #f2f2f2;
+  box-shadow: 6px 6px 0 #000;
+}
+
+.menu h1 {
+  margin-bottom: 14px;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-align: center;
+  text-shadow: 4px 4px 0 #b33831;
+}
+
+.menu button,
+.menu input {
+  font: inherit;
+  color: inherit;
+}
+
+.menu button {
+  cursor: pointer;
+  border: 2px solid #f2f2f2;
+  background: #2b2e3f;
+  padding: 6px 12px;
+}
+
+.menu button:hover {
+  background: #3a3e55;
+}
+
+.menu-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.menu-tabs button {
+  flex: 1;
+  opacity: 0.6;
+}
+
+.menu-tabs button.active {
+  opacity: 1;
+  background: #b33831;
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-join {
+  display: flex;
+  gap: 8px;
+}
+
+.menu-join input {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 18px;
+  border: 2px solid #f2f2f2;
+  background: #0f1017;
+}
+
+.menu-join input:disabled {
+  opacity: 0.55;
+}
+
+.menu .menu-play {
+  padding: 10px 22px;
+  font-size: 18px;
+  font-weight: 700;
+  background: #b33831;
+}
+
+.menu-label {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.menu-loadout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.menu-weapon {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  opacity: 0.6;
+}
+
+.menu-weapon span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.menu-weapon.chosen {
+  opacity: 1;
+  border-color: #fbb954;
+  box-shadow: inset 0 0 0 2px #fbb954;
+}
+
+.menu-status {
+  min-height: 1.2em;
+  color: #fbb954;
+}
+
+.menu-tips {
+  list-style: none;
+  font-size: 13px;
+  opacity: 0.75;
+  line-height: 1.6;
+}
+
+.menu-tips li::before {
+  content: "▸ ";
+}
+
+.menu-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.menu-controls .menu-row,
+.menu-toggle {
+  grid-template-columns: 1fr auto;
+}
+
+.menu-row input[type="range"] {
+  accent-color: #b33831;
+}
+
+.menu-value {
+  text-align: right;
+  opacity: 0.8;
+}
+
+.menu-choice {
+  display: flex;
+  gap: 4px;
+  grid-column: span 2;
+}
+
+.menu-choice button {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.menu-choice button.chosen {
+  opacity: 1;
+  border-color: #fbb954;
+}
+
+.menu-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-key {
+  min-width: 130px;
+  font-size: 13px;
+}
+
+.menu-key.waiting {
+  background: #fbb954;
+  color: #1b1d2a;
+}
+
+.menu .menu-small {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+/* --- Scoreboard, minimap, banner, hover name --------------------------------------------- */
+
+.hud-scoreboard {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  translate: -50% 0;
+  min-width: 420px;
+  padding: 16px 20px;
+  background: rgb(15 16 23 / 0.88);
+  border: 2px solid #f2f2f2;
+  color: #f2f2f2;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.hud-scoreboard h2 {
+  font-size: 18px;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+}
+
+.hud-scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.hud-scoreboard th {
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: right;
+  padding: 2px 8px;
+}
+
+.hud-scoreboard td {
+  text-align: right;
+  padding: 3px 8px;
+}
+
+.hud-scoreboard .name {
+  text-align: left;
+}
+
+.hud-scoreboard td.name::before {
+  content: "■ ";
+  color: var(--color);
+}
+
+.hud-scoreboard tr.me {
+  background: rgb(251 185 84 / 0.18);
+}
+
+.hud-scoreboard .hint {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.hud-minimap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 192px;
+  height: 192px;
+  image-rendering: pixelated;
+  opacity: 0.9;
+}
+
+.hud-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  background: #b33831;
+  color: #fff;
+  font-size: 15px;
+  pointer-events: auto;
+}
+
+.hud-banner button {
+  font: inherit;
+  padding: 2px 10px;
+  border: 2px solid #fff;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.hud-hover-name {
+  position: absolute;
+  top: calc(50% + 22px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 #000;
 }
 
 /* Beats the display rules of the HUD classes above. */

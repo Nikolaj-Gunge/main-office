@@ -1,31 +1,15 @@
-import { Button, type PlayerInput } from '@office-fps/shared'
+import type { PlayerInput } from '@office-fps/shared'
+import { ACTIONS, type Keybinds } from './bindings.ts'
 import type { Keyboard } from './keyboard.ts'
 import type { MouseLook } from './mouse-look.ts'
 
-/** Key bindings by `KeyboardEvent.code`. Phase 7 makes these rebindable. */
-const BINDINGS: [Button, string[]][] = [
-  [Button.Forward, ['KeyW']],
-  [Button.Back, ['KeyS']],
-  [Button.Left, ['KeyA']],
-  [Button.Right, ['KeyD']],
-  [Button.Jump, ['Space']],
-  // Ctrl+W closes the tab in most browsers, so C is the safe default crouch.
-  [Button.Crouch, ['KeyC', 'ControlLeft']],
-  [Button.Sprint, ['ShiftLeft']],
-  [Button.Fire, ['Mouse0']],
-  [Button.Aim, ['Mouse2']],
-  [Button.Reload, ['KeyR']],
-  [Button.Slot1, ['Digit1']],
-  [Button.Slot2, ['Digit2']],
-  [Button.SwapWeapon, ['KeyQ', 'Wheel']],
-]
-
 /** Samples one tick of input. Taps shorter than a tick still register via `consumePressed`. */
-export function samplePlayerInput(keys: Keyboard, look: MouseLook): PlayerInput {
+export function samplePlayerInput(keys: Keyboard, look: MouseLook, binds: Keybinds): PlayerInput {
   let buttons = 0
-  for (const [button, codes] of BINDINGS) {
-    for (const code of codes) {
-      if (keys.isDown(code) || keys.consumePressed(code)) buttons |= button
+  for (const action of ACTIONS) {
+    if (!action.button) continue
+    for (const code of binds[action.id]) {
+      if (keys.isDown(code) || keys.consumePressed(code)) buttons |= action.button
     }
   }
   return { buttons, yaw: look.yaw, pitch: look.pitch }

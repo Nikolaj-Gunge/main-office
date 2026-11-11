@@ -36,11 +36,12 @@ everyone opens `http://<your-ip>:3000`.
 | Q / wheel      | Switch to the other weapon                                 |
 | Shift (scoped) | Hold breath — steadies the sniper scope for 3 s            |
 | M              | Mute / unmute (or open the game with `?mute=1`)            |
+| Tab (hold)     | Scoreboard                                                 |
+| Esc            | Menu: resume, loadout, settings, rebind controls           |
 | V              | Toggle noclip (Space/Ctrl up/down); leaving it drops you there |
 | F1             | Settings + live movement / camera-feel tuning              |
 | F3             | Debug text (fps, position, speed, ping, bandwidth, prediction corrections) |
 | F4             | Hitbox debug: green = where you see players, red = where the server checked your last shot |
-| Esc            | Release mouse                                              |
 
 F1 → "Network test" adds fake latency/jitter (presets up to 300 ms RTT) to try the netcode on
 localhost. `/healthz` on the server reports players and tick timings.

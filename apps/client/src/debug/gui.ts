@@ -1,4 +1,5 @@
 import GUI from 'lil-gui'
+import { withDefaults } from '../input/bindings.ts'
 import { PALETTES } from '../render/palettes.ts'
 import { COLOR_MODES, DEFAULT_SETTINGS, type Settings } from '../settings.ts'
 
@@ -30,7 +31,7 @@ export function createSettingsGui(settings: Settings, onChange: () => void): GUI
     .add(
       {
         reset: () => {
-          Object.assign(settings, DEFAULT_SETTINGS)
+          Object.assign(settings, DEFAULT_SETTINGS, { keybinds: withDefaults(undefined) })
           for (const c of gui.controllersRecursive()) c.updateDisplay()
           onChange()
         },
