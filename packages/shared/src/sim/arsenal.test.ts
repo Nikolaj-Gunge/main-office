@@ -69,7 +69,7 @@ describe('sniper', () => {
   test('quick-scope: perfect accuracy and no sway the moment the scope is fully in', () => {
     const w = drawn(WeaponId.Sniper)
     const ads = WEAPONS[WeaponId.Sniper].adsTime
-    expect(ads).toBeLessThanOrEqual(0.2)
+    expect(ads).toBeCloseTo(0.275, 3)
     let ticks = 0
     while (aimProgress(w) < 1) {
       stepWeapon(w, Button.Aim, 0, TICK_DT, STILL)

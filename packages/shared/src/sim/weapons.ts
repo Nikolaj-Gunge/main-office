@@ -174,7 +174,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     moveSpread: 6,
     airSpread: 10,
     sprintToFire: 0.3,
-    adsTime: 0.2,
+    adsTime: 0.275,
     aimZoom: 4,
     scoped: true,
     scopeSway: 0.45,
