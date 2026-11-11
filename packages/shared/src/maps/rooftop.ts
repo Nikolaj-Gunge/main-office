@@ -417,11 +417,12 @@ export function buildRooftop(): MapDef {
   // ─── Weapons lying around (you spawn with only the handgun) ────────────────────────────
   const RIFLE = 1
   const SNIPER = 2
+  const SHOTGUN = 3
   m.pickup(HX, 0, HZ, SNIPER) // helipad centre: the most exposed spot on the roof
   m.pickup(TX, DECK, dz0 + 0.8, RIFLE) // tank deck, behind the tank
-  m.pickup(-10.5, 0, -12.2, RIFLE) // SHOTGUN — inside the stairwell hut
-  m.pickup(-11.5, 0, TZ, RIFLE) // SHOTGUN — under the tank deck, among the legs
-  m.pickup(11, 0, 12.5, RIFLE) // SHOTGUN — south-east corner by the condenser
+  m.pickup(-10.5, 0, -12.2, SHOTGUN) // inside the stairwell hut
+  m.pickup(-11.5, 0, TZ, SHOTGUN) // under the tank deck, among the legs
+  m.pickup(11, 0, 12.5, SHOTGUN) // south-east corner by the condenser
   m.pickup(1.5, 0, -13.5, RIFLE) // north, between the AC units
   m.pickup(-8.3, 0, -1, RIFLE) // solar field, by the inverter cabinet
   return m.build()

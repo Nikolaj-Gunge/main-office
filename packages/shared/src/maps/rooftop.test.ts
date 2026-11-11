@@ -111,7 +111,7 @@ describe('rooftop map', () => {
     expect(pickups.length).toBeLessThanOrEqual(8)
     expect(pickups.filter((p) => p.weapon === 2).length).toBeLessThanOrEqual(1)
     for (const p of pickups) {
-      expect([1, 2]).toContain(p.weapon)
+      expect([1, 2, 3]).toContain(p.weapon)
       expect(Math.abs(p.pos[0])).toBeLessThan(HALF)
       expect(Math.abs(p.pos[2])).toBeLessThan(HALF)
     }
