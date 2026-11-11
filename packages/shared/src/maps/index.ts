@@ -1,5 +1,7 @@
 import { buildGym } from './gym.ts'
+import { buildMeetingRoom } from './meeting-room.ts'
 import { buildOffice } from './office.ts'
+import { buildRooftop } from './rooftop.ts'
 import type { MapDef } from './types.ts'
 
 export * from './builder.ts'
@@ -9,6 +11,8 @@ export * from './types.ts'
 export const MAPS: Record<string, () => MapDef> = {
   gym: buildGym,
   office: buildOffice,
+  meetingroom: buildMeetingRoom,
+  rooftop: buildRooftop,
 }
 
 export const DEFAULT_MAP_ID = 'office'

@@ -67,6 +67,12 @@ export class MapBuilder {
     return this
   }
 
+  /** A raw box (centre + size), e.g. a rotated piece of decoration. */
+  box(box: MapBox) {
+    this.boxes.push(box)
+    return this
+  }
+
   /**
    * Ramp rising toward -Z. Its top surface starts at floor height `y` at z = `zStart` and climbs
    * `run` meters (horizontal) at `angleDeg`. Returns the height reached.
