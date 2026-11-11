@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "bun --watch src/main.ts",
     "start": "NODE_ENV=production bun src/main.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "bots": "bun src/tools/bots.ts"
   },
   "dependencies": {
     "@office-fps/shared": "workspace:*"

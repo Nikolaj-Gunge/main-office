@@ -16,9 +16,11 @@ bun install
 bun dev          # client on http://localhost:5173, server on :3000 (Vite proxies /ws)
 ```
 
-Open http://localhost:5173 and click to play.
+Open http://localhost:5173, enter a name and click Play. Open a second tab to see yourself from
+the outside. To play with colleagues on the office network: `bun run build && bun start`, then
+everyone opens `http://<your-ip>:3000`.
 
-## Controls (gym map, offline movement)
+## Controls (gym map)
 
 | Key            | Action                                                     |
 | -------------- | ---------------------------------------------------------- |
@@ -29,8 +31,11 @@ Open http://localhost:5173 and click to play.
 | Shift          | Sprint (forward only)                                      |
 | V              | Toggle noclip (Space/Ctrl up/down); leaving it drops you there |
 | F1             | Settings + live movement / camera-feel tuning              |
-| F3             | Debug text (fps, position, speed, grounded, ping)          |
+| F3             | Debug text (fps, position, speed, ping, bandwidth, prediction corrections) |
 | Esc            | Release mouse                                              |
+
+F1 → "Network test" adds fake latency/jitter (presets up to 300 ms RTT) to try the netcode on
+localhost. `/healthz` on the server reports players and tick timings.
 
 Look settings are saved in `localStorage`. Movement and camera-feel tuning are not (they must
 match the server): use "copy values as JSON" in F1 and paste into the shared defaults. In dev builds, `window.__game` exposes the camera,
@@ -46,6 +51,7 @@ settings and renderer for console debugging.
 | `bun run lint`      | Biome lint + format check (`bun run format` fixes)  |
 | `bun run build`     | Production client build → `apps/client/dist`        |
 | `bun start`         | Production server: serves `dist` + WebSocket on one port (`PORT`, default 3000) |
+| `bun run bots`      | Headless bots for load tests (`--count 20 --url ws://… --seconds 60`) |
 
 ## Layout
 

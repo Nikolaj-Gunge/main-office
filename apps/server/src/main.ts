@@ -8,6 +8,7 @@ import {
   WS_PATH,
 } from '@office-fps/shared'
 import { createConnections, type SocketData } from './connections.ts'
+import { Game } from './game.ts'
 import { GameLoop } from './loop.ts'
 import { serveStatic } from './static.ts'
 
@@ -16,17 +17,14 @@ const clientDist = process.env.CLIENT_DIST ?? new URL('../../client/dist', impor
 
 await initPhysics()
 const map = loadMap(process.env.MAP ?? DEFAULT_MAP_ID)
-// Phase 3: players get a PlayerBody in this world and are simulated with stepPlayer.
 const physics = createPhysicsWorld(map)
+const game = new Game(map, physics)
 console.log(
   `[server] map "${map.name}": ${physics.mapColliders.length} colliders, ${map.spawns.length} spawns`,
 )
 
-const loop = new GameLoop(TICK_RATE, () => {
-  // Phase 3: step the world and broadcast snapshots here.
-})
-
-const connections = createConnections(() => loop.tick)
+const loop = new GameLoop(TICK_RATE, () => game.step())
+const connections = createConnections(game, () => loop.tickMs)
 
 const server = Bun.serve<SocketData>({
   port,
@@ -34,11 +32,19 @@ const server = Bun.serve<SocketData>({
     const url = new URL(req.url)
 
     if (url.pathname === '/healthz') {
-      return Response.json({ ok: true, tick: loop.tick, players: connections.count() })
+      return Response.json({
+        ok: true,
+        tick: game.tick,
+        players: game.players.size,
+        connections: connections.count(),
+        tickMs: Number(loop.tickMs.toFixed(3)),
+        simMs: Number(game.timing.simMs.toFixed(3)),
+        snapshotMs: Number(game.timing.snapshotMs.toFixed(3)),
+      })
     }
 
     if (url.pathname === WS_PATH) {
-      const upgraded = server.upgrade(req, { data: { playerId: 0, name: '' } })
+      const upgraded = server.upgrade(req, { data: { playerId: 0 } })
       return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 400 })
     }
 
@@ -51,6 +57,14 @@ loop.start()
 console.log(
   `[server] listening on http://localhost:${server.port} (ws ${WS_PATH}, ${TICK_RATE} Hz)`,
 )
+
+// Periodic health line while people are playing.
+setInterval(() => {
+  if (game.players.size === 0) return
+  console.log(
+    `[game] ${game.players.size} players · tick avg ${loop.tickMs.toFixed(2)} ms · max ${loop.takeMaxTickMs().toFixed(2)} ms`,
+  )
+}, 10_000)
 
 function shutdown() {
   console.log('[server] shutting down')

@@ -1,6 +1,8 @@
 import {
+  ClientMsg,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
+  type InputCommand,
   initPhysics,
   loadMap,
   ServerMsg,
@@ -9,9 +11,11 @@ import {
 import Stats from 'stats-gl'
 import * as THREE from 'three'
 import { createSettingsGui } from './debug/gui.ts'
+import { addNetworkFolder } from './debug/network.ts'
 import { addTuningFolders } from './debug/tuning.ts'
 import { FreeFly } from './game/free-fly.ts'
 import { LocalPlayer } from './game/local-player.ts'
+import { RemotePlayers } from './game/remote-players.ts'
 import { Overlay } from './hud/overlay.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
@@ -61,15 +65,57 @@ function updateProjection() {
   camera.updateProjectionMatrix()
 }
 
-// --- Player & input -------------------------------------------------------------------
+// --- Players & input ------------------------------------------------------------------
 const keys = new Keyboard()
 const look = new MouseLook(canvas)
 const player = new LocalPlayer(physics, map.spawns[0])
+const remotes = new RemotePlayers(scene)
 look.yaw = player.state.yaw
 const fly = new FreeFly(camera, keys, look)
 let noclip = false
 
-overlay.onClickToPlay(() => void look.lock())
+// --- Networking -----------------------------------------------------------------------
+/** True once the server has welcomed us: from then on the server owns our position. */
+let joined = false
+
+const net = new Connection({
+  onState: (state, reason) => {
+    if (state === 'closed') {
+      joined = false
+      remotes.clear()
+      overlay.setJoined(false)
+      overlay.setStatus(reason ? `Disconnected: ${reason}` : 'Connection lost — reconnecting…')
+    }
+    if (state === 'connecting') overlay.setStatus('Connecting…')
+  },
+  onMessage: (msg) => {
+    switch (msg.type) {
+      case ServerMsg.Welcome:
+        joined = true
+        noclip = false
+        remotes.clear()
+        player.resetPrediction()
+        overlay.setJoined(true)
+        overlay.setStatus('')
+        break
+      case ServerMsg.PlayerJoined:
+        if (msg.id !== net.playerId) remotes.add(msg.id, msg.name, msg.color)
+        break
+      case ServerMsg.PlayerLeft:
+        remotes.remove(msg.id)
+        break
+      case ServerMsg.Snapshot:
+        if (msg.self) player.onServerState(msg.self, msg.ackSeq)
+        remotes.onSnapshot(msg.tick, msg.players, performance.now())
+        break
+    }
+  },
+})
+
+overlay.onPlay((name) => {
+  if (net.state === 'idle') net.connect(name)
+  void look.lock()
+})
 look.onLockChange = (locked) => overlay.setLocked(locked)
 
 // --- Settings -------------------------------------------------------------------------
@@ -84,6 +130,7 @@ function applySettings() {
 
 const gui = createSettingsGui(settings, applySettings)
 addTuningFolders(gui, player)
+addNetworkFolder(gui, net, remotes)
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return
@@ -102,8 +149,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyV') {
     noclip = !noclip
-    if (!noclip) {
-      // Drop the player where the noclip camera is.
+    // Offline, leaving noclip drops you where the camera is. Online the server owns your
+    // position, so the camera just returns to your player.
+    if (!noclip && !joined) {
       const eye = player.movement.standEyeHeight
       player.teleport(camera.position.x, camera.position.y - eye, camera.position.z)
     }
@@ -117,24 +165,13 @@ window.addEventListener('resize', () => {
 pixels.resize()
 applySettings()
 
-// --- Networking -----------------------------------------------------------------------
-let netState = 'connecting'
-const net = new Connection(localStorage.getItem('playerName') ?? 'Player', {
-  onState: (state) => {
-    netState = state
-  },
-  onMessage: (msg) => {
-    if (msg.type === ServerMsg.Welcome) console.log(`[net] joined as #${msg.playerId}`)
-  },
-})
-net.connect()
-
 // --- Loop -----------------------------------------------------------------------------
 /** Max ticks to simulate per frame; beyond this we drop time instead of spiralling. */
 const MAX_TICKS_PER_FRAME = 8
 let last = performance.now()
 let accumulator = 0
 let fpsSmoothed = 60
+const outgoing: InputCommand[] = []
 
 pixels.renderer.setAnimationLoop(() => {
   const now = performance.now()
@@ -142,19 +179,27 @@ pixels.renderer.setAnimationLoop(() => {
   last = now
   fpsSmoothed += (1 / Math.max(dt, 1e-4) - fpsSmoothed) * 0.05
 
-  if (noclip) {
-    fly.update(dt)
-  } else {
-    accumulator += dt
-    let ticks = 0
-    while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
-      player.tick(samplePlayerInput(keys, look))
-      accumulator -= TICK_DT
-      ticks++
-    }
-    if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0
-    player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+  // The player keeps simulating in noclip while online (standing still), so the server and
+  // prediction stay in step.
+  accumulator += dt
+  let ticks = 0
+  while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
+    const input = noclip
+      ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
+      : samplePlayerInput(keys, look)
+    const command = player.tick(input)
+    if (joined) outgoing.push(command)
+    accumulator -= TICK_DT
+    ticks++
   }
+  if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0
+  if (outgoing.length > 0) {
+    net.send({ type: ClientMsg.Input, commands: outgoing.splice(0, outgoing.length) })
+  }
+
+  if (noclip) fly.update(dt)
+  else player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+  remotes.update(now)
 
   sky.position.copy(camera.position)
   pixels.render(scene, camera)
@@ -163,6 +208,7 @@ pixels.renderer.setAnimationLoop(() => {
   if (settings.showDebug) {
     const s = player.state
     const deg = 180 / Math.PI
+    const kb = (b: number) => (b / 1024).toFixed(1)
     overlay.debug.textContent = [
       `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale}`,
       noclip
@@ -171,9 +217,14 @@ pixels.renderer.setAnimationLoop(() => {
       `speed ${Math.hypot(s.vel.x, s.vel.z).toFixed(2)} m/s · vy ${s.vel.y.toFixed(2)}`,
       `${s.grounded ? 'grounded' : 'airborne'}${s.crouched ? ' · crouched' : ''}`,
       `yaw ${(look.yaw * deg).toFixed(1)}° pitch ${(look.pitch * deg).toFixed(1)}°`,
-      netState === 'open'
-        ? `net #${net.playerId} · ping ${net.rtt.toFixed(1)} ms`
-        : `net ${netState}…`,
+      joined
+        ? [
+            `net #${net.playerId} · ping ${net.rtt.toFixed(0)} ms · ${remotes.count} others`,
+            `in ${kb(net.bytesInPerSec)} kB/s · out ${kb(net.bytesOutPerSec)} kB/s · server tick ${net.serverTickMs.toFixed(2)} ms`,
+            `pending ${player.predictor.pendingCount} · last correction ${(player.lastCorrection * 100).toFixed(1)} cm`,
+            net.sim.active ? `NET SIM +${net.sim.latencyMs}±${net.sim.jitterMs} ms each way` : '',
+          ].join('\n')
+        : `offline (${net.state})`,
     ].join('\n')
   }
 })
@@ -181,6 +232,6 @@ pixels.renderer.setAnimationLoop(() => {
 // Dev-only handle for debugging from the console and automated visual checks.
 if (import.meta.env.DEV) {
   Object.assign(window, {
-    __game: { camera, look, settings, applySettings, pixels, scene, player, keys },
+    __game: { camera, look, settings, applySettings, pixels, scene, player, keys, net, remotes },
   })
 }

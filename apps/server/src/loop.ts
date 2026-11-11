@@ -6,17 +6,19 @@ const MAX_CATCH_UP_TICKS = 5
  * jitters, so we wake often and run as many whole ticks as real time has accumulated.
  */
 export class GameLoop {
-  tick = 0
+  /** Smoothed time spent inside one tick (ms). */
+  tickMs = 0
+  /** Worst tick time since the last `takeMaxTickMs()`. */
+  private maxTickMs = 0
   private readonly stepMs: number
+  private readonly onTick: () => void
   private accumulator = 0
   private last = 0
   private timer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(
-    tickRate: number,
-    private readonly onTick: (tick: number) => void,
-  ) {
+  constructor(tickRate: number, onTick: () => void) {
     this.stepMs = 1000 / tickRate
+    this.onTick = onTick
   }
 
   start(): void {
@@ -27,6 +29,12 @@ export class GameLoop {
   stop(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
+  }
+
+  takeMaxTickMs(): number {
+    const max = this.maxTickMs
+    this.maxTickMs = 0
+    return max
   }
 
   private schedule(): void {
@@ -40,8 +48,11 @@ export class GameLoop {
 
     let steps = 0
     while (this.accumulator >= this.stepMs && steps < MAX_CATCH_UP_TICKS) {
-      this.tick++
-      this.onTick(this.tick)
+      const start = performance.now()
+      this.onTick()
+      const ms = performance.now() - start
+      this.tickMs += (ms - this.tickMs) * 0.05
+      this.maxTickMs = Math.max(this.maxTickMs, ms)
       this.accumulator -= this.stepMs
       steps++
     }

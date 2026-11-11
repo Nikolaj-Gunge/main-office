@@ -12,4 +12,16 @@ export const DEFAULT_SERVER_PORT = 3000
 export const WS_PATH = '/ws'
 
 /** Bumped whenever the binary protocol changes incompatibly. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
+
+/** Hard cap on simultaneous players (ids and counts are encoded in a u8/u16). */
+export const MAX_PLAYERS = 32
+
+/** Max player name length (characters). */
+export const MAX_NAME_LENGTH = 16
+
+/** Player colors by index (server assigns the index). Readable against the gym's dev textures. */
+export const PLAYER_COLORS = [
+  0xe83b3b, 0x4d9be6, 0x1ebc73, 0xf9c22b, 0xa884f3, 0xfb6b1d, 0x30e1b9, 0xf04f78, 0x8fd3ff,
+  0x91db69, 0xfbb954, 0xeaaded,
+] as const

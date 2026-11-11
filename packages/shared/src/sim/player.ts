@@ -1,5 +1,10 @@
 import type { MapSpawn } from '../maps/types.ts'
-import { type PhysicsWorld, RAPIER } from '../physics/world.ts'
+import {
+  type PhysicsWorld,
+  PLAYER_COLLISION_GROUPS,
+  PLAYER_QUERY_GROUPS,
+  RAPIER,
+} from '../physics/world.ts'
 import { Button, hasButton, type PlayerInput } from './input.ts'
 import type { MovementConfig } from './movement-config.ts'
 
@@ -80,7 +85,7 @@ export class PlayerBody {
       RAPIER.ColliderDesc.capsule(
         capsuleHalfHeight(config.standHeight, config.radius),
         config.radius,
-      ),
+      ).setCollisionGroups(PLAYER_COLLISION_GROUPS),
     )
     this.controller = physics.world.createCharacterController(SKIN)
     this.controller.setUp({ x: 0, y: 1, z: 0 })
@@ -93,13 +98,19 @@ export class PlayerBody {
   configure(config: MovementConfig): void {
     this.config = config
     this.controller.setMinSlopeSlideAngle((config.maxSlopeDeg * Math.PI) / 180)
-    this.setHeight(this.height)
+    this.applyShape()
   }
 
+  /** Switches the capsule to `height` (no-op if already there). */
   setHeight(height: number): void {
+    if (height === this.height) return
     this.height = height
+    this.applyShape()
+  }
+
+  private applyShape(): void {
     this.collider.setShape(
-      new RAPIER.Capsule(capsuleHalfHeight(height, this.config.radius), this.config.radius),
+      new RAPIER.Capsule(capsuleHalfHeight(this.height, this.config.radius), this.config.radius),
     )
   }
 
@@ -114,7 +125,7 @@ export class PlayerBody {
         IDENTITY,
         shape,
         undefined,
-        undefined,
+        PLAYER_QUERY_GROUPS,
         this.collider,
       ) === null
     )
@@ -185,7 +196,7 @@ export class PlayerBody {
       up.moved.y + 0.1,
       true,
       undefined,
-      undefined,
+      PLAYER_QUERY_GROUPS,
       this.collider,
     )
     if (!hit) return null
@@ -217,7 +228,7 @@ export class PlayerBody {
     c.setSlideEnabled(mode.slide)
     c.setMaxSlopeClimbAngle(mode.climb ? (this.config.maxSlopeDeg * Math.PI) / 180 : 0)
     this.collider.setTranslation({ x: feet.x, y: feet.y + SKIN + this.height / 2, z: feet.z })
-    c.computeColliderMovement(this.collider, delta)
+    c.computeColliderMovement(this.collider, delta, undefined, PLAYER_QUERY_GROUPS)
     const moved = c.computedMovement()
     const normals: MutVec3[] = []
     for (let i = 0; i < c.numComputedCollisions(); i++) {
@@ -312,6 +323,9 @@ export function stepPlayer(
   state.yaw = input.yaw
   state.pitch = input.pitch
   const events: StepEvents = { jumped: false, landed: false, landingSpeed: 0 }
+
+  // The state may have been reset (reconciliation, respawn): make the capsule match it.
+  body.setHeight(state.crouched ? c.crouchHeight : c.standHeight)
 
   // --- Crouch: shrink instantly, stand up only when there's head room ----------------------
   const wantCrouch = hasButton(buttons, Button.Crouch)

@@ -11,6 +11,18 @@ export function initPhysics(): Promise<void> {
   return ready
 }
 
+/**
+ * Rapier interaction groups: high 16 bits = membership, low 16 bits = what it interacts with.
+ * Players are only blocked by the map, never by each other: player-vs-player blocking would
+ * mispredict constantly (you collide with where *you* see them, the server with where they are).
+ */
+export const GROUP_MAP = 0x0001
+export const GROUP_PLAYER = 0x0002
+export const MAP_COLLISION_GROUPS = (GROUP_MAP << 16) | 0xffff
+export const PLAYER_COLLISION_GROUPS = (GROUP_PLAYER << 16) | GROUP_MAP
+/** Scene-query filter for player movement: hits the map only. */
+export const PLAYER_QUERY_GROUPS = (GROUP_PLAYER << 16) | GROUP_MAP
+
 export interface PhysicsWorld {
   world: RAPIER.World
   /** Static map colliders, in map box order. */
@@ -25,7 +37,9 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
   const mapColliders = map.boxes.map((box) => {
     const [hx, hy, hz] = [box.size[0] / 2, box.size[1] / 2, box.size[2] / 2]
-    const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(...box.center)
+    const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+      .setTranslation(...box.center)
+      .setCollisionGroups(MAP_COLLISION_GROUPS)
     if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
     return world.createCollider(desc)
   })

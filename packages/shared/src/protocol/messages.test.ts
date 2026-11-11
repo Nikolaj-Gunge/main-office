@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { createPlayerState } from '../sim/player.ts'
 import {
   type ClientMessage,
   ClientMsg,
@@ -9,11 +10,19 @@ import {
   type ServerMessage,
   ServerMsg,
 } from './messages.ts'
+import { quantizeInput } from './quantize.ts'
 
 describe('client messages', () => {
   const cases: ClientMessage[] = [
-    { type: ClientMsg.Hello, protocolVersion: 1, name: 'Nikolaj' },
+    { type: ClientMsg.Hello, protocolVersion: 2, name: 'Nikolaj' },
     { type: ClientMsg.Ping, clientTime: 12345.678 },
+    {
+      type: ClientMsg.Input,
+      commands: [
+        { seq: 1, ...quantizeInput({ buttons: 0b1010001, yaw: 1.234, pitch: -0.5 }) },
+        { seq: 2, ...quantizeInput({ buttons: 0, yaw: -7.5, pitch: 1.5 }) },
+      ],
+    },
   ]
   for (const msg of cases) {
     test(`round-trips 0x${msg.type.toString(16)}`, () => {
@@ -24,16 +33,73 @@ describe('client messages', () => {
   test('rejects unknown ids', () => {
     expect(() => decodeClientMessage(new Uint8Array([0x7f]))).toThrow()
   })
+
+  test('rejects truncated messages', () => {
+    const bytes = encodeClientMessage({ type: ClientMsg.Ping, clientTime: 1 })
+    expect(() => decodeClientMessage(bytes.subarray(0, 4))).toThrow()
+  })
 })
 
 describe('server messages', () => {
+  const self = createPlayerState({ pos: [1.5, 2.25, -3.125], yaw: 0.7 })
+  self.vel = { x: 0.1, y: -2, z: 5.2 }
+  self.crouched = true
+  self.crouchAmount = 0.375
+  self.prevButtons = 0x41
+
   const cases: ServerMessage[] = [
-    { type: ServerMsg.Welcome, playerId: 7, serverTick: 99999, tickRate: 60 },
-    { type: ServerMsg.Pong, clientTime: 1.25, serverTime: 1700000000000.5 },
+    { type: ServerMsg.Welcome, playerId: 7, serverTick: 99999, tickRate: 60, snapshotRate: 30 },
+    { type: ServerMsg.Pong, clientTime: 1.25, serverTime: 1700000000000.5, tickMs: 0.5 },
+    { type: ServerMsg.PlayerJoined, id: 3, color: 5, name: 'Bo' },
+    { type: ServerMsg.PlayerLeft, id: 3 },
+    { type: ServerMsg.Snapshot, tick: 10, ackSeq: 0, self: null, players: [] },
   ]
   for (const msg of cases) {
     test(`round-trips 0x${msg.type.toString(16)}`, () => {
       expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg)
     })
   }
+
+  test('snapshot keeps own state exact and others close', () => {
+    const msg: ServerMessage = {
+      type: ServerMsg.Snapshot,
+      tick: 1234,
+      ackSeq: 999,
+      self,
+      players: [
+        { id: 2, x: 10.1, y: 0, z: -20.3, yaw: 1, pitch: 0.2, crouch: 0.5, grounded: true },
+      ],
+    }
+    const out = decodeServerMessage(encodeServerMessage(msg))
+    if (out.type !== ServerMsg.Snapshot) throw new Error('wrong type')
+    expect(out.self).toEqual(self)
+    const p = out.players[0]
+    expect(p?.x).toBeCloseTo(10.1, 4)
+    expect(p?.z).toBeCloseTo(-20.3, 4)
+    expect(p?.yaw).toBeCloseTo(1, 3)
+    expect(p?.pitch).toBeCloseTo(0.2, 3)
+    expect(p?.crouch).toBeCloseTo(0.5, 2)
+    expect(p?.grounded).toBe(true)
+  })
+})
+
+describe('quantizeInput', () => {
+  test('is idempotent and survives the wire bit-exactly', () => {
+    const q = quantizeInput({ buttons: 3, yaw: 123.456, pitch: -0.987 })
+    expect(quantizeInput(q)).toEqual(q)
+    const wire = decodeClientMessage(
+      encodeClientMessage({ type: ClientMsg.Input, commands: [{ seq: 1, ...q }] }),
+    )
+    if (wire.type !== ClientMsg.Input) throw new Error('wrong type')
+    expect(wire.commands[0]).toEqual({ seq: 1, ...q })
+  })
+
+  test('keeps the movement direction (sin/cos of yaw) within 0.01°', () => {
+    for (const yaw of [-10, -1, 0, 0.5, 3, 100]) {
+      const q = quantizeInput({ buttons: 0, yaw, pitch: 0 }).yaw
+      expect(Math.abs(Math.atan2(Math.sin(q - yaw), Math.cos(q - yaw)))).toBeLessThan(
+        (0.01 * Math.PI) / 180,
+      )
+    }
+  })
 })

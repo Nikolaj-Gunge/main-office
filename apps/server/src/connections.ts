@@ -4,26 +4,22 @@ import {
   encodeServerMessage,
   PROTOCOL_VERSION,
   ServerMsg,
-  TICK_RATE,
 } from '@office-fps/shared'
 import type { ServerWebSocket, WebSocketHandler } from 'bun'
+import type { Game } from './game.ts'
 
 export interface SocketData {
+  /** 0 until the Hello handshake succeeds. */
   playerId: number
-  name: string
 }
 
-const MAX_NAME_LENGTH = 16
-
-export function createConnections(getTick: () => number) {
-  let nextPlayerId = 1
+/** Adapts Bun WebSockets to the transport-agnostic `Game`. */
+export function createConnections(game: Game, getTickMs: () => number) {
   const sockets = new Set<ServerWebSocket<SocketData>>()
 
   const handlers: WebSocketHandler<SocketData> = {
     open(ws) {
-      ws.data.playerId = nextPlayerId++
       sockets.add(ws)
-      console.log(`[ws] #${ws.data.playerId} connected (${sockets.size} online)`)
     },
 
     message(ws, raw) {
@@ -33,34 +29,37 @@ export function createConnections(getTick: () => number) {
       try {
         msg = decodeClientMessage(raw)
       } catch (err) {
-        console.warn(`[ws] #${ws.data.playerId} bad message:`, (err as Error).message)
+        console.warn(`[ws] bad message from #${ws.data.playerId}:`, (err as Error).message)
         return
       }
 
       switch (msg.type) {
         case ClientMsg.Hello: {
+          if (ws.data.playerId) return
           if (msg.protocolVersion !== PROTOCOL_VERSION) {
             ws.close(4000, 'Protocol version mismatch — reload the page')
             return
           }
-          ws.data.name = msg.name.trim().slice(0, MAX_NAME_LENGTH) || `Player ${ws.data.playerId}`
-          console.log(`[ws] #${ws.data.playerId} is "${ws.data.name}"`)
-          ws.send(
-            encodeServerMessage({
-              type: ServerMsg.Welcome,
-              playerId: ws.data.playerId,
-              serverTick: getTick(),
-              tickRate: TICK_RATE,
-            }),
-          )
+          const id = game.join(msg.name, { send: (bytes) => ws.send(bytes) })
+          if (id === null) {
+            ws.close(4001, 'Server full')
+            return
+          }
+          ws.data.playerId = id
+          const name = game.players.get(id)?.name
+          console.log(`[ws] #${id} "${name}" joined (${game.players.size} online)`)
           break
         }
+        case ClientMsg.Input:
+          if (ws.data.playerId) game.handleInput(ws.data.playerId, msg.commands)
+          break
         case ClientMsg.Ping:
           ws.send(
             encodeServerMessage({
               type: ServerMsg.Pong,
               clientTime: msg.clientTime,
               serverTime: Date.now(),
+              tickMs: getTickMs(),
             }),
           )
           break
@@ -69,7 +68,10 @@ export function createConnections(getTick: () => number) {
 
     close(ws, code) {
       sockets.delete(ws)
-      console.log(`[ws] #${ws.data.playerId} disconnected (${code}, ${sockets.size} online)`)
+      const id = ws.data.playerId
+      if (!id) return
+      game.leave(id)
+      console.log(`[ws] #${id} left (${code}, ${game.players.size} online)`)
     },
   }
 
