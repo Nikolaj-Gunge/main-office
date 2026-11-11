@@ -354,7 +354,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - **Done when:** running around the gym feels good and every metric matches the table.
 - **Implementation notes:** Rapier's built-in autostep/snap proved unreliable with velocity clipping, so `PlayerBody` does its own Quake-style step-up (probe up → across → center raycast must find a walkable surface ≤ step height) and ground snap. Combined moves are split into horizontal + vertical sweeps (Rapier occasionally stalls on diagonal moves with a downward component). Walls clip velocity with their horizontal normal only, so ledge edges can't add upward speed. 25 movement tests cover every metric, plus determinism and a randomized fuzz on the gym.
 
-### Phase 3 — Networking backbone
+### Phase 3 — Networking backbone ✅
 
 - Binary codec + protocol in shared (round-trip tests).
 - Server: accumulator tick loop, join/leave, input queues, shared `stepPlayer`, snapshots @ 30 Hz.
