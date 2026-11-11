@@ -44,8 +44,11 @@ export interface PlayerState {
   alive: boolean
   /** The weapon in your hands. */
   weapon: WeaponState
-  /** The other weapon (primary ↔ handgun), keeping its own ammo and timers. */
-  holstered: WeaponState
+  /**
+   * The other weapon, keeping its own ammo and timers — or null when the primary slot is empty
+   * (you spawn with only the handgun and pick rifles/snipers up from the floor).
+   */
+  holstered: WeaponState | null
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -73,7 +76,7 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 export function createPlayerState(
   spawn?: MapSpawn,
   weapon: WeaponState = createWeaponState(WeaponId.Rifle),
-  holstered: WeaponState = createWeaponState(WeaponId.Handgun),
+  holstered: WeaponState | null = createWeaponState(WeaponId.Handgun),
 ): PlayerState {
   return {
     pos: { x: spawn?.pos[0] ?? 0, y: spawn?.pos[1] ?? 0, z: spawn?.pos[2] ?? 0 },
@@ -98,7 +101,7 @@ export function clonePlayerState(s: PlayerState): PlayerState {
     pos: { ...s.pos },
     vel: { ...s.vel },
     weapon: { ...s.weapon },
-    holstered: { ...s.holstered },
+    holstered: s.holstered ? { ...s.holstered } : null,
   }
 }
 
@@ -507,7 +510,7 @@ export function stepPlayer(
     hasButton(pressed, Button.SwapWeapon) ||
     (hasButton(pressed, Button.Slot1) && !isPrimary) ||
     (hasButton(pressed, Button.Slot2) && isPrimary)
-  if (wantSwitch) {
+  if (wantSwitch && state.holstered) {
     ;[state.weapon, state.holstered] = switchWeapons(state.weapon, state.holstered)
     events.switched = true
   }

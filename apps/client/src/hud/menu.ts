@@ -1,9 +1,8 @@
-import { isPrimary, MAX_NAME_LENGTH, type PrimaryWeapon, WeaponId } from '@office-fps/shared'
+import { MAX_NAME_LENGTH } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
 import type { Settings } from '../settings.ts'
 
 const NAME_KEY = 'office-fps:name'
-const PRIMARY_KEY = 'office-fps:primary'
 
 /** Pixel-size presets: lower = chunkier pixels. */
 const PIXEL_PRESETS: [string, number][] = [
@@ -31,25 +30,21 @@ function h<K extends keyof HTMLElementTagNameMap>(
 
 /**
  * The game's front door and pause menu (Esc). One screen with three tabs:
- *   PLAY — name, primary weapon, Play/Resume and how to play
+ *   PLAY — name, Play/Resume and how to play
  *   SETTINGS — mouse, view, pixel size, sound (applied and saved instantly)
  *   CONTROLS — every action, click to rebind
  * The game keeps running behind it — it's multiplayer, there is no real pause.
  */
 export class Menu {
-  /** Chosen primary weapon (remembered between visits). */
-  primary: PrimaryWeapon
   private readonly root: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly playButton: HTMLButtonElement
   private readonly status: HTMLParagraphElement
-  private readonly loadoutButtons: HTMLButtonElement[] = []
   private readonly tabs = new Map<Tab, { button: HTMLButtonElement; panel: HTMLElement }>()
   private readonly controlsList: HTMLDivElement
   private readonly settings: Settings
   private readonly onSettingsChange: () => void
   private onPlayHandler: ((name: string) => void) | null = null
-  private onLoadoutHandler: ((primary: PrimaryWeapon) => void) | null = null
   /** Action waiting for a key press (rebinding), if any. */
   private capturing: ActionId | null = null
   private joined = false
@@ -57,8 +52,6 @@ export class Menu {
   constructor(parent: HTMLElement, settings: Settings, onSettingsChange: () => void) {
     this.settings = settings
     this.onSettingsChange = onSettingsChange
-    const saved = Number(localStorage.getItem(PRIMARY_KEY))
-    this.primary = isPrimary(saved) ? saved : WeaponId.Rifle
 
     // --- Play tab ---
     this.nameInput = h('input', {
@@ -75,35 +68,21 @@ export class Menu {
       this.play()
     })
 
-    const loadout = h('div', { class: 'menu-loadout' })
-    for (const [id, title, blurb] of [
-      [WeaponId.Rifle, 'RIFLE', 'Full-auto. Mid range. Learn the spray.'],
-      [WeaponId.Sniper, 'SNIPER', 'One shot to the body. Scope in, hold Shift to steady.'],
-    ] as const) {
-      const button = h(
-        'button',
-        { type: 'button', class: 'menu-weapon' },
-        h('strong', {}, title),
-        h('span', {}, blurb),
-      )
-      button.addEventListener('click', () => this.setPrimary(id))
-      button.dataset.weapon = String(id)
-      this.loadoutButtons.push(button)
-      loadout.append(button)
-    }
-
     this.status = h('p', { class: 'menu-status' })
     const play = h(
       'section',
       { class: 'menu-panel' },
       form,
-      h('p', { class: 'menu-label' }, 'Primary weapon (+ handgun)'),
-      loadout,
       this.status,
       h(
         'ul',
         { class: 'menu-tips' },
         h('li', {}, 'Free-for-all: everyone against everyone. The match never ends.'),
+        h(
+          'li',
+          {},
+          'You spawn with a handgun. Rifles and snipers lie around the office — walk over one to grab it, E to swap.',
+        ),
         h('li', {}, 'Headshots kill instantly with every weapon.'),
         h('li', {}, 'Hold Tab for scores · Esc for this menu · M mutes'),
       ),
@@ -175,7 +154,6 @@ export class Menu {
     )
     parent.append(this.root)
     this.showTab('play')
-    this.setPrimary(this.primary)
 
     // Rebinding listens on the whole window while waiting for a key.
     window.addEventListener('keydown', (e) => this.captureKey(e, e.code), true)
@@ -188,11 +166,6 @@ export class Menu {
 
   onPlay(handler: (name: string) => void): void {
     this.onPlayHandler = handler
-  }
-
-  /** Called when the primary weapon choice changes. */
-  onLoadout(handler: (primary: PrimaryWeapon) => void): void {
-    this.onLoadoutHandler = handler
   }
 
   get visible(): boolean {
@@ -213,16 +186,6 @@ export class Menu {
 
   setStatus(text: string): void {
     this.status.textContent = text
-  }
-
-  setPrimary(id: number): void {
-    if (!isPrimary(id)) return
-    this.primary = id
-    localStorage.setItem(PRIMARY_KEY, String(id))
-    for (const b of this.loadoutButtons) {
-      b.classList.toggle('chosen', Number(b.dataset.weapon) === id)
-    }
-    this.onLoadoutHandler?.(id)
   }
 
   /** Re-renders values (e.g. after F1 or a hotkey changed a setting). */

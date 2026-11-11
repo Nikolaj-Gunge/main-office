@@ -1,6 +1,7 @@
 import {
   clonePlayerState,
   createPlayerState,
+  createWeaponState,
   DEFAULT_MOVEMENT,
   eyeHeight,
   type InputCommand,
@@ -13,6 +14,7 @@ import {
   Predictor,
   type StepEvents,
   TICK_DT,
+  WeaponId,
 } from '@office-fps/shared'
 import type { PerspectiveCamera } from 'three'
 import { CameraFeel } from './camera-feel.ts'
@@ -43,7 +45,11 @@ export class LocalPlayer {
 
   constructor(physics: PhysicsWorld, spawn: MapSpawn | undefined) {
     this.body = new PlayerBody(physics, this.movement)
-    this.predictor = new Predictor(createPlayerState(spawn), this.body)
+    // Offline / before joining you hold what a fresh spawn holds: just the handgun.
+    this.predictor = new Predictor(
+      createPlayerState(spawn, createWeaponState(WeaponId.Handgun), null),
+      this.body,
+    )
     this.prev = clonePlayerState(this.state)
   }
 

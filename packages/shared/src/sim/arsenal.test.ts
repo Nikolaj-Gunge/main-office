@@ -170,7 +170,7 @@ describe('loadout and switching', () => {
     const rifleAmmo = state.weapon.ammo
     expect(play(state, body, 2, (t) => (t === 0 ? Button.Slot2 : 0)).switches).toBe(1)
     expect(state.weapon.id).toBe(WeaponId.Handgun)
-    expect(state.holstered.ammo).toBe(rifleAmmo)
+    expect(state.holstered?.ammo).toBe(rifleAmmo)
     // Pressing 2 again does nothing; Q swaps back.
     expect(play(state, body, 2, (t) => (t === 0 ? Button.Slot2 : 0)).switches).toBe(0)
     play(state, body, 2, (t) => (t === 0 ? Button.SwapWeapon : 0))
@@ -195,8 +195,8 @@ describe('loadout and switching', () => {
     play(state, body, 1, () => Button.Reload)
     expect(state.weapon.reload).toBeGreaterThan(0)
     play(state, body, 1, () => Button.Slot2)
-    expect(state.holstered.reload).toBe(0)
-    expect(state.holstered.ammo).toBeLessThan(WEAPONS[WeaponId.Rifle].magSize)
+    expect(state.holstered?.reload).toBe(0)
+    expect(state.holstered?.ammo).toBeLessThan(WEAPONS[WeaponId.Rifle].magSize)
   })
 
   test('heavier weapons are slower; aiming slows you and blocks sprint', () => {

@@ -40,7 +40,7 @@ export function createConnections(game: Game, getTickMs: () => number) {
             ws.close(4000, 'Protocol version mismatch — reload the page')
             return
           }
-          const id = game.join(msg.name, { send: (bytes) => ws.send(bytes) }, msg.primary)
+          const id = game.join(msg.name, { send: (bytes) => ws.send(bytes) })
           if (id === null) {
             ws.close(4001, 'Server full')
             return
@@ -52,9 +52,6 @@ export function createConnections(game: Game, getTickMs: () => number) {
         }
         case ClientMsg.Input:
           if (ws.data.playerId) game.handleInput(ws.data.playerId, msg.commands)
-          break
-        case ClientMsg.SetLoadout:
-          if (ws.data.playerId) game.setLoadout(ws.data.playerId, msg.primary)
           break
         case ClientMsg.SetDebug:
           if (ws.data.playerId) game.setDebug(ws.data.playerId, msg.flags)

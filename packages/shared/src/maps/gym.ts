@@ -121,5 +121,10 @@ export function buildGym(): MapDef {
     m.label(24.5, 0.6, z, `${d} m`)
   }
 
+  m.randomSpawnsIn([X0 + 0.5, Z0 + 0.5], [20.5, Z1 - 0.5])
+  m.pickup(-15, 0, 40, 1)
+  m.pickup(-5, 0, 40, 2)
+  m.pickup(5, 0, 40, 1)
+  m.pickup(-24, 4, -16, 2) // on the mezzanine
   return m.build()
 }

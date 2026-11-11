@@ -16,7 +16,6 @@ import {
   type RemotePlayerState,
   ServerMsg,
   TICK_RATE,
-  WeaponId,
 } from '@office-fps/shared'
 
 function arg(name: string, fallback: string): string {
@@ -68,7 +67,6 @@ class Bot {
         type: ClientMsg.Hello,
         protocolVersion: PROTOCOL_VERSION,
         name: `Bot ${index}`,
-        primary: Math.random() < 0.7 ? WeaponId.Rifle : WeaponId.Sniper,
       })
     })
     this.ws.addEventListener('message', (e) => {

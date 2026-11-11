@@ -7,7 +7,11 @@ export class ScreenShake {
   maxAngle = 0.03
   private trauma = 0
   private time = 0
-  private readonly seeds = [Math.random() * 100, Math.random() * 100, Math.random() * 100]
+  private readonly seeds: number[]
+
+  constructor(random: () => number = Math.random) {
+    this.seeds = [random() * 100, random() * 100, random() * 100]
+  }
 
   add(amount: number): void {
     this.trauma = Math.min(1, this.trauma + amount)

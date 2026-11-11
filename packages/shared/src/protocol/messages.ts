@@ -2,7 +2,7 @@ import type { HitPose, HitZone } from '../sim/hitboxes.ts'
 import type { PlayerInput } from '../sim/input.ts'
 import type { PlayerState } from '../sim/player.ts'
 import type { WeaponState } from '../sim/weapon-sim.ts'
-import type { PrimaryWeapon, WeaponId } from '../sim/weapons.ts'
+import type { WeaponId } from '../sim/weapons.ts'
 import { BinaryReader, BinaryWriter } from './binary.ts'
 import { decodePitch, decodeYaw, encodePitch, encodeYaw } from './quantize.ts'
 
@@ -12,7 +12,6 @@ export const ClientMsg = {
   Input: 0x02,
   Ping: 0x03,
   SetDebug: 0x04,
-  SetLoadout: 0x05,
 } as const
 export type ClientMsg = (typeof ClientMsg)[keyof typeof ClientMsg]
 
@@ -29,6 +28,8 @@ export const ServerMsg = {
   Kill: 0x89,
   DebugShot: 0x8a,
   Scoreboard: 0x8b,
+  ItemSpawn: 0x8c,
+  ItemRemove: 0x8d,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -76,19 +77,11 @@ export const ShotResult = {
 export type ShotResult = (typeof ShotResult)[keyof typeof ShotResult]
 
 export type ClientMessage =
-  | {
-      type: typeof ClientMsg.Hello
-      protocolVersion: number
-      name: string
-      /** Primary weapon to spawn with. */
-      primary: PrimaryWeapon
-    }
+  | { type: typeof ClientMsg.Hello; protocolVersion: number; name: string }
   | { type: typeof ClientMsg.Input; commands: InputCommand[] }
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
   | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
-  /** Primary weapon for your next spawn. */
-  | { type: typeof ClientMsg.SetLoadout; primary: PrimaryWeapon }
 
 export interface ScoreEntry {
   id: number
@@ -159,6 +152,15 @@ export type ServerMessage =
       headshot: boolean
     }
   | { type: typeof ServerMsg.Scoreboard; entries: ScoreEntry[] }
+  /** A weapon now lies on the floor (map pickup, thrown or dropped on death). Full ammo. */
+  | {
+      type: typeof ServerMsg.ItemSpawn
+      id: number
+      weapon: WeaponId
+      pos: { x: number; y: number; z: number }
+      yaw: number
+    }
+  | { type: typeof ServerMsg.ItemRemove; id: number }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -186,7 +188,8 @@ function writePlayerState(w: BinaryWriter, s: PlayerState): void {
   )
   w.u16(s.prevButtons)
   writeWeapon(w, s.weapon)
-  writeWeapon(w, s.holstered)
+  w.u8(s.holstered ? 1 : 0)
+  if (s.holstered) writeWeapon(w, s.holstered)
 }
 
 function writeWeapon(w: BinaryWriter, wp: WeaponState): void {
@@ -229,7 +232,7 @@ function readPlayerState(r: BinaryReader): PlayerState {
   const flags = r.u8()
   const prevButtons = r.u16()
   const weapon = readWeapon(r)
-  const holstered = readWeapon(r)
+  const holstered = r.u8() ? readWeapon(r) : null
   return {
     pos,
     vel,
@@ -323,10 +326,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
   const w = new BinaryWriter(32).u8(msg.type)
   switch (msg.type) {
     case ClientMsg.Hello:
-      w.u16(msg.protocolVersion).str8(msg.name).u8(msg.primary)
-      break
-    case ClientMsg.SetLoadout:
-      w.u8(msg.primary)
+      w.u16(msg.protocolVersion).str8(msg.name)
       break
     case ClientMsg.Input:
       w.u8(msg.commands.length)
@@ -350,14 +350,7 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
   const type = r.u8()
   switch (type) {
     case ClientMsg.Hello:
-      return {
-        type,
-        protocolVersion: r.u16(),
-        name: r.str8(),
-        primary: r.u8() as PrimaryWeapon,
-      }
-    case ClientMsg.SetLoadout:
-      return { type, primary: r.u8() as PrimaryWeapon }
+      return { type, protocolVersion: r.u16(), name: r.str8() }
     case ClientMsg.Input: {
       const count = r.u8()
       const commands: InputCommand[] = []
@@ -429,6 +422,14 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
         .u16(msg.victimId)
         .u8(msg.weapon)
         .u8(msg.headshot ? 1 : 0)
+      break
+    case ServerMsg.ItemSpawn:
+      w.u16(msg.id).u8(msg.weapon)
+      writeVec(w, msg.pos)
+      w.u16(encodeYaw(msg.yaw))
+      break
+    case ServerMsg.ItemRemove:
+      w.u16(msg.id)
       break
     case ServerMsg.Scoreboard:
       w.u8(msg.entries.length)
@@ -511,6 +512,16 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
         weapon: r.u8() as WeaponId,
         headshot: r.u8() === 1,
       }
+    case ServerMsg.ItemSpawn:
+      return {
+        type,
+        id: r.u16(),
+        weapon: r.u8() as WeaponId,
+        pos: readVec(r),
+        yaw: decodeYaw(r.u16()),
+      }
+    case ServerMsg.ItemRemove:
+      return { type, id: r.u16() }
     case ServerMsg.Scoreboard: {
       const count = r.u8()
       const entries: ScoreEntry[] = []

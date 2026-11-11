@@ -3,6 +3,7 @@ import { buildOffice } from './office.ts'
 import type { MapDef } from './types.ts'
 
 export * from './builder.ts'
+export * from './spawn-points.ts'
 export * from './types.ts'
 
 export const MAPS: Record<string, () => MapDef> = {

@@ -69,7 +69,9 @@ describe('Game', () => {
     const ids = [1, 2, 3].map((i) => game.join(`P${i}`, fakeClient()) ?? 0)
     const [p1, p2] = ids.map((id) => game.players.get(id))
     expect(p1?.color).not.toBe(p2?.color)
-    expect(Math.hypot((p1?.state.pos.x ?? 0) - (p2?.state.pos.x ?? 0))).toBeGreaterThan(5)
+    const a = p1?.state.pos
+    const b = p2?.state.pos
+    expect(Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.z ?? 0) - (b?.z ?? 0))).toBeGreaterThan(5)
   })
 
   test('applies inputs, acks them and snapshots at the snapshot rate', () => {

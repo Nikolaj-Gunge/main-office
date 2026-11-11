@@ -366,5 +366,21 @@ export function buildOffice(): MapDef {
   m.spawn(-9, UP, -16, S) // office A
   m.spawn(23, UP, -15, S) // CEO office
   m.spawn(9, UP, -12, S) // lounge
+  // Players actually spawn at random free spots on both floors (see findSpawnPoints); the fixed
+  // spawns above mark the floor heights and serve as a fallback.
+  m.randomSpawnsIn([X0 + 0.5, Z0 + 0.5], [X1 - 0.5, Z1 - 0.5])
+
+  // ─── Weapons lying around (you spawn with only the handgun) ────────────────────────────
+  const RIFLE = 1
+  const SNIPER = 2
+  m.pickup(22, 1, 6.6, RIFLE) // kitchen island
+  m.pickup(-20.5, 1.1, 4, RIFLE) // reception desk
+  m.pickup(-3, 0, 7, RIFLE) // open-plan aisle
+  m.pickup(8, 0, -10.5, RIFLE) // quiet room
+  m.pickup(-22, UP, -15, RIFLE) // games room
+  m.pickup(-15, 0.75, -13.3, RIFLE) // boardroom table, near the edge
+  m.pickup(23, UP + 0.78, -17.5, SNIPER) // CEO desk
+  m.pickup(8.5, UP + 0.45, -18.5, SNIPER) // upper lounge table
+  m.pickup(-5, 0, -2.5, SNIPER) // under the gallery beside the grand stairs, in the open — risky
   return m.build()
 }

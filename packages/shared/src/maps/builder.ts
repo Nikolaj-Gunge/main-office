@@ -4,6 +4,7 @@ import type {
   MapLabel,
   MapLight,
   MapLighting,
+  MapPickup,
   MapSpawn,
   MaterialId,
   Vec3,
@@ -25,6 +26,8 @@ export class MapBuilder {
   private readonly labels: MapLabel[] = []
   private readonly lights: MapLight[] = []
   private skyline = false
+  private readonly pickups: MapPickup[] = []
+  private spawnArea: MapDef['spawnArea']
 
   private readonly id: string
   private readonly name: string
@@ -98,6 +101,18 @@ export class MapBuilder {
     return this
   }
 
+  /** A weapon lying here (feet of the weapon at y), back `respawn` s after it's taken. */
+  pickup(x: number, y: number, z: number, weapon: number, respawn = 25) {
+    this.pickups.push({ pos: [x, y, z], weapon, respawn })
+    return this
+  }
+
+  /** Random spawns anywhere inside this x/z area (on the floors the fixed spawns stand on). */
+  randomSpawnsIn(min: [number, number], max: [number, number]) {
+    this.spawnArea = { min, max }
+    return this
+  }
+
   withSkyline() {
     this.skyline = true
     return this
@@ -118,6 +133,8 @@ export class MapBuilder {
       lighting: this.lighting,
       lights: this.lights,
       skyline: this.skyline,
+      pickups: this.pickups,
+      ...(this.spawnArea ? { spawnArea: this.spawnArea } : {}),
     }
   }
 }

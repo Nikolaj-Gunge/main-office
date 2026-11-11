@@ -1,4 +1,5 @@
 import {
+  AUTO_PICKUP_RADIUS,
   Button,
   createPlayerState,
   createWeaponState,
@@ -6,11 +7,11 @@ import {
   DebugFlag,
   damageAtDistance,
   encodeServerMessage,
+  findSpawnPoints,
   type HitPose,
   HitZone,
   hasButton,
   type InputCommand,
-  isPrimary,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   type MapDef,
@@ -19,7 +20,6 @@ import {
   PLAYER_QUERY_GROUPS,
   PlayerBody,
   type PlayerState,
-  type PrimaryWeapon,
   RAPIER,
   type RemotePlayerState,
   raycastPose,
@@ -31,11 +31,15 @@ import {
   stepPlayer,
   TICK_DT,
   TICK_RATE,
+  USE_PICKUP_RADIUS,
   WEAPONS,
   WeaponId,
+  type WeaponState,
   ZONE_MULTIPLIER,
 } from '@office-fps/shared'
+import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
+import { SpawnPicker } from './spawning.ts'
 
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
 export interface GameClient {
@@ -63,8 +67,6 @@ interface ServerPlayer {
   kills: number
   deaths: number
   debugFlags: number
-  /** Primary weapon for the next spawn (the handgun is always the secondary). */
-  loadout: PrimaryWeapon
   /** Round trip (ms) the client last reported. */
   ping: number
 }
@@ -105,18 +107,28 @@ export class Game {
     Math.ceil((1 * TICK_RATE) / TICKS_PER_SNAPSHOT),
     TICKS_PER_SNAPSHOT,
   )
+  private readonly spawns: SpawnPicker
+  readonly items: WorldItems
 
-  constructor(map: MapDef, physics: PhysicsWorld) {
+  constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
     this.physics = physics
+    this.spawns = new SpawnPicker(findSpawnPoints(map, physics), physics, random)
+    this.items = new WorldItems(
+      map.pickups ?? [],
+      (item) => this.broadcast(itemSpawnMessage(item)),
+      (id) => this.broadcast({ type: ServerMsg.ItemRemove, id }),
+    )
+    this.items.step(0)
+  }
+
+  /** Number of possible random spawn spots (for the startup log). */
+  get spawnPointCount(): number {
+    return this.spawns.count
   }
 
   /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
-  join(
-    rawName: string,
-    client: GameClient,
-    primary: PrimaryWeapon = WeaponId.Rifle,
-  ): number | null {
+  join(rawName: string, client: GameClient): number | null {
     if (this.players.size >= MAX_PLAYERS) return null
     const id = this.nextId
     this.nextId = (this.nextId % 0xffff) + 1
@@ -127,7 +139,7 @@ export class Game {
       color: this.pickColor(),
       client,
       body: new PlayerBody(this.physics, DEFAULT_MOVEMENT),
-      state: this.freshState(0, isPrimary(primary) ? primary : WeaponId.Rifle),
+      state: this.freshState(0),
       queue: [],
       lastQueuedSeq: 0,
       ackSeq: 0,
@@ -137,7 +149,6 @@ export class Game {
       kills: 0,
       deaths: 0,
       debugFlags: 0,
-      loadout: isPrimary(primary) ? primary : WeaponId.Rifle,
       ping: 0,
     }
 
@@ -157,6 +168,7 @@ export class Game {
         name: other.name,
       })
     }
+    for (const item of this.items.items.values()) send(client, itemSpawnMessage(item))
     this.players.set(id, player)
     this.broadcast({ type: ServerMsg.PlayerJoined, id, color: player.color, name })
     return id
@@ -181,12 +193,6 @@ export class Game {
     if (player.queue.length > MAX_QUEUE) player.queue.splice(0, player.queue.length - MAX_QUEUE)
   }
 
-  /** Changes the primary weapon for the player's next spawn. */
-  setLoadout(id: number, primary: number): void {
-    const player = this.players.get(id)
-    if (player && isPrimary(primary)) player.loadout = primary
-  }
-
   /** Stores the round trip a client measured (for the scoreboard). */
   reportPing(id: number, rtt: number): void {
     const player = this.players.get(id)
@@ -205,11 +211,15 @@ export class Game {
     for (const player of this.players.values()) {
       const commands = player.queue.splice(0, MAX_COMMANDS_PER_TICK)
       for (const command of commands) {
+        const usePressed =
+          hasButton(command.buttons, Button.Use) && !hasButton(player.state.prevButtons, Button.Use)
         const events = stepPlayer(player.state, command, TICK_DT, player.body)
         player.ackSeq = command.seq
         if (events.shot) this.fire(player, events.shot, command.viewTick)
+        this.handlePickups(player, usePressed)
       }
     }
+    this.items.step(this.tick)
     for (const player of this.players.values()) {
       if (!player.state.alive && this.tick >= player.respawnAt) this.respawn(player)
     }
@@ -322,6 +332,10 @@ export class Game {
   }
 
   private kill(victim: ServerPlayer, killer: ServerPlayer, headshot: boolean): void {
+    // Your rifle/sniper drops where you died (full ammo, like every weapon on the floor).
+    const primary = primaryOf(victim.state)
+    if (primary)
+      this.items.drop(primary.id, this.floorBelow(victim.state.pos), victim.state.yaw, this.tick)
     victim.state.alive = false
     victim.state.vel = { x: 0, y: 0, z: 0 }
     victim.respawnAt = this.tick + RESPAWN_SECONDS * TICK_RATE
@@ -339,20 +353,73 @@ export class Game {
 
   private respawn(player: ServerPlayer): void {
     const previous = player.state
-    player.state = this.freshState(player.id, player.loadout)
+    player.state = this.freshState(player.id)
     // Keep input edge detection continuous so a held button isn't seen as a new press.
     player.state.prevButtons = previous.prevButtons
     player.health = MAX_HEALTH
     player.protectedUntil = this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
   }
 
-  private freshState(excludeId: number, primary: PrimaryWeapon): PlayerState {
-    const seed = () => (Math.random() * 0xffffffff) >>> 0
-    return createPlayerState(
-      this.pickSpawn(excludeId),
-      createWeaponState(primary, seed()),
-      createWeaponState(WeaponId.Handgun, seed()),
+  /** Everyone spawns with only the handgun; rifles and snipers are found on the floor. */
+  private freshState(excludeId: number): PlayerState {
+    return createPlayerState(this.pickSpawn(excludeId), newWeapon(WeaponId.Handgun), null)
+  }
+
+  // --- Weapons on the floor ------------------------------------------------------------------
+
+  /**
+   * Empty primary slot: walking over a weapon picks it up and draws it. Slot filled: E swaps —
+   * your rifle/sniper is thrown on the floor and the new one goes in your hands.
+   */
+  private handlePickups(player: ServerPlayer, usePressed: boolean): void {
+    if (!player.state.alive) return
+    const s = player.state
+    const primary = primaryOf(s)
+    if (!primary) {
+      const item = this.items.nearest(s.pos, AUTO_PICKUP_RADIUS)
+      if (item) this.equip(player, item)
+      return
+    }
+    if (!usePressed) return
+    const item = this.items.nearest(s.pos, USE_PICKUP_RADIUS)
+    if (!item) return
+    this.throwPrimary(player, primary)
+    this.equip(player, item)
+  }
+
+  /** Takes `item` off the floor into the primary slot and draws it (full ammo). */
+  private equip(player: ServerPlayer, item: WorldItem): void {
+    if (!this.items.take(item.id, this.tick)) return
+    const s = player.state
+    const handgun = s.weapon.id === WeaponId.Handgun ? s.weapon : s.holstered
+    s.weapon = newWeapon(item.weapon)
+    s.holstered = handgun ?? newWeapon(WeaponId.Handgun)
+  }
+
+  /** Throws the primary a little ahead onto the floor. */
+  private throwPrimary(player: ServerPlayer, primary: WeaponState): void {
+    const s = player.state
+    const ahead = {
+      x: s.pos.x - Math.sin(s.yaw) * 0.9,
+      y: s.pos.y,
+      z: s.pos.z - Math.cos(s.yaw) * 0.9,
+    }
+    // Don't throw it through a wall: keep it at your feet if something is in the way.
+    const ray = new RAPIER.Ray(
+      { x: s.pos.x, y: s.pos.y + 0.5, z: s.pos.z },
+      { x: -Math.sin(s.yaw), y: 0, z: -Math.cos(s.yaw) },
     )
+    const blocked = this.physics.world.castRay(ray, 1.2, true, undefined, PLAYER_QUERY_GROUPS)
+    this.items.drop(primary.id, this.floorBelow(blocked ? s.pos : ahead), s.yaw, this.tick)
+    if (s.weapon === primary) s.weapon = s.holstered ?? newWeapon(WeaponId.Handgun)
+    s.holstered = null
+  }
+
+  /** The floor (or desk) surface below a point, so dropped weapons lie on something. */
+  private floorBelow(p: Point): Point {
+    const ray = new RAPIER.Ray({ x: p.x, y: p.y + 1, z: p.z }, { x: 0, y: -1, z: 0 })
+    const hit = this.physics.world.castRay(ray, 6, true, undefined, PLAYER_QUERY_GROUPS)
+    return { x: p.x, y: hit ? p.y + 1 - hit.timeOfImpact : p.y, z: p.z }
   }
 
   // --- Snapshots -----------------------------------------------------------------------------
@@ -399,29 +466,39 @@ export class Game {
     for (const player of this.players.values()) player.client.send(bytes)
   }
 
-  /** Spawn point farthest from every living player (other than `excludeId`). */
+  /** A random spot away from, and out of sight of, every living enemy. */
   private pickSpawn(excludeId = 0) {
-    let best = this.map.spawns[0]
-    let bestDistance = -1
-    for (const spawn of this.map.spawns) {
-      let nearest = Number.POSITIVE_INFINITY
-      for (const p of this.players.values()) {
-        if (p.id === excludeId || !p.state.alive) continue
-        const d = Math.hypot(p.state.pos.x - spawn.pos[0], p.state.pos.z - spawn.pos[2])
-        nearest = Math.min(nearest, d)
-      }
-      if (nearest > bestDistance) {
-        bestDistance = nearest
-        best = spawn
-      }
-    }
-    return best
+    const enemies = [...this.players.values()]
+      .filter((p) => p.id !== excludeId && p.state.alive)
+      .map((p) => p.state.pos)
+    return this.spawns.pick(enemies)
   }
 
   private pickColor(): number {
     const used = new Set([...this.players.values()].map((p) => p.color))
     for (let i = 0; i < PLAYER_COLORS.length; i++) if (!used.has(i)) return i
     return this.players.size % PLAYER_COLORS.length
+  }
+}
+
+/** A weapon fresh off the floor: full magazine and reserve, its own spread seed. */
+function newWeapon(id: WeaponId): WeaponState {
+  return createWeaponState(id, (Math.random() * 0xffffffff) >>> 0)
+}
+
+/** The rifle/sniper a player carries (in hand or holstered), or null. */
+function primaryOf(s: PlayerState): WeaponState | null {
+  if (s.weapon.id !== WeaponId.Handgun) return s.weapon
+  return s.holstered && s.holstered.id !== WeaponId.Handgun ? s.holstered : null
+}
+
+function itemSpawnMessage(item: WorldItem): ServerMessage {
+  return {
+    type: ServerMsg.ItemSpawn,
+    id: item.id,
+    weapon: item.weapon,
+    pos: item.pos,
+    yaw: item.yaw,
   }
 }
 

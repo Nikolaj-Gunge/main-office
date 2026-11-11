@@ -299,16 +299,4 @@ describe('arsenal', () => {
     aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.5)
     expect(s.b.all(ServerMsg.ShotFired).at(-1)?.weapon).toBe(WeaponId.Sniper)
   })
-
-  test('a new loadout applies at the next spawn', () => {
-    const s = duel()
-    const victim = s.game.players.get(s.victim)
-    expect(victim?.state.weapon.id).toBe(WeaponId.Rifle)
-    s.game.setLoadout(s.victim, WeaponId.Sniper)
-    s.game.setLoadout(s.victim, WeaponId.Handgun) // not a primary: ignored
-    shootAt(s, { x: 0, y: 1.64, z: -5 })
-    for (let t = 0; t < RESPAWN_SECONDS * TICK_RATE + 2; t++) s.game.step()
-    expect(victim?.state.weapon.id).toBe(WeaponId.Sniper)
-    expect(victim?.state.holstered.id).toBe(WeaponId.Handgun)
-  })
 })

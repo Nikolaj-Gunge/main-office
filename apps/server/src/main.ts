@@ -20,7 +20,8 @@ const map = loadMap(process.env.MAP ?? DEFAULT_MAP_ID)
 const physics = createPhysicsWorld(map)
 const game = new Game(map, physics)
 console.log(
-  `[server] map "${map.name}": ${physics.mapColliders.length} colliders, ${map.spawns.length} spawns`,
+  `[server] map "${map.name}": ${physics.mapColliders.length} colliders, ` +
+    `${game.spawnPointCount} spawn spots, ${map.pickups?.length ?? 0} weapon pickups`,
 )
 
 const loop = new GameLoop(TICK_RATE, () => game.step())

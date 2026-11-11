@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { HitZone } from '../sim/hitboxes.ts'
 import { createPlayerState } from '../sim/player.ts'
+import { createWeaponState } from '../sim/weapon-sim.ts'
 import { WeaponId } from '../sim/weapons.ts'
 import {
   type ClientMessage,
@@ -17,8 +18,7 @@ import { quantizeInput } from './quantize.ts'
 
 describe('client messages', () => {
   const cases: ClientMessage[] = [
-    { type: ClientMsg.Hello, protocolVersion: 6, name: 'Nikolaj', primary: WeaponId.Sniper },
-    { type: ClientMsg.SetLoadout, primary: WeaponId.Rifle },
+    { type: ClientMsg.Hello, protocolVersion: 7, name: 'Nikolaj' },
     { type: ClientMsg.Ping, clientTime: 12345.678, rtt: 23 },
     { type: ClientMsg.SetDebug, flags: 1 },
     {
@@ -69,7 +69,7 @@ describe('server messages', () => {
   self.alive = false
   self.weapon = { ...self.weapon, ammo: 7, cooldown: 0.05, shotIndex: 42, spreadSeed: 0xdeadbeef }
   self.holstered = {
-    ...self.holstered,
+    ...createWeaponState(WeaponId.Handgun),
     ammo: 3,
     aimTime: 0.1,
     swayTime: 2.5,
@@ -116,6 +116,7 @@ describe('server messages', () => {
       from: { x: 1, y: 0, z: 2 },
     },
     { type: ServerMsg.Kill, killerId: 1, victimId: 2, weapon: WeaponId.Handgun, headshot: true },
+    { type: ServerMsg.ItemRemove, id: 12 },
     {
       type: ServerMsg.Scoreboard,
       entries: [
@@ -171,6 +172,40 @@ describe('server messages', () => {
     expect(p?.protected).toBe(true)
     expect(p?.weapon).toBe(WeaponId.Sniper)
     expect(p?.aiming).toBe(true)
+  })
+
+  test('item spawns survive the wire', () => {
+    const out = decodeServerMessage(
+      encodeServerMessage({
+        type: ServerMsg.ItemSpawn,
+        id: 3,
+        weapon: WeaponId.Sniper,
+        pos: { x: 1.5, y: 4.5, z: -7.25 },
+        yaw: 1.2,
+      }),
+    )
+    if (out.type !== ServerMsg.ItemSpawn) throw new Error('wrong type')
+    expect(out.weapon).toBe(WeaponId.Sniper)
+    expect(out.pos).toEqual({ x: 1.5, y: 4.5, z: -7.25 })
+    expect(out.yaw).toBeCloseTo(1.2, 3)
+  })
+
+  test('an empty primary slot survives the wire', () => {
+    const s = { ...self, holstered: null }
+    const out = decodeServerMessage(
+      encodeServerMessage({
+        type: ServerMsg.Snapshot,
+        tick: 1,
+        ackSeq: 1,
+        self: s,
+        health: 100,
+        respawnIn: 0,
+        protected: false,
+        players: [],
+      }),
+    )
+    if (out.type !== ServerMsg.Snapshot) throw new Error('wrong type')
+    expect(out.self?.holstered).toBeNull()
   })
 
   test('debug shot poses survive the wire', () => {

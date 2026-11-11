@@ -32,8 +32,9 @@ everyone opens `http://<your-ip>:3000`.
 | Left mouse     | Shoot                                                      |
 | Right mouse    | Aim down sights (tighter spread)                           |
 | R              | Reload                                                     |
-| 1 / 2          | Primary / handgun (while dead: choose rifle / sniper for the next spawn) |
+| 1 / 2          | Rifle-or-sniper slot / handgun                             |
 | Q / wheel      | Switch to the other weapon                                 |
+| E              | Swap your rifle/sniper for the weapon on the floor         |
 | Shift (scoped) | Hold breath — steadies the sniper scope for 3 s            |
 | M              | Mute / unmute (or open the game with `?mute=1`)            |
 | Tab (hold)     | Scoreboard                                                 |
@@ -45,6 +46,10 @@ everyone opens `http://<your-ip>:3000`.
 
 F1 → "Network test" adds fake latency/jitter (presets up to 300 ms RTT) to try the netcode on
 localhost. `/healthz` on the server reports players and tick timings.
+
+Everyone spawns at a random spot (away from and out of sight of enemies) with only a handgun.
+Rifles and snipers lie around the map with full ammo: walk over one with an empty slot to take
+it, or press E to swap (your old one is thrown down). Dying drops your rifle/sniper.
 
 The default map is the office; open the game with `?map=gym` (and start the server with
 `MAP=gym`) for the metrics gym.

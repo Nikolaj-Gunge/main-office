@@ -25,8 +25,10 @@ export const PLAYER_QUERY_GROUPS = (GROUP_PLAYER << 16) | GROUP_MAP
 
 export interface PhysicsWorld {
   world: RAPIER.World
-  /** Static map colliders, in map box order. */
+  /** Static map colliders (boxes with collide !== false), in map order. */
   mapColliders: RAPIER.Collider[]
+  /** Handles of colliders you can see through (glass): they block bullets, not line of sight. */
+  seeThrough: Set<number>
 }
 
 /**
@@ -35,6 +37,7 @@ export interface PhysicsWorld {
  */
 export function createPhysicsWorld(map: MapDef): PhysicsWorld {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+  const seeThrough = new Set<number>()
   const mapColliders = map.boxes
     .filter((box) => box.collide !== false)
     .map((box) => {
@@ -43,11 +46,13 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
         .setTranslation(...box.center)
         .setCollisionGroups(MAP_COLLISION_GROUPS)
       if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
-      return world.createCollider(desc)
+      const collider = world.createCollider(desc)
+      if (box.material === 'glass') seeThrough.add(collider.handle)
+      return collider
     })
   // One step builds the broad phase so scene queries see the colliders.
   world.step()
-  return { world, mapColliders }
+  return { world, mapColliders, seeThrough }
 }
 
 /** Euler XYZ (radians, Three.js default order) → quaternion. */

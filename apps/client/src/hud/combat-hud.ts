@@ -33,7 +33,7 @@ export class CombatHud {
   private readonly damageRing: HTMLDivElement
   private readonly vignette: HTMLDivElement
   private readonly death: HTMLDivElement
-  private readonly deathLoadout: HTMLDivElement
+  private readonly prompt: HTMLDivElement
   private readonly slots: HTMLDivElement
   private readonly scope: HTMLDivElement
   private readonly breathFill: HTMLDivElement
@@ -76,7 +76,8 @@ export class CombatHud {
     this.death = el('div', 'hud-death', root)
     this.deathText = el('div', 'hud-death-text', this.death)
     this.deathTimer = el('div', 'hud-death-timer', this.death)
-    this.deathLoadout = el('div', 'hud-death-loadout', this.death)
+    el('div', 'hud-death-tip', this.death).textContent =
+      'You respawn with a handgun — rifles and snipers lie around the office.'
     this.slots = el('div', 'hud-slots', this.ammo)
     this.scope = el('div', 'hud-scope', root)
     el('div', 'hud-scope-cross', this.scope)
@@ -85,6 +86,8 @@ export class CombatHud {
     this.scope.hidden = true
     this.hoverName = el('div', 'hud-hover-name', root)
     this.hoverName.hidden = true
+    this.prompt = el('div', 'hud-prompt', root)
+    this.prompt.hidden = true
     this.death.hidden = true
 
     this.setHealth(100)
@@ -99,20 +102,24 @@ export class CombatHud {
     this.vignette.style.opacity = String(h <= 0 ? 0 : Math.max(0, (50 - h) / 50))
   }
 
-  setWeapon(w: WeaponState, holstered: WeaponState): void {
+  setWeapon(w: WeaponState, holstered: WeaponState | null): void {
     const def = WEAPONS[w.id]
-    // "1 RIFLE · 2 HANDGUN" with the one in hand highlighted.
+    // "1 RIFLE · 2 HANDGUN" with the one in hand highlighted; "1 —" when the slot is empty.
     const primary = w.id === WeaponId.Handgun ? holstered : w
-    const slotText = `1 ${WEAPONS[primary.id].name.toUpperCase()}   2 HANDGUN`
-    if (this.slots.dataset.text !== `${slotText}${w.id}`) {
-      this.slots.dataset.text = `${slotText}${w.id}`
+    const slotKey = `${primary?.id ?? '-'}${w.id}`
+    if (this.slots.dataset.text !== slotKey) {
+      this.slots.dataset.text = slotKey
       this.slots.innerHTML = ''
-      for (const [slot, weapon] of [
-        ['1', primary.id],
-        ['2', WeaponId.Handgun],
-      ] as const) {
-        const span = el('span', weapon === w.id ? 'slot active' : 'slot', this.slots)
-        span.textContent = `${slot} ${WEAPONS[weapon].name.toUpperCase()}`
+      const rows: [string, string, boolean][] = [
+        [
+          '1',
+          primary ? WEAPONS[primary.id].name.toUpperCase() : '—',
+          primary !== null && primary === w,
+        ],
+        ['2', 'HANDGUN', w.id === WeaponId.Handgun],
+      ]
+      for (const [slot, name, active] of rows) {
+        el('span', active ? 'slot active' : 'slot', this.slots).textContent = `${slot} ${name}`
       }
     }
     this.ammoCount.textContent = String(w.ammo)
@@ -144,17 +151,10 @@ export class CombatHud {
     this.scope.classList.toggle('steady', steady)
   }
 
-  /** Death screen: which primary you'll spawn with (press 1 or 2 to change). */
-  setLoadoutChoice(primary: WeaponId): void {
-    this.deathLoadout.innerHTML = ''
-    el('span', 'label', this.deathLoadout).textContent = 'Next spawn: '
-    for (const [key, id] of [
-      ['1', WeaponId.Rifle],
-      ['2', WeaponId.Sniper],
-    ] as const) {
-      const option = el('span', id === primary ? 'option chosen' : 'option', this.deathLoadout)
-      option.textContent = `[${key}] ${WEAPONS[id].name.toUpperCase()}`
-    }
+  /** "[E] Swap for SNIPER" when standing at a weapon with your primary slot full. */
+  setPickupPrompt(text: string | null): void {
+    this.prompt.hidden = text === null
+    if (text !== null && this.prompt.textContent !== text) this.prompt.textContent = text
   }
 
   /** Crosshair gap in CSS pixels from the current spread cone (degrees) and vertical FOV. */

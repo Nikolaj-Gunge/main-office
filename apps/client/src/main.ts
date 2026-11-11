@@ -9,7 +9,6 @@ import {
   loadMap,
   MAPS,
   PLAYER_QUERY_GROUPS,
-  type PrimaryWeapon,
   RAPIER,
   ServerMsg,
   TICK_DT,
@@ -34,7 +33,7 @@ import { Menu } from './hud/menu.ts'
 import { Minimap } from './hud/minimap.ts'
 import { Overlay } from './hud/overlay.ts'
 import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
-import { actionFor } from './input/bindings.ts'
+import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { samplePlayerInput } from './input/player-input.ts'
@@ -46,6 +45,7 @@ import { buildMapObject } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { Viewmodel } from './render/viewmodel.ts'
+import { WorldItemsView } from './render/world-items.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 import '@fontsource/pixelify-sans/400.css'
 import '@fontsource/pixelify-sans/700.css'
@@ -140,6 +140,9 @@ const effects = new Effects(scene, (origin, dir, maxDistance) => {
 })
 effects.onCasingHit = (at) => audio.playNear('casing', at, 0.45, 15)
 const debugHitboxes = new DebugHitboxes(scene)
+const worldItems = new WorldItemsView(scene)
+/** Ignore item sounds for the batch the server sends right after joining. */
+let itemSoundsFrom = Number.POSITIVE_INFINITY
 
 // Footsteps: yours (from the camera bob cycle) and everyone else's (from their movement).
 player.feel.onFootstep = () => {
@@ -178,6 +181,7 @@ const net = new Connection({
       joined = false
       remotes.clear()
       roster.clear()
+      worldItems.clear()
       menu.setJoined(false)
       const fatal = reason?.includes('Protocol') ?? false
       const text = reason
@@ -206,6 +210,8 @@ const net = new Connection({
         player.resetPrediction()
         menu.setJoined(true)
         menu.setStatus('')
+        worldItems.clear()
+        itemSoundsFrom = performance.now() + 500
         overlay.setBanner(null)
         everJoined = true
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
@@ -227,6 +233,13 @@ const net = new Connection({
       case ServerMsg.Scoreboard:
         scoreboard.update(msg.entries)
         break
+      case ServerMsg.ItemSpawn:
+        worldItems.add(msg.id, msg.weapon, msg.pos, msg.yaw)
+        if (performance.now() > itemSoundsFrom) audio.playNear('land', msg.pos, 0.35, 20)
+        break
+      case ServerMsg.ItemRemove:
+        worldItems.remove(msg.id)
+        break
       case ServerMsg.ShotFired: {
         // Shooting gives your position away on the minimap.
         const at = remotes.muzzleOf(msg.shooterId)
@@ -237,18 +250,9 @@ const net = new Connection({
   },
 })
 
-// Primary weapon for the next spawn: chosen in the menu, or with 1/2 on the death screen.
-menu.onLoadout((primary: PrimaryWeapon) => {
-  net.primary = primary
-  hud.setLoadoutChoice(primary)
-  if (joined) net.send({ type: ClientMsg.SetLoadout, primary })
-})
-net.primary = menu.primary
-hud.setLoadoutChoice(menu.primary)
-
 menu.onPlay((name) => {
   audio.unlock() // browsers only allow audio after a click
-  if (net.state === 'idle') net.connect(name, menu.primary)
+  if (net.state === 'idle') net.connect(name)
   void look.lock()
 })
 // Esc releases the mouse: show the menu. Clicking Resume locks it again.
@@ -298,10 +302,6 @@ window.addEventListener('keydown', (e) => {
     menu.refresh()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
   }
-  // Dead: primary / handgun keys pick the primary for your next spawn instead.
-  if (!player.state.alive && (action === 'primary' || action === 'secondary')) {
-    menu.setPrimary(action === 'primary' ? WeaponId.Rifle : WeaponId.Sniper)
-  }
   if (action === 'mute') {
     audio.muted = !audio.muted
     overlay.flash(audio.muted ? 'Sound off (M)' : 'Sound on (M)')
@@ -328,6 +328,21 @@ window.addEventListener('resize', () => {
 })
 pixels.resize()
 applySettings()
+
+// --- Weapons on the floor --------------------------------------------------------------
+let lastPrimary: number | null = null
+/** Swap prompt when standing at a weapon with a full slot; pickup sound when it changes. */
+function updatePickups() {
+  const s = player.state
+  const primary = s.weapon.id !== WeaponId.Handgun ? s.weapon.id : (s.holstered?.id ?? null)
+  if (s.alive && primary !== null && primary !== lastPrimary && joined) {
+    audio.play('reload.slide', { volume: 0.7 })
+  }
+  lastPrimary = s.alive ? primary : null
+  const near = s.alive && primary !== null ? worldItems.nearestInReach(s.pos) : null
+  const key = keyLabel(settings.keybinds.use[0] ?? 'KeyE')
+  hud.setPickupPrompt(near ? `[${key}] Swap for ${WEAPONS[near.weapon].name.toUpperCase()}` : null)
+}
 
 // --- Loop -----------------------------------------------------------------------------
 /** Max ticks to simulate per frame; beyond this we drop time instead of spiralling. */
@@ -392,6 +407,9 @@ pixels.renderer.setAnimationLoop(() => {
   audio.setListener(camera)
   audio.update(dt)
   remotes.update(now, camera.position)
+  worldItems.update(dt)
+  minimap.setItems(worldItems.positions())
+  updatePickups()
   minimap.update(dt, player.state.pos, look.yaw)
   minimap.setVisible(joined && !noclip)
   scoreboard.show(scoreboardHeld && joined, roster, net.playerId)
@@ -451,6 +469,7 @@ if (import.meta.env.DEV) {
       recoil,
       effects,
       viewmodel,
+      worldItems,
     },
   })
 }

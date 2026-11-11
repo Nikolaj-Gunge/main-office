@@ -97,14 +97,15 @@ describe('Recoil spray pattern', () => {
 
 describe('ScreenShake', () => {
   test('fades out completely and scales with trauma squared', () => {
-    const shake = new ScreenShake()
+    const fixed = () => 0.37
+    const shake = new ScreenShake(fixed)
     shake.add(0.5)
     let maxSmall = 0
     for (let i = 0; i < 20; i++) maxSmall = Math.max(maxSmall, Math.abs(shake.update(0.005).pitch))
     for (let i = 0; i < 200; i++) shake.update(0.01)
     const after = shake.update(0.01)
     expect(Math.abs(after.pitch) + Math.abs(after.yaw) + Math.abs(after.roll)).toBe(0)
-    const big = new ScreenShake()
+    const big = new ScreenShake(fixed)
     big.add(1)
     let maxBig = 0
     for (let i = 0; i < 20; i++) maxBig = Math.max(maxBig, Math.abs(big.update(0.005).pitch))

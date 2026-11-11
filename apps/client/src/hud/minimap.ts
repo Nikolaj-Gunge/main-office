@@ -52,6 +52,7 @@ export class Minimap {
   private readonly levels: { y: number; image: HTMLCanvasElement }[] = []
   private readonly origin: { x: number; z: number }
   private readonly pings: Ping[] = []
+  private items: { x: number; z: number }[] = []
 
   constructor(parent: HTMLElement, map: MapDef) {
     this.canvas = document.createElement('canvas')
@@ -115,6 +116,11 @@ export class Minimap {
     if (this.pings.length > 32) this.pings.shift()
   }
 
+  /** Weapons lying on the floor: small yellow squares (they aren't players, so no wallhack). */
+  setItems(items: { x: number; z: number }[]): void {
+    this.items = items
+  }
+
   setVisible(visible: boolean): void {
     this.canvas.hidden = !visible
   }
@@ -140,6 +146,16 @@ export class Minimap {
     ctx.translate(-(me.x - this.origin.x) * SCALE, -(me.z - this.origin.z) * SCALE)
     ctx.imageSmoothingEnabled = false
     if (level) ctx.drawImage(level.image, 0, 0)
+
+    ctx.fillStyle = '#fbb954'
+    for (const it of this.items) {
+      ctx.fillRect(
+        Math.round((it.x - this.origin.x) * SCALE) - 1,
+        Math.round((it.z - this.origin.z) * SCALE) - 1,
+        3,
+        3,
+      )
+    }
 
     for (let i = this.pings.length - 1; i >= 0; i--) {
       const p = this.pings[i]

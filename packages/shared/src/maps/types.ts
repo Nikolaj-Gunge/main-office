@@ -81,6 +81,16 @@ export interface MapLighting {
   fogFar: number
 }
 
+/** A spot where a weapon lies on the floor and comes back after being taken. */
+export interface MapPickup {
+  /** Where it lies (bottom of the weapon). */
+  pos: Vec3
+  /** WeaponId (rifle 1 / sniper 2). */
+  weapon: number
+  /** Seconds before a taken weapon reappears. */
+  respawn: number
+}
+
 export interface MapDef {
   id: string
   name: string
@@ -91,4 +101,10 @@ export interface MapDef {
   lights?: MapLight[]
   /** Draw a city skyline around the map (outdoor view through windows). */
   skyline?: boolean
+  pickups?: MapPickup[]
+  /**
+   * Area (x/z) to search for random spawn points; floor heights come from `spawns`. Without
+   * it, only the fixed spawns are used.
+   */
+  spawnArea?: { min: [number, number]; max: [number, number] }
 }
