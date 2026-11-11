@@ -365,7 +365,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - **Done when:** 2+ browsers move smoothly with 150 ms simulated latency; own movement never feels delayed; 20 bots run with server tick time < 2 ms.
 - **Implementation notes:** client-paced input queue on the server (≤2 commands per player per tick, 20 max queued, duplicates dropped). Own state is sent at full f64 precision and inputs are quantized *before* prediction, so the client replays bit-exactly: a scripted 600-tick run at 150 ms lag reconciles with 0 cm correction. Players don't collide with each other (collision groups) to avoid constant mispredictions. Remote players are drawn 100 ms in the past via a smoothed server-clock estimate. Measured: 20 bots on one laptop, tick ≈1.1 ms (sim ≈0.65 ms, snapshot sends ≈0.9 ms per round, ≈45 µs per `ws.send`).
 
-### Phase 4 — First weapon end-to-end (handgun)
+### Phase 4 — First weapon end-to-end (handgun) ✅
 
 - Weapon definitions + weapon state machine in shared (fire cooldown, mag, reload, draw), predicted on client.
 - Hitbox layout + debug draw; server hitbox history ring buffer; lag-compensated hitscan.
