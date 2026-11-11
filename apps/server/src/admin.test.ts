@@ -92,6 +92,11 @@ describe('admin API', () => {
     expect(res.status).toBe(200)
   })
 
+  test('ignores terminal paste markers and control characters stored in the secret', async () => {
+    const { admin } = setup('\u001b[200~office-admin\u001b[201~\r\n')
+    expect((await admin.handle(request('state', 'office-admin'))).status).toBe(200)
+  })
+
   test('rejects a body that is not JSON', async () => {
     const { admin } = setup()
     expect((await admin.handle(request('rules', 'hunter2', '{oops'))).status).toBe(400)

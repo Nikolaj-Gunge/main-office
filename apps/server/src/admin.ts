@@ -51,7 +51,13 @@ export class AdminApi {
     if (record && record.count >= MAX_FAILURES && now < record.until) {
       return json({ error: 'Too many wrong passwords — try again in a few minutes' }, 429)
     }
-    if (!(await samePassword(passwordFrom(request), password))) {
+    const given = passwordFrom(request)
+    if (!(await samePassword(given, password))) {
+      // Lengths only (never the password), to tell typos from paste artifacts in the logs.
+      console.warn(
+        `[admin] wrong password: got ${normalize(given).length} chars, ` +
+          `expected ${normalize(password).length} (${password.length} before cleanup)`,
+      )
       const count = record && now < record.until ? record.count + 1 : 1
       this.failures.set(client, { count, until: now + LOCKOUT_MS })
       return json({ error: 'Wrong password' }, 401)
@@ -126,8 +132,17 @@ function passwordFrom(request: Request): string {
   }
 }
 
-/** Same text either way: Unicode-normalized (æ typed vs pasted) and without stray spaces. */
-const normalize = (password: string) => password.normalize('NFC').trim()
+/**
+ * Same text either way: without terminal paste markers and other control characters (pasting
+ * into `wrangler secret put` can store them invisibly), Unicode-normalized, no stray spaces.
+ */
+export const normalizePassword = (password: string) =>
+  password
+    .replace(/\u001b\[20[01]~/g, '')
+    .replace(/\p{Cc}/gu, '')
+    .normalize('NFC')
+    .trim()
+const normalize = normalizePassword
 
 /** Compares SHA-256 digests in constant time, so response timing doesn't leak the password. */
 async function samePassword(given: string, expected: string): Promise<boolean> {
