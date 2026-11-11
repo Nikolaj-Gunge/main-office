@@ -112,7 +112,7 @@ export class ClientCombat {
       ? new THREE.Vector3(origin.x, origin.y - 0.08, origin.z)
       : this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
     const heavy = weapon.id === WeaponId.Sniper
-    this.d.effects.shot(muzzle, end, normal, kind, heavy)
+    this.d.effects.shot(muzzle, end, normal, kind, heavy, true)
     this.d.viewmodel.onShot()
     this.d.recoil.kick(weapon, aiming)
     this.d.shake.add(heavy ? 0.5 : weapon.fireMode === 'auto' ? 0.13 : 0.32)

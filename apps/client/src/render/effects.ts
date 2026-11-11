@@ -5,6 +5,7 @@ const TRACER_LENGTH = 3
 /** Hard cap on how long a tracer can exist (s), whatever happens. */
 const TRACER_MAX_AGE = 2
 const MAX_BLOOD = 48
+const MAX_SMOKE = 96
 /** Blood marks stay this long (s), fading out over the last few seconds. */
 const BLOOD_LIFE = 20
 const BLOOD_FADE = 4
@@ -36,6 +37,17 @@ interface Tracer {
   distance: number
   traveled: number
   age: number
+}
+
+interface SmokePuff {
+  sprite: THREE.Sprite
+  material: THREE.SpriteMaterial
+  vel: THREE.Vector3
+  life: number
+  maxLife: number
+  startSize: number
+  endSize: number
+  opacity: number
 }
 
 interface BloodMark {
@@ -72,6 +84,35 @@ function placeFlat(
   mesh.quaternion.multiply(spin.setFromAxisAngle(PLANE_NORMAL, Math.random() * Math.PI * 2))
   mesh.scale.setScalar(size)
   mesh.updateMatrix()
+}
+
+/** Soft, dithered puff: dense in the middle, broken up towards the edge (reads as pixel smoke). */
+function makeSmokeTexture(): THREE.CanvasTexture {
+  const size = 16
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas unavailable')
+  let seed = 4242
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2)
+      const density = Math.max(0, 1 - d) ** 1.1
+      if (rand() < density * 2.5) {
+        const shade = 215 + Math.floor(rand() * 35)
+        ctx.fillStyle = `rgba(${shade},${shade},${shade},${Math.min(1, density * 2.4)})`
+        ctx.fillRect(x, y, 1, 1)
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.magFilter = THREE.NearestFilter
+  tex.minFilter = THREE.NearestFilter
+  return tex
 }
 
 /** Irregular dark-red splat with droplets, transparent around it. */
@@ -151,6 +192,8 @@ export class Effects {
   private particleIndex = 0
   private readonly lights: { light: THREE.PointLight; life: number }[] = []
   private lightIndex = 0
+  private readonly smoke: SmokePuff[] = []
+  private smokeIndex = 0
   private readonly blood: BloodMark[] = []
   private bloodIndex = 0
   private readonly casings: Casing[] = []
@@ -205,6 +248,30 @@ export class Effects {
       this.particles.push({ mesh, vel: new THREE.Vector3(), life: 0, maxLife: 1 })
     }
 
+    const smokeTexture = makeSmokeTexture()
+    for (let i = 0; i < MAX_SMOKE; i++) {
+      const material = new THREE.SpriteMaterial({
+        map: smokeTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+      })
+      const sprite = new THREE.Sprite(material)
+      sprite.visible = false
+      sprite.renderOrder = 2
+      scene.add(sprite)
+      this.smoke.push({
+        sprite,
+        material,
+        vel: new THREE.Vector3(),
+        life: 0,
+        maxLife: 1,
+        startSize: 0.1,
+        endSize: 0.5,
+        opacity: 0.3,
+      })
+    }
+
     const bloodTexture = makeBloodTexture()
     const bloodGeometry = new THREE.PlaneGeometry(1, 1)
     for (let i = 0; i < MAX_BLOOD; i++) {
@@ -244,15 +311,21 @@ export class Effects {
     }
   }
 
-  /** A bullet from `from` to `to`; `hit` decides the impact effect at the end. */
+  /**
+   * A bullet from `from` to `to`; `hit` decides the impact effect at the end. `own` = your own
+   * gun: its smoke is fainter and starts a bit ahead so it never clouds your aim.
+   */
   shot(
     from: THREE.Vector3,
     to: THREE.Vector3,
     normal: THREE.Vector3,
     hit: 'world' | 'player' | 'nothing',
     heavy = false,
+    own = false,
   ): void {
     this.flashLight(from)
+    const aim = to.clone().sub(from).normalize()
+    this.muzzleSmoke(from, aim, heavy, own)
     const dir = to.clone().sub(from)
     const distance = dir.length()
     if (distance > 0.5) {
@@ -276,6 +349,16 @@ export class Effects {
     if (hit === 'world') {
       this.decal(to, normal)
       this.burst(to, normal, 0x9a948a, 6, 2.5)
+      // Dust kicked off the surface.
+      for (let i = 0; i < 2; i++) {
+        this.puff(to.clone().addScaledVector(normal, 0.05), normal.clone().multiplyScalar(0.5), {
+          life: 0.7,
+          startSize: 0.12,
+          endSize: 0.55,
+          opacity: 0.6,
+          tint: 0xc4b9a6,
+        })
+      }
     } else if (hit === 'player') {
       this.bleed(to, dir.normalize(), false)
     }
@@ -325,6 +408,49 @@ export class Effects {
     mark.mesh.visible = true
     mark.material.opacity = 1
     mark.life = BLOOD_LIFE
+  }
+
+  /** Gun smoke: a few puffs at the barrel that drift, rise, grow and fade. */
+  private muzzleSmoke(at: THREE.Vector3, dir: THREE.Vector3, heavy: boolean, own: boolean): void {
+    const start = own ? at.clone().addScaledVector(dir, 0.3) : at
+    const count = heavy ? 5 : 2
+    for (let i = 0; i < count; i++) {
+      const vel = dir
+        .clone()
+        .multiplyScalar(0.5 + Math.random() * 0.8)
+        .add(
+          new THREE.Vector3(
+            (Math.random() - 0.5) * 0.3,
+            0.25 + Math.random() * 0.2,
+            (Math.random() - 0.5) * 0.3,
+          ),
+        )
+      this.puff(start.clone().addScaledVector(dir, i * 0.08), vel, {
+        life: heavy ? 1.6 : 1.1,
+        startSize: heavy ? 0.12 : 0.08,
+        endSize: heavy ? 1.1 : 0.6,
+        opacity: (heavy ? 0.75 : 0.6) * (own ? 0.6 : 1),
+        tint: 0xd0d0d0,
+      })
+    }
+  }
+
+  private puff(
+    at: THREE.Vector3,
+    vel: THREE.Vector3,
+    o: { life: number; startSize: number; endSize: number; opacity: number; tint: number },
+  ): void {
+    const p = this.smoke[this.smokeIndex++ % MAX_SMOKE]
+    if (!p) return
+    p.sprite.position.copy(at)
+    p.vel.copy(vel)
+    p.maxLife = p.life = o.life * (0.8 + Math.random() * 0.4)
+    p.startSize = o.startSize
+    p.endSize = o.endSize * (0.85 + Math.random() * 0.3)
+    p.opacity = o.opacity
+    p.material.color.setHex(o.tint)
+    p.material.rotation = Math.random() * Math.PI * 2
+    p.sprite.visible = true
   }
 
   /** Spits a spent casing out of the ejection port. */
@@ -411,6 +537,23 @@ export class Effects {
     }
 
     this.updateCasings(dt)
+
+    for (const p of this.smoke) {
+      if (p.life <= 0) continue
+      p.life -= dt
+      if (p.life <= 0) {
+        p.sprite.visible = false
+        continue
+      }
+      const t = 1 - p.life / p.maxLife // 0 → 1 over its life
+      // Slows down quickly (air drag), keeps rising gently.
+      p.vel.multiplyScalar(Math.exp(-3 * dt))
+      p.vel.y += 0.15 * dt
+      p.sprite.position.addScaledVector(p.vel, dt)
+      p.sprite.scale.setScalar(p.startSize + (p.endSize - p.startSize) * Math.sqrt(t))
+      p.material.opacity = p.opacity * (1 - t) * Math.min(1, t * 8) // quick fade-in, slow fade-out
+      p.material.rotation += dt * 0.4
+    }
 
     for (const mark of this.blood) {
       if (mark.life <= 0) continue
