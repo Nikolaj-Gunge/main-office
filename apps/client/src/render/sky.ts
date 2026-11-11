@@ -34,3 +34,65 @@ export function createSky(top: THREE.ColorRepresentation, horizon: THREE.ColorRe
   mesh.renderOrder = -1
   return mesh
 }
+
+/**
+ * A ring of city blocks around the map, seen through the office windows. Pixel-art towers with
+ * lit windows, painted once into a texture and wrapped on a cylinder far outside the building.
+ */
+export function createSkyline(radius = 180): THREE.Mesh {
+  const width = 1024
+  const height = 96
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas unavailable')
+  let seed = 1234567
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  // Two layers: hazy far towers, then darker near ones with windows.
+  for (const [color, minH, maxH, windows] of [
+    ['#9fb0c4', 20, 60, false],
+    ['#5f6f84', 12, 80, true],
+  ] as const) {
+    let x = 0
+    while (x < width) {
+      const w = 10 + Math.floor(rand() * 26)
+      const h = minH + Math.floor(rand() * (maxH - minH))
+      ctx.fillStyle = color
+      ctx.fillRect(x, height - h, w, h)
+      if (windows) {
+        for (let wy = height - h + 3; wy < height - 2; wy += 4) {
+          for (let wx = x + 2; wx < x + w - 2; wx += 3) {
+            if (rand() < 0.35) {
+              ctx.fillStyle = rand() < 0.8 ? '#cfd8e3' : '#f6e3a1'
+              ctx.fillRect(wx, wy, 1, 2)
+            }
+          }
+        }
+      }
+      x += w + Math.floor(rand() * 4)
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.magFilter = THREE.NearestFilter
+  texture.minFilter = THREE.NearestFilter
+  texture.wrapS = THREE.RepeatWrapping
+  texture.repeat.set(3, 1)
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.BackSide,
+    fog: false,
+    depthWrite: false,
+  })
+  // Cylinder from slightly below ground to well above eye level.
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 70, 48, 1, true), material)
+  mesh.position.y = 20
+  mesh.renderOrder = -1
+  mesh.name = 'skyline'
+  return mesh
+}

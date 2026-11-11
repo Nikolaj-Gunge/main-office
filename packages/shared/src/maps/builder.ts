@@ -1,4 +1,19 @@
-import type { MapBox, MapDef, MapLabel, MapLighting, MapSpawn, MaterialId, Vec3 } from './types.ts'
+import type {
+  MapBox,
+  MapDef,
+  MapLabel,
+  MapLight,
+  MapLighting,
+  MapSpawn,
+  MaterialId,
+  Vec3,
+} from './types.ts'
+
+/** Optional per-box flags (see MapBox). */
+export interface BoxFlags {
+  collide?: boolean
+  render?: boolean
+}
 
 /**
  * Small authoring DSL for code-defined maps. Positions are given as *bottom-center*
@@ -8,6 +23,8 @@ export class MapBuilder {
   private readonly boxes: MapBox[] = []
   private readonly spawns: MapSpawn[] = []
   private readonly labels: MapLabel[] = []
+  private readonly lights: MapLight[] = []
+  private skyline = false
 
   private readonly id: string
   private readonly name: string
@@ -20,19 +37,29 @@ export class MapBuilder {
   }
 
   /** Box whose bottom face is centered on (x, y, z). */
-  block(x: number, y: number, z: number, w: number, h: number, d: number, material: MaterialId) {
-    this.boxes.push({ center: [x, y + h / 2, z], size: [w, h, d], material })
+  block(
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+    d: number,
+    material: MaterialId,
+    flags: BoxFlags = {},
+  ) {
+    this.boxes.push({ center: [x, y + h / 2, z], size: [w, h, d], material, ...flags })
     return this
   }
 
   /** Box spanning two opposite corners (any order). */
-  span(a: Vec3, b: Vec3, material: MaterialId) {
+  span(a: Vec3, b: Vec3, material: MaterialId, flags: BoxFlags = {}) {
     const min = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])] as const
     const max = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])] as const
     this.boxes.push({
       center: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2],
       size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]],
       material,
+      ...flags,
     })
     return this
   }
@@ -66,6 +93,16 @@ export class MapBuilder {
     return this
   }
 
+  light(light: MapLight) {
+    this.lights.push(light)
+    return this
+  }
+
+  withSkyline() {
+    this.skyline = true
+    return this
+  }
+
   label(x: number, y: number, z: number, text: string) {
     this.labels.push({ pos: [x, y, z], text })
     return this
@@ -79,6 +116,8 @@ export class MapBuilder {
       spawns: this.spawns,
       labels: this.labels,
       lighting: this.lighting,
+      lights: this.lights,
+      skyline: this.skyline,
     }
   }
 }

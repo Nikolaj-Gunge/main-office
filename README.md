@@ -46,6 +46,9 @@ everyone opens `http://<your-ip>:3000`.
 F1 → "Network test" adds fake latency/jitter (presets up to 300 ms RTT) to try the netcode on
 localhost. `/healthz` on the server reports players and tick timings.
 
+The default map is the office; open the game with `?map=gym` (and start the server with
+`MAP=gym`) for the metrics gym.
+
 Audio starts when you click Play (browsers block sound before a click). Volume is in F1 → Audio.
 
 To run a second, isolated dev instance next to your normal one:

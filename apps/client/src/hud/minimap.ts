@@ -1,19 +1,35 @@
-import type { MapDef, MaterialId } from '@office-fps/shared'
+import type { MapBox, MapDef, MaterialId } from '@office-fps/shared'
 
-/** Minimap pixels per metre and visible radius. */
+/** Minimap pixels per metre and canvas size (visible radius = SIZE / 2 / SCALE metres). */
 const SCALE = 2
 const SIZE = 128
 const PING_SECONDS = 2.5
 
-const COLORS: Record<MaterialId, string> = {
+/** Walkable surface colors (floors), then obstacle colors (things at body height). */
+const FLOOR = '#33363d'
+const COLORS: Partial<Record<MaterialId, string>> = {
   floor: '#3a3d42',
   wall: '#c9c5bb',
   cover: '#d0742f',
   platform: '#4f73a8',
   marker: '#8f7b2b',
   target: '#b9362f',
-  ramp: '#5d9a4a',
+  ramp: '#3f8a55',
+  plaster: '#d8d4cc',
+  concrete: '#9a9893',
+  metal: '#7c818b',
+  glass: '#7fb8dc',
+  desk: '#8b7f6a',
+  fabric: '#2f7d86',
+  fabricAlt: '#4a4d57',
+  plant: '#3d8a45',
+  accent: '#b33831',
+  rack: '#4aa8ff',
+  screen: '#4a5568',
+  whiteboard: '#e0e0dc',
 }
+/** Never drawn: overhead stuff. */
+const SKIP = new Set<MaterialId>(['ceiling', 'lightpanel'])
 
 interface Ping {
   x: number
@@ -21,14 +37,19 @@ interface Ping {
   life: number
 }
 
+const bottom = (b: MapBox) => b.center[1] - b.size[1] / 2
+const top = (b: MapBox) => b.center[1] + b.size[1] / 2
+
 /**
- * Top-left minimap, rotating with you (forward is always up). The level is drawn once into an
- * image; enemies only show up as red pings for a moment when they fire — no wallhack.
+ * Top-left minimap, rotating with you (forward is always up). Each floor of the map is drawn
+ * once into its own image — the one you're standing on is shown. Enemies only show up as red
+ * pings for a moment when they fire — no wallhack.
  */
 export class Minimap {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
-  private readonly image: HTMLCanvasElement
+  /** One image per floor height, lowest first. */
+  private readonly levels: { y: number; image: HTMLCanvasElement }[] = []
   private readonly origin: { x: number; z: number }
   private readonly pings: Ping[] = []
 
@@ -41,7 +62,6 @@ export class Minimap {
     this.ctx = ctx
     parent.append(this.canvas)
 
-    // Bounds of everything, then paint boxes lowest-first so tops of tall things win.
     let minX = Number.POSITIVE_INFINITY
     let minZ = Number.POSITIVE_INFINITY
     let maxX = Number.NEGATIVE_INFINITY
@@ -53,26 +73,39 @@ export class Minimap {
       maxZ = Math.max(maxZ, b.center[2] + b.size[2] / 2)
     }
     this.origin = { x: minX, z: minZ }
-    this.image = document.createElement('canvas')
-    this.image.width = Math.ceil((maxX - minX) * SCALE)
-    this.image.height = Math.ceil((maxZ - minZ) * SCALE)
-    const img = this.image.getContext('2d')
-    if (!img) throw new Error('2D canvas unavailable')
-    const boxes = [...map.boxes].sort(
-      (a, b) => a.center[1] + a.size[1] / 2 - (b.center[1] + b.size[1] / 2),
+
+    // Floors = distinct spawn heights (every playable level has spawns).
+    const floors = [...new Set(map.spawns.map((s) => Math.round(s.pos[1] * 10) / 10))].sort(
+      (a, b) => a - b,
     )
-    for (const b of boxes) {
-      // Ramps are tilted about X: their footprint along Z shrinks by cos(angle).
-      const depth = b.size[2] * Math.abs(Math.cos(b.rotation?.[0] ?? 0))
-      const top = b.center[1] + b.size[1] / 2
-      img.globalAlpha = b.material === 'floor' ? 1 : Math.min(1, 0.55 + top / 8)
-      img.fillStyle = COLORS[b.material]
-      img.fillRect(
-        Math.round((b.center[0] - b.size[0] / 2 - minX) * SCALE),
-        Math.round((b.center[2] - depth / 2 - minZ) * SCALE),
-        Math.max(1, Math.round(b.size[0] * SCALE)),
-        Math.max(1, Math.round(depth * SCALE)),
-      )
+    for (const y of floors) {
+      const image = document.createElement('canvas')
+      image.width = Math.ceil((maxX - minX) * SCALE)
+      image.height = Math.ceil((maxZ - minZ) * SCALE)
+      const img = image.getContext('2d')
+      if (!img) throw new Error('2D canvas unavailable')
+      const rect = (b: MapBox, color: string) => {
+        // Ramps tilt about X: their footprint along Z shrinks by cos(angle).
+        const depth = b.size[2] * Math.abs(Math.cos(b.rotation?.[0] ?? 0))
+        img.fillStyle = color
+        img.fillRect(
+          Math.round((b.center[0] - b.size[0] / 2 - minX) * SCALE),
+          Math.round((b.center[2] - depth / 2 - minZ) * SCALE),
+          Math.max(1, Math.round(b.size[0] * SCALE)),
+          Math.max(1, Math.round(depth * SCALE)),
+        )
+      }
+      const visible = map.boxes.filter((b) => b.render !== false && !SKIP.has(b.material))
+      // Floor you can stand on at this level…
+      for (const b of visible) {
+        if (Math.abs(top(b) - y) < 0.06) rect(b, FLOOR)
+      }
+      // …then anything at body height, lowest first so taller things win.
+      const obstacles = visible
+        .filter((b) => top(b) > y + 0.3 && bottom(b) < y + 2.2)
+        .sort((a, b) => top(a) - top(b))
+      for (const b of obstacles) rect(b, COLORS[b.material] ?? '#888888')
+      this.levels.push({ y, image })
     }
   }
 
@@ -86,7 +119,7 @@ export class Minimap {
     this.canvas.hidden = !visible
   }
 
-  update(dt: number, me: { x: number; z: number }, yaw: number): void {
+  update(dt: number, me: { x: number; y: number; z: number }, yaw: number): void {
     const ctx = this.ctx
     const half = SIZE / 2
     ctx.clearRect(0, 0, SIZE, SIZE)
@@ -97,12 +130,16 @@ export class Minimap {
     ctx.fillStyle = '#15171b'
     ctx.fillRect(0, 0, SIZE, SIZE)
 
+    // The floor you're on: the highest level at or below your feet.
+    let level = this.levels[0]
+    for (const l of this.levels) if (me.y >= l.y - 0.5) level = l
+
     // World → minimap: centre on me, rotate so my view direction points up.
     ctx.translate(half, half)
     ctx.rotate(yaw)
     ctx.translate(-(me.x - this.origin.x) * SCALE, -(me.z - this.origin.z) * SCALE)
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(this.image, 0, 0)
+    if (level) ctx.drawImage(level.image, 0, 0)
 
     for (let i = this.pings.length - 1; i >= 0; i--) {
       const p = this.pings[i]

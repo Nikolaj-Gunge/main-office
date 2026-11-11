@@ -17,7 +17,7 @@ import { quantizeInput } from './quantize.ts'
 
 describe('client messages', () => {
   const cases: ClientMessage[] = [
-    { type: ClientMsg.Hello, protocolVersion: 5, name: 'Nikolaj', primary: WeaponId.Sniper },
+    { type: ClientMsg.Hello, protocolVersion: 6, name: 'Nikolaj', primary: WeaponId.Sniper },
     { type: ClientMsg.SetLoadout, primary: WeaponId.Rifle },
     { type: ClientMsg.Ping, clientTime: 12345.678, rtt: 23 },
     { type: ClientMsg.SetDebug, flags: 1 },
@@ -78,7 +78,14 @@ describe('server messages', () => {
   }
 
   const cases: ServerMessage[] = [
-    { type: ServerMsg.Welcome, playerId: 7, serverTick: 99999, tickRate: 60, snapshotRate: 30 },
+    {
+      type: ServerMsg.Welcome,
+      playerId: 7,
+      serverTick: 99999,
+      tickRate: 60,
+      snapshotRate: 30,
+      mapId: 'office',
+    },
     { type: ServerMsg.Pong, clientTime: 1.25, serverTime: 1700000000000.5, tickMs: 0.5 },
     { type: ServerMsg.PlayerJoined, id: 3, color: 5, name: 'Bo' },
     { type: ServerMsg.PlayerLeft, id: 3 },

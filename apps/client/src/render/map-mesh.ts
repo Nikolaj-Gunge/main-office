@@ -2,7 +2,7 @@ import type { MapDef, MaterialId } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { createLabel } from './labels.ts'
-import { getSurfaceMaterial } from './textures.ts'
+import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
 
 /**
  * World-space planar UVs: each face is projected on its dominant axis, so the 1 m texture grid
@@ -37,6 +37,7 @@ export function buildMapObject(map: MapDef): THREE.Group {
   const euler = new THREE.Euler()
 
   for (const box of map.boxes) {
+    if (box.render === false) continue
     const geometry = new THREE.BoxGeometry(...box.size)
     euler.set(...(box.rotation ?? [0, 0, 0]))
     quaternion.setFromEuler(euler)
@@ -53,8 +54,10 @@ export function buildMapObject(map: MapDef): THREE.Group {
     for (const g of geometries) g.dispose()
     const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
     mesh.name = `surface:${material}`
-    mesh.castShadow = true
-    mesh.receiveShadow = true
+    mesh.castShadow = castsShadow(material)
+    mesh.receiveShadow = !isTransparent(material)
+    // Glass after everything opaque so you see what's behind it.
+    if (isTransparent(material)) mesh.renderOrder = 1
     group.add(mesh)
   }
 

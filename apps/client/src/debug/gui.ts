@@ -14,6 +14,7 @@ export function createSettingsGui(settings: Settings, onChange: () => void): GUI
   render.add(settings, 'palette', Object.keys(PALETTES))
   render.add(settings, 'dither', 0, 2, 0.05)
   render.add(settings, 'outlines', 0, 1, 0.05)
+  render.add(settings, 'bloom', 0, 2, 0.05)
   render.add(settings, 'exposure', 0.2, 3, 0.05)
 
   const camera = gui.addFolder('Camera & input')

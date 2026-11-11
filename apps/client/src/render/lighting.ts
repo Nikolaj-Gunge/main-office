@@ -30,5 +30,26 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
   sun.shadow.bias = -0.0005
   sun.shadow.normalBias = 0.03
   scene.add(sun, sun.target)
+
+  // The map's own lamps (no shadows: cheap, and the sun does the shadow work).
+  for (const l of map.lights ?? []) {
+    const light =
+      l.kind === 'spot'
+        ? new THREE.SpotLight(
+            l.color,
+            l.intensity,
+            l.distance,
+            ((l.angleDeg ?? 45) * Math.PI) / 180,
+            0.5,
+            2,
+          )
+        : new THREE.PointLight(l.color, l.intensity, l.distance, 2)
+    light.position.set(...l.pos)
+    if (light instanceof THREE.SpotLight) {
+      light.target.position.set(l.pos[0], 0, l.pos[2])
+      scene.add(light.target)
+    }
+    scene.add(light)
+  }
   return sun
 }

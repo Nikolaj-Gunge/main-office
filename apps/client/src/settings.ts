@@ -18,6 +18,10 @@ export interface Settings {
   dither: number
   /** 0 = no outlines, 1 = black outlines. */
   outlines: number
+  /** Glow around bright things (lights, screens, muzzle flash). 0 = off. */
+  bloom: number
+  /** Bumped when the default look changes, so saved settings pick up the new look once. */
+  lookVersion: number
   exposure: number
   /** 0–1. */
   masterVolume: number
@@ -30,12 +34,15 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
   fov: 90,
-  pixelHeight: 270,
+  // Phase 8 look: sharper pixels, more colour steps, gentler dither and outlines, bloom.
+  pixelHeight: 360,
   colorMode: 'levels',
-  colorLevels: 24,
+  colorLevels: 40,
   palette: 'resurrect64',
-  dither: 1,
-  outlines: 0.35,
+  dither: 0.6,
+  outlines: 0.25,
+  bloom: 0.5,
+  lookVersion: 2,
   exposure: 1,
   masterVolume: 0.8,
   sfxVolume: 1,
@@ -46,11 +53,26 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 const STORAGE_KEY = 'office-fps:settings'
+const LOOK_KEYS = [
+  'pixelHeight',
+  'colorMode',
+  'colorLevels',
+  'dither',
+  'outlines',
+  'bloom',
+  'exposure',
+  'lookVersion',
+] as const
 
 export function loadSettings(): Settings {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<Settings>
-    return { ...DEFAULT_SETTINGS, ...stored, keybinds: withDefaults(stored.keybinds) }
+    const merged = { ...DEFAULT_SETTINGS, ...stored, keybinds: withDefaults(stored.keybinds) }
+    if ((stored.lookVersion ?? 1) < DEFAULT_SETTINGS.lookVersion) {
+      // New default look: adopt it once, keep everything else (controls, volume, FOV…).
+      for (const key of LOOK_KEYS) Object.assign(merged, { [key]: DEFAULT_SETTINGS[key] })
+    }
+    return merged
   } catch {
     return { ...DEFAULT_SETTINGS, keybinds: withDefaults(undefined) }
   }

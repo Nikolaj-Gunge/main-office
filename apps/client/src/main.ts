@@ -7,6 +7,7 @@ import {
   type InputCommand,
   initPhysics,
   loadMap,
+  MAPS,
   PLAYER_QUERY_GROUPS,
   type PrimaryWeapon,
   RAPIER,
@@ -43,7 +44,7 @@ import { Effects } from './render/effects.ts'
 import { createLighting } from './render/lighting.ts'
 import { buildMapObject } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
-import { createSky } from './render/sky.ts'
+import { createSky, createSkyline } from './render/sky.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 import '@fontsource/pixelify-sans/400.css'
@@ -65,7 +66,11 @@ const menu = new Menu(hudRoot, settings, () => applySettings())
 
 // --- World ----------------------------------------------------------------------------
 await initPhysics()
-const map = loadMap(DEFAULT_MAP_ID)
+// `?map=gym` loads another map (the server tells us which one it runs on join).
+const params = new URLSearchParams(location.search)
+const requestedMap = params.get('map') ?? ''
+const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
+const map = loadMap(mapId)
 const physics = createPhysicsWorld(map)
 const minimap = new Minimap(hudRoot, map)
 
@@ -78,6 +83,7 @@ scene.add(buildMapObject(map))
 createLighting(map, scene)
 const sky = createSky(map.lighting.skyColor, map.lighting.fogColor)
 scene.add(sky)
+if (map.skyline) scene.add(createSkyline())
 
 const stats = new Stats({ trackGPU: true, horizontal: false })
 stats.init(pixels.renderer)
@@ -188,6 +194,12 @@ const net = new Connection({
     combat.onMessage(msg)
     switch (msg.type) {
       case ServerMsg.Welcome:
+        if (msg.mapId !== map.id && msg.mapId in MAPS) {
+          // Server runs another map: reload into it (keeps ?mute and other params).
+          params.set('map', msg.mapId)
+          location.search = params.toString()
+          return
+        }
         joined = true
         noclip = false
         remotes.clear()

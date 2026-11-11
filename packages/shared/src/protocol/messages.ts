@@ -105,6 +105,8 @@ export type ServerMessage =
       serverTick: number
       tickRate: number
       snapshotRate: number
+      /** Map the server runs (clients load the same one). */
+      mapId: string
     }
   | {
       type: typeof ServerMsg.Snapshot
@@ -384,6 +386,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
   switch (msg.type) {
     case ServerMsg.Welcome:
       w.u16(msg.playerId).u32(msg.serverTick).u8(msg.tickRate).u8(msg.snapshotRate)
+      w.str8(msg.mapId)
       break
     case ServerMsg.Snapshot:
       w.u32(msg.tick).u32(msg.ackSeq)
@@ -461,6 +464,7 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
         serverTick: r.u32(),
         tickRate: r.u8(),
         snapshotRate: r.u8(),
+        mapId: r.str8(),
       }
     case ServerMsg.Snapshot: {
       const tick = r.u32()

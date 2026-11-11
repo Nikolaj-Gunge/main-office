@@ -35,14 +35,16 @@ export interface PhysicsWorld {
  */
 export function createPhysicsWorld(map: MapDef): PhysicsWorld {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
-  const mapColliders = map.boxes.map((box) => {
-    const [hx, hy, hz] = [box.size[0] / 2, box.size[1] / 2, box.size[2] / 2]
-    const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
-      .setTranslation(...box.center)
-      .setCollisionGroups(MAP_COLLISION_GROUPS)
-    if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
-    return world.createCollider(desc)
-  })
+  const mapColliders = map.boxes
+    .filter((box) => box.collide !== false)
+    .map((box) => {
+      const [hx, hy, hz] = [box.size[0] / 2, box.size[1] / 2, box.size[2] / 2]
+      const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+        .setTranslation(...box.center)
+        .setCollisionGroups(MAP_COLLISION_GROUPS)
+      if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
+      return world.createCollider(desc)
+    })
   // One step builds the broad phase so scene queries see the colliders.
   world.step()
   return { world, mapColliders }

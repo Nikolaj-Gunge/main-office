@@ -147,6 +147,7 @@ export class Game {
       serverTick: this.tick,
       tickRate: TICK_RATE,
       snapshotRate: SNAPSHOT_RATE,
+      mapId: this.map.id,
     })
     for (const other of this.players.values()) {
       send(client, {

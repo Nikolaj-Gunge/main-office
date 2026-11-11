@@ -11,14 +11,46 @@ const POST_VERTEX = /* glsl */ `
   }
 `
 
+/** Bright-pass: what glows (light panels, screens, muzzle flashes). */
+const BRIGHT_FRAGMENT = /* glsl */ `
+  uniform sampler2D tColor;
+  uniform sampler2D tOverlay;
+  uniform float threshold;
+  varying vec2 vUv;
+  void main() {
+    vec4 o = texture2D(tOverlay, vUv);
+    vec3 c = texture2D(tColor, vUv).rgb * (1.0 - o.a) + o.rgb;
+    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    gl_FragColor = vec4(c * max(0.0, luma - threshold) / max(luma, 1e-4), 1.0);
+  }
+`
+
+/** Separable 9-tap gaussian blur. */
+const BLUR_FRAGMENT = /* glsl */ `
+  uniform sampler2D tInput;
+  uniform vec2 direction; // texel step
+  varying vec2 vUv;
+  void main() {
+    vec3 sum = texture2D(tInput, vUv).rgb * 0.227027;
+    sum += texture2D(tInput, vUv + direction * 1.3846).rgb * 0.316216;
+    sum += texture2D(tInput, vUv - direction * 1.3846).rgb * 0.316216;
+    sum += texture2D(tInput, vUv + direction * 3.2308).rgb * 0.070270;
+    sum += texture2D(tInput, vUv - direction * 3.2308).rgb * 0.070270;
+    gl_FragColor = vec4(sum, 1.0);
+  }
+`
+
 function createPostUniforms(
   target: THREE.WebGLRenderTarget,
   overlay: THREE.WebGLRenderTarget,
+  bloom: THREE.WebGLRenderTarget,
   size: THREE.Vector2,
 ) {
   return {
     tColor: { value: target.texture },
     tOverlay: { value: overlay.texture },
+    tBloom: { value: bloom.texture },
+    bloomStrength: { value: 0.6 },
     tDepth: { value: target.depthTexture },
     resolution: { value: size },
     cameraNear: { value: 0.1 },
@@ -52,6 +84,19 @@ export class PixelRenderer {
   private readonly postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
   private readonly uniforms: ReturnType<typeof createPostUniforms>
   private targetHeight = 270
+  // Bloom: bright-pass and ping-pong blur at half resolution, smooth (linear) on purpose — the
+  // glow is then quantized and dithered with everything else in the post pass.
+  private readonly bloomA: THREE.WebGLRenderTarget
+  private readonly bloomB: THREE.WebGLRenderTarget
+  private readonly fxScene = new THREE.Scene()
+  private readonly fxQuad: THREE.Mesh
+  private readonly brightMaterial: THREE.ShaderMaterial
+  private readonly blurMaterial: THREE.ShaderMaterial
+  private readonly blurUniforms = {
+    tInput: { value: null as THREE.Texture | null },
+    direction: { value: new THREE.Vector2() },
+  }
+  private bloomEnabled = true
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -76,7 +121,37 @@ export class PixelRenderer {
       magFilter: THREE.NearestFilter,
     })
 
-    this.uniforms = createPostUniforms(this.target, this.overlayTarget, this.size)
+    const bloomOptions = {
+      type: THREE.HalfFloatType,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+    }
+    this.bloomA = new THREE.WebGLRenderTarget(1, 1, bloomOptions)
+    this.bloomB = new THREE.WebGLRenderTarget(1, 1, bloomOptions)
+    this.brightMaterial = new THREE.ShaderMaterial({
+      vertexShader: POST_VERTEX,
+      fragmentShader: BRIGHT_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        tColor: { value: this.target.texture },
+        tOverlay: { value: this.overlayTarget.texture },
+        threshold: { value: 1.1 },
+      },
+    })
+    this.blurMaterial = new THREE.ShaderMaterial({
+      vertexShader: POST_VERTEX,
+      fragmentShader: BLUR_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: this.blurUniforms,
+    })
+    this.fxQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.brightMaterial)
+    this.fxQuad.frustumCulled = false
+    this.fxScene.add(this.fxQuad)
+
+    this.uniforms = createPostUniforms(this.target, this.overlayTarget, this.bloomA, this.size)
     const material = new THREE.ShaderMaterial({
       vertexShader: POST_VERTEX,
       fragmentShader: postFragment,
@@ -96,6 +171,8 @@ export class PixelRenderer {
     u.levels.value = settings.colorLevels
     u.dither.value = settings.dither
     u.outlines.value = settings.outlines
+    u.bloomStrength.value = settings.bloom
+    this.bloomEnabled = settings.bloom > 0
 
     const colors = (PALETTES[settings.palette] ?? PALETTES.resurrect64 ?? []).slice(
       0,
@@ -126,6 +203,8 @@ export class PixelRenderer {
     this.renderer.setSize(w, h, false)
     this.target.setSize(w, h)
     this.overlayTarget.setSize(w, h)
+    this.bloomA.setSize(Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2)))
+    this.bloomB.setSize(Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2)))
     // CSS size may overshoot the window by < 1 game pixel; body has overflow: hidden.
     this.canvas.style.width = `${(w * this.scale) / dpr}px`
     this.canvas.style.height = `${(h * this.scale) / dpr}px`
@@ -152,7 +231,28 @@ export class PixelRenderer {
     r.clear()
     if (overlay) r.render(overlay.scene, overlay.camera)
     r.setClearColor(0x000000, 1)
+    if (this.bloomEnabled) this.renderBloom()
     r.setRenderTarget(null)
     r.render(this.postScene, this.postCamera)
+  }
+
+  private renderBloom(): void {
+    const r = this.renderer
+    this.fxQuad.material = this.brightMaterial
+    r.setRenderTarget(this.bloomA)
+    r.render(this.fxScene, this.postCamera)
+    // Two blur rounds (H+V each) for a wider, softer glow.
+    const u = this.blurUniforms
+    this.fxQuad.material = this.blurMaterial
+    for (const spread of [1, 2]) {
+      u.tInput.value = this.bloomA.texture
+      u.direction.value.set(spread / this.bloomA.width, 0)
+      r.setRenderTarget(this.bloomB)
+      r.render(this.fxScene, this.postCamera)
+      u.tInput.value = this.bloomB.texture
+      u.direction.value.set(0, spread / this.bloomB.height)
+      r.setRenderTarget(this.bloomA)
+      r.render(this.fxScene, this.postCamera)
+    }
   }
 }

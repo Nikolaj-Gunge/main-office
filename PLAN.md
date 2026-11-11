@@ -407,6 +407,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - glTF loader with `COL_` / `SPAWN_` / `LIGHT_` conventions; baked lighting; pixel textures; landmark props.
 - Lighting to guide flow; choke points, verticality, sightlines validated in playtests.
 - **Done when:** 6–10 people play 20 minutes and nobody gets lost or spawn-killed repeatedly.
+- **Implementation notes (first pass, before office photos):** "Main Office" is code-built (`packages/shared/src/maps/office.ts`), 60 × 40 m: double-height open-plan hall (desk clusters, glass meeting rooms, reception with logo wall, kitchen with coffee machine and ping-pong) under a glass-railed gallery; north wing with boardroom, quiet room, server room (ground) and games room, offices, lounge, CEO office (upper). Three routes up (grand stairs, kitchen stairs, enclosed west stairwell). Map boxes can be render-only or collider-only; maps can carry lights and a skyline. Visual upgrade: richer procedural textures per material, glass, emissive panels/screens/rack LEDs with a half-res bloom pass, 360p default with 40 colour levels and softer dither/outlines (saved settings adopt the new look once). Minimap draws one image per floor. `?map=gym` still loads the gym; the server tells clients its map on join. Measured: 20 shooting bots ≈ 1.2–2.7 ms per tick on this map.
 
 ### Phase 9 — Characters & animation
 
