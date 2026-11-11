@@ -115,7 +115,10 @@ export class AdminApi {
 
 /** The password a request carries (see the class comment); '' if missing or malformed. */
 function passwordFrom(request: Request): string {
-  const raw = request.headers.get('X-Admin-Password') ?? ''
+  // A cached copy of the old admin page still sends `Authorization: Bearer …`.
+  const raw =
+    request.headers.get('X-Admin-Password') ??
+    encodeURIComponent((request.headers.get('Authorization') ?? '').replace(/^Bearer /, ''))
   try {
     return decodeURIComponent(raw)
   } catch {
