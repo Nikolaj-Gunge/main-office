@@ -1,7 +1,6 @@
 import type * as THREE from 'three'
+import { distanceLowpass, falloff, gunshotMix } from './mixing.ts'
 import { SOUNDS, type SoundId } from './sounds.ts'
-
-const SPEED_OF_SOUND = 343
 
 export interface PlayOptions {
   /** World position for 3D sounds; omit for sounds "in your head" (own gun, UI). */
@@ -181,32 +180,32 @@ export class AudioEngine {
    * mostly the echo, dulled and arriving late (sound travels 343 m/s).
    */
   gunshot(at?: { x: number; y: number; z: number }): void {
-    const d = at ? this.distanceTo(at) : 0
-    const attenuation = 1 / (1 + d / 18)
-    const delay = d / SPEED_OF_SOUND
-    const lowpass = d < 1 ? 20000 : Math.max(900, 16000 * Math.exp(-d / 35))
-    const base = at ? 0.9 : 0.75
-    const layer = (id: SoundId, mixLevel: number) =>
+    const m = gunshotMix(at ? this.distanceTo(at) : null)
+    const layer = (id: SoundId, level: number) =>
       this.play(id, {
         ...(at ? { at } : {}),
-        volume: base * mixLevel * attenuation,
-        delay,
-        lowpass,
+        volume: m.volume * level,
+        delay: m.delay,
+        lowpass: m.lowpass,
       })
-    layer('shot.close', clamp01(1 - (d - 3) / 25))
-    layer('shot.body', Math.max(0.15, clamp01(1 - d / 90)))
-    layer('shot.tail', 0.35 + 0.65 * clamp01(d / 35))
+    layer('shot.close', m.close)
+    layer('shot.body', m.body)
+    layer('shot.tail', m.tail)
   }
 
-  /** Footsteps and other quiet world sounds: audible to ~`range` m, fading quadratically. */
+  /**
+   * Quieter world sounds (footsteps, impacts, casings): full volume within `ref` m, then falling
+   * off steeply and getting duller, silent beyond `range` m.
+   */
   playNear(
     id: SoundId,
     at: { x: number; y: number; z: number },
     volume: number,
     range: number,
+    ref = 3,
   ): void {
-    const fall = clamp01(1 - this.distanceTo(at) / range)
-    this.play(id, { at, volume: volume * fall * fall })
+    const d = this.distanceTo(at)
+    this.play(id, { at, volume: volume * falloff(d, ref, range), lowpass: distanceLowpass(d) })
   }
 
   /** Health-driven heartbeat and muffled hearing. */

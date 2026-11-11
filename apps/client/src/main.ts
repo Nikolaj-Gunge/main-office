@@ -125,10 +125,10 @@ const debugHitboxes = new DebugHitboxes(scene)
 player.feel.onFootstep = () => {
   const s = player.state
   const sprinting = Math.hypot(s.vel.x, s.vel.z) > player.movement.walkSpeed * 1.1
-  audio.play('step', { volume: s.crouched ? 0.1 : sprinting ? 0.32 : 0.22 })
+  audio.play('step', { volume: s.crouched ? 0.05 : sprinting ? 0.16 : 0.11 })
 }
-remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 1 : 0.7, 28)
-remotes.onLand = (at) => audio.playNear('land', at, 0.8, 25)
+remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
+remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
 
 // --- Networking -----------------------------------------------------------------------
 /** True once the server has welcomed us: from then on the server owns our position. */
@@ -273,7 +273,7 @@ pixels.renderer.setAnimationLoop(() => {
     if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
     if (events.weapon) combat.onWeaponEvents(events.weapon, player.state.weapon)
     if (events.landed && events.landingSpeed > 3) {
-      audio.play('land', { volume: Math.min(0.6, events.landingSpeed / 14) })
+      audio.play('land', { volume: Math.min(0.35, events.landingSpeed / 20) })
     }
     if (joined) outgoing.push(command)
     accumulator -= TICK_DT
