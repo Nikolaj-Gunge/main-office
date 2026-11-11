@@ -77,7 +77,15 @@ export class MapBuilder {
    * Ramp rising toward -Z. Its top surface starts at floor height `y` at z = `zStart` and climbs
    * `run` meters (horizontal) at `angleDeg`. Returns the height reached.
    */
-  ramp(x: number, y: number, zStart: number, width: number, run: number, angleDeg: number) {
+  ramp(
+    x: number,
+    y: number,
+    zStart: number,
+    width: number,
+    run: number,
+    angleDeg: number,
+    material: MaterialId = 'ramp',
+  ) {
     const a = (angleDeg * Math.PI) / 180
     const thickness = 0.3
     const length = run / Math.cos(a)
@@ -92,7 +100,7 @@ export class MapBuilder {
       ],
       size: [width, thickness, length],
       rotation: [a, 0, 0],
-      material: 'ramp',
+      material,
     })
     return rise
   }
