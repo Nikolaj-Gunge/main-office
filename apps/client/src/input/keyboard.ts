@@ -1,4 +1,7 @@
-/** Tracks held keys by `KeyboardEvent.code` (layout-independent: WASD works on AZERTY too). */
+/**
+ * Tracks held keys by `KeyboardEvent.code` (layout-independent: WASD works on AZERTY too), plus
+ * mouse buttons as `Mouse0` (left), `Mouse1` (middle), `Mouse2` (right) while the pointer is locked.
+ */
 export class Keyboard {
   private readonly down = new Set<string>()
   /** Keys pressed since last `consumePressed`, so a tap shorter than one tick isn't lost. */
@@ -13,6 +16,19 @@ export class Keyboard {
     })
     target.addEventListener('keyup', (e) => this.down.delete(e.code))
     target.addEventListener('blur', () => this.down.clear())
+    target.addEventListener('mousedown', (e) => {
+      if (!document.pointerLockElement) return
+      this.pressed.add(`Mouse${e.button}`)
+      this.down.add(`Mouse${e.button}`)
+    })
+    target.addEventListener('mouseup', (e) => this.down.delete(`Mouse${e.button}`))
+    // Right-click to aim must not open the context menu.
+    target.addEventListener('contextmenu', (e) => {
+      if (document.pointerLockElement) e.preventDefault()
+    })
+    document.addEventListener('pointerlockchange', () => {
+      if (!document.pointerLockElement) this.down.clear()
+    })
   }
 
   isDown(code: string): boolean {

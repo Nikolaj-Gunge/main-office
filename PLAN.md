@@ -373,6 +373,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - Placeholder viewmodel (box gun) in its own pass; basic muzzle flash + tracer + impact.
 - Events: hit confirm, kill feed entries.
 - **Done when:** two people can shoot each other; hitting the head kills instantly; hits register correctly at 150 ms simulated latency (verified with debug hitbox draw of rewound pose).
+- **Implementation notes:** weapon state (ammo, cooldown, reload, draw, click buffer, spread seed) lives inside the predicted `PlayerState`, so client and server agree shot-for-shot; spread is a seeded hash of (server seed, shot index). Server history is kept per *snapshot* tick and interpolated exactly like the client draws remote players, so the rewound pose equals what was on screen — measured 0 cm error over 12 live shots at 166 ms RTT. Rewind is capped at 400 ms. Viewmodel renders into its own target and is composited in the post shader (keeps world depth for outlines). `bun run bots --shoot` gives you someone to fight alone.
 
 ### Phase 5 — Game feel pass #1
 

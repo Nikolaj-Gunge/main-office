@@ -1,0 +1,60 @@
+import type { HitPose } from '@office-fps/shared'
+
+export interface HistoryPose extends HitPose {
+  alive: boolean
+}
+
+/** Shortest-path angle lerp (yaw wraps at 2π). */
+function lerpAngle(a: number, b: number, t: number): number {
+  return a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t
+}
+
+/**
+ * Ring buffer of every player's hitbox pose at recent snapshot ticks. When someone fires, the
+ * server asks "where was everyone at the moment the shooter saw them?" and tests against that.
+ *
+ * Interpolates between *snapshot* ticks, exactly like the client does when drawing remote
+ * players, so the rewound pose matches what was on the shooter's screen.
+ */
+export class PoseHistory {
+  private readonly frames: { tick: number; poses: Map<number, HistoryPose> }[] = []
+  private readonly capacity: number
+  private readonly ticksPerFrame: number
+
+  constructor(capacity: number, ticksPerFrame: number) {
+    this.capacity = capacity
+    this.ticksPerFrame = ticksPerFrame
+  }
+
+  record(tick: number, poses: Map<number, HistoryPose>): void {
+    this.frames.push({ tick, poses })
+    if (this.frames.length > this.capacity) this.frames.shift()
+  }
+
+  get oldestTick(): number {
+    return this.frames[0]?.tick ?? 0
+  }
+
+  /** Pose of player `id` at fractional `tick`, or null if unknown then. */
+  poseAt(id: number, tick: number): HistoryPose | null {
+    const frames = this.frames
+    const newest = frames[frames.length - 1]
+    if (!newest) return null
+    // Frames are evenly spaced: index arithmetic instead of searching.
+    const rel = (tick - (frames[0]?.tick ?? 0)) / this.ticksPerFrame
+    const i0 = Math.max(0, Math.min(frames.length - 1, Math.floor(rel)))
+    const i1 = Math.min(frames.length - 1, i0 + 1)
+    const a = frames[i0]?.poses.get(id)
+    const b = frames[i1]?.poses.get(id)
+    if (!a || !b) return a ?? b ?? null
+    const t = i0 === i1 ? 0 : Math.max(0, Math.min(1, rel - i0))
+    return {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z: a.z + (b.z - a.z) * t,
+      yaw: lerpAngle(a.yaw, b.yaw, t),
+      crouch: a.crouch + (b.crouch - a.crouch) * t,
+      alive: t < 0.5 ? a.alive : b.alive,
+    }
+  }
+}

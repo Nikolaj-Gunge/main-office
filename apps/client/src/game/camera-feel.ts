@@ -36,8 +36,10 @@ export class CameraFeel {
   roll = 0
   onFootstep?: () => void
 
-  private phase = 0
-  private bobWeight = 0
+  /** Footstep cycle (radians, one step per π) — the viewmodel bobs in sync with it. */
+  phase = 0
+  /** 0 = standing still, 1 = walking, >1 = sprinting. */
+  bobWeight = 0
   private readonly dip = new Spring(14)
   private stepOffset = 0
 

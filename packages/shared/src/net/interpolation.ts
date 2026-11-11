@@ -67,6 +67,8 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     pitch: lerp(a.pitch, b.pitch),
     crouch: Math.max(0, Math.min(1, lerp(a.crouch, b.crouch))),
     grounded: t < 0.5 ? a.grounded : b.grounded,
+    alive: b.alive,
+    protected: b.protected,
   }
 }
 

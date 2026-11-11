@@ -2,6 +2,7 @@ import {
   ClientMsg,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
+  DebugFlag,
   type InputCommand,
   initPhysics,
   loadMap,
@@ -13,18 +14,23 @@ import * as THREE from 'three'
 import { createSettingsGui } from './debug/gui.ts'
 import { addNetworkFolder } from './debug/network.ts'
 import { addTuningFolders } from './debug/tuning.ts'
+import { ClientCombat } from './game/combat.ts'
 import { FreeFly } from './game/free-fly.ts'
 import { LocalPlayer } from './game/local-player.ts'
 import { RemotePlayers } from './game/remote-players.ts'
+import { CombatHud } from './hud/combat-hud.ts'
 import { Overlay } from './hud/overlay.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
+import { DebugHitboxes } from './render/debug-hitboxes.ts'
+import { Effects } from './render/effects.ts'
 import { createLighting } from './render/lighting.ts'
 import { buildMapObject } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
 import { createSky } from './render/sky.ts'
+import { Viewmodel } from './render/viewmodel.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 
 function requireElement<T extends Element>(selector: string): T {
@@ -34,7 +40,9 @@ function requireElement<T extends Element>(selector: string): T {
 }
 
 const canvas = requireElement<HTMLCanvasElement>('#game')
-const overlay = new Overlay(requireElement<HTMLDivElement>('#hud'))
+const hudRoot = requireElement<HTMLDivElement>('#hud')
+const hud = new CombatHud(hudRoot)
+const overlay = new Overlay(hudRoot)
 const settings = loadSettings()
 
 // --- World ----------------------------------------------------------------------------
@@ -63,6 +71,7 @@ function updateProjection() {
   camera.fov = (2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180) / Math.PI
   camera.aspect = aspect
   camera.updateProjectionMatrix()
+  viewmodel.setAspect(aspect)
 }
 
 // --- Players & input ------------------------------------------------------------------
@@ -74,9 +83,25 @@ look.yaw = player.state.yaw
 const fly = new FreeFly(camera, keys, look)
 let noclip = false
 
+// --- Combat ---------------------------------------------------------------------------
+const viewmodel = new Viewmodel()
+const effects = new Effects(scene)
+const debugHitboxes = new DebugHitboxes(scene)
+
 // --- Networking -----------------------------------------------------------------------
 /** True once the server has welcomed us: from then on the server owns our position. */
 let joined = false
+
+const combat = new ClientCombat({
+  camera,
+  physics,
+  effects,
+  hud,
+  viewmodel,
+  remotes,
+  debug: debugHitboxes,
+  myId: () => net.playerId,
+})
 
 const net = new Connection({
   onState: (state, reason) => {
@@ -89,6 +114,7 @@ const net = new Connection({
     if (state === 'connecting') overlay.setStatus('Connecting…')
   },
   onMessage: (msg) => {
+    combat.onMessage(msg)
     switch (msg.type) {
       case ServerMsg.Welcome:
         joined = true
@@ -97,11 +123,14 @@ const net = new Connection({
         player.resetPrediction()
         overlay.setJoined(true)
         overlay.setStatus('')
+        if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
       case ServerMsg.PlayerJoined:
+        combat.setName(msg.id, msg.name)
         if (msg.id !== net.playerId) remotes.add(msg.id, msg.name, msg.color)
         break
       case ServerMsg.PlayerLeft:
+        combat.forget(msg.id)
         remotes.remove(msg.id)
         break
       case ServerMsg.Snapshot:
@@ -147,6 +176,11 @@ window.addEventListener('keydown', (e) => {
     applySettings()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
   }
+  if (e.code === 'F4') {
+    e.preventDefault()
+    debugHitboxes.enabled = !debugHitboxes.enabled
+    net.send({ type: ClientMsg.SetDebug, flags: debugHitboxes.enabled ? DebugFlag.LagComp : 0 })
+  }
   if (e.code === 'KeyV') {
     noclip = !noclip
     // Offline, leaving noclip drops you where the camera is. Online the server owns your
@@ -187,7 +221,8 @@ pixels.renderer.setAnimationLoop(() => {
     const input = noclip
       ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
       : samplePlayerInput(keys, look)
-    const command = player.tick(input)
+    const { command, events } = player.tick(input, remotes.renderTick)
+    if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id)
     if (joined) outgoing.push(command)
     accumulator -= TICK_DT
     ticks++
@@ -200,9 +235,16 @@ pixels.renderer.setAnimationLoop(() => {
   if (noclip) fly.update(dt)
   else player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
   remotes.update(now)
+  combat.update(
+    dt,
+    player.state,
+    { yaw: look.yaw, pitch: look.pitch, delta: look.takeDelta() },
+    { phase: player.feel.phase, weight: player.feel.bobWeight },
+    player.movement.walkSpeed,
+  )
 
   sky.position.copy(camera.position)
-  pixels.render(scene, camera)
+  pixels.render(scene, camera, noclip ? undefined : viewmodel)
   stats.update()
 
   if (settings.showDebug) {
@@ -232,6 +274,19 @@ pixels.renderer.setAnimationLoop(() => {
 // Dev-only handle for debugging from the console and automated visual checks.
 if (import.meta.env.DEV) {
   Object.assign(window, {
-    __game: { camera, look, settings, applySettings, pixels, scene, player, keys, net, remotes },
+    __game: {
+      camera,
+      look,
+      settings,
+      applySettings,
+      pixels,
+      scene,
+      player,
+      keys,
+      net,
+      remotes,
+      hud,
+      debugHitboxes,
+    },
   })
 }

@@ -3,6 +3,7 @@
  *
  *   bun run bots                       # 20 bots against ws://localhost:3000/ws
  *   bun run bots --count 8 --url ws://host:3000/ws --seconds 60
+ *   bun run bots --count 3 --shoot     # bots also shoot (badly) at the nearest player
  */
 import {
   Button,
@@ -12,6 +13,7 @@ import {
   encodeClientMessage,
   type InputCommand,
   PROTOCOL_VERSION,
+  type RemotePlayerState,
   ServerMsg,
   TICK_RATE,
 } from '@office-fps/shared'
@@ -24,6 +26,7 @@ function arg(name: string, fallback: string): string {
 const count = Number(arg('count', '20'))
 const url = arg('url', 'ws://localhost:3000/ws')
 const seconds = Number(arg('seconds', '0'))
+const shoot = process.argv.includes('--shoot')
 
 const MOVES = [
   Button.Forward,
@@ -36,18 +39,27 @@ const MOVES = [
   Button.Forward | Button.Crouch,
   0,
 ]
+/** Aim error (radians) so shooting bots hit sometimes, not always. */
+const AIM_ERROR = 0.05
 
 class Bot {
-  private ws: WebSocket
+  private readonly ws: WebSocket
+  private readonly index: number
   private seq = 1
   private buttons = 0
   private yaw = Math.random() * Math.PI * 2
+  private pitch = 0
   private turnRate = 0
   private nextChange = 0
+  private nextShot = 0
   private timer: ReturnType<typeof setInterval> | null = null
+  private lastTick = 0
+  private self = { x: 0, y: 0, z: 0, alive: true }
+  private others: RemotePlayerState[] = []
   welcomed = false
 
-  constructor(readonly index: number) {
+  constructor(index: number) {
+    this.index = index
     this.ws = new WebSocket(url)
     this.ws.binaryType = 'arraybuffer'
     this.ws.addEventListener('open', () => {
@@ -59,10 +71,15 @@ class Bot {
         this.welcomed = true
         this.timer = setInterval(() => this.tick(), 1000 / TICK_RATE)
       }
+      if (msg.type === ServerMsg.Snapshot) {
+        this.lastTick = msg.tick
+        this.others = msg.players
+        if (msg.self) this.self = { ...msg.self.pos, alive: msg.self.alive }
+      }
     })
     this.ws.addEventListener('close', (e) => {
       if (this.timer) clearInterval(this.timer)
-      if (e.code !== 1000) console.log(`[bot ${index}] closed ${e.code} ${e.reason}`)
+      if (e.code !== 1000) console.log(`[bot ${this.index}] closed ${e.code} ${e.reason}`)
     })
   }
 
@@ -75,15 +92,46 @@ class Bot {
       this.nextChange = now + 500 + Math.random() * 1500
     }
     this.yaw += this.turnRate / TICK_RATE
+
+    let buttons = this.buttons
+    if (shoot && this.self.alive && now > this.nextShot) {
+      const target = this.nearestTarget()
+      if (target) {
+        const dx = target.x - this.self.x
+        const dz = target.z - this.self.z
+        const dy = target.y + 1.3 - (this.self.y + 1.65)
+        this.yaw = Math.atan2(-dx, -dz) + (Math.random() - 0.5) * AIM_ERROR
+        this.pitch = Math.atan2(dy, Math.hypot(dx, dz)) + (Math.random() - 0.5) * AIM_ERROR
+        buttons = (buttons & ~Button.Sprint) | Button.Fire
+        this.nextShot = now + 400 + Math.random() * 800
+      }
+    }
+
     const command: InputCommand = {
       seq: this.seq++,
-      buttons: this.buttons,
+      buttons,
       yaw: this.yaw,
-      pitch: 0,
+      pitch: this.pitch,
+      // Bots "see" the latest snapshot, no interpolation delay.
+      viewTick: this.lastTick,
     }
     this.send({ type: ClientMsg.Input, commands: [command] })
     // Jump is edge-triggered: release it after one tick.
     this.buttons &= ~Button.Jump
+  }
+
+  private nearestTarget(): RemotePlayerState | null {
+    let best: RemotePlayerState | null = null
+    let bestD = 40 // only shoot within 40 m
+    for (const p of this.others) {
+      if (!p.alive) continue
+      const d = Math.hypot(p.x - this.self.x, p.z - this.self.z)
+      if (d < bestD) {
+        bestD = d
+        best = p
+      }
+    }
+    return best
   }
 
   private send(msg: ClientMessage): void {
@@ -104,7 +152,7 @@ try {
   process.exit(1)
 }
 
-console.log(`[bots] connecting ${count} bots to ${url}`)
+console.log(`[bots] connecting ${count} bots to ${url}${shoot ? ' (shooting)' : ''}`)
 const bots = Array.from({ length: count }, (_, i) => new Bot(i + 1))
 
 const stop = () => {

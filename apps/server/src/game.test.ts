@@ -37,7 +37,13 @@ function fakeClient() {
   }
 }
 
-const forward = (seq: number): InputCommand => ({ seq, buttons: Button.Forward, yaw: 0, pitch: 0 })
+const forward = (seq: number): InputCommand => ({
+  seq,
+  buttons: Button.Forward,
+  yaw: 0,
+  pitch: 0,
+  viewTick: 0,
+})
 
 describe('Game', () => {
   test('join sends welcome and the roster; others hear about it', () => {

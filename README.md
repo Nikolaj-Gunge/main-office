@@ -29,9 +29,13 @@ everyone opens `http://<your-ip>:3000`.
 | Space          | Jump                                                       |
 | C / Left Ctrl  | Crouch (C recommended: Ctrl+W closes the tab)              |
 | Shift          | Sprint (forward only)                                      |
+| Left mouse     | Shoot                                                      |
+| Right mouse    | Aim down sights (tighter spread)                           |
+| R              | Reload                                                     |
 | V              | Toggle noclip (Space/Ctrl up/down); leaving it drops you there |
 | F1             | Settings + live movement / camera-feel tuning              |
 | F3             | Debug text (fps, position, speed, ping, bandwidth, prediction corrections) |
+| F4             | Hitbox debug: green = where you see players, red = where the server checked your last shot |
 | Esc            | Release mouse                                              |
 
 F1 → "Network test" adds fake latency/jitter (presets up to 300 ms RTT) to try the netcode on
@@ -51,7 +55,7 @@ settings and renderer for console debugging.
 | `bun run lint`      | Biome lint + format check (`bun run format` fixes)  |
 | `bun run build`     | Production client build → `apps/client/dist`        |
 | `bun start`         | Production server: serves `dist` + WebSocket on one port (`PORT`, default 3000) |
-| `bun run bots`      | Headless bots for load tests (`--count 20 --url ws://… --seconds 60`) |
+| `bun run bots`      | Headless bots for load tests (`--count 20 --url ws://… --seconds 60`; add `--shoot` to make them shoot at the nearest player) |
 
 ## Layout
 
@@ -71,10 +75,12 @@ to go back to.
 
 1. Work happens on `phase-N` (pushed to GitHub as a backup while in progress).
 2. Test it: `git checkout phase-N && bun install && bun dev`.
-3. Approved → fast-forward `main` to it and tag it:
+3. Approved → fast-forward `main` to it, tag it, and delete the branch (the tag replaces it):
    ```sh
    git checkout main && git merge --ff-only phase-N
-   git tag -a phase-N -m "Phase N approved" && git push origin main phase-N
+   git tag -a phase-N -m "Phase N approved"
+   git push origin refs/heads/main refs/tags/phase-N
+   git branch -d phase-N && git push origin --delete refs/heads/phase-N
    ```
 4. Not approved → keep iterating on `phase-N`; `main` is untouched.
 

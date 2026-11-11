@@ -33,6 +33,8 @@ function inputAt(tick: number) {
   if (tick % 120 === 30) buttons |= Button.Jump
   if (tick % 200 > 170) buttons |= Button.Crouch
   if (tick % 150 < 40) buttons |= Button.Sprint
+  if (tick % 25 === 0) buttons |= Button.Fire
+  if (tick === 400) buttons |= Button.Reload
   return { buttons, yaw: Math.sin(tick / 50) * 2, pitch: 0 }
 }
 
@@ -70,6 +72,16 @@ describe('Predictor', () => {
         reconciles++
       }
     }
+    // Drain: after everything has arrived both sides must agree exactly, weapon included.
+    while (toServer.length > 0) {
+      const { cmd } = toServer.shift() as { cmd: InputCommand }
+      stepPlayer(server.state, cmd, TICK_DT, server.body)
+      serverAck = cmd.seq
+    }
+    predictor.reconcile(clonePlayerState(server.state), serverAck)
+    expect(predictor.state).toEqual(server.state)
+    expect(server.state.weapon.shotIndex).toBeGreaterThan(10)
+
     expect(reconciles).toBeGreaterThan(250)
     expect(maxCorrection).toBe(0)
     expect(predictor.pendingCount).toBeLessThanOrEqual(2 * LAG + 1)
@@ -99,6 +111,8 @@ describe('InterpolationBuffer', () => {
     pitch: 0,
     crouch: 0,
     grounded: true,
+    alive: true,
+    protected: false,
   })
 
   test('blends between snapshots', () => {

@@ -11,6 +11,7 @@ import {
   type PlayerInput,
   type PlayerState,
   Predictor,
+  type StepEvents,
   TICK_DT,
 } from '@office-fps/shared'
 import type { PerspectiveCamera } from 'three'
@@ -37,6 +38,8 @@ export class LocalPlayer {
   private prev: PlayerState
   /** Visual-only offset that hides small corrections by fading them out over a few frames. */
   private readonly smoothing = { x: 0, y: 0, z: 0 }
+  /** 0 = alive, 1 = fully in the death-cam pose. */
+  private death = 0
 
   constructor(physics: PhysicsWorld, spawn: MapSpawn | undefined) {
     this.body = new PlayerBody(physics, this.movement)
@@ -62,12 +65,15 @@ export class LocalPlayer {
     this.prev = clonePlayerState(s)
   }
 
-  /** Runs one predicted tick. Returns the command to send to the server. */
-  tick(input: PlayerInput): InputCommand {
+  /**
+   * Runs one predicted tick. `viewTick` is the server tick of what's on screen (lag compensation).
+   * Returns the command to send to the server and what happened (shots, jumps…).
+   */
+  tick(input: PlayerInput, viewTick: number): { command: InputCommand; events: StepEvents } {
     this.prev = clonePlayerState(this.state)
-    const { command, events } = this.predictor.predict(input)
-    this.feel.onTick(this.state, this.prev.pos.y, events, this.movement, TICK_DT)
-    return command
+    const result = this.predictor.predict(input, viewTick)
+    this.feel.onTick(this.state, this.prev.pos.y, result.events, this.movement, TICK_DT)
+    return result
   }
 
   /** Applies an authoritative snapshot of our own player. */
@@ -112,7 +118,11 @@ export class LocalPlayer {
     this.smoothing.y *= fade
     this.smoothing.z *= fade
 
-    const eye = lerp(eyeHeight(a, this.movement), eyeHeight(b, this.movement))
+    // Dead: camera drops to the floor and tilts (until respawn moves us).
+    const deathTarget = b.alive ? 0 : 1
+    this.death += (deathTarget - this.death) * Math.min(1, dt * 6)
+    const eye =
+      lerp(eyeHeight(a, this.movement), eyeHeight(b, this.movement)) * (1 - this.death * 0.8)
     const rightX = Math.cos(yaw)
     const rightZ = -Math.sin(yaw)
     camera.position.set(
@@ -120,6 +130,6 @@ export class LocalPlayer {
       lerp(a.pos.y, b.pos.y) + eye + this.feel.offsetY + this.smoothing.y,
       lerp(a.pos.z, b.pos.z) + rightZ * this.feel.offsetX + this.smoothing.z,
     )
-    camera.rotation.set(pitch, yaw, this.feel.roll, 'YXZ')
+    camera.rotation.set(pitch, yaw, this.feel.roll + this.death * 0.5, 'YXZ')
   }
 }

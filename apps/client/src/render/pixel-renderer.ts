@@ -11,9 +11,14 @@ const POST_VERTEX = /* glsl */ `
   }
 `
 
-function createPostUniforms(target: THREE.WebGLRenderTarget, size: THREE.Vector2) {
+function createPostUniforms(
+  target: THREE.WebGLRenderTarget,
+  overlay: THREE.WebGLRenderTarget,
+  size: THREE.Vector2,
+) {
   return {
     tColor: { value: target.texture },
+    tOverlay: { value: overlay.texture },
     tDepth: { value: target.depthTexture },
     resolution: { value: size },
     cameraNear: { value: 0.1 },
@@ -36,6 +41,8 @@ function createPostUniforms(target: THREE.WebGLRenderTarget, size: THREE.Vector2
 export class PixelRenderer {
   readonly renderer: THREE.WebGLRenderer
   readonly target: THREE.WebGLRenderTarget
+  /** Viewmodel layer: own color + depth, transparent where there is no gun. */
+  readonly overlayTarget: THREE.WebGLRenderTarget
   /** Internal resolution in game pixels. */
   readonly size = new THREE.Vector2(1, 1)
   /** Screen pixels per game pixel. */
@@ -63,7 +70,13 @@ export class PixelRenderer {
       depthTexture: new THREE.DepthTexture(1, 1, THREE.UnsignedIntType),
     })
 
-    this.uniforms = createPostUniforms(this.target, this.size)
+    this.overlayTarget = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+    })
+
+    this.uniforms = createPostUniforms(this.target, this.overlayTarget, this.size)
     const material = new THREE.ShaderMaterial({
       vertexShader: POST_VERTEX,
       fragmentShader: postFragment,
@@ -112,19 +125,34 @@ export class PixelRenderer {
 
     this.renderer.setSize(w, h, false)
     this.target.setSize(w, h)
+    this.overlayTarget.setSize(w, h)
     // CSS size may overshoot the window by < 1 game pixel; body has overflow: hidden.
     this.canvas.style.width = `${(w * this.scale) / dpr}px`
     this.canvas.style.height = `${(h * this.scale) / dpr}px`
   }
 
-  render(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
+  /**
+   * World into one target, the optional viewmodel into a second (own depth, transparent
+   * background), then the post pass composites both and pixelates. Keeping them apart preserves
+   * the world's depth buffer for outlines while the gun can never clip into walls.
+   */
+  render(
+    scene: THREE.Scene,
+    camera: THREE.PerspectiveCamera,
+    overlay?: { scene: THREE.Scene; camera: THREE.Camera },
+  ): void {
     this.uniforms.cameraNear.value = camera.near
     this.uniforms.cameraFar.value = camera.far
 
-    this.renderer.setRenderTarget(this.target)
-    this.renderer.render(scene, camera)
-    // Phase 4: viewmodel pass goes here (same target, depth cleared, own camera).
-    this.renderer.setRenderTarget(null)
-    this.renderer.render(this.postScene, this.postCamera)
+    const r = this.renderer
+    r.setRenderTarget(this.target)
+    r.render(scene, camera)
+    r.setRenderTarget(this.overlayTarget)
+    r.setClearColor(0x000000, 0)
+    r.clear()
+    if (overlay) r.render(overlay.scene, overlay.camera)
+    r.setClearColor(0x000000, 1)
+    r.setRenderTarget(null)
+    r.render(this.postScene, this.postCamera)
   }
 }

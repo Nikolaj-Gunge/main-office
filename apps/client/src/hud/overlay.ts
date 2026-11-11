@@ -11,8 +11,6 @@ export class Overlay {
   private readonly playButton: HTMLButtonElement
 
   constructor(root: HTMLElement) {
-    const crosshair = document.createElement('div')
-    crosshair.className = 'crosshair'
     this.debug = document.createElement('div')
     this.debug.className = 'hud-text debug'
 
@@ -26,7 +24,7 @@ export class Overlay {
         <button type="submit">PLAY</button>
       </form>
       <p class="status"></p>
-      <p class="hint">WASD move · Space jump · C crouch · Shift sprint · V noclip · F1 settings · F3 debug · Esc release mouse</p>
+      <p class="hint">WASD move · Space jump · C crouch · Shift sprint · LMB shoot · RMB aim · R reload<br>V noclip · F1 settings · F3 net debug · F4 hitboxes · Esc release mouse</p>
     `
     const form = this.screen.querySelector('form') as HTMLFormElement
     this.nameInput = form.querySelector('input') as HTMLInputElement
@@ -34,7 +32,7 @@ export class Overlay {
     this.status = this.screen.querySelector('.status') as HTMLParagraphElement
     this.nameInput.value = localStorage.getItem(NAME_KEY) ?? ''
 
-    root.append(crosshair, this.debug, this.screen)
+    root.append(this.debug, this.screen)
     form.addEventListener('submit', (e) => e.preventDefault())
   }
 

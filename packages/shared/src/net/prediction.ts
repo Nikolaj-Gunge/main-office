@@ -36,9 +36,12 @@ export class Predictor {
     return this.pending.length
   }
 
-  /** Applies one tick of input locally. Returns the command to send to the server. */
-  predict(input: PlayerInput): { command: InputCommand; events: StepEvents } {
-    const command: InputCommand = { seq: this.nextSeq++, ...quantizeInput(input) }
+  /**
+   * Applies one tick of input locally. `viewTick` is the server tick the player is currently
+   * seeing others at (for lag compensation). Returns the command to send to the server.
+   */
+  predict(input: PlayerInput, viewTick = 0): { command: InputCommand; events: StepEvents } {
+    const command: InputCommand = { seq: this.nextSeq++, ...quantizeInput(input), viewTick }
     const events = stepPlayer(this.state, command, TICK_DT, this.body)
     this.pending.push(command)
     if (this.pending.length > MAX_PENDING) this.pending.shift()

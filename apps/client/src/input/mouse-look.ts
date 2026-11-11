@@ -14,6 +14,9 @@ export class MouseLook {
   pitch = 0
   sensitivity = 2
   onLockChange?: (locked: boolean) => void
+  /** Look movement (radians) since the last `takeDelta()` — drives weapon sway. */
+  private dYaw = 0
+  private dPitch = 0
 
   constructor(private readonly element: HTMLElement) {
     document.addEventListener('pointerlockchange', () => this.onLockChange?.(this.locked))
@@ -40,5 +43,14 @@ export class MouseLook {
     const k = this.sensitivity * M_YAW * DEG
     this.yaw -= e.movementX * k
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch - e.movementY * k))
+    this.dYaw -= e.movementX * k
+    this.dPitch -= e.movementY * k
+  }
+
+  takeDelta(): { yaw: number; pitch: number } {
+    const d = { yaw: this.dYaw, pitch: this.dPitch }
+    this.dYaw = 0
+    this.dPitch = 0
+    return d
   }
 }

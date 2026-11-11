@@ -43,17 +43,6 @@ body {
   left: 8px;
 }
 
-.crosshair {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  margin: -2px 0 0 -2px;
-  background: #fff;
-  box-shadow: 0 0 0 1px #000;
-}
-
 .click-to-play {
   position: absolute;
   inset: 0;
@@ -119,4 +108,285 @@ body {
   min-height: 1.4em;
   font-size: 13px;
   color: #fbb954;
+}
+
+/* --- Combat HUD -------------------------------------------------------------------------- */
+
+.hud-health,
+.hud-ammo,
+.hud-killfeed,
+.hud-death,
+.hud-protected {
+  position: absolute;
+  font:
+    bold 14px / 1.2 ui-monospace,
+    Menlo,
+    monospace;
+  color: #f2f2f2;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.hud-health {
+  left: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-health-bar {
+  width: 220px;
+  height: 14px;
+  border: 2px solid #f2f2f2;
+  background: rgb(0 0 0 / 0.5);
+  box-shadow: 2px 2px 0 #000;
+  /* 10 segments: every 10 HP gets a notch */
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 19.6px,
+    rgb(0 0 0 / 0.6) 19.6px 21.6px
+  );
+}
+
+.hud-health-fill {
+  height: 100%;
+  background: #1ebc73;
+  transition: width 0.12s steps(6);
+}
+
+.hud-health.low .hud-health-fill {
+  background: #e83b3b;
+  animation: hud-blink 0.6s steps(2) infinite;
+}
+
+.hud-health-text {
+  font-size: 22px;
+  min-width: 3ch;
+}
+
+.hud-ammo {
+  right: 24px;
+  bottom: 24px;
+  text-align: right;
+}
+
+.hud-ammo-mag {
+  font-size: 30px;
+}
+
+.hud-ammo-reserve {
+  font-size: 16px;
+  opacity: 0.75;
+}
+
+.hud-ammo.empty .hud-ammo-mag {
+  color: #e83b3b;
+}
+
+.hud-ammo-note {
+  font-size: 11px;
+  letter-spacing: 2px;
+  opacity: 0.8;
+}
+
+.hud-crosshair {
+  --gap: 6px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.hud-crosshair .line {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px #000;
+}
+
+.hud-crosshair .top,
+.hud-crosshair .bottom {
+  width: 2px;
+  height: 8px;
+  left: -1px;
+}
+
+.hud-crosshair .left,
+.hud-crosshair .right {
+  width: 8px;
+  height: 2px;
+  top: -1px;
+}
+
+.hud-crosshair .top {
+  bottom: var(--gap);
+}
+
+.hud-crosshair .bottom {
+  top: var(--gap);
+}
+
+.hud-crosshair .left {
+  right: var(--gap);
+}
+
+.hud-crosshair .right {
+  left: var(--gap);
+}
+
+.hud-crosshair .dot {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  left: -1px;
+  top: -1px;
+  background: #fff;
+}
+
+.hud-crosshair.aiming .line {
+  opacity: 0;
+}
+
+.hud-hitmarker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  opacity: 0;
+}
+
+.hud-hitmarker .tick {
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #000;
+}
+
+.hud-hitmarker .t0 {
+  transform: translate(-16px, -12px) rotate(45deg);
+}
+.hud-hitmarker .t1 {
+  transform: translate(6px, -12px) rotate(-45deg);
+}
+.hud-hitmarker .t2 {
+  transform: translate(-16px, 10px) rotate(-45deg);
+}
+.hud-hitmarker .t3 {
+  transform: translate(6px, 10px) rotate(45deg);
+}
+
+.hud-hitmarker.show {
+  animation: hud-hit 0.3s steps(4) forwards;
+}
+
+.hud-hitmarker.head .tick {
+  background: #e83b3b;
+  width: 13px;
+}
+
+.hud-hitmarker.kill {
+  animation-duration: 0.6s;
+}
+
+.hud-hitmarker.kill .tick {
+  height: 3px;
+}
+
+.hud-killfeed {
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.hud-kill {
+  padding: 2px 8px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.hud-kill.me {
+  outline: 2px solid #fbb954;
+}
+
+.hud-kill .weapon {
+  opacity: 0.7;
+}
+
+.hud-damage-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.hud-damage-arc {
+  position: absolute;
+  width: 120px;
+  height: 14px;
+  left: -60px;
+  top: -14px;
+  /* bottom-center sits on the crosshair; JS rotates it and pushes it out onto a 130 px ring */
+  transform-origin: 50% 100%;
+  background: radial-gradient(ellipse at 50% 100%, rgb(232 59 59 / 0.95), rgb(232 59 59 / 0) 70%);
+}
+
+.hud-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgb(179 56 49 / 0.75));
+  transition: opacity 0.2s;
+}
+
+.hud-death {
+  top: 38%;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.hud-death-text {
+  font-size: 26px;
+  color: #e83b3b;
+}
+
+.hud-death-timer {
+  margin-top: 8px;
+  font-size: 16px;
+}
+
+.hud-protected {
+  top: 62%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: #8fd3ff;
+  animation: hud-blink 0.8s steps(2) infinite;
+}
+
+/* Beats the display rules of the HUD classes above. */
+#hud [hidden] {
+  display: none;
+}
+
+@keyframes hud-hit {
+  0% {
+    opacity: 1;
+    scale: 1.3;
+  }
+  60% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hud-blink {
+  50% {
+    opacity: 0.4;
+  }
 }

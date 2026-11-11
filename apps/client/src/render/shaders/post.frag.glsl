@@ -2,6 +2,7 @@
 #include <packing>
 
 uniform sampler2D tColor;
+uniform sampler2D tOverlay; // viewmodel, premultiplied over transparent black
 uniform sampler2D tDepth;
 uniform vec2 resolution;
 uniform float cameraNear;
@@ -59,11 +60,12 @@ vec3 nearestPaletteColor(vec3 c) {
 }
 
 void main() {
-  vec3 color = texture2D(tColor, vUv).rgb;
+  vec4 overlay = texture2D(tOverlay, vUv);
+  vec3 color = texture2D(tColor, vUv).rgb * (1.0 - overlay.a) + overlay.rgb;
   color = linearToSRGB(acesFilm(color * exposure));
 
   // 1 px outline where this pixel sits in front of a much farther neighbour (silhouette edges).
-  if (outlines > 0.0) {
+  if (outlines > 0.0 && overlay.a < 0.5) {
     vec2 texel = 1.0 / resolution;
     float d = viewDepth(vUv);
     float far = max(

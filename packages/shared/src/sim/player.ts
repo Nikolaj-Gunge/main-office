@@ -5,8 +5,11 @@ import {
   PLAYER_QUERY_GROUPS,
   RAPIER,
 } from '../physics/world.ts'
+import { viewDirection } from './hitboxes.ts'
 import { Button, hasButton, type PlayerInput } from './input.ts'
 import type { MovementConfig } from './movement-config.ts'
+import { createWeaponState, stepWeapon, type WeaponEvents, type WeaponState } from './weapon-sim.ts'
+import { WeaponId } from './weapons.ts'
 
 export interface MutVec3 {
   x: number
@@ -31,6 +34,16 @@ export interface PlayerState {
   /** Seconds a jump press stays queued. */
   jumpBuffer: number
   prevButtons: number
+  /** Dead players don't move or shoot; the server flips this and respawns them. */
+  alive: boolean
+  weapon: WeaponState
+}
+
+/** A fired bullet: eye position and (spread-adjusted) unit direction. */
+export interface ShotEvent {
+  origin: MutVec3
+  dir: MutVec3
+  shotIndex: number
 }
 
 export interface StepEvents {
@@ -38,13 +51,18 @@ export interface StepEvents {
   landed: boolean
   /** Downward speed at the moment of landing (m/s), 0 if not landing. */
   landingSpeed: number
+  shot: ShotEvent | null
+  weapon: WeaponEvents | null
 }
 
 /** Gap Rapier keeps between the capsule and the world. Feet sit this far above the floor. */
 const SKIN = 0.02
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 
-export function createPlayerState(spawn?: MapSpawn): PlayerState {
+export function createPlayerState(
+  spawn?: MapSpawn,
+  weapon: WeaponState = createWeaponState(WeaponId.Handgun),
+): PlayerState {
   return {
     pos: { x: spawn?.pos[0] ?? 0, y: spawn?.pos[1] ?? 0, z: spawn?.pos[2] ?? 0 },
     vel: { x: 0, y: 0, z: 0 },
@@ -56,11 +74,13 @@ export function createPlayerState(spawn?: MapSpawn): PlayerState {
     airTime: 0,
     jumpBuffer: 0,
     prevButtons: 0,
+    alive: true,
+    weapon,
   }
 }
 
 export function clonePlayerState(s: PlayerState): PlayerState {
-  return { ...s, pos: { ...s.pos }, vel: { ...s.vel } }
+  return { ...s, pos: { ...s.pos }, vel: { ...s.vel }, weapon: { ...s.weapon } }
 }
 
 export function eyeHeight(state: PlayerState, config: MovementConfig): number {
@@ -322,7 +342,14 @@ export function stepPlayer(
   state.prevButtons = buttons
   state.yaw = input.yaw
   state.pitch = input.pitch
-  const events: StepEvents = { jumped: false, landed: false, landingSpeed: 0 }
+  const events: StepEvents = {
+    jumped: false,
+    landed: false,
+    landingSpeed: 0,
+    shot: null,
+    weapon: null,
+  }
+  if (!state.alive) return events
 
   // The state may have been reset (reconciliation, respawn): make the capsule match it.
   body.setHeight(state.crouched ? c.crouchHeight : c.standHeight)
@@ -357,7 +384,12 @@ export function stepPlayer(
     wishX /= wishLen
     wishZ /= wishLen
   }
-  const sprinting = hasButton(buttons, Button.Sprint) && forward > 0 && !state.crouched
+  // Holding fire cancels sprint, so you can always start shooting (after sprintToFire).
+  const sprinting =
+    hasButton(buttons, Button.Sprint) &&
+    forward > 0 &&
+    !state.crouched &&
+    !hasButton(buttons, Button.Fire)
   const maxSpeed = state.crouched
     ? c.crouchSpeed
     : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)
@@ -444,6 +476,22 @@ export function stepPlayer(
     state.airTime = 0
   } else {
     state.airTime += dt
+  }
+
+  // --- Weapon: after movement, so shots leave from where the player now is ----------------
+  events.weapon = stepWeapon(state.weapon, buttons, pressed, dt, {
+    sprinting,
+    grounded: state.grounded,
+    crouched: state.crouched,
+    speedFactor: Math.hypot(state.vel.x, state.vel.z) / c.walkSpeed,
+  })
+  const shot = events.weapon.shot
+  if (shot) {
+    events.shot = {
+      origin: { x: state.pos.x, y: state.pos.y + eyeHeight(state, c), z: state.pos.z },
+      dir: viewDirection(state.yaw + shot.yawOffset, state.pitch + shot.pitchOffset),
+      shotIndex: shot.shotIndex,
+    }
   }
 
   return events

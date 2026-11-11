@@ -12,6 +12,9 @@ const BINDINGS: [Button, string[]][] = [
   // Ctrl+W closes the tab in most browsers, so C is the safe default crouch.
   [Button.Crouch, ['KeyC', 'ControlLeft']],
   [Button.Sprint, ['ShiftLeft']],
+  [Button.Fire, ['Mouse0']],
+  [Button.Aim, ['Mouse2']],
+  [Button.Reload, ['KeyR']],
 ]
 
 /** Samples one tick of input. Taps shorter than a tick still register via `consumePressed`. */
