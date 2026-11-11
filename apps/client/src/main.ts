@@ -325,7 +325,34 @@ menu.onPlay((name) => {
   void look.lock()
 })
 // Esc releases the mouse: show the menu. Clicking Resume locks it again.
-look.onLockChange = (locked) => menu.setVisible(!locked)
+look.onLockChange = (locked) => {
+  menu.setVisible(!locked && !resumeByClick)
+  if (locked) {
+    resumeByClick = false
+    overlay.setBanner(null)
+  }
+}
+
+/**
+ * Esc again closes the menu. Browsers don't let a page re-capture the mouse from an Esc key
+ * press (it isn't a "user activation", and Chrome adds a cooldown after leaving), so when that
+ * is refused we wait for a click on the game instead.
+ */
+let resumeByClick = false
+function closeMenu(): void {
+  menu.setVisible(false)
+  const refused = () => {
+    if (look.locked || menu.visible) return
+    resumeByClick = true
+    overlay.setBanner('Click to resume')
+  }
+  // Some browsers reject the request, others just never lock: check shortly after either way.
+  look.lock().catch(refused)
+  setTimeout(refused, 300)
+}
+canvas.addEventListener('click', () => {
+  if (resumeByClick) void look.lock()
+})
 
 // --- Settings -------------------------------------------------------------------------
 function applySettings() {
@@ -359,6 +386,18 @@ window.addEventListener('keydown', (e) => {
     scoreboardHeld = true
   }
   if (e.repeat) return
+  if (e.code === 'Escape' && menu.visible && menu.isJoined && !look.locked) {
+    e.preventDefault()
+    closeMenu()
+    return
+  }
+  if (e.code === 'Escape' && resumeByClick) {
+    // Waiting for the resume click: Esc brings the menu back (it toggles).
+    resumeByClick = false
+    overlay.setBanner(null)
+    menu.setVisible(true)
+    return
+  }
   if (e.code === 'F1') {
     e.preventDefault()
     if (gui._closed) gui.open()
