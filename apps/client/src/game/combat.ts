@@ -58,6 +58,8 @@ export class ClientCombat {
   private lastDeath: { killer: string | null; weapon: string; headshot: boolean } | null = null
   private wasAlive = true
   private isProtected = false
+  /** Your feet, refreshed every frame (for your own death effects). */
+  private readonly selfPos = { x: 0, y: 0, z: 0 }
   private readonly hoverRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 })
 
   constructor(deps: CombatDeps) {
@@ -205,6 +207,10 @@ export class ClientCombat {
         break
       case ServerMsg.Kill: {
         const me = this.d.myId()
+        // Blood pool where they fell (as you see them, ~100 ms behind; you, where you are).
+        const fell =
+          msg.victimId === me ? this.selfPos : this.d.remotes.visiblePoses().get(msg.victimId)
+        if (fell) this.d.effects.deathPool(new THREE.Vector3(fell.x, fell.y, fell.z))
         const weapon = WEAPONS[msg.weapon].name
         this.d.hud.kill(
           this.name(msg.killerId),
@@ -275,6 +281,9 @@ export class ClientCombat {
     bob: { phase: number; weight: number },
     walkSpeed: number,
   ): void {
+    this.selfPos.x = state.pos.x
+    this.selfPos.y = state.pos.y
+    this.selfPos.z = state.pos.z
     const w = state.weapon
     this.d.viewmodel.update(dt, look.delta, bob, w, state.alive)
     this.d.hud.setWeapon(w, state.holstered)

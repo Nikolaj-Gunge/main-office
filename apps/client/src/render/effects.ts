@@ -2,6 +2,12 @@ import * as THREE from 'three'
 
 const TRACER_SPEED = 300 // m/s — far slower than a real bullet, so you can see it travel
 const TRACER_LENGTH = 3
+/** Hard cap on how long a tracer can exist (s), whatever happens. */
+const TRACER_MAX_AGE = 2
+const MAX_BLOOD = 48
+/** Blood marks stay this long (s), fading out over the last few seconds. */
+const BLOOD_LIFE = 20
+const BLOOD_FADE = 4
 const MAX_DECALS = 128
 const MAX_PARTICLES = 160
 const MAX_CASINGS = 24
@@ -29,6 +35,13 @@ interface Tracer {
   dir: THREE.Vector3
   distance: number
   traveled: number
+  age: number
+}
+
+interface BloodMark {
+  mesh: THREE.Mesh
+  material: THREE.MeshBasicMaterial
+  life: number
 }
 
 interface Particle {
@@ -36,6 +49,74 @@ interface Particle {
   vel: THREE.Vector3
   life: number
   maxLife: number
+}
+
+const PLANE_NORMAL = new THREE.Vector3(0, 0, 1)
+const spin = new THREE.Quaternion()
+
+/**
+ * Lays a pooled plane flat on a surface: facing along `normal`, lifted `lift` m off it, turned
+ * randomly about the normal. (Not Object3D.lookAt — with matrixAutoUpdate off it aims from the
+ * mesh's *previous* world position, which tilted every decal the wrong way.)
+ */
+function placeFlat(
+  mesh: THREE.Mesh,
+  at: THREE.Vector3,
+  normal: THREE.Vector3,
+  lift: number,
+  size: number,
+): void {
+  const n = normal.clone().normalize()
+  mesh.position.copy(at).addScaledVector(n, lift)
+  mesh.quaternion.setFromUnitVectors(PLANE_NORMAL, n)
+  mesh.quaternion.multiply(spin.setFromAxisAngle(PLANE_NORMAL, Math.random() * Math.PI * 2))
+  mesh.scale.setScalar(size)
+  mesh.updateMatrix()
+}
+
+/** Irregular dark-red splat with droplets, transparent around it. */
+function makeBloodTexture(): THREE.CanvasTexture {
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas unavailable')
+  let seed = 99
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  const blob = (x: number, y: number, r: number, color: string) => {
+    ctx.fillStyle = color
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy <= r * r) ctx.fillRect(x + dx, y + dy, 1, 1)
+      }
+    }
+  }
+  blob(16, 16, 7, '#6e0d0d')
+  for (let i = 0; i < 7; i++) {
+    const a = rand() * Math.PI * 2
+    const d = 5 + rand() * 6
+    blob(
+      Math.round(16 + Math.cos(a) * d),
+      Math.round(16 + Math.sin(a) * d),
+      2 + Math.floor(rand() * 3),
+      '#7d1010',
+    )
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = rand() * Math.PI * 2
+    const d = 10 + rand() * 5
+    ctx.fillStyle = '#8a1414'
+    ctx.fillRect(Math.round(16 + Math.cos(a) * d), Math.round(16 + Math.sin(a) * d), 1, 1)
+  }
+  blob(15, 15, 3, '#9c1a1a')
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.magFilter = THREE.NearestFilter
+  tex.minFilter = THREE.NearestFilter
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
 }
 
 function makeHoleTexture(): THREE.CanvasTexture {
@@ -70,6 +151,8 @@ export class Effects {
   private particleIndex = 0
   private readonly lights: { light: THREE.PointLight; life: number }[] = []
   private lightIndex = 0
+  private readonly blood: BloodMark[] = []
+  private bloodIndex = 0
   private readonly casings: Casing[] = []
   private casingIndex = 0
   private readonly raycast: WorldRaycast
@@ -122,6 +205,23 @@ export class Effects {
       this.particles.push({ mesh, vel: new THREE.Vector3(), life: 0, maxLife: 1 })
     }
 
+    const bloodTexture = makeBloodTexture()
+    const bloodGeometry = new THREE.PlaneGeometry(1, 1)
+    for (let i = 0; i < MAX_BLOOD; i++) {
+      const material = new THREE.MeshBasicMaterial({
+        map: bloodTexture,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -6,
+      })
+      const mesh = new THREE.Mesh(bloodGeometry, material)
+      mesh.visible = false
+      mesh.matrixAutoUpdate = false
+      scene.add(mesh)
+      this.blood.push({ mesh, material, life: 0 })
+    }
+
     const casingGeometry = new THREE.BoxGeometry(0.012, 0.012, 0.03)
     const brass = new THREE.MeshLambertMaterial({ color: 0xd9a441, emissive: 0x3a2a08 })
     for (let i = 0; i < MAX_CASINGS; i++) {
@@ -164,14 +264,67 @@ export class Effects {
       const width = heavy ? 0.03 : 0.012
       mesh.scale.set(width, width, 0.01)
       this.scene.add(mesh)
-      this.tracers.push({ mesh, from: from.clone(), dir: dir.normalize(), distance, traveled: 0 })
+      this.tracers.push({
+        mesh,
+        from: from.clone(),
+        dir: dir.clone().normalize(),
+        distance,
+        traveled: 0,
+        age: 0,
+      })
     }
     if (hit === 'world') {
       this.decal(to, normal)
       this.burst(to, normal, 0x9a948a, 6, 2.5)
     } else if (hit === 'player') {
-      this.burst(to, normal, 0xb32e2e, 8, 2)
+      this.bleed(to, dir.normalize(), false)
     }
+  }
+
+  /**
+   * Blood where a bullet hit someone: a spray continuing in the bullet's direction, a splat on
+   * whatever is right behind them and drips on the floor. `kill` makes it bigger.
+   */
+  bleed(at: THREE.Vector3, dir: THREE.Vector3, kill: boolean): void {
+    const spray = dir.clone().multiplyScalar(0.8)
+    this.burst(at, spray, 0x8a1212, kill ? 22 : 12, kill ? 3.2 : 2.4, 0.5)
+    this.burst(at, dir.clone().negate().multiplyScalar(0.4), 0xb32e2e, kill ? 8 : 4, 1.4, 0.35)
+    const behind = this.raycast(at, dir, 2.5)
+    if (behind) {
+      this.bloodMark(
+        at.clone().addScaledVector(dir, behind.distance),
+        behind.normal,
+        kill ? 0.75 : 0.45,
+      )
+    }
+    const down = new THREE.Vector3(0, -1, 0)
+    const floor = this.raycast(at, down, 3)
+    if (floor) {
+      const drip = at.clone().addScaledVector(down, floor.distance)
+      drip.x += (Math.random() - 0.5) * 0.4
+      drip.z += (Math.random() - 0.5) * 0.4
+      this.bloodMark(drip, floor.normal, kill ? 0.5 : 0.3)
+    }
+  }
+
+  /** Someone died here: a pool on the floor under them, plus a burst. */
+  deathPool(feet: THREE.Vector3): void {
+    const at = feet.clone().add(new THREE.Vector3(0, 1.1, 0))
+    this.burst(at, new THREE.Vector3(0, 0.6, 0), 0x8a1212, 16, 2.6, 0.6)
+    const floor = this.raycast(at, new THREE.Vector3(0, -1, 0), 3)
+    if (floor) {
+      const spot = at.clone().add(new THREE.Vector3(0, -floor.distance, 0))
+      this.bloodMark(spot, floor.normal, 1.1 + Math.random() * 0.3)
+    }
+  }
+
+  private bloodMark(at: THREE.Vector3, normal: THREE.Vector3, size: number): void {
+    const mark = this.blood[this.bloodIndex++ % MAX_BLOOD]
+    if (!mark) return
+    placeFlat(mark.mesh, at, normal, 0.006, size)
+    mark.mesh.visible = true
+    mark.material.opacity = 1
+    mark.life = BLOOD_LIFE
   }
 
   /** Spits a spent casing out of the ejection port. */
@@ -197,10 +350,7 @@ export class Effects {
   private decal(at: THREE.Vector3, normal: THREE.Vector3): void {
     const decal = this.decals[this.decalIndex++ % MAX_DECALS]
     if (!decal) return
-    decal.position.copy(at).addScaledVector(normal, 0.005)
-    decal.lookAt(at.clone().add(normal))
-    decal.rotateZ(Math.random() * Math.PI)
-    decal.updateMatrix()
+    placeFlat(decal, at, normal, 0.005, 1)
     decal.visible = true
   }
 
@@ -210,6 +360,7 @@ export class Effects {
     color: number,
     count: number,
     speed: number,
+    lifetime = 0.3,
   ) {
     for (let i = 0; i < count; i++) {
       const p = this.particles[this.particleIndex++ % MAX_PARTICLES]
@@ -222,7 +373,7 @@ export class Effects {
         .normalize()
         .multiplyScalar(speed * (0.4 + Math.random() * 0.8))
       ;(p.mesh.material as THREE.MeshBasicMaterial).color.setHex(color)
-      p.maxLife = p.life = 0.25 + Math.random() * 0.3
+      p.maxLife = p.life = lifetime * (0.8 + Math.random() * 0.9)
       p.mesh.visible = true
     }
   }
@@ -232,9 +383,12 @@ export class Effects {
       const t = this.tracers[i]
       if (!t) continue
       t.traveled += TRACER_SPEED * dt
+      t.age += dt
       const head = Math.min(t.traveled, t.distance)
-      const tail = Math.max(0, head - TRACER_LENGTH)
-      if (tail >= t.distance - 0.01) {
+      // The tail keeps flying after the head hits, so the streak shrinks into the impact and
+      // is gone — never left hanging in the air.
+      const tail = Math.min(Math.max(0, t.traveled - TRACER_LENGTH), t.distance)
+      if (tail >= t.distance - 0.01 || t.age > TRACER_MAX_AGE) {
         this.scene.remove(t.mesh)
         this.tracers.splice(i, 1)
         continue
@@ -257,6 +411,13 @@ export class Effects {
     }
 
     this.updateCasings(dt)
+
+    for (const mark of this.blood) {
+      if (mark.life <= 0) continue
+      mark.life -= dt
+      if (mark.life <= 0) mark.mesh.visible = false
+      else mark.material.opacity = Math.min(1, mark.life / BLOOD_FADE)
+    }
 
     for (const slot of this.lights) {
       slot.life = Math.max(0, slot.life - dt)
