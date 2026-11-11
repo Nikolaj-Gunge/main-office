@@ -104,6 +104,27 @@ body {
   background: #b33831;
 }
 
+.click-to-play .loadout {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.click-to-play .loadout button {
+  background: rgb(0 0 0 / 0.6);
+  opacity: 0.6;
+}
+
+.click-to-play .loadout button.chosen {
+  background: #b33831;
+  opacity: 1;
+}
+
+.click-to-play .loadout-note {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 .click-to-play .status {
   min-height: 1.4em;
   font-size: 13px;
@@ -364,6 +385,75 @@ body {
   letter-spacing: 3px;
   color: #8fd3ff;
   animation: hud-blink 0.8s steps(2) infinite;
+}
+
+.hud-slots {
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.hud-slots .slot {
+  opacity: 0.45;
+}
+
+.hud-slots .slot.active {
+  opacity: 1;
+  color: #fbb954;
+}
+
+.hud-death-loadout {
+  margin-top: 18px;
+  font-size: 15px;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.hud-death-loadout .option {
+  opacity: 0.55;
+}
+
+.hud-death-loadout .option.chosen {
+  opacity: 1;
+  color: #fbb954;
+}
+
+/* Scope: black everywhere except a circle; thin cross through the middle. */
+.hud-scope {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 0 34vmin, #050505 34.3vmin);
+}
+
+.hud-scope-cross {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(#050505, #050505) center / 100% 2px no-repeat,
+    linear-gradient(#050505, #050505) center / 2px 100% no-repeat;
+}
+
+.hud-scope-breath {
+  position: absolute;
+  left: 50%;
+  bottom: calc(50% - 30vmin);
+  width: 120px;
+  height: 4px;
+  margin-left: -60px;
+  background: rgb(255 255 255 / 0.15);
+}
+
+.hud-scope-breath-fill {
+  height: 100%;
+  background: #8fd3ff;
+}
+
+.hud-scope.steady .hud-scope-breath-fill {
+  background: #fbb954;
 }
 
 /* Beats the display rules of the HUD classes above. */

@@ -1,10 +1,12 @@
-import { Spring, WEAPONS, type WeaponState } from '@office-fps/shared'
+import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
 
-/** Where the gun sits in view space: hip (bottom right) and aiming down the sights (centered). */
-const HIP = new THREE.Vector3(0.15, -0.15, -0.38)
-const ADS = new THREE.Vector3(0, -0.071, -0.24)
-const ADS_SPEED = 12
+const STEEL = 0x2b2d33
+const FRAME = 0x3a3d45
+const WOOD = 0x6b4a2f
+const SKIN = 0xc68e6a
+const SLEEVE = 0x2e4057
+const SIGHT = 0xd8d8d8
 
 function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0) {
   const mesh = new THREE.Mesh(
@@ -13,6 +15,111 @@ function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0
   )
   mesh.position.set(x, y, z)
   return mesh
+}
+
+/** One first-person weapon: its meshes plus where it sits and where things come out of it. */
+interface GunModel {
+  group: THREE.Group
+  muzzle: THREE.Object3D
+  ejectPort: THREE.Object3D
+  /** View-space position at the hip and when aiming down sights (sights on screen center). */
+  hip: THREE.Vector3
+  ads: THREE.Vector3
+  /** How hard each shot shoves the model back/up (visual only). */
+  kick: number
+}
+
+function marker(x: number, y: number, z: number): THREE.Object3D {
+  const o = new THREE.Object3D()
+  o.position.set(x, y, z)
+  return o
+}
+
+function handgun(): GunModel {
+  const group = new THREE.Group()
+  const grip = box(0.028, 0.095, 0.042, FRAME, 0, -0.06, 0.05)
+  grip.rotateX(0.18)
+  group.add(
+    box(0.032, 0.03, 0.19, STEEL, 0, 0.012, -0.02), // slide
+    box(0.03, 0.022, 0.16, FRAME, 0, -0.012, -0.005), // frame
+    grip,
+    box(0.006, 0.006, 0.006, SIGHT, 0, 0.03, -0.11), // front sight
+    box(0.022, 0.006, 0.006, SIGHT, 0, 0.03, 0.065), // rear sight
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.065, 0.055), // hand
+    box(0.06, 0.07, 0.25, SLEEVE, 0.02, -0.09, 0.2), // forearm
+  )
+  const muzzle = marker(0, 0.012, -0.125)
+  const ejectPort = marker(0.02, 0.02, -0.01)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.15, -0.15, -0.38),
+    ads: new THREE.Vector3(0, -0.071, -0.24),
+    kick: 1,
+  }
+}
+
+function rifle(): GunModel {
+  const group = new THREE.Group()
+  const mag = box(0.03, 0.11, 0.055, STEEL, 0, -0.08, -0.06)
+  mag.rotateX(-0.25)
+  const grip = box(0.028, 0.08, 0.04, FRAME, 0, -0.065, 0.08)
+  grip.rotateX(0.3)
+  group.add(
+    box(0.045, 0.06, 0.3, FRAME, 0, 0, 0), // receiver
+    box(0.05, 0.05, 0.2, STEEL, 0, -0.005, -0.24), // handguard
+    box(0.018, 0.018, 0.16, STEEL, 0, 0.005, -0.42), // barrel
+    box(0.006, 0.03, 0.006, SIGHT, 0, 0.045, -0.32), // front sight post
+    box(0.025, 0.012, 0.012, SIGHT, 0, 0.038, 0.1), // rear sight
+    box(0.04, 0.07, 0.18, FRAME, 0, -0.02, 0.24), // stock
+    mag,
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    box(0.055, 0.04, 0.07, SKIN, -0.01, -0.045, -0.24), // support hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.25), // forearm
+  )
+  const muzzle = marker(0, 0.005, -0.5)
+  const ejectPort = marker(0.025, 0.02, -0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.16, -0.44),
+    ads: new THREE.Vector3(0, -0.044, -0.2),
+    kick: 0.55,
+  }
+}
+
+function sniper(): GunModel {
+  const group = new THREE.Group()
+  const bolt = box(0.04, 0.012, 0.012, SIGHT, 0.035, 0.012, 0.04)
+  group.add(
+    box(0.04, 0.05, 0.32, STEEL, 0, 0, 0), // receiver
+    box(0.05, 0.055, 0.42, WOOD, 0, -0.03, -0.02), // stock body
+    box(0.02, 0.02, 0.38, STEEL, 0, 0.006, -0.42), // barrel
+    box(0.034, 0.034, 0.22, 0x15161a, 0, 0.055, -0.02), // scope tube
+    box(0.044, 0.044, 0.03, 0x15161a, 0, 0.055, -0.13), // front bell
+    box(0.04, 0.04, 0.03, 0x15161a, 0, 0.055, 0.09), // eyepiece
+    box(0.045, 0.08, 0.2, WOOD, 0, -0.02, 0.27), // butt stock
+    bolt,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    box(0.055, 0.04, 0.07, SKIN, -0.01, -0.06, -0.22), // support hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.11, 0.25), // forearm
+  )
+  const muzzle = marker(0, 0.006, -0.62)
+  const ejectPort = marker(0.03, 0.02, 0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.17, -0.44),
+    ads: new THREE.Vector3(0, -0.06, -0.12),
+    kick: 1.6,
+  }
 }
 
 function makeFlashTexture(): THREE.CanvasTexture {
@@ -47,13 +154,18 @@ export class Viewmodel {
   readonly ejectView = new THREE.Vector3()
 
   private readonly root = new THREE.Group()
-  private readonly gun = new THREE.Group()
-  private readonly muzzle = new THREE.Object3D()
-  private readonly ejectPort = new THREE.Object3D()
+  private readonly models: Record<WeaponId, GunModel> = {
+    [WeaponId.Handgun]: handgun(),
+    [WeaponId.Rifle]: rifle(),
+    [WeaponId.Sniper]: sniper(),
+  }
+  private active: GunModel
   private readonly flash: THREE.Mesh
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 1.5)
   private flashTime = 0
   private aim = 0
+  /** True while looking through a scope: the gun is hidden and the HUD draws the scope. */
+  scoped = false
 
   // Springs: kick back / up, sway (look lag), each with its own snappiness.
   private readonly kickBack = new Spring(18)
@@ -62,24 +174,11 @@ export class Viewmodel {
   private readonly swayY = new Spring(10)
 
   constructor() {
-    // Handgun from boxes: slide, frame, grip, trigger guard; plus a hand. Phase 9 swaps in models.
-    const steel = 0x2b2d33
-    const frame = 0x3a3d45
-    const skin = 0xc68e6a
-    const sleeve = 0x2e4057
-    this.gun.add(
-      box(0.032, 0.03, 0.19, steel, 0, 0.012, -0.02), // slide
-      box(0.03, 0.022, 0.16, frame, 0, -0.012, -0.005), // frame
-      box(0.028, 0.095, 0.042, frame, 0, -0.06, 0.05), // grip
-      box(0.006, 0.006, 0.006, 0xd8d8d8, 0, 0.03, -0.11), // front sight
-      box(0.022, 0.006, 0.006, 0xd8d8d8, 0, 0.03, 0.065), // rear sight
-      box(0.045, 0.06, 0.06, skin, 0.004, -0.065, 0.055), // hand
-      box(0.06, 0.07, 0.25, sleeve, 0.02, -0.09, 0.2), // forearm
-    )
-    this.gun.children.at(-3)?.rotateX(0.18)
-    this.muzzle.position.set(0, 0.012, -0.125)
-    this.ejectPort.position.set(0.02, 0.02, -0.01)
-    this.gun.add(this.muzzle, this.ejectPort)
+    for (const model of Object.values(this.models)) {
+      model.group.visible = false
+      this.root.add(model.group)
+    }
+    this.active = this.models[WeaponId.Handgun]
 
     this.flash = new THREE.Mesh(
       new THREE.PlaneGeometry(0.09, 0.09),
@@ -90,21 +189,17 @@ export class Viewmodel {
         depthWrite: false,
       }),
     )
-    this.flash.position.copy(this.muzzle.position).add(new THREE.Vector3(0, 0, -0.03))
     this.flash.visible = false
-    this.gun.add(this.flash)
-    this.flashLight.position.copy(this.muzzle.position)
-    this.gun.add(this.flashLight)
 
-    this.root.add(this.gun)
     this.scene.add(this.root)
     this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a3f35, 1.6))
     const key = new THREE.DirectionalLight(0xfff1d6, 1.6)
     key.position.set(0.5, 1, 0.3)
     this.scene.add(key)
+    this.setWeapon(WeaponId.Handgun)
   }
 
-  /** 0 = hip fire, 1 = fully aiming down sights (drives the FOV zoom). */
+  /** 0 = hip fire, 1 = fully aiming down sights (eased, for visuals). */
   get aimProgress(): number {
     return this.aim
   }
@@ -114,10 +209,22 @@ export class Viewmodel {
     this.camera.updateProjectionMatrix()
   }
 
+  private setWeapon(id: WeaponId): void {
+    const model = this.models[id]
+    if (model === this.active && model.group.visible) return
+    this.active.group.visible = false
+    this.active = model
+    model.group.visible = true
+    // Flash and its light ride on the active gun's muzzle.
+    model.muzzle.add(this.flash, this.flashLight)
+    this.flash.position.set(0, 0, -0.03)
+  }
+
   /** Recoil and muzzle flash for one shot. */
   onShot(): void {
-    this.kickBack.impulse(0.9)
-    this.kickUp.impulse(9)
+    const k = this.active.kick
+    this.kickBack.impulse(0.9 * k)
+    this.kickUp.impulse(9 * k)
     this.flashTime = 0.065
     this.flash.rotation.z = Math.random() * Math.PI
   }
@@ -131,12 +238,15 @@ export class Viewmodel {
     look: { yaw: number; pitch: number },
     bob: { phase: number; weight: number },
     weapon: WeaponState,
-    aiming: boolean,
     alive: boolean,
   ): void {
     const def = WEAPONS[weapon.id]
-    this.root.visible = alive
-    this.aim += ((aiming && weapon.reload === 0 ? 1 : 0) - this.aim) * Math.min(1, dt * ADS_SPEED)
+    this.setWeapon(weapon.id)
+    // Ease the shared (linear) aim progress so the gun glides into place.
+    const t = aimProgress(weapon)
+    this.aim = t * t * (3 - 2 * t)
+    this.scoped = def.scoped && t >= 0.95
+    this.root.visible = alive && !this.scoped
     const hipWeight = 1 - this.aim * 0.85
 
     this.swayX.impulse(-look.yaw * 1.5 * hipWeight)
@@ -146,28 +256,33 @@ export class Viewmodel {
     this.swayX.update(dt)
     this.swayY.update(dt)
 
-    // Reload: dip down and roll the gun; draw: rise from below.
+    // Reload: dip down and roll the gun; draw: rise from below; bolt: a small rock back.
     const reloadTotal = weapon.ammo === 0 ? def.emptyReloadTime : def.reloadTime
     const reloadT = weapon.reload > 0 ? 1 - weapon.reload / reloadTotal : 0
     const reloadDip = Math.sin(reloadT * Math.PI)
     const drawT = def.drawTime > 0 ? weapon.draw / def.drawTime : 0
+    const boltT =
+      def.fireMode === 'bolt' && weapon.cooldown > 0
+        ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)
+        : 0
 
     const bobX = Math.cos(bob.phase) * 0.008 * bob.weight * hipWeight
     const bobY = -Math.abs(Math.sin(bob.phase)) * 0.01 * bob.weight * hipWeight
 
-    this.gun.position
-      .lerpVectors(HIP, ADS, this.aim)
+    const m = this.active
+    m.group.position
+      .lerpVectors(m.hip, m.ads, this.aim)
       .add(
         new THREE.Vector3(
           this.swayX.value * 0.02 + bobX,
-          this.swayY.value * 0.02 + bobY - reloadDip * 0.08 - drawT * 0.18,
+          this.swayY.value * 0.02 + bobY - reloadDip * 0.08 - drawT * 0.18 - boltT * 0.03,
           this.kickBack.value * 0.06 * (1 - this.aim * 0.5),
         ),
       )
-    this.gun.rotation.set(
+    m.group.rotation.set(
       this.kickUp.value * 0.02 - reloadDip * 0.5 - drawT * 0.8,
       this.swayX.value * 0.03,
-      reloadDip * 0.6,
+      reloadDip * 0.6 + boltT * 0.35,
     )
 
     this.flashTime -= dt
@@ -175,8 +290,8 @@ export class Viewmodel {
     this.flash.visible = flashing
     this.flashLight.intensity = flashing ? 3 : 0
 
-    this.gun.updateMatrixWorld(true)
-    this.muzzleView.setFromMatrixPosition(this.muzzle.matrixWorld)
-    this.ejectView.setFromMatrixPosition(this.ejectPort.matrixWorld)
+    m.group.updateMatrixWorld(true)
+    this.muzzleView.setFromMatrixPosition(m.muzzle.matrixWorld)
+    this.ejectView.setFromMatrixPosition(m.ejectPort.matrixWorld)
   }
 }

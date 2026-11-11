@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import {
   Button,
   createPhysicsWorld,
+  createWeaponState,
   DebugFlag,
   decodeServerMessage,
   HitZone,
@@ -10,6 +11,7 @@ import {
   type ServerMessage,
   ServerMsg,
   TICK_RATE,
+  WeaponId,
 } from '@office-fps/shared'
 import { Game, MAX_HEALTH, RESPAWN_SECONDS } from './game.ts'
 
@@ -70,6 +72,8 @@ function duel(): Setup {
   pa.state.pos = { x: 0, y: 0, z: 0 }
   pb.state.pos = { x: 0, y: 0, z: -5 }
   pb.state.yaw = Math.PI // facing the shooter
+  // These tests are about the handgun; the default loadout spawns with the rifle out.
+  pa.state.weapon = createWeaponState(WeaponId.Handgun, 7)
   const seq = { n: 1 }
   // Let protection run out and guns finish drawing (both players send idle inputs).
   for (let t = 0; t < 2.5 * TICK_RATE; t++) {
@@ -233,5 +237,74 @@ describe('lag compensation', () => {
     shootAt(s, { x: seen.x, y: seen.y + 1.3, z: seen.z }, viewTick)
     const debug = s.a.all(ServerMsg.DebugShot).at(-1)
     expect(debug?.poses[0]?.x).toBeCloseTo(seen.x, 1)
+  })
+})
+
+describe('arsenal', () => {
+  /** Aim for `aimSeconds` (scope in), then click once. */
+  function aimedShot(s: Setup, target: { x: number; y: number; z: number }, aimSeconds: number) {
+    const p = s.game.players.get(s.shooter)
+    if (!p) throw new Error('no shooter')
+    const eye = { x: p.state.pos.x, y: p.state.pos.y + 1.65, z: p.state.pos.z }
+    const dx = target.x - eye.x
+    const dz = target.z - eye.z
+    const yaw = Math.atan2(-dx, -dz)
+    const pitch = Math.atan2(target.y - eye.y, Math.hypot(dx, dz))
+    const step = (buttons: number) => {
+      s.game.handleInput(s.shooter, [
+        { seq: s.seq.n++, buttons, yaw, pitch, viewTick: s.game.tick },
+      ])
+      s.game.handleInput(s.victim, [idle(s.seq.n)])
+      s.game.step()
+    }
+    for (let t = 0; t < aimSeconds * TICK_RATE; t++) step(Button.Aim)
+    step(Button.Aim | Button.Fire)
+    for (let t = 0; t < 5; t++) step(Button.Aim)
+  }
+
+  function arm(s: Setup, id: WeaponId) {
+    const p = s.game.players.get(s.shooter)
+    if (!p) throw new Error()
+    p.state.weapon = createWeaponState(id, 3)
+    p.state.weapon.draw = 0
+  }
+
+  test('a scoped sniper shot to the chest kills; to the leg it does not', () => {
+    const s = duel()
+    arm(s, WeaponId.Sniper)
+    aimedShot(s, { x: 0.1, y: 0.4, z: -5 }, 0.5)
+    expect(health(s)).toBe(MAX_HEALTH - 75)
+    arm(s, WeaponId.Sniper)
+    aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.5)
+    expect(health(s)).toBe(0)
+    expect(s.b.all(ServerMsg.Kill).at(-1)?.weapon).toBe(WeaponId.Sniper)
+  })
+
+  test('the rifle needs 4 chest hits', () => {
+    const s = duel()
+    arm(s, WeaponId.Rifle)
+    for (let i = 0; i < 3; i++) aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.3)
+    expect(health(s)).toBe(MAX_HEALTH - 90)
+    aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.3)
+    expect(health(s)).toBe(0)
+  })
+
+  test('others are told which weapon fired', () => {
+    const s = duel()
+    arm(s, WeaponId.Sniper)
+    aimedShot(s, { x: 0, y: 1.3, z: -5 }, 0.5)
+    expect(s.b.all(ServerMsg.ShotFired).at(-1)?.weapon).toBe(WeaponId.Sniper)
+  })
+
+  test('a new loadout applies at the next spawn', () => {
+    const s = duel()
+    const victim = s.game.players.get(s.victim)
+    expect(victim?.state.weapon.id).toBe(WeaponId.Rifle)
+    s.game.setLoadout(s.victim, WeaponId.Sniper)
+    s.game.setLoadout(s.victim, WeaponId.Handgun) // not a primary: ignored
+    shootAt(s, { x: 0, y: 1.64, z: -5 })
+    for (let t = 0; t < RESPAWN_SECONDS * TICK_RATE + 2; t++) s.game.step()
+    expect(victim?.state.weapon.id).toBe(WeaponId.Sniper)
+    expect(victim?.state.holstered.id).toBe(WeaponId.Handgun)
   })
 })

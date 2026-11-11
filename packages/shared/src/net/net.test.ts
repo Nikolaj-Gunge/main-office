@@ -113,6 +113,8 @@ describe('InterpolationBuffer', () => {
     grounded: true,
     alive: true,
     protected: false,
+    weapon: 1,
+    aiming: false,
   })
 
   test('blends between snapshots', () => {

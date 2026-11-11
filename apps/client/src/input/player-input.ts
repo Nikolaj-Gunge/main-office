@@ -15,6 +15,9 @@ const BINDINGS: [Button, string[]][] = [
   [Button.Fire, ['Mouse0']],
   [Button.Aim, ['Mouse2']],
   [Button.Reload, ['KeyR']],
+  [Button.Slot1, ['Digit1']],
+  [Button.Slot2, ['Digit2']],
+  [Button.SwapWeapon, ['KeyQ', 'Wheel']],
 ]
 
 /** Samples one tick of input. Taps shorter than a tick still register via `consumePressed`. */

@@ -69,6 +69,8 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     grounded: t < 0.5 ? a.grounded : b.grounded,
     alive: b.alive,
     protected: b.protected,
+    weapon: b.weapon,
+    aiming: b.aiming,
   }
 }
 

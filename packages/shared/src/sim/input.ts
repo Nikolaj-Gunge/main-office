@@ -11,6 +11,10 @@ export const Button = {
   Aim: 1 << 8,
   Reload: 1 << 9,
   Use: 1 << 10,
+  /** Switch to primary (1) / secondary (2) / the other weapon (Q, mouse wheel). */
+  Slot1: 1 << 11,
+  Slot2: 1 << 12,
+  SwapWeapon: 1 << 13,
 } as const
 export type Button = (typeof Button)[keyof typeof Button]
 

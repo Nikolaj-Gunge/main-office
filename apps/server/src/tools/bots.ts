@@ -16,6 +16,7 @@ import {
   type RemotePlayerState,
   ServerMsg,
   TICK_RATE,
+  WeaponId,
 } from '@office-fps/shared'
 
 function arg(name: string, fallback: string): string {
@@ -63,7 +64,12 @@ class Bot {
     this.ws = new WebSocket(url)
     this.ws.binaryType = 'arraybuffer'
     this.ws.addEventListener('open', () => {
-      this.send({ type: ClientMsg.Hello, protocolVersion: PROTOCOL_VERSION, name: `Bot ${index}` })
+      this.send({
+        type: ClientMsg.Hello,
+        protocolVersion: PROTOCOL_VERSION,
+        name: `Bot ${index}`,
+        primary: Math.random() < 0.7 ? WeaponId.Rifle : WeaponId.Sniper,
+      })
     })
     this.ws.addEventListener('message', (e) => {
       const msg = decodeServerMessage(e.data as ArrayBuffer)

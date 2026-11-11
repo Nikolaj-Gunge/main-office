@@ -30,6 +30,7 @@ export const SOUNDS = {
   'reload.out': { variants: 1, recipe: magOut },
   'reload.in': { variants: 1, recipe: magIn },
   'reload.slide': { variants: 1, recipe: slide },
+  bolt: { variants: 1, recipe: boltCycle },
   dryfire: { variants: 1, recipe: dryFire },
   hit: { variants: 1, recipe: hitTick },
   'hit.head': { variants: 1, recipe: headTink },
@@ -119,6 +120,21 @@ function slide(rate: number): Signal {
   const rack = envelope(bandpass(noise(0.1, rate, 221), rate, 3000, 1.5), rate, 0.01, 0.03)
   const forward = metalClick(rate, 222, 1700, 0.09)
   return fadeEdges(normalize(mix(rate, back, [gain(rack, 0.5), 0.02], [forward, 0.11]), 0.65), rate)
+}
+
+/** Bolt-action cycle: lift, pull back, push forward, lock down. */
+function boltCycle(rate: number): Signal {
+  const lift = metalClick(rate, 240, 1300, 0.05)
+  const back = envelope(bandpass(noise(0.14, rate, 241), rate, 2400, 1.6), rate, 0.02, 0.05)
+  const forward = envelope(bandpass(noise(0.12, rate, 242), rate, 2000, 1.6), rate, 0.02, 0.04)
+  const lock = metalClick(rate, 243, 1100, 0.08)
+  return fadeEdges(
+    normalize(
+      mix(rate, lift, [gain(back, 0.6), 0.08], [gain(forward, 0.6), 0.3], [lock, 0.45]),
+      0.65,
+    ),
+    rate,
+  )
 }
 
 function dryFire(rate: number): Signal {

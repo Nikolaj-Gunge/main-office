@@ -17,7 +17,8 @@ import { quantizeInput } from './quantize.ts'
 
 describe('client messages', () => {
   const cases: ClientMessage[] = [
-    { type: ClientMsg.Hello, protocolVersion: 3, name: 'Nikolaj' },
+    { type: ClientMsg.Hello, protocolVersion: 4, name: 'Nikolaj', primary: WeaponId.Sniper },
+    { type: ClientMsg.SetLoadout, primary: WeaponId.Rifle },
     { type: ClientMsg.Ping, clientTime: 12345.678 },
     { type: ClientMsg.SetDebug, flags: 1 },
     {
@@ -67,6 +68,14 @@ describe('server messages', () => {
   self.prevButtons = 0x41
   self.alive = false
   self.weapon = { ...self.weapon, ammo: 7, cooldown: 0.05, shotIndex: 42, spreadSeed: 0xdeadbeef }
+  self.holstered = {
+    ...self.holstered,
+    ammo: 3,
+    aimTime: 0.1,
+    swayTime: 2.5,
+    breath: 1.5,
+    steady: true,
+  }
 
   const cases: ServerMessage[] = [
     { type: ServerMsg.Welcome, playerId: 7, serverTick: 99999, tickRate: 60, snapshotRate: 30 },
@@ -86,6 +95,7 @@ describe('server messages', () => {
     {
       type: ServerMsg.ShotFired,
       shooterId: 4,
+      weapon: WeaponId.Sniper,
       end: { x: 1.5, y: 2, z: -3.25 },
       normal: { x: 0, y: 1, z: 0 },
       result: ShotResult.World,
@@ -127,6 +137,8 @@ describe('server messages', () => {
           grounded: true,
           alive: false,
           protected: true,
+          weapon: WeaponId.Sniper,
+          aiming: true,
         },
       ],
     }
@@ -143,6 +155,8 @@ describe('server messages', () => {
     expect(p?.grounded).toBe(true)
     expect(p?.alive).toBe(false)
     expect(p?.protected).toBe(true)
+    expect(p?.weapon).toBe(WeaponId.Sniper)
+    expect(p?.aiming).toBe(true)
   })
 
   test('debug shot poses survive the wire', () => {

@@ -22,6 +22,10 @@ export class Keyboard {
       this.down.add(`Mouse${e.button}`)
     })
     target.addEventListener('mouseup', (e) => this.down.delete(`Mouse${e.button}`))
+    // Each wheel notch is a one-off press of `Wheel`.
+    target.addEventListener('wheel', (e) => {
+      if (document.pointerLockElement && Math.abs(e.deltaY) > 0) this.pressed.add('Wheel')
+    })
     // Right-click to aim must not open the context menu.
     target.addEventListener('contextmenu', (e) => {
       if (document.pointerLockElement) e.preventDefault()

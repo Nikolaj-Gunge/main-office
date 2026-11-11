@@ -1,8 +1,8 @@
 import {
-  Button,
+  aimProgress,
   currentSpread,
   HitZone,
-  hasButton,
+  MAX_BREATH,
   type PhysicsWorld,
   PLAYER_QUERY_GROUPS,
   type PlayerState,
@@ -14,7 +14,7 @@ import {
   ShotResult,
   WEAPONS,
   type WeaponEvents,
-  type WeaponId,
+  WeaponId,
   type WeaponState,
 } from '@office-fps/shared'
 import * as THREE from 'three'
@@ -100,12 +100,17 @@ export class ClientCombat {
       kind === 'world' && wall
         ? new THREE.Vector3(wall.normal.x, wall.normal.y, wall.normal.z)
         : new THREE.Vector3(-dir.x, -dir.y, -dir.z)
-    const muzzle = this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
-    this.d.effects.shot(muzzle, end, normal, kind)
+    // Scoped, the gun is hidden: the tracer starts just below the eye instead of the muzzle.
+    const muzzle = this.d.viewmodel.scoped
+      ? new THREE.Vector3(origin.x, origin.y - 0.08, origin.z)
+      : this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
+    const heavy = weapon.id === WeaponId.Sniper
+    this.d.effects.shot(muzzle, end, normal, kind, heavy)
     this.d.viewmodel.onShot()
     this.d.recoil.kick(weapon, aiming)
-    this.d.shake.add(0.18)
-    this.d.audio.gunshot()
+    this.d.shake.add(heavy ? 0.45 : weapon.fireMode === 'auto' ? 0.1 : 0.18)
+    this.d.audio.gunshot(undefined, weapon.id)
+    if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
     this.impactSound(end, kind)
     this.ejectCasing()
   }
@@ -167,13 +172,16 @@ export class ClientCombat {
               ? 'world'
               : 'nothing'
         const end = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
+        const heavy = msg.weapon === WeaponId.Sniper
         this.d.effects.shot(
           from,
           end,
           new THREE.Vector3(msg.normal.x, msg.normal.y, msg.normal.z),
           kind,
+          heavy,
         )
-        this.d.audio.gunshot(from)
+        this.d.audio.gunshot(from, msg.weapon)
+        if (heavy) this.d.audio.playNear('bolt', from, 0.6, 25)
         this.impactSound(end, kind)
         this.nearMiss(from, end)
         break
@@ -229,19 +237,20 @@ export class ClientCombat {
     bob: { phase: number; weight: number },
     walkSpeed: number,
   ): void {
-    const aiming = hasButton(state.prevButtons, Button.Aim)
-    this.d.viewmodel.update(dt, look.delta, bob, state.weapon, aiming, state.alive)
-    this.d.hud.setWeapon(state.weapon)
+    const w = state.weapon
+    this.d.viewmodel.update(dt, look.delta, bob, w, state.alive)
+    this.d.hud.setWeapon(w, state.holstered)
     this.d.hud.setSpread(
-      currentSpread(state.weapon, aiming, {
+      currentSpread(w, {
         sprinting: false,
         grounded: state.grounded,
         crouched: state.crouched,
         speedFactor: Math.hypot(state.vel.x, state.vel.z) / walkSpeed,
       }),
       this.d.camera.fov,
-      aiming,
+      aimProgress(w) > 0.3,
     )
+    this.d.hud.setScope(this.d.viewmodel.scoped && state.alive, w.breath / MAX_BREATH, w.steady)
     this.d.hud.update(dt, state.pos, look.yaw)
     this.d.hud.setProtected(state.alive && this.isProtected)
     this.d.hud.setVisible(state.alive)

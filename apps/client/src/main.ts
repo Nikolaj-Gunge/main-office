@@ -8,10 +8,13 @@ import {
   initPhysics,
   loadMap,
   PLAYER_QUERY_GROUPS,
+  type PrimaryWeapon,
   RAPIER,
   ServerMsg,
   TICK_DT,
   WEAPONS,
+  WeaponId,
+  weaponSway,
 } from '@office-fps/shared'
 import Stats from 'stats-gl'
 import * as THREE from 'three'
@@ -186,9 +189,19 @@ const net = new Connection({
   },
 })
 
+/** Primary weapon for the next spawn; also remembered for the join screen. */
+function chooseLoadout(primary: PrimaryWeapon) {
+  overlay.setPrimary(primary)
+  net.primary = primary
+  hud.setLoadoutChoice(primary)
+  if (joined) net.send({ type: ClientMsg.SetLoadout, primary })
+}
+hud.setLoadoutChoice(overlay.primary)
+
 overlay.onPlay((name) => {
+  chooseLoadout(overlay.primary)
   audio.unlock() // browsers only allow audio after a click
-  if (net.state === 'idle') net.connect(name)
+  if (net.state === 'idle') net.connect(name, overlay.primary)
   void look.lock()
 })
 look.onLockChange = (locked) => overlay.setLocked(locked)
@@ -222,6 +235,10 @@ window.addEventListener('keydown', (e) => {
     settings.showDebug = !settings.showDebug
     applySettings()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
+  }
+  // Dead: 1 / 2 pick the primary for your next spawn (you can't switch weapons while dead).
+  if (!player.state.alive && (e.code === 'Digit1' || e.code === 'Digit2')) {
+    chooseLoadout(e.code === 'Digit1' ? WeaponId.Rifle : WeaponId.Sniper)
   }
   if (e.code === 'F4') {
     e.preventDefault()
@@ -290,6 +307,10 @@ pixels.renderer.setAnimationLoop(() => {
     const kick = recoil.update(dt)
     look.addRotation(kick.yaw, kick.pitch)
     player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+    // Scope sway: the view drifts exactly as much as the bullet will (shared weaponSway).
+    const sway = weaponSway(player.state.weapon)
+    camera.rotation.x += sway.pitch
+    camera.rotation.y += sway.yaw
     const s = shake.update(dt)
     camera.rotation.x += s.pitch
     camera.rotation.y += s.yaw
@@ -304,7 +325,7 @@ pixels.renderer.setAnimationLoop(() => {
   camera.updateMatrixWorld()
   audio.setListener(camera)
   audio.update(dt)
-  remotes.update(now)
+  remotes.update(now, camera.position)
   combat.update(
     dt,
     player.state,

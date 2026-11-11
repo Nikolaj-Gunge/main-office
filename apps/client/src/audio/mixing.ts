@@ -27,6 +27,16 @@ export function distanceLowpass(distance: number): number {
   return distance < 1 ? 20000 : Math.max(900, 16000 * Math.exp(-distance / 30))
 }
 
+/**
+ * How each weapon sounds, from the shared gunshot layers: pitch (playback rate), loudness and how
+ * much room/echo. The rifle is snappier, the sniper a deep boom that rolls across the map.
+ */
+export const GUN_VOICES: Record<number, { rate: number; volume: number; tail: number }> = {
+  0: { rate: 1, volume: 1, tail: 1 }, // handgun
+  1: { rate: 1.12, volume: 0.9, tail: 0.9 }, // rifle
+  2: { rate: 0.72, volume: 1.35, tail: 1.6 }, // sniper
+}
+
 export interface GunshotMix {
   /** Overall volume (before the per-layer levels). */
   volume: number

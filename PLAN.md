@@ -390,6 +390,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - Sniper: bolt cycle, scope overlay, 4× zoom, scope sway + hold breath, unscoped inaccuracy, glint visible to others.
 - Weapon switching (draw times), loadout choice on death screen, movement inaccuracy, sprint-to-fire delay, damage falloff.
 - **Done when:** each weapon has a clear role: handgun close/backup, rifle mid, sniper long — nothing dominates in playtests.
+- **Implementation notes:** loadout = primary (rifle or sniper, chosen on the join screen or with 1/2 while dead, applied at next spawn) + handgun; the holstered weapon keeps its own ammo/timers inside the predicted state. Aim accuracy builds over `adsTime`. Scope sway and hold-breath live in the shared weapon state, so the camera drift you see equals the bullet's offset on the server. The rifle's spray pattern is a fixed per-shot table applied by the client recoil (no recovery until you stop firing). Remote snapshots carry weapon + aiming → avatar gun model and the sniper glint (brightest when they point at you).
 
 ### Phase 7 — Complete HUD & UX
 

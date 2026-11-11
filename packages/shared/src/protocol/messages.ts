@@ -1,7 +1,8 @@
 import type { HitPose, HitZone } from '../sim/hitboxes.ts'
 import type { PlayerInput } from '../sim/input.ts'
 import type { PlayerState } from '../sim/player.ts'
-import type { WeaponId } from '../sim/weapons.ts'
+import type { WeaponState } from '../sim/weapon-sim.ts'
+import type { PrimaryWeapon, WeaponId } from '../sim/weapons.ts'
 import { BinaryReader, BinaryWriter } from './binary.ts'
 import { decodePitch, decodeYaw, encodePitch, encodeYaw } from './quantize.ts'
 
@@ -11,6 +12,7 @@ export const ClientMsg = {
   Input: 0x02,
   Ping: 0x03,
   SetDebug: 0x04,
+  SetLoadout: 0x05,
 } as const
 export type ClientMsg = (typeof ClientMsg)[keyof typeof ClientMsg]
 
@@ -59,6 +61,9 @@ export interface RemotePlayerState {
   alive: boolean
   /** Just spawned: can't be damaged yet. */
   protected: boolean
+  weapon: WeaponId
+  /** Aiming down sights (with a sniper: scoped — others see the lens glint). */
+  aiming: boolean
 }
 
 /** What a shot hit, for drawing tracers and impacts on other clients. */
@@ -70,10 +75,18 @@ export const ShotResult = {
 export type ShotResult = (typeof ShotResult)[keyof typeof ShotResult]
 
 export type ClientMessage =
-  | { type: typeof ClientMsg.Hello; protocolVersion: number; name: string }
+  | {
+      type: typeof ClientMsg.Hello
+      protocolVersion: number
+      name: string
+      /** Primary weapon to spawn with. */
+      primary: PrimaryWeapon
+    }
   | { type: typeof ClientMsg.Input; commands: InputCommand[] }
   | { type: typeof ClientMsg.Ping; clientTime: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
+  /** Primary weapon for your next spawn. */
+  | { type: typeof ClientMsg.SetLoadout; primary: PrimaryWeapon }
 
 export type ServerMessage =
   | {
@@ -105,6 +118,7 @@ export type ServerMessage =
       /** Someone else fired: draw their tracer to `end` and an impact if it hit something. */
       type: typeof ServerMsg.ShotFired
       shooterId: number
+      weapon: WeaponId
       end: { x: number; y: number; z: number }
       normal: { x: number; y: number; z: number }
       result: ShotResult
@@ -145,6 +159,7 @@ const FLAG_CROUCHED = 1
 const FLAG_GROUNDED = 2
 const FLAG_DEAD = 4
 const FLAG_PROTECTED = 8
+const FLAG_AIMING = 16
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -157,10 +172,37 @@ function writePlayerState(w: BinaryWriter, s: PlayerState): void {
     (s.crouched ? FLAG_CROUCHED : 0) | (s.grounded ? FLAG_GROUNDED : 0) | (s.alive ? 0 : FLAG_DEAD),
   )
   w.u16(s.prevButtons)
-  const wp = s.weapon
+  writeWeapon(w, s.weapon)
+  writeWeapon(w, s.holstered)
+}
+
+function writeWeapon(w: BinaryWriter, wp: WeaponState): void {
   w.u8(wp.id).u8(wp.ammo).u16(wp.reserve)
   w.f64(wp.cooldown).f64(wp.reload).f64(wp.draw).f64(wp.fireBuffer).f64(wp.sprintRecover)
   w.u32(wp.shotIndex).u32(wp.spreadSeed)
+  w.f64(wp.aimTime)
+    .f64(wp.swayTime)
+    .f64(wp.breath)
+    .u8(wp.steady ? 1 : 0)
+}
+
+function readWeapon(r: BinaryReader): WeaponState {
+  return {
+    id: r.u8() as WeaponId,
+    ammo: r.u8(),
+    reserve: r.u16(),
+    cooldown: r.f64(),
+    reload: r.f64(),
+    draw: r.f64(),
+    fireBuffer: r.f64(),
+    sprintRecover: r.f64(),
+    shotIndex: r.u32(),
+    spreadSeed: r.u32(),
+    aimTime: r.f64(),
+    swayTime: r.f64(),
+    breath: r.f64(),
+    steady: r.u8() === 1,
+  }
 }
 
 function readPlayerState(r: BinaryReader): PlayerState {
@@ -173,18 +215,8 @@ function readPlayerState(r: BinaryReader): PlayerState {
   const jumpBuffer = r.f64()
   const flags = r.u8()
   const prevButtons = r.u16()
-  const weapon = {
-    id: r.u8() as WeaponId,
-    ammo: r.u8(),
-    reserve: r.u16(),
-    cooldown: r.f64(),
-    reload: r.f64(),
-    draw: r.f64(),
-    fireBuffer: r.f64(),
-    sprintRecover: r.f64(),
-    shotIndex: r.u32(),
-    spreadSeed: r.u32(),
-  }
+  const weapon = readWeapon(r)
+  const holstered = readWeapon(r)
   return {
     pos,
     vel,
@@ -198,6 +230,7 @@ function readPlayerState(r: BinaryReader): PlayerState {
     prevButtons,
     alive: (flags & FLAG_DEAD) === 0,
     weapon,
+    holstered,
   }
 }
 
@@ -210,8 +243,10 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
   w.u8(
     (p.grounded ? FLAG_GROUNDED : 0) |
       (p.alive ? 0 : FLAG_DEAD) |
-      (p.protected ? FLAG_PROTECTED : 0),
+      (p.protected ? FLAG_PROTECTED : 0) |
+      (p.aiming ? FLAG_AIMING : 0),
   )
+  w.u8(p.weapon)
 }
 
 function readRemote(r: BinaryReader): RemotePlayerState {
@@ -223,6 +258,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const pitch = decodePitch(r.i16())
   const crouch = r.u8() / 255
   const flags = r.u8()
+  const weapon = r.u8() as WeaponId
   return {
     id,
     x,
@@ -234,6 +270,8 @@ function readRemote(r: BinaryReader): RemotePlayerState {
     grounded: (flags & FLAG_GROUNDED) !== 0,
     alive: (flags & FLAG_DEAD) === 0,
     protected: (flags & FLAG_PROTECTED) !== 0,
+    aiming: (flags & FLAG_AIMING) !== 0,
+    weapon,
   }
 }
 
@@ -272,7 +310,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
   const w = new BinaryWriter(32).u8(msg.type)
   switch (msg.type) {
     case ClientMsg.Hello:
-      w.u16(msg.protocolVersion).str8(msg.name)
+      w.u16(msg.protocolVersion).str8(msg.name).u8(msg.primary)
+      break
+    case ClientMsg.SetLoadout:
+      w.u8(msg.primary)
       break
     case ClientMsg.Input:
       w.u8(msg.commands.length)
@@ -296,7 +337,14 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
   const type = r.u8()
   switch (type) {
     case ClientMsg.Hello:
-      return { type, protocolVersion: r.u16(), name: r.str8() }
+      return {
+        type,
+        protocolVersion: r.u16(),
+        name: r.str8(),
+        primary: r.u8() as PrimaryWeapon,
+      }
+    case ClientMsg.SetLoadout:
+      return { type, primary: r.u8() as PrimaryWeapon }
     case ClientMsg.Input: {
       const count = r.u8()
       const commands: InputCommand[] = []
@@ -346,7 +394,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       w.f64(msg.clientTime).f64(msg.serverTime).f32(msg.tickMs)
       break
     case ServerMsg.ShotFired:
-      w.u16(msg.shooterId)
+      w.u16(msg.shooterId).u8(msg.weapon)
       writeVec(w, msg.end)
       writeNormal(w, msg.normal)
       w.u8(msg.result)
@@ -416,6 +464,7 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       return {
         type,
         shooterId: r.u16(),
+        weapon: r.u8() as WeaponId,
         end: readVec(r),
         normal: readNormal(r),
         result: r.u8() as ShotResult,

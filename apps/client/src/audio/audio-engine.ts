@@ -1,5 +1,5 @@
 import type * as THREE from 'three'
-import { distanceLowpass, falloff, gunshotMix } from './mixing.ts'
+import { distanceLowpass, falloff, GUN_VOICES, gunshotMix } from './mixing.ts'
 import { SOUNDS, type SoundId } from './sounds.ts'
 
 export interface PlayOptions {
@@ -179,18 +179,21 @@ export class AudioEngine {
    * A gunshot, mixed by distance: up close you hear the mechanical crack and punch; far away
    * mostly the echo, dulled and arriving late (sound travels 343 m/s).
    */
-  gunshot(at?: { x: number; y: number; z: number }): void {
+  gunshot(at: { x: number; y: number; z: number } | undefined, weapon: number): void {
     const m = gunshotMix(at ? this.distanceTo(at) : null)
+    const voice = GUN_VOICES[weapon] ?? { rate: 1, volume: 1, tail: 1 }
+    const rate = voice.rate * (0.97 + Math.random() * 0.06)
     const layer = (id: SoundId, level: number) =>
       this.play(id, {
         ...(at ? { at } : {}),
-        volume: m.volume * level,
+        volume: m.volume * voice.volume * level,
         delay: m.delay,
         lowpass: m.lowpass,
+        rate,
       })
     layer('shot.close', m.close)
     layer('shot.body', m.body)
-    layer('shot.tail', m.tail)
+    layer('shot.tail', m.tail * voice.tail)
   }
 
   /**

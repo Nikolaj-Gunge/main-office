@@ -6,7 +6,7 @@ export interface WeaponState {
   id: WeaponId
   ammo: number
   reserve: number
-  /** Seconds until the next shot is allowed. */
+  /** Seconds until the next shot is allowed (also the sniper's bolt cycle). */
   cooldown: number
   /** Seconds left of the current reload (0 = not reloading). */
   reload: number
@@ -20,6 +20,14 @@ export interface WeaponState {
   shotIndex: number
   /** Server-chosen per life, so spread isn't predictable by others. */
   spreadSeed: number
+  /** Seconds spent aiming, capped at the weapon's adsTime (0 = hip fire). */
+  aimTime: number
+  /** Clock for scope sway while aiming (seconds). */
+  swayTime: number
+  /** Seconds of held breath left (scoped weapons). */
+  breath: number
+  /** Currently holding breath (sway damped). */
+  steady: boolean
 }
 
 export interface WeaponContext {
@@ -31,7 +39,7 @@ export interface WeaponContext {
 }
 
 export interface WeaponEvents {
-  /** Set when a shot was fired this tick: the spread offsets to apply to the view direction. */
+  /** Set when a shot was fired this tick: the offsets to apply to the view direction. */
   shot: { yawOffset: number; pitchOffset: number; shotIndex: number } | null
   reloadStarted: boolean
   reloaded: boolean
@@ -40,6 +48,10 @@ export interface WeaponEvents {
 
 const FIRE_BUFFER = 0.1
 const EPS = 1e-6
+/** Hold breath up to this long, then it gives out until you breathe again. */
+export const MAX_BREATH = 3
+const BREATH_REGEN = 0.6
+const STEADY_SWAY = 0.15
 
 export function createWeaponState(id: WeaponId, spreadSeed = 0): WeaponState {
   const def = WEAPONS[id]
@@ -54,17 +66,44 @@ export function createWeaponState(id: WeaponId, spreadSeed = 0): WeaponState {
     sprintRecover: 0,
     shotIndex: 0,
     spreadSeed,
+    aimTime: 0,
+    swayTime: 0,
+    breath: MAX_BREATH,
+    steady: false,
   }
 }
 
+/** 0 = hip, 1 = fully aimed (accuracy and zoom blend between them). */
+export function aimProgress(w: WeaponState): number {
+  const ads = WEAPONS[w.id].adsTime
+  return ads > 0 ? Math.min(1, w.aimTime / ads) : 0
+}
+
 /** Current spread cone radius (degrees) for the given situation. */
-export function currentSpread(w: WeaponState, aiming: boolean, ctx: WeaponContext): number {
+export function currentSpread(w: WeaponState, ctx: WeaponContext): number {
   const def = WEAPONS[w.id]
-  let spread = aiming ? def.aimSpread : def.hipSpread
+  const t = aimProgress(w)
+  let spread = def.hipSpread + (def.aimSpread - def.hipSpread) * t
   spread += def.moveSpread * Math.min(ctx.speedFactor, 1.5)
   if (!ctx.grounded) spread += def.airSpread
   if (ctx.crouched) spread *= 0.8
   return spread
+}
+
+/**
+ * Scope drift (radians) — a slow figure-of-eight that grows as you aim and shrinks while holding
+ * breath. It moves where the bullet goes, and the client draws the camera with the same offset,
+ * so what you see in the scope is exactly where you'll hit.
+ */
+export function weaponSway(w: WeaponState): { yaw: number; pitch: number } {
+  const def = WEAPONS[w.id]
+  if (def.scopeSway === 0) return { yaw: 0, pitch: 0 }
+  const a = ((def.scopeSway * Math.PI) / 180) * aimProgress(w) * (w.steady ? STEADY_SWAY : 1)
+  const t = w.swayTime
+  return {
+    yaw: a * (Math.sin(t * 0.9) * 0.7 + Math.sin(t * 2.1 + 1) * 0.3),
+    pitch: a * 0.8 * (Math.sin(t * 1.3 + 0.5) * 0.6 + Math.sin(t * 0.7) * 0.4),
+  }
 }
 
 /** 32-bit integer hash → [0, 1). Same on every JS engine. */
@@ -76,7 +115,7 @@ function hash01(seed: number, n: number): number {
   return (h >>> 0) / 4294967296
 }
 
-/** Advances the weapon one tick. Mutates `w`. */
+/** Advances the active weapon one tick. Mutates `w`. */
 export function stepWeapon(
   w: WeaponState,
   buttons: number,
@@ -92,6 +131,18 @@ export function stepWeapon(
   w.sprintRecover = ctx.sprinting ? def.sprintToFire : Math.max(0, w.sprintRecover - dt)
   w.fireBuffer = hasButton(pressed, Button.Fire) ? FIRE_BUFFER : Math.max(0, w.fireBuffer - dt)
 
+  // Aiming: accuracy (and zoom) build up over adsTime; you can't aim while drawing or reloading.
+  const aiming = hasButton(buttons, Button.Aim) && w.draw <= EPS && w.reload === 0
+  w.aimTime = aiming ? Math.min(def.adsTime, w.aimTime + dt) : 0
+  w.swayTime = aiming ? w.swayTime + dt : 0
+  const holdBreath = aiming && def.scopeSway > 0 && hasButton(buttons, Button.Sprint)
+  w.steady = holdBreath && w.breath > 0
+  w.breath = w.steady
+    ? Math.max(0, w.breath - dt)
+    : holdBreath
+      ? 0 // out of breath: must let go of Shift before it recovers
+      : Math.min(MAX_BREATH, w.breath + dt * BREATH_REGEN)
+
   if (w.reload > 0) {
     w.reload -= dt
     if (w.reload <= EPS) {
@@ -104,10 +155,11 @@ export function stepWeapon(
   }
 
   const wantFire = def.fireMode === 'auto' ? hasButton(buttons, Button.Fire) : w.fireBuffer > 0
-  const canReload = w.reload === 0 && w.ammo < def.magSize && w.reserve > 0
+  const canReload = w.reload === 0 && w.ammo < def.magSize && w.reserve > 0 && w.draw <= EPS
   if (canReload && (hasButton(pressed, Button.Reload) || (wantFire && w.ammo === 0))) {
     w.reload = w.ammo === 0 ? def.emptyReloadTime : def.reloadTime
     w.fireBuffer = 0
+    w.aimTime = 0
     events.reloadStarted = true
     return events
   }
@@ -116,13 +168,14 @@ export function stepWeapon(
 
   const ready = w.cooldown <= EPS && w.reload === 0 && w.draw <= EPS && w.sprintRecover <= EPS
   if (wantFire && ready && w.ammo > 0) {
-    const spreadRad = (currentSpread(w, hasButton(buttons, Button.Aim), ctx) * Math.PI) / 180
+    const spreadRad = (currentSpread(w, ctx) * Math.PI) / 180
     // Uniform point in a disc: sqrt keeps it from bunching in the middle.
     const r = spreadRad * Math.sqrt(hash01(w.spreadSeed, w.shotIndex * 2))
     const theta = Math.PI * 2 * hash01(w.spreadSeed, w.shotIndex * 2 + 1)
+    const sway = weaponSway(w)
     events.shot = {
-      yawOffset: r * Math.cos(theta),
-      pitchOffset: r * Math.sin(theta),
+      yawOffset: r * Math.cos(theta) + sway.yaw,
+      pitchOffset: r * Math.sin(theta) + sway.pitch,
       shotIndex: w.shotIndex,
     }
     w.ammo--
@@ -131,4 +184,21 @@ export function stepWeapon(
     w.fireBuffer = 0
   }
   return events
+}
+
+/**
+ * Puts the active weapon away and draws the holstered one. Interrupts reloads (the mag you were
+ * loading stays out) and aiming; the drawn weapon must finish its draw time before firing.
+ */
+export function switchWeapons(
+  active: WeaponState,
+  holstered: WeaponState,
+): [WeaponState, WeaponState] {
+  active.reload = 0
+  active.aimTime = 0
+  active.swayTime = 0
+  active.fireBuffer = 0
+  holstered.draw = WEAPONS[holstered.id].drawTime
+  holstered.fireBuffer = 0
+  return [holstered, active]
 }

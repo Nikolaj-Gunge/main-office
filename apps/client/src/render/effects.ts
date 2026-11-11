@@ -83,6 +83,12 @@ export class Effects {
     opacity: 0.9,
     fog: false,
   })
+  private readonly heavyTracerMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.95,
+    fog: false,
+  })
   private readonly scene: THREE.Scene
 
   constructor(scene: THREE.Scene, raycast: WorldRaycast) {
@@ -144,13 +150,19 @@ export class Effects {
     to: THREE.Vector3,
     normal: THREE.Vector3,
     hit: 'world' | 'player' | 'nothing',
+    heavy = false,
   ): void {
     this.flashLight(from)
     const dir = to.clone().sub(from)
     const distance = dir.length()
     if (distance > 0.5) {
-      const mesh = new THREE.Mesh(this.tracerGeometry, this.tracerMaterial)
-      mesh.scale.set(0.012, 0.012, 0.01)
+      // Sniper rounds leave a thicker, whiter streak.
+      const mesh = new THREE.Mesh(
+        this.tracerGeometry,
+        heavy ? this.heavyTracerMaterial : this.tracerMaterial,
+      )
+      const width = heavy ? 0.03 : 0.012
+      mesh.scale.set(width, width, 0.01)
       this.scene.add(mesh)
       this.tracers.push({ mesh, from: from.clone(), dir: dir.normalize(), distance, traveled: 0 })
     }

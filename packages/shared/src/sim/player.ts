@@ -8,8 +8,14 @@ import {
 import { viewDirection } from './hitboxes.ts'
 import { Button, hasButton, type PlayerInput } from './input.ts'
 import type { MovementConfig } from './movement-config.ts'
-import { createWeaponState, stepWeapon, type WeaponEvents, type WeaponState } from './weapon-sim.ts'
-import { WeaponId } from './weapons.ts'
+import {
+  createWeaponState,
+  stepWeapon,
+  switchWeapons,
+  type WeaponEvents,
+  type WeaponState,
+} from './weapon-sim.ts'
+import { WEAPONS, WeaponId } from './weapons.ts'
 
 export interface MutVec3 {
   x: number
@@ -36,7 +42,10 @@ export interface PlayerState {
   prevButtons: number
   /** Dead players don't move or shoot; the server flips this and respawns them. */
   alive: boolean
+  /** The weapon in your hands. */
   weapon: WeaponState
+  /** The other weapon (primary ↔ handgun), keeping its own ammo and timers. */
+  holstered: WeaponState
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -53,6 +62,8 @@ export interface StepEvents {
   landingSpeed: number
   shot: ShotEvent | null
   weapon: WeaponEvents | null
+  /** Switched weapons this tick. */
+  switched: boolean
 }
 
 /** Gap Rapier keeps between the capsule and the world. Feet sit this far above the floor. */
@@ -61,7 +72,8 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 }
 
 export function createPlayerState(
   spawn?: MapSpawn,
-  weapon: WeaponState = createWeaponState(WeaponId.Handgun),
+  weapon: WeaponState = createWeaponState(WeaponId.Rifle),
+  holstered: WeaponState = createWeaponState(WeaponId.Handgun),
 ): PlayerState {
   return {
     pos: { x: spawn?.pos[0] ?? 0, y: spawn?.pos[1] ?? 0, z: spawn?.pos[2] ?? 0 },
@@ -76,11 +88,18 @@ export function createPlayerState(
     prevButtons: 0,
     alive: true,
     weapon,
+    holstered,
   }
 }
 
 export function clonePlayerState(s: PlayerState): PlayerState {
-  return { ...s, pos: { ...s.pos }, vel: { ...s.vel }, weapon: { ...s.weapon } }
+  return {
+    ...s,
+    pos: { ...s.pos },
+    vel: { ...s.vel },
+    weapon: { ...s.weapon },
+    holstered: { ...s.holstered },
+  }
 }
 
 export function eyeHeight(state: PlayerState, config: MovementConfig): number {
@@ -348,6 +367,7 @@ export function stepPlayer(
     landingSpeed: 0,
     shot: null,
     weapon: null,
+    switched: false,
   }
   if (!state.alive) return events
 
@@ -384,15 +404,18 @@ export function stepPlayer(
     wishX /= wishLen
     wishZ /= wishLen
   }
-  // Holding fire cancels sprint, so you can always start shooting (after sprintToFire).
+  // Holding fire cancels sprint, so you can always start shooting (after sprintToFire). Aiming
+  // also stops sprinting — and with a scope, Shift holds your breath instead.
+  const aiming = hasButton(buttons, Button.Aim)
   const sprinting =
     hasButton(buttons, Button.Sprint) &&
     forward > 0 &&
     !state.crouched &&
+    !aiming &&
     !hasButton(buttons, Button.Fire)
-  const maxSpeed = state.crouched
-    ? c.crouchSpeed
-    : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)
+  const handling = WEAPONS[state.weapon.id].moveSpeedFactor * (aiming ? 0.6 : 1)
+  const maxSpeed =
+    (state.crouched ? c.crouchSpeed : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)) * handling
   const wishSpeed = wishLen > 0 ? maxSpeed : 0
 
   // --- Jump (buffered press + coyote time) -----------------------------------------------
@@ -478,7 +501,16 @@ export function stepPlayer(
     state.airTime += dt
   }
 
-  // --- Weapon: after movement, so shots leave from where the player now is ----------------
+  // --- Weapon: switch first, then fire — after movement, so shots leave from where you are ---
+  const isPrimary = state.weapon.id !== WeaponId.Handgun
+  const wantSwitch =
+    hasButton(pressed, Button.SwapWeapon) ||
+    (hasButton(pressed, Button.Slot1) && !isPrimary) ||
+    (hasButton(pressed, Button.Slot2) && isPrimary)
+  if (wantSwitch) {
+    ;[state.weapon, state.holstered] = switchWeapons(state.weapon, state.holstered)
+    events.switched = true
+  }
   events.weapon = stepWeapon(state.weapon, buttons, pressed, dt, {
     sprinting,
     grounded: state.grounded,

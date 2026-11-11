@@ -48,6 +48,53 @@ describe('Recoil', () => {
   })
 })
 
+describe('Recoil spray pattern', () => {
+  const rifle = WEAPONS[WeaponId.Rifle]
+
+  /** Fires `shots` at the rifle's fire rate; returns the view offset after each shot. */
+  function spray(recoil: Recoil, shots: number) {
+    const dt = 1 / 120
+    let pitch = 0
+    let yaw = 0
+    const path: { pitch: number; yaw: number }[] = []
+    for (let i = 0; i < shots; i++) {
+      recoil.kick(rifle, false)
+      for (let t = 0; t < rifle.fireInterval; t += dt) {
+        const d = recoil.update(dt)
+        pitch += d.pitch
+        yaw += d.yaw
+      }
+      path.push({ pitch, yaw })
+    }
+    return { path, pitch, yaw }
+  }
+
+  test('is identical every spray (learnable) and climbs while you hold fire', () => {
+    const a = spray(new Recoil(), 12)
+    const b = spray(new Recoil(), 12)
+    expect(a.path).toEqual(b.path)
+    for (let i = 1; i < 10; i++) expect(a.path[i]?.pitch).toBeGreaterThan(a.path[i - 1]?.pitch ?? 0)
+    expect(a.pitch).toBeGreaterThan(5 * DEG)
+  })
+
+  test('recovers to where you aimed once you stop', () => {
+    const recoil = new Recoil()
+    const s = spray(recoil, 10)
+    let pitch = s.pitch
+    for (let t = 0; t < 2; t += 1 / 120) pitch += recoil.update(1 / 120).pitch
+    expect(Math.abs(pitch)).toBeLessThan(0.05 * DEG)
+  })
+
+  test('a pause resets the pattern to the first shot', () => {
+    const recoil = new Recoil()
+    spray(recoil, 8)
+    for (let t = 0; t < 1; t += 1 / 120) recoil.update(1 / 120)
+    const again = spray(recoil, 1)
+    const fresh = spray(new Recoil(), 1)
+    expect(again.pitch).toBeCloseTo(fresh.pitch, 4)
+  })
+})
+
 describe('ScreenShake', () => {
   test('fades out completely and scales with trauma squared', () => {
     const shake = new ScreenShake()

@@ -83,7 +83,8 @@ export class RemotePlayers {
     for (const s of states) this.players.get(s.id)?.buffer.push(tick, s)
   }
 
-  update(nowMs: number): void {
+  /** @param viewer your eye position (for directional effects like the scope glint) */
+  update(nowMs: number, viewer?: THREE.Vector3): void {
     if (!this.clock.isSynced) return
     this.renderTick = this.clock.tick(nowMs) - (this.interpDelayMs * TICK_RATE) / 1000
     const dt = Math.min(0.1, (nowMs - this.lastUpdateMs) / 1000)
@@ -92,7 +93,7 @@ export class RemotePlayers {
       const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
-      if (p.shown) p.avatar.update(p.shown, nowMs)
+      if (p.shown) p.avatar.update(p.shown, nowMs, viewer)
       if (before && p.shown && dt > 0) this.detectSteps(p, before, p.shown, dt)
     }
   }

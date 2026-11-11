@@ -4,8 +4,10 @@ import {
   decodeServerMessage,
   encodeClientMessage,
   PROTOCOL_VERSION,
+  type PrimaryWeapon,
   type ServerMessage,
   ServerMsg,
+  WeaponId,
   WS_PATH,
 } from '@office-fps/shared'
 import { NetSim } from './net-sim.ts'
@@ -35,6 +37,8 @@ export class Connection {
 
   private ws: WebSocket | null = null
   private name = ''
+  /** Primary weapon; kept up to date so reconnects spawn with the current choice. */
+  primary: PrimaryWeapon = WeaponId.Rifle
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private bytesIn = 0
   private bytesOut = 0
@@ -50,8 +54,9 @@ export class Connection {
     }, 1000)
   }
 
-  connect(name: string): void {
+  connect(name: string, primary: PrimaryWeapon): void {
     this.name = name
+    this.primary = primary
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${location.host}${WS_PATH}`)
     ws.binaryType = 'arraybuffer'
@@ -60,7 +65,12 @@ export class Connection {
 
     ws.addEventListener('open', () => {
       this.setState('open')
-      this.send({ type: ClientMsg.Hello, protocolVersion: PROTOCOL_VERSION, name: this.name })
+      this.send({
+        type: ClientMsg.Hello,
+        protocolVersion: PROTOCOL_VERSION,
+        name: this.name,
+        primary: this.primary,
+      })
       this.sendPing()
       this.pingTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS)
     })
@@ -82,8 +92,9 @@ export class Connection {
       this.ws = null
       this.playerId = 0
       this.setState('closed', event.reason)
-      if (!FATAL_CODES.has(event.code))
-        setTimeout(() => this.connect(this.name), RECONNECT_DELAY_MS)
+      if (!FATAL_CODES.has(event.code)) {
+        setTimeout(() => this.connect(this.name, this.primary), RECONNECT_DELAY_MS)
+      }
     })
   }
 

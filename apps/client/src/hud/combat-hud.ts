@@ -1,4 +1,4 @@
-import { HitZone, MAX_PLAYERS, WEAPONS, type WeaponState } from '@office-fps/shared'
+import { HitZone, MAX_PLAYERS, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 
 const KILLFEED_SECONDS = 6
 const KILLFEED_MAX = 5
@@ -33,6 +33,10 @@ export class CombatHud {
   private readonly damageRing: HTMLDivElement
   private readonly vignette: HTMLDivElement
   private readonly death: HTMLDivElement
+  private readonly deathLoadout: HTMLDivElement
+  private readonly slots: HTMLDivElement
+  private readonly scope: HTMLDivElement
+  private readonly breathFill: HTMLDivElement
   private readonly deathText: HTMLDivElement
   private readonly deathTimer: HTMLDivElement
   private readonly protectedLabel: HTMLDivElement
@@ -71,6 +75,13 @@ export class CombatHud {
     this.death = el('div', 'hud-death', root)
     this.deathText = el('div', 'hud-death-text', this.death)
     this.deathTimer = el('div', 'hud-death-timer', this.death)
+    this.deathLoadout = el('div', 'hud-death-loadout', this.death)
+    this.slots = el('div', 'hud-slots', this.ammo)
+    this.scope = el('div', 'hud-scope', root)
+    el('div', 'hud-scope-cross', this.scope)
+    const breath = el('div', 'hud-scope-breath', this.scope)
+    this.breathFill = el('div', 'hud-scope-breath-fill', breath)
+    this.scope.hidden = true
     this.death.hidden = true
 
     this.setHealth(100)
@@ -85,8 +96,22 @@ export class CombatHud {
     this.vignette.style.opacity = String(h <= 0 ? 0 : Math.max(0, (50 - h) / 50))
   }
 
-  setWeapon(w: WeaponState): void {
+  setWeapon(w: WeaponState, holstered: WeaponState): void {
     const def = WEAPONS[w.id]
+    // "1 RIFLE · 2 HANDGUN" with the one in hand highlighted.
+    const primary = w.id === WeaponId.Handgun ? holstered : w
+    const slotText = `1 ${WEAPONS[primary.id].name.toUpperCase()}   2 HANDGUN`
+    if (this.slots.dataset.text !== `${slotText}${w.id}`) {
+      this.slots.dataset.text = `${slotText}${w.id}`
+      this.slots.innerHTML = ''
+      for (const [slot, weapon] of [
+        ['1', primary.id],
+        ['2', WeaponId.Handgun],
+      ] as const) {
+        const span = el('span', weapon === w.id ? 'slot active' : 'slot', this.slots)
+        span.textContent = `${slot} ${WEAPONS[weapon].name.toUpperCase()}`
+      }
+    }
     this.ammoCount.textContent = String(w.ammo)
     this.ammoReserve.textContent = ` / ${w.reserve}`
     this.ammo.classList.toggle('empty', w.ammo === 0)
@@ -98,6 +123,27 @@ export class CombatHud {
           : w.ammo <= Math.ceil(def.magSize / 4)
             ? 'R TO RELOAD'
             : def.name.toUpperCase()
+  }
+
+  /** Scope overlay while looking through a scope; the bar shows held breath (Shift). */
+  setScope(on: boolean, breath01: number, steady: boolean): void {
+    this.scope.hidden = !on
+    if (!on) return
+    this.breathFill.style.width = `${Math.round(breath01 * 100)}%`
+    this.scope.classList.toggle('steady', steady)
+  }
+
+  /** Death screen: which primary you'll spawn with (press 1 or 2 to change). */
+  setLoadoutChoice(primary: WeaponId): void {
+    this.deathLoadout.innerHTML = ''
+    el('span', 'label', this.deathLoadout).textContent = 'Next spawn: '
+    for (const [key, id] of [
+      ['1', WeaponId.Rifle],
+      ['2', WeaponId.Sniper],
+    ] as const) {
+      const option = el('span', id === primary ? 'option chosen' : 'option', this.deathLoadout)
+      option.textContent = `[${key}] ${WEAPONS[id].name.toUpperCase()}`
+    }
   }
 
   /** Crosshair gap in CSS pixels from the current spread cone (degrees) and vertical FOV. */

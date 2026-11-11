@@ -1,4 +1,5 @@
 import {
+  Button,
   createPlayerState,
   createWeaponState,
   DEFAULT_MOVEMENT,
@@ -7,7 +8,9 @@ import {
   encodeServerMessage,
   type HitPose,
   HitZone,
+  hasButton,
   type InputCommand,
+  isPrimary,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   type MapDef,
@@ -16,6 +19,7 @@ import {
   PLAYER_QUERY_GROUPS,
   PlayerBody,
   type PlayerState,
+  type PrimaryWeapon,
   RAPIER,
   type RemotePlayerState,
   raycastPose,
@@ -59,6 +63,8 @@ interface ServerPlayer {
   kills: number
   deaths: number
   debugFlags: number
+  /** Primary weapon for the next spawn (the handgun is always the secondary). */
+  loadout: PrimaryWeapon
 }
 
 /**
@@ -104,7 +110,11 @@ export class Game {
   }
 
   /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
-  join(rawName: string, client: GameClient): number | null {
+  join(
+    rawName: string,
+    client: GameClient,
+    primary: PrimaryWeapon = WeaponId.Rifle,
+  ): number | null {
     if (this.players.size >= MAX_PLAYERS) return null
     const id = this.nextId
     this.nextId = (this.nextId % 0xffff) + 1
@@ -115,7 +125,7 @@ export class Game {
       color: this.pickColor(),
       client,
       body: new PlayerBody(this.physics, DEFAULT_MOVEMENT),
-      state: this.freshState(),
+      state: this.freshState(0, isPrimary(primary) ? primary : WeaponId.Rifle),
       queue: [],
       lastQueuedSeq: 0,
       ackSeq: 0,
@@ -125,6 +135,7 @@ export class Game {
       kills: 0,
       deaths: 0,
       debugFlags: 0,
+      loadout: isPrimary(primary) ? primary : WeaponId.Rifle,
     }
 
     send(client, {
@@ -164,6 +175,12 @@ export class Game {
       player.queue.push(command)
     }
     if (player.queue.length > MAX_QUEUE) player.queue.splice(0, player.queue.length - MAX_QUEUE)
+  }
+
+  /** Changes the primary weapon for the player's next spawn. */
+  setLoadout(id: number, primary: number): void {
+    const player = this.players.get(id)
+    if (player && isPrimary(primary)) player.loadout = primary
   }
 
   setDebug(id: number, flags: number): void {
@@ -245,6 +262,7 @@ export class Game {
     const shotMsg = encodeServerMessage({
       type: ServerMsg.ShotFired,
       shooterId: shooter.id,
+      weapon: shooter.state.weapon.id,
       end,
       normal,
       result,
@@ -309,16 +327,20 @@ export class Game {
 
   private respawn(player: ServerPlayer): void {
     const previous = player.state
-    player.state = this.freshState(player.id)
+    player.state = this.freshState(player.id, player.loadout)
     // Keep input edge detection continuous so a held button isn't seen as a new press.
     player.state.prevButtons = previous.prevButtons
     player.health = MAX_HEALTH
     player.protectedUntil = this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
   }
 
-  private freshState(excludeId = 0): PlayerState {
-    const seed = (Math.random() * 0xffffffff) >>> 0
-    return createPlayerState(this.pickSpawn(excludeId), createWeaponState(WeaponId.Handgun, seed))
+  private freshState(excludeId: number, primary: PrimaryWeapon): PlayerState {
+    const seed = () => (Math.random() * 0xffffffff) >>> 0
+    return createPlayerState(
+      this.pickSpawn(excludeId),
+      createWeaponState(primary, seed()),
+      createWeaponState(WeaponId.Handgun, seed()),
+    )
   }
 
   // --- Snapshots -----------------------------------------------------------------------------
@@ -395,6 +417,8 @@ function toRemote(p: ServerPlayer, isProtected: boolean): RemotePlayerState {
     grounded: s.grounded,
     alive: s.alive,
     protected: isProtected,
+    weapon: s.weapon.id,
+    aiming: s.alive && hasButton(s.prevButtons, Button.Aim) && s.weapon.aimTime > 0,
   }
 }
 
