@@ -39,6 +39,7 @@ export function buildOffice(): MapDef {
   const SLAB = 0.3
   const ROOF = 9
   const T = 0.3 // wall thickness
+  const UNDER_STAIRS_DOOR = -16.5 // z of the door from under the west stairs to the boardroom
   const deco = { collide: false } as const
   const solid = { render: false } as const
 
@@ -195,7 +196,9 @@ export function buildOffice(): MapDef {
 
   // ─── West stairwell (enclosed, ground → games room) ─────────────────────────────────────
   stairs(X0, -26, -8, 0, UP)
-  wallZ(-20, -8, -26, 0, UP - SLAB, 'plaster') // ground floor side wall
+  // Ground floor side wall. The room under the landing (z -20..-13.4) is closed in by the stair
+  // flight, so it gets a door through to the boardroom (wall at x -24 has the matching door).
+  wallZ(-20, -8, -26, 0, UP - SLAB, 'plaster', [[UNDER_STAIRS_DOOR, 1.6]])
   m.span([-26.05, UP, -13.4], [-25.95, UP + 1.1, -8], 'glass') // upper: railing over the hole
   m.span([X0, UP, -8.05], [-26, UP + 1.1, -7.95], 'glass')
 
@@ -210,7 +213,7 @@ export function buildOffice(): MapDef {
     [12, 1.6],
   ]) // quiet room
   wallX(16, X1, -8, 0, UP - SLAB, 'plaster', [[18.4, 1.4]]) // server room: one door (choke)
-  wallZ(Z0, -8, -24, 0, UP - SLAB, 'plaster')
+  wallZ(Z0, -8, -24, 0, UP - SLAB, 'plaster', [[UNDER_STAIRS_DOOR, 1.6]])
   wallZ(Z0, -8, 16, 0, UP - SLAB, 'plaster')
 
   // Boardroom: long table, screen, chairs.

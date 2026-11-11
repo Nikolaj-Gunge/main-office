@@ -102,6 +102,67 @@ describe('office map', () => {
     }
   })
 
+  test('every random spawn point can walk out to the rest of its floor (no sealed rooms)', () => {
+    const physics = createPhysicsWorld(map)
+    const probe = new PlayerBody(physics, { ...DEFAULT_MOVEMENT })
+    const points = findSpawnPoints(map, physics)
+    // Flood fill a fine grid of spots a player fits in; cells 0.25 m apart can't have a wall
+    // between them, so neighbouring free cells are walkable to each other.
+    const step = 0.25
+    const nx = Math.round(60 / step) + 1
+    const nz = Math.round(40 / step) + 1
+    for (const y of [0, UP]) {
+      const free = new Uint8Array(nx * nz)
+      for (let i = 0; i < nx; i++) {
+        for (let k = 0; k < nz; k++) {
+          const pos = { x: -30 + i * step, y, z: -20 + k * step }
+          free[i * nz + k] = probe.fits(pos, DEFAULT_MOVEMENT.standHeight) ? 1 : 0
+        }
+      }
+      // Label connected regions; the biggest is the floor everyone shares.
+      const region = new Int32Array(nx * nz).fill(-1)
+      const sizes: number[] = []
+      for (let start = 0; start < free.length; start++) {
+        if (!free[start] || region[start] !== -1) continue
+        const id = sizes.length
+        let size = 0
+        const stack = [start]
+        region[start] = id
+        while (stack.length > 0) {
+          const c = stack.pop() ?? 0
+          size++
+          const i = Math.floor(c / nz)
+          const k = c % nz
+          for (const [di, dk] of [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ] as const) {
+            const ni = i + di
+            const nk = k + dk
+            if (ni < 0 || nk < 0 || ni >= nx || nk >= nz) continue
+            const n = ni * nz + nk
+            if (free[n] && region[n] === -1) {
+              region[n] = id
+              stack.push(n)
+            }
+          }
+        }
+        sizes.push(size)
+      }
+      const main = sizes.indexOf(Math.max(...sizes))
+      const sealed = points
+        .filter((p) => p[1] === y)
+        .filter((p) => {
+          const c = Math.round((p[0] + 30) / step) * nz + Math.round((p[2] + 20) / step)
+          return region[c] !== main
+        })
+      expect({ floor: y, sealed }).toEqual({ floor: y, sealed: [] })
+    }
+    probe.free()
+  })
+
   test('every weapon can be picked up by walking over it (a player fits within reach)', () => {
     const physics = createPhysicsWorld(map)
     const probe = new PlayerBody(physics, { ...DEFAULT_MOVEMENT })
