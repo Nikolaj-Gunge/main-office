@@ -139,7 +139,8 @@ function passwordFrom(request: Request): string {
  */
 export const normalizePassword = (password: string) =>
   password
-    .replace(/\u001b\[20[01]~/g, '')
+    .replaceAll('\u001b[200~', '') // bracketed paste: start…
+    .replaceAll('\u001b[201~', '') // …and end
     .replace(/\p{Cc}/gu, '')
     .normalize('NFC')
     .trim()
