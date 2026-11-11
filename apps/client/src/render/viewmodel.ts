@@ -245,7 +245,8 @@ export class Viewmodel {
     // Ease the shared (linear) aim progress so the gun glides into place.
     const t = aimProgress(weapon)
     this.aim = t * t * (3 - 2 * t)
-    this.scoped = def.scoped && t >= 0.95
+    // Scope overlay exactly when fully aimed — the same moment accuracy becomes perfect.
+    this.scoped = def.scoped && t >= 1
     this.root.visible = alive && !this.scoped
     const hipWeight = 1 - this.aim * 0.85
 

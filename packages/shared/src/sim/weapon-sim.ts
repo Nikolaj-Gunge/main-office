@@ -52,6 +52,8 @@ const EPS = 1e-6
 export const MAX_BREATH = 3
 const BREATH_REGEN = 0.6
 const STEADY_SWAY = 0.15
+/** Seconds after the scope is fully in before sway reaches full size (quick-scopes stay on target). */
+const SWAY_RAMP = 0.6
 
 export function createWeaponState(id: WeaponId, spreadSeed = 0): WeaponState {
   const def = WEAPONS[id]
@@ -79,11 +81,16 @@ export function aimProgress(w: WeaponState): number {
   return ads > 0 ? Math.min(1, w.aimTime / ads) : 0
 }
 
-/** Current spread cone radius (degrees) for the given situation. */
+/**
+ * Current spread cone radius (degrees) for the given situation. Accuracy improves only a little
+ * while the sights come up, then snaps to full aimed accuracy the moment you're fully aimed —
+ * so a fast, complete scope-in ("quick-scope") is rewarded and a half scope is not.
+ */
 export function currentSpread(w: WeaponState, ctx: WeaponContext): number {
   const def = WEAPONS[w.id]
   const t = aimProgress(w)
-  let spread = def.hipSpread + (def.aimSpread - def.hipSpread) * t
+  const blend = t >= 1 ? 1 : t * t * 0.6
+  let spread = def.hipSpread + (def.aimSpread - def.hipSpread) * blend
   spread += def.moveSpread * Math.min(ctx.speedFactor, 1.5)
   if (!ctx.grounded) spread += def.airSpread
   if (ctx.crouched) spread *= 0.8
@@ -98,7 +105,9 @@ export function currentSpread(w: WeaponState, ctx: WeaponContext): number {
 export function weaponSway(w: WeaponState): { yaw: number; pitch: number } {
   const def = WEAPONS[w.id]
   if (def.scopeSway === 0) return { yaw: 0, pitch: 0 }
-  const a = ((def.scopeSway * Math.PI) / 180) * aimProgress(w) * (w.steady ? STEADY_SWAY : 1)
+  // Sway grows in over SWAY_RAMP seconds after the scope is fully in.
+  const ramp = Math.max(0, Math.min(1, (w.swayTime - def.adsTime) / SWAY_RAMP))
+  const a = ((def.scopeSway * Math.PI) / 180) * ramp * (w.steady ? STEADY_SWAY : 1)
   const t = w.swayTime
   return {
     yaw: a * (Math.sin(t * 0.9) * 0.7 + Math.sin(t * 2.1 + 1) * 0.3),
@@ -133,7 +142,8 @@ export function stepWeapon(
 
   // Aiming: accuracy (and zoom) build up over adsTime; you can't aim while drawing or reloading.
   const aiming = hasButton(buttons, Button.Aim) && w.draw <= EPS && w.reload === 0
-  w.aimTime = aiming ? Math.min(def.adsTime, w.aimTime + dt) : 0
+  // Snap the last float-rounding sliver so "fully aimed" lands exactly on the expected tick.
+  w.aimTime = aiming ? Math.min(def.adsTime, w.aimTime + dt + EPS) : 0
   w.swayTime = aiming ? w.swayTime + dt : 0
   const holdBreath = aiming && def.scopeSway > 0 && hasButton(buttons, Button.Sprint)
   w.steady = holdBreath && w.breath > 0

@@ -66,6 +66,25 @@ describe('sniper', () => {
     expect(currentSpread(w, STILL)).toBe(0)
   })
 
+  test('quick-scope: perfect accuracy and no sway the moment the scope is fully in', () => {
+    const w = drawn(WeaponId.Sniper)
+    const ads = WEAPONS[WeaponId.Sniper].adsTime
+    expect(ads).toBeLessThanOrEqual(0.2)
+    let ticks = 0
+    while (aimProgress(w) < 1) {
+      stepWeapon(w, Button.Aim, 0, TICK_DT, STILL)
+      ticks++
+    }
+    expect(ticks).toBeLessThanOrEqual(Math.ceil(ads / TICK_DT))
+    expect(currentSpread(w, STILL)).toBe(0)
+    const sway = weaponSway(w)
+    expect(Math.hypot(sway.yaw, sway.pitch)).toBeLessThan(0.02 * (Math.PI / 180))
+    // One tick short of fully scoped is still clearly inaccurate.
+    const half = drawn(WeaponId.Sniper)
+    for (let t = 0; t < ticks - 1; t++) stepWeapon(half, Button.Aim, 0, TICK_DT, STILL)
+    expect(currentSpread(half, STILL)).toBeGreaterThan(2)
+  })
+
   test('scope sways; holding breath steadies it for 3 s, then it gives out', () => {
     const w = drawn(WeaponId.Sniper)
     const swayOver = (ticks: number, buttons: number) => {
