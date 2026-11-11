@@ -81,7 +81,7 @@ settings and renderer for console debugging.
 
 The always-on office server runs on Cloudflare: Workers Assets serve the client, and one Durable
 Object (`GameRoom`, in `apps/cloudflare`) runs the same `Game` as the Bun server. Anyone with the
-link can join.
+link can join: **https://office-fps.office-fps-cloudflare.workers.dev**
 
 ```sh
 cd apps/cloudflare
