@@ -423,3 +423,25 @@ describe('shotgun', () => {
     expect(health(s)).toBeLessThan(MAX_HEALTH)
   })
 })
+
+describe('spawn loadout', () => {
+  test('players respawn holding the rules’ spawn weapon, handgun holstered', () => {
+    const s = duel()
+    s.game.setRules(mergeRules(DEFAULT_RULES, { spawnWeapon: 'shotgun', respawnSeconds: 0 }))
+    shootAt(s, { x: 0, y: 1.64, z: -5 })
+    for (let t = 0; t < 3; t++) s.game.step()
+    const victim = s.game.players.get(s.victim)
+    expect(victim?.state.alive).toBe(true)
+    expect(victim?.state.weapon.id).toBe(WeaponId.Shotgun)
+    expect(victim?.state.holstered?.id).toBe(WeaponId.Handgun)
+  })
+
+  test('"none" keeps the handgun-only start', () => {
+    const s = duel()
+    shootAt(s, { x: 0, y: 1.64, z: -5 })
+    for (let t = 0; t < DEFAULT_RULES.respawnSeconds * TICK_RATE + 2; t++) s.game.step()
+    const victim = s.game.players.get(s.victim)
+    expect(victim?.state.weapon.id).toBe(WeaponId.Handgun)
+    expect(victim?.state.holstered).toBeNull()
+  })
+})

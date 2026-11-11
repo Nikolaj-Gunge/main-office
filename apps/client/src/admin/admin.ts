@@ -10,6 +10,7 @@ interface AdminState {
     maps: { id: string; name: string }[]
     skins: string[]
     jingles: string[]
+    spawnWeapons: string[]
     ranges: Record<string, { min: number; max: number; step: number }>
     defaults: GameRules
   }
@@ -52,7 +53,15 @@ const JINGLE_NAMES: Record<string, string> = {
   airhorn: 'Airhorn',
 }
 
-/** One-click combinations. Each starts from normal play (map, skin and jingle are kept). */
+const SPAWN_WEAPON_NAMES: Record<string, string> = {
+  none: 'Handgun only',
+  rifle: '+ Rifle',
+  sniper: '+ Sniper',
+  shotgun: '+ Shotgun',
+  random: '+ Random',
+}
+
+/** One-click combinations. Each starts from normal play (map, skin, loadout, jingle kept). */
 const PRESETS: { label: string; rules: Partial<GameRules> }[] = [
   { label: 'Normal', rules: {} },
   { label: 'Moon', rules: { gravity: 0.17 } },
@@ -219,11 +228,22 @@ function render(): void {
     ),
   )
 
+  const loadoutCard = card(
+    'Spawn with',
+    'Everyone always has the handgun. Applies from each player’s next spawn.',
+    choiceGroup(
+      'Spawn weapon',
+      choices.spawnWeapons.map((id) => ({ id, name: SPAWN_WEAPON_NAMES[id] ?? id })),
+      rules.spawnWeapon,
+      (id) => change({ spawnWeapon: id as GameRules['spawnWeapon'] }, true),
+    ),
+  )
+
   const presets = h('div', { class: 'choices' })
   for (const preset of PRESETS) {
     const button = h('button', { type: 'button' }, preset.label)
     button.addEventListener('click', () => {
-      const { map, skin, jingles, ...normal } = choices.defaults
+      const { map, skin, jingles, spawnWeapon, ...normal } = choices.defaults
       change({ ...normal, ...preset.rules }, true)
     })
     presets.append(button)
@@ -347,6 +367,7 @@ function render(): void {
     h('p', { class: 'subtitle' }, 'Office FPS server controls — changes go live for everyone.'),
     mapCard,
     skinCard,
+    loadoutCard,
     presetCard,
     rulesCard,
     jingleCard,

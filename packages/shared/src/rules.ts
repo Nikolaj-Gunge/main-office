@@ -6,6 +6,10 @@ import type { WeaponRules } from './sim/weapon-sim.ts'
 export const SKINS = ['slime', 'worker', 'robot'] as const
 export type SkinId = (typeof SKINS)[number]
 
+/** Main weapon everyone spawns with, next to the handgun ('none' = find one on the floor). */
+export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'random'] as const
+export type SpawnWeapon = (typeof SPAWN_WEAPONS)[number]
+
 /** What plays when you get a kill (on top of the kill ding). */
 export const JINGLES = ['off', 'arcade', 'fanfare', 'airhorn'] as const
 export type JingleId = (typeof JINGLES)[number]
@@ -19,6 +23,8 @@ export interface GameRules {
   map: string
   skin: SkinId
   jingles: JingleId
+  /** Spawn loadout: the handgun plus this (in hand). Applies from each player's next spawn. */
+  spawnWeapon: SpawnWeapon
   /** Multipliers on the normal values (1 = normal). */
   gravity: number
   speed: number
@@ -43,6 +49,7 @@ export const DEFAULT_RULES: GameRules = {
   map: DEFAULT_MAP_ID,
   skin: 'slime',
   jingles: 'arcade',
+  spawnWeapon: 'none',
   gravity: 1,
   speed: 1,
   jump: 1,
@@ -85,6 +92,12 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   }
   if (typeof u.jingles === 'string' && (JINGLES as readonly string[]).includes(u.jingles)) {
     next.jingles = u.jingles as JingleId
+  }
+  if (
+    typeof u.spawnWeapon === 'string' &&
+    (SPAWN_WEAPONS as readonly string[]).includes(u.spawnWeapon)
+  ) {
+    next.spawnWeapon = u.spawnWeapon as SpawnWeapon
   }
   for (const key of Object.keys(RULE_RANGES) as NumericRule[]) {
     const value = u[key]

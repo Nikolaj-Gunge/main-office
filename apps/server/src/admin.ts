@@ -8,6 +8,7 @@ import {
   mergeRules,
   RULE_RANGES,
   SKINS,
+  SPAWN_WEAPONS,
 } from '@office-fps/shared'
 import type { Game } from './game.ts'
 
@@ -106,6 +107,7 @@ export class AdminApi {
         maps: this.mapNames,
         skins: SKINS,
         jingles: JINGLES,
+        spawnWeapons: SPAWN_WEAPONS,
         ranges: RULE_RANGES,
         defaults: DEFAULT_RULES,
       },

@@ -32,6 +32,7 @@ import {
   type ShotEvent,
   ShotResult,
   SNAPSHOT_RATE,
+  type SpawnWeapon,
   stepPlayer,
   TICK_DT,
   TICK_RATE,
@@ -491,9 +492,17 @@ export class Game {
     player.protectedUntil = this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
   }
 
-  /** Everyone spawns with only the handgun; rifles and snipers are found on the floor. */
+  /**
+   * Everyone spawns with the handgun, plus the rules' spawn weapon in hand if the admin set one
+   * (otherwise rifles, snipers and shotguns are found on the floor).
+   */
   private freshState(excludeId: number): PlayerState {
-    return createPlayerState(this.pickSpawn(excludeId), newWeapon(WeaponId.Handgun), null)
+    const spawn = this.pickSpawn(excludeId)
+    const primary = spawnPrimary(this.rulesValue.spawnWeapon, this.random)
+    const handgun = newWeapon(WeaponId.Handgun)
+    return primary === null
+      ? createPlayerState(spawn, handgun, null)
+      : createPlayerState(spawn, newWeapon(primary), handgun)
   }
 
   // --- Weapons on the floor ------------------------------------------------------------------
@@ -610,6 +619,20 @@ export class Game {
     for (let i = 0; i < PLAYER_COLORS.length; i++) if (!used.has(i)) return i
     return this.players.size % PLAYER_COLORS.length
   }
+}
+
+const SPAWN_PRIMARIES: Record<Exclude<SpawnWeapon, 'none' | 'random'>, WeaponId> = {
+  rifle: WeaponId.Rifle,
+  sniper: WeaponId.Sniper,
+  shotgun: WeaponId.Shotgun,
+}
+
+/** The main weapon a spawn gets under the rules ('random' picks one per spawn), or null. */
+function spawnPrimary(rule: SpawnWeapon, random: () => number): WeaponId | null {
+  if (rule === 'none') return null
+  if (rule !== 'random') return SPAWN_PRIMARIES[rule]
+  const all = Object.values(SPAWN_PRIMARIES)
+  return all[Math.floor(random() * all.length)] ?? WeaponId.Rifle
 }
 
 /** A weapon fresh off the floor: full magazine and reserve, its own spread seed. */
