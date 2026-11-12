@@ -488,6 +488,29 @@ Built in 3 testable parts on `phase-11`:
   - More zombies the further you get: intensity 0.8 → 2.4, a pool of 24, faster spawning in later stages.
   - Claws hit harder: 17 / 27 / 38 for easy / normal / hard.
   - MP5 and LMG: tall open sights, and the gun held lower and further out when aiming.
+- **Per-weapon recoil animation:**
+  - Flip, twist and side jerk, each with its own recovery speed.
+  - Pistol slide (locks back when empty), charging handles, sniper bolt.
+- **Zombies round 3 — two big co-op maps and new goal types (protocol v17):**
+  - New goals:
+    - `activate`: visit every spot (switches, pumps, fuel cans), optionally staying a few seconds at each.
+    - `defend`: zombies tear at a thing; if it breaks, the stage restarts.
+    - `survive`: a countdown.
+  - Stages may open no gate; only the last stage ends the run.
+  - Dead Mall (`mall`), 10 stages:
+    - Car park → keycards from the shops → food court → defend the generator → escalator to the upper floor.
+    - Upper floor: security office hold → cinema.
+    - Roof: flares → defend the radio → survive until the helicopter.
+  - Last Train (`metro`), 11 stages over 350 m, going down:
+    - Street (fuses from wrecks) → ramp down to the concourse (breakers, survive) → escalators.
+    - Platform (defend the signal box) → tunnel → pump room.
+    - Depot: fuel cans, control room on a gantry, defend the train.
+  - Map/mode coupling: picking a co-op map starts zombies; picking another mode leaves it for the office.
+  - Nav: fields are capped at 160 steps (cheap on big maps), and ramp links respect gates.
+  - Every co-op map is covered by `coop-maps.test.ts`:
+    - starts, goals and spawns are on the floor and connected;
+    - gates seal off what's behind them;
+    - a player can walk up every ramp.
 - Next co-op idea (user): a heist map — sneak past guards and police.
 
 - Slide and mantle; lean (Q/E).

@@ -147,10 +147,14 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   for (const key of BOOLEAN_RULES) {
     if (typeof u[key] === 'boolean') next[key] = u[key]
   }
-  // Zombies is played on a co-op map: picking zombies moves there, picking another map ends it.
+  // Zombies is played on a co-op map, and co-op maps only in zombies: picking zombies moves to
+  // one, picking a co-op map starts zombies; picking another map or mode leaves.
   if (next.mode === 'zombies' && !isCoopMap(next.map)) {
     if (u.mode === 'zombies') next.map = COOP_MAPS[0]
     else next.mode = 'ffa'
+  } else if (next.mode !== 'zombies' && isCoopMap(next.map)) {
+    if (typeof u.map === 'string' && isCoopMap(u.map)) next.mode = 'zombies'
+    else next.map = DEFAULT_MAP_ID
   }
   return next
 }

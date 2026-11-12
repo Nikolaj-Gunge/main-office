@@ -29,7 +29,8 @@ const DIAGONAL = Math.SQRT2
 export class NavGrid {
   readonly nodes: Vec3[]
   private readonly cell = new Map<string, number>()
-  private readonly edges: { to: number; cost: number; link?: boolean }[][]
+  /** `gate`: a ramp link that runs through this gate (closed while it's shut). */
+  private readonly edges: { to: number; cost: number; link?: boolean; gate?: number }[][]
   /** Floor heights that have nodes. */
   private readonly floors: number[]
   /** Gate id that blocks each node (-1 = none). */
@@ -53,14 +54,17 @@ export class NavGrid {
       setGates(physics, gatesOpen)
     }
     this.floors = [...new Set(this.nodes.map((p) => p[1]))]
-    // Ramps between floors: the spots at both ends are joined both ways.
+    // Ramps between floors: the spots at both ends are joined both ways (shut while a gate
+    // across the ramp is).
     for (const [bottom, top] of map.navLinks ?? []) {
       const a = this.nearest({ x: bottom[0], y: bottom[1], z: bottom[2] })
       const b = this.nearest({ x: top[0], y: top[1], z: top[2] })
       if (a < 0 || b < 0) continue
       const cost = Math.hypot(top[0] - bottom[0], top[1] - bottom[1], top[2] - bottom[2]) / SPACING
-      this.edges[a]?.push({ to: b, cost, link: true })
-      this.edges[b]?.push({ to: a, cost, link: true })
+      const gate = linkGate(map, bottom, top)
+      const extra = gate === undefined ? {} : { gate }
+      this.edges[a]?.push({ to: b, cost, link: true, ...extra })
+      this.edges[b]?.push({ to: a, cost, link: true, ...extra })
     }
     this.gateOf = new Int16Array(this.nodes.length).fill(-1)
     for (const box of map.boxes) {
@@ -155,9 +159,14 @@ export class NavGrid {
 
   /**
    * Walking distance (in grid steps) from every node to the nearest of `sources`; Infinity
-   * where they can't get to (behind shut gates).
+   * where they can't get to (behind shut gates), or further than `limit` steps (which keeps the
+   * cost down on big maps: nobody needs a way to somewhere half the map away).
    */
-  field(sources: readonly Point[], gatesOpen: (id: number) => boolean): Float64Array {
+  field(
+    sources: readonly Point[],
+    gatesOpen: (id: number) => boolean,
+    limit = Number.POSITIVE_INFINITY,
+  ): Float64Array {
     const dist = new Float64Array(this.nodes.length).fill(Number.POSITIVE_INFINITY)
     const blocked = (i: number) => {
       const gate = this.gateOf[i] ?? -1
@@ -173,9 +182,10 @@ export class NavGrid {
     while (heap.size > 0) {
       const [i, d] = heap.pop()
       if (d > (dist[i] ?? 0)) continue
-      for (const { to, cost } of this.edges[i] ?? []) {
+      for (const { to, cost, gate } of this.edges[i] ?? []) {
+        if (gate !== undefined && !gatesOpen(gate)) continue
         const nd = d + cost
-        if (nd >= (dist[to] ?? 0) || blocked(to)) continue
+        if (nd > limit || nd >= (dist[to] ?? 0) || blocked(to)) continue
         dist[to] = nd
         heap.push(to, nd)
       }
@@ -213,6 +223,26 @@ export class NavGrid {
     const n = this.nodes[i] as Vec3
     return { x: n[0], y: n[1], z: n[2] }
   }
+}
+
+/** The gate (if any) standing across the straight way from `a` to `b`, a metre above the ground. */
+function linkGate(map: MapDef, a: Vec3, b: Vec3): number | undefined {
+  const steps = Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.25)
+  for (const box of map.boxes) {
+    if (box.gate === undefined) continue
+    const [cx, cy, cz] = box.center
+    const [sx, sy, sz] = box.size
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const x = a[0] + (b[0] - a[0]) * t
+      const y = a[1] + (b[1] - a[1]) * t + 1
+      const z = a[2] + (b[2] - a[2]) * t
+      if (Math.abs(x - cx) <= sx / 2 && Math.abs(y - cy) <= sy / 2 && Math.abs(z - cz) <= sz / 2) {
+        return box.gate
+      }
+    }
+  }
+  return undefined
 }
 
 /** Binary min-heap of (node, priority). */

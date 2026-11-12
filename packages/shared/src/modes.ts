@@ -89,6 +89,10 @@ export interface CoopInfo {
   progress: number
   /** Kill goals: kills so far and needed. */
   kills?: [number, number]
+  /** Activate goals: bit i set = spot i is done. */
+  parts?: number
+  /** Defend goals: what's left of the thing's health, 0–1. */
+  health?: number
   /** Bit i set = gate i is open. */
   gates: number
   zombiesAlive: number

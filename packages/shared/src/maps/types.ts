@@ -28,6 +28,12 @@ export const MATERIALS = [
   'lightpanel',
   'rack',
   'whiteboard',
+  // Farm (cornfield)
+  'dirt',
+  'grass',
+  'corn',
+  'hay',
+  'barn',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
@@ -140,6 +146,18 @@ export type CoopGoal =
   | { kind: 'reach'; zone: CoopZone }
   /** Survivors stay in the zone this long in total (the clock only runs while someone is in). */
   | { kind: 'hold'; zone: CoopZone; seconds: number }
+  /**
+   * Survivors get to every spot, in any order, and stay `seconds` in each (switches, valves,
+   * fuel cans to pick up: 0 s = just walk over it). `what` labels the spots on the HUD.
+   */
+  | { kind: 'activate'; spots: CoopZone[]; seconds: number; what: string }
+  /**
+   * Keep something alive for `seconds`: zombies that get to it tear at it (`health` points in
+   * all), and if it breaks the stage starts over. `what` names it on the HUD.
+   */
+  | { kind: 'defend'; zone: CoopZone; seconds: number; health: number; what: string }
+  /** Stay alive this long, anywhere. */
+  | { kind: 'survive'; seconds: number }
 
 export interface CoopStage {
   name: string
@@ -161,6 +179,13 @@ export interface CoopStage {
    * least as big (WEAPON_TIER): the further you get, the bigger the guns.
    */
   armory?: number
+}
+
+/** The areas a goal marks in the world (none for kill and survive goals). */
+export function goalZones(goal: CoopGoal): CoopZone[] {
+  if (goal.kind === 'activate') return goal.spots
+  if (goal.kind === 'reach' || goal.kind === 'hold' || goal.kind === 'defend') return [goal.zone]
+  return []
 }
 
 export interface CoopDef {

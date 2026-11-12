@@ -25,12 +25,12 @@ function client() {
 }
 
 /** A zombies run on Outbreak with `n` people who stand still (no input). */
-function setup(n = 1) {
-  const map = loadMap('outbreak')
+function setup(n = 1, mapId = 'outbreak') {
+  const map = loadMap(mapId)
   const game = new Game(map, createPhysicsWorld(map), mulberry(7))
   const clients = Array.from({ length: n }, () => client())
   const ids = clients.map((c, i) => game.join(`P${i}`, c) ?? 0)
-  game.setRules(mergeRules(DEFAULT_RULES, { mode: 'zombies' }))
+  game.setRules(mergeRules(DEFAULT_RULES, { mode: 'zombies', map: mapId }))
   const match = (): MatchInfo => {
     const m = clients[0]?.inbox.filter((x) => x.type === ServerMsg.Match).at(-1)
     if (!m || m.type !== ServerMsg.Match) throw new Error('no match info')
@@ -45,7 +45,27 @@ function setup(n = 1) {
   const run = (seconds: number) => {
     for (let i = 0; i < seconds * TICK_RATE; i++) game.step()
   }
-  return { game, clients, ids, match, player, zombies, run }
+  const director = () =>
+    (game.match as unknown as { zombies: { startRun(s: number): void } }).zombies
+  /** Jumps the run to stage `i` (0-based) and puts the people back at its start. */
+  const skipTo = (i: number) => {
+    director().startRun(i)
+    for (const id of ids) {
+      const p = player(id)
+      game.respawnNow(p)
+      p.protectedUntil = Number.POSITIVE_INFINITY
+    }
+    run(0.1)
+    game.match.broadcast()
+  }
+  /** Runs with every zombie dropped the moment it shows up. */
+  const runClear = (seconds: number) => {
+    for (let i = 0; i < seconds * TICK_RATE; i++) {
+      game.step()
+      for (const z of zombies()) if (z.state.alive) game.killPlayer(z.id, ids[0] ?? 0)
+    }
+  }
+  return { game, clients, ids, match, player, zombies, run, skipTo, runClear }
 }
 
 function mulberry(seed: number) {
@@ -174,5 +194,89 @@ describe('zombies mode', () => {
       (z) => z.state.alive && Math.abs(z.state.pos.y - me.state.pos.y) < 0.3,
     )
     expect(upHere.length).toBeGreaterThan(3)
+  })
+})
+
+describe('zombies mode: more kinds of goal', () => {
+  test('activate: every spot once, in any order (keycards in the mall)', () => {
+    const { ids, player, match, skipTo, runClear, game } = setup(1, 'mall')
+    const me = player(ids[0] ?? 0)
+    skipTo(1)
+    const goal = game.world.map.coop?.stages[1]?.goal
+    if (goal?.kind !== 'activate') throw new Error('expected an activate goal')
+    const visit = (i: number) => {
+      const z = goal.spots[i]
+      if (!z) throw new Error('no spot')
+      me.state.pos = { x: (z.min[0] + z.max[0]) / 2, y: z.min[1], z: (z.min[2] + z.max[2]) / 2 }
+      runClear(0.2)
+    }
+    visit(2)
+    expect(match().coop?.parts).toBe(0b100)
+    expect(match().coop?.progress).toBeCloseTo(1 / 3, 2)
+    visit(0)
+    expect(match().coop?.parts).toBe(0b101)
+    visit(1)
+    expect(match().coop?.stage).toBe(2)
+    expect((match().coop?.gates ?? 0) & 0b10).toBe(0b10)
+  })
+
+  test('activate with a timer: you have to stay at each one (pumps in the tunnel)', () => {
+    const { ids, player, match, skipTo, runClear, game } = setup(1, 'metro')
+    const me = player(ids[0] ?? 0)
+    skipTo(7)
+    const goal = game.world.map.coop?.stages[7]?.goal
+    if (goal?.kind !== 'activate') throw new Error('expected an activate goal')
+    const z = goal.spots[0]
+    if (!z) throw new Error('no spot')
+    me.state.pos = { x: (z.min[0] + z.max[0]) / 2, y: z.min[1], z: (z.min[2] + z.max[2]) / 2 }
+    runClear(goal.seconds / 2)
+    expect(match().coop?.parts ?? 0).toBe(0)
+    runClear(goal.seconds / 2 + 0.3)
+    expect(match().coop?.parts).toBe(1)
+  })
+
+  test('defend: zombies left alone at the generator wreck it, and the stage starts over', () => {
+    const { ids, player, match, skipTo, run } = setup(1, 'mall')
+    const me = player(ids[0] ?? 0)
+    skipTo(3)
+    expect(match().coop?.health).toBe(1)
+    // Hide in the far corner and let them get on with it.
+    me.state.pos = { x: -28, y: 0, z: -102 }
+    let ended = false
+    for (let t = 0; t < 60 * TICK_RATE && !ended; t++) {
+      me.state.pos = { x: -28, y: 0, z: -102 }
+      me.health = 100
+      run(1 / TICK_RATE)
+      ended = match().phase === 'ended'
+    }
+    expect(ended).toBe(true)
+    expect(match().result?.headline).toContain('Generator')
+    run(ROUND_END_SECONDS + 0.5)
+    expect(match().phase).toBe('playing')
+    expect(match().coop?.stage).toBe(3)
+    expect(match().coop?.health).toBe(1)
+  })
+
+  test('defend: kept clear for long enough, the gate opens', () => {
+    const { match, skipTo, runClear } = setup(1, 'mall')
+    skipTo(3)
+    runClear(46)
+    expect(match().coop?.stage).toBe(4)
+    expect((match().coop?.gates ?? 0) & 0b100).toBe(0b100)
+  })
+
+  test('survive: the clock runs wherever you are; the last stage gets you out', () => {
+    const { match, skipTo, runClear } = setup(1, 'metro')
+    skipTo(3)
+    runClear(25)
+    expect(match().coop?.progress).toBeCloseTo(0.5, 1)
+    runClear(26)
+    expect(match().coop?.stage).toBe(4)
+    skipTo(9) // the mall's last stage is a survive goal too; here: the last train
+    const { match: mallMatch, skipTo: mallSkip, runClear: mallClear } = setup(1, 'mall')
+    mallSkip(9)
+    mallClear(61)
+    expect(mallMatch().phase).toBe('ended')
+    expect(mallMatch().result?.headline).toContain('escaped')
   })
 })

@@ -2,10 +2,12 @@ import {
   Button,
   bodyParts,
   ClientMsg,
+  type CoopGoal,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
   DebugFlag,
   type GameRules,
+  goalZones,
   HitZone,
   INFECTED_SPEED,
   INPUT_BATCH_TICKS,
@@ -425,10 +427,20 @@ function syncCoop(next: MatchInfo) {
     pixels.renderer.shadowMap.needsUpdate = true
   }
   const goal = coop ? map.coop?.stages[coop.stage]?.goal : undefined
-  coopZone.set(goal && goal.kind !== 'kill' && next.phase === 'playing' ? goal.zone : null)
+  // Activate goals: only the spots still to do.
+  const zones = goal && next.phase === 'playing' ? goalZones(goal) : []
+  coopZone.set(
+    goal?.kind === 'activate' ? zones.filter((_, i) => !((coop?.parts ?? 0) & (1 << i))) : zones,
+  )
   hud.outText = next.mode === 'zombies' ? 'Back at the next checkpoint' : 'Out until the next round'
 }
 const objective = new ObjectiveMarker(hudRoot)
+/** What the co-op waypoint says over the goal. */
+function waypointText(goal: CoopGoal): string {
+  if (goal.kind === 'hold') return 'HOLD'
+  if (goal.kind === 'activate' || goal.kind === 'defend') return goal.what.toUpperCase()
+  return 'GO'
+}
 const goalAt = new THREE.Vector3()
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the
@@ -649,8 +661,10 @@ pixels.renderer.setAnimationLoop(() => {
   const stage = match?.coop ? map.coop?.stages[match.coop.stage] : undefined
   objective.update(
     camera,
-    joined && !noclip && match?.phase === 'playing' ? coopZone.centre(goalAt) : null,
-    stage?.goal.kind === 'hold' ? 'HOLD' : 'GO',
+    joined && !noclip && match?.phase === 'playing'
+      ? coopZone.centre(goalAt, camera.position)
+      : null,
+    stage ? waypointText(stage.goal) : '',
   )
   worldItems.update(dt)
   minimap.setItems(worldItems.positions())

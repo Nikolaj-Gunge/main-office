@@ -2,6 +2,8 @@ import {
   type CoopDef,
   type CoopInfo,
   type CoopStage,
+  type CoopZone,
+  goalZones,
   type InputCommand,
   inZone,
   MAX_PLAYERS,
@@ -36,6 +38,18 @@ const LOST_SECONDS = 4
 const FIELD_EVERY = 12
 /** Survivor bots keep within this many steps of the people they follow. */
 const FOLLOW_STEPS = 6
+/** The survivors field only reaches this far (nav steps): plenty to hunt with, cheap on big maps. */
+const HUNT_STEPS = 160
+/** Bots look this far for the people they follow. */
+const FOLLOW_REACH = 400
+/** Defend goals: a zombie this close (m) to the thing's area tears at it… */
+const SMASH_REACH = 1.3
+/** …this hard, as a share of its claw damage per second. */
+const SMASH_RATE = 0.5
+/** Defend goals: survivor bots stand guard this close (m) to the thing. */
+const GUARD_DISTANCE = 3
+/** Defend goals: zombies go for the thing unless a survivor is closer than this (m). */
+const DISTRACTED = 5
 
 /** How the difficulty (the admin's bot skill) plays out. */
 const DIFFICULTY = {
@@ -68,8 +82,15 @@ export class ZombieDirector {
   private readonly game: Game
   private readonly random: () => number
   stage = 0
-  /** Kills (kill goals) or seconds held (hold goals) this stage. */
+  /** Kills (kill goals) or seconds (hold, survive and defend goals) this stage. */
   private done = 0
+  /** Activate goals: spots done (bits) and seconds spent at each. */
+  private parts = 0
+  private partTime: number[] = []
+  /** Defend goals: damage the thing has taken. */
+  private harm = 0
+  /** Defend goals: the thing broke (the stage starts over). */
+  failed = false
   gates = 0
   escaped = false
   private runStart = 0
@@ -125,7 +146,7 @@ export class ZombieDirector {
     if (stages.length === 0) return // not a co-op map (the mode is about to change)
     this.stage = Math.max(0, Math.min(stage, stages.length - 1))
     if (this.stage === 0) this.runStart = this.game.tick
-    this.done = 0
+    this.resetGoal()
     this.escaped = false
     this.gates = 0
     for (const s of stages.slice(0, this.stage))
@@ -168,14 +189,16 @@ export class ZombieDirector {
   private completeStage(): void {
     const stage = this.current
     if (!stage) return
-    if (stage.opens === undefined) {
+    if (this.stage >= (this.coop?.stages.length ?? 0) - 1) {
       this.escaped = true
       return
     }
-    this.gates |= 1 << stage.opens
-    this.game.setGates(this.gates)
+    if (stage.opens !== undefined) {
+      this.gates |= 1 << stage.opens
+      this.game.setGates(this.gates)
+    }
     this.stage++
-    this.done = 0
+    this.resetGoal()
     this.toGoal = this.goalField()
     // Checkpoint: the fallen come back here, everyone is patched up, restocked and handed this
     // stage's gun if it's bigger than theirs.
@@ -189,6 +212,21 @@ export class ZombieDirector {
       this.game.refill(p)
     }
     this.game.match.broadcast()
+  }
+
+  private resetGoal(): void {
+    this.done = 0
+    this.parts = 0
+    this.partTime = []
+    this.harm = 0
+    this.failed = false
+  }
+
+  /** Defend goals: how much the thing can take (more zombies come for bigger teams). */
+  private toughness(stage: CoopStage): number {
+    if (stage.goal.kind !== 'defend') return 0
+    const team = Math.max(1, this.survivors().length)
+    return stage.goal.health * ((4 + 3 * team) / 7)
   }
 
   /** Kills the current stage needs (more with more survivors). */
@@ -218,6 +256,7 @@ export class ZombieDirector {
       this.toSurvivors = this.nav.field(
         team.map((p) => p.state.pos),
         open,
+        HUNT_STEPS,
       )
       const people = team.filter((p) => !p.bot)
       this.toPeople =
@@ -225,19 +264,13 @@ export class ZombieDirector {
           ? this.nav.field(
               people.map((p) => p.state.pos),
               open,
+              FOLLOW_REACH,
             )
           : null
     }
 
-    // The goal.
-    const goal = stage.goal
-    if (goal.kind === 'kill' && this.done >= this.killsNeeded(stage)) this.completeStage()
-    else if (goal.kind === 'reach' && team.some((p) => inZone(goal.zone, p.state.pos))) {
-      this.completeStage()
-    } else if (goal.kind === 'hold' && team.some((p) => inZone(goal.zone, p.state.pos))) {
-      this.done += TICK_DT
-      if (this.done >= goal.seconds) this.completeStage()
-    }
+    this.stepGoal(stage, team)
+    if (this.failed || this.current !== stage) return
 
     // The horde.
     const zombies = this.zombies()
@@ -254,6 +287,57 @@ export class ZombieDirector {
       }
     }
     if (tick % TICK_RATE === 0) this.recycleLost(zombies)
+  }
+
+  /** Progress on the stage's goal; completes the stage when it's done. */
+  private stepGoal(stage: CoopStage, team: ServerPlayer[]): void {
+    const goal = stage.goal
+    const anyoneIn = (zone: CoopZone) => team.some((p) => inZone(zone, p.state.pos))
+    switch (goal.kind) {
+      case 'kill':
+        if (this.done >= this.killsNeeded(stage)) this.completeStage()
+        return
+      case 'reach':
+        if (anyoneIn(goal.zone)) this.completeStage()
+        return
+      case 'hold':
+        if (!anyoneIn(goal.zone)) return
+        this.done += TICK_DT
+        if (this.done >= goal.seconds) this.completeStage()
+        return
+      case 'survive':
+        this.done += TICK_DT
+        if (this.done >= goal.seconds) this.completeStage()
+        return
+      case 'activate': {
+        goal.spots.forEach((spot, i) => {
+          if (this.parts & (1 << i) || !anyoneIn(spot)) return
+          const t = (this.partTime[i] ?? 0) + TICK_DT
+          this.partTime[i] = t
+          if (t < goal.seconds) return
+          this.parts |= 1 << i
+          this.toGoal = this.goalField()
+          this.game.match.broadcast()
+        })
+        if (this.parts === (1 << goal.spots.length) - 1) this.completeStage()
+        return
+      }
+      case 'defend': {
+        // Every zombie at the thing tears at it.
+        let smashing = 0
+        for (const z of this.zombies()) {
+          if (z.state.alive && nearZone(goal.zone, z.state.pos, SMASH_REACH)) smashing++
+        }
+        this.harm += smashing * this.clawDamage() * SMASH_RATE * TICK_DT
+        if (this.harm >= this.toughness(stage)) {
+          this.failed = true
+          return
+        }
+        this.done += TICK_DT
+        if (this.done >= goal.seconds) this.completeStage()
+        return
+      }
+    }
   }
 
   /** Wakes a pooled zombie at a spawn spot away from (and preferably out of sight of) the team. */
@@ -299,7 +383,12 @@ export class ZombieDirector {
         this.lost.delete(z.id)
         continue
       }
-      const d = this.nav.distance(field, z.state.pos)
+      // Defend goals: the ones at (or on their way to) the thing aren't lost either.
+      const toThing =
+        this.current?.goal.kind === 'defend' && this.toGoal
+          ? this.nav.distance(this.toGoal, z.state.pos)
+          : Number.POSITIVE_INFINITY
+      const d = Math.min(this.nav.distance(field, z.state.pos), toThing)
       if (d < LOST_STEPS) {
         this.lost.delete(z.id)
         continue
@@ -329,10 +418,25 @@ export class ZombieDirector {
         target = p.state.pos
       }
     }
-    const waypoint =
+    let waypoint =
       zombie.state.alive && this.nav && this.toSurvivors
         ? this.nav.next(this.toSurvivors, pos)
         : null
+    // Defend goals: most of the horde goes for the thing, unless someone's right there.
+    const goal = this.current?.goal
+    if (
+      goal?.kind === 'defend' &&
+      zombie.id % 3 !== 0 &&
+      best > DISTRACTED &&
+      this.nav &&
+      this.toGoal &&
+      zombie.state.alive
+    ) {
+      const { min, max } = goal.zone
+      // Aim a little above it, so it can "see" (and claw) over the top of the thing.
+      target = { x: (min[0] + max[0]) / 2, y: min[1] + 1, z: (min[2] + max[2]) / 2 }
+      waypoint = this.nav.next(this.toGoal, pos)
+    }
     const crowd: Point[] = []
     for (const other of this.game.players.values()) {
       if (other === zombie || !other.zombie || !other.state.alive) continue
@@ -353,8 +457,14 @@ export class ZombieDirector {
     if (!nav || bot.team !== 1) return null
     return (pos) => {
       const goal = this.current?.goal
-      if (goal && goal.kind !== 'kill' && this.toGoal) {
-        if (inZone(goal.zone, pos)) return 'stay'
+      const zones = goal ? this.openZones(goal) : []
+      if (zones.length > 0 && this.toGoal) {
+        // Defend goals: the zone is the thing itself; guard it from close by.
+        const there =
+          goal?.kind === 'defend'
+            ? zones.some((z) => nearZone(z, pos, GUARD_DISTANCE))
+            : zones.some((z) => inZone(z, pos))
+        if (there) return 'stay'
         return nav.next(this.toGoal, pos)
       }
       if (!this.toPeople) return null
@@ -363,12 +473,23 @@ export class ZombieDirector {
     }
   }
 
+  /** The goal's areas still to get to (activate goals: the spots not done yet). */
+  private openZones(goal: CoopStage['goal']): CoopZone[] {
+    const zones = goalZones(goal)
+    return goal.kind === 'activate' ? zones.filter((_, i) => !(this.parts & (1 << i))) : zones
+  }
+
   private goalField(): Float64Array | null {
     const goal = this.current?.goal
-    if (!this.nav || !goal || goal.kind === 'kill') return null
-    const { min, max } = goal.zone
-    const centre = { x: (min[0] + max[0]) / 2, y: min[1], z: (min[2] + max[2]) / 2 }
-    return this.nav.field([centre], (id) => (this.gates & (1 << id)) !== 0)
+    if (!this.nav || !goal) return null
+    const zones = this.openZones(goal)
+    if (zones.length === 0) return null
+    const centres = zones.map(({ min, max }) => ({
+      x: (min[0] + max[0]) / 2,
+      y: min[1],
+      z: (min[2] + max[2]) / 2,
+    }))
+    return this.nav.field(centres, (id) => (this.gates & (1 << id)) !== 0)
   }
 
   /** A zombie went down: counts for kill goals; it waits in the pool to come back. */
@@ -426,20 +547,48 @@ export class ZombieDirector {
     const goal = stage?.goal
     let progress = 0
     let kills: [number, number] | undefined
+    let health: number | undefined
     if (stage && goal?.kind === 'kill') {
       const needed = this.killsNeeded(stage)
       kills = [Math.min(this.done, needed), needed]
       progress = needed > 0 ? Math.min(1, this.done / needed) : 1
-    } else if (goal?.kind === 'hold') progress = Math.min(1, this.done / goal.seconds)
+    } else if (goal?.kind === 'hold' || goal?.kind === 'survive' || goal?.kind === 'defend') {
+      progress = Math.min(1, this.done / goal.seconds)
+    } else if (goal?.kind === 'activate') {
+      // Spots done, plus how far along the best one in progress is.
+      const total = goal.spots.length
+      let partial = 0
+      goal.spots.forEach((_, i) => {
+        if (this.parts & (1 << i)) progress += 1
+        else if (goal.seconds > 0)
+          partial = Math.max(partial, (this.partTime[i] ?? 0) / goal.seconds)
+      })
+      progress = Math.min(1, (progress + partial) / total)
+    }
+    if (stage && goal?.kind === 'defend') {
+      const max = this.toughness(stage)
+      health = Math.round(Math.max(0, 1 - this.harm / max) * 100) / 100
+    }
     return {
       stage: this.escaped ? (this.coop?.stages.length ?? 0) : this.stage,
       progress: this.escaped ? 1 : progress,
       ...(kills ? { kills } : {}),
+      ...(goal?.kind === 'activate' ? { parts: this.parts } : {}),
+      ...(health !== undefined ? { health } : {}),
       gates: this.gates,
       zombiesAlive: this.zombies().filter((z) => z.state.alive).length,
       elapsed: this.elapsed,
     }
   }
+}
+
+/** Within `reach` (m, across the floor) of the zone, on its floor? */
+function nearZone(zone: CoopZone, p: Point, reach: number): boolean {
+  const { min, max } = zone
+  if (p.y < min[1] - 1.5 || p.y > max[1]) return false
+  const dx = Math.max(min[0] - p.x, 0, p.x - max[0])
+  const dz = Math.max(min[2] - p.z, 0, p.z - max[2])
+  return Math.hypot(dx, dz) <= reach
 }
 
 function pick<T>(list: readonly T[], random: () => number): T | undefined {

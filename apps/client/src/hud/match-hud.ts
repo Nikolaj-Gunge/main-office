@@ -137,15 +137,37 @@ export class MatchHud {
     }
     const goal = stage.goal
     let score = `${stage.name}: ${stage.task}`
-    if (goal.kind === 'kill' && coop.kills) score += ` ${coop.kills[0]}/${coop.kills[1]}`
-    if (goal.kind === 'hold') score += ` ${Math.floor(coop.progress * 100)}%`
+    let status = ''
+    switch (goal.kind) {
+      case 'kill':
+        if (coop.kills) score += ` ${coop.kills[0]}/${coop.kills[1]}`
+        break
+      case 'hold':
+        score += ` ${Math.floor(coop.progress * 100)}%`
+        if (coop.progress > 0 && coop.progress < 1) status = 'Stay in the green area!'
+        break
+      case 'survive':
+      case 'defend': {
+        const left = Math.max(0, Math.ceil(goal.seconds * (1 - coop.progress)))
+        score += ` ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+        if (goal.kind === 'defend' && coop.health !== undefined) {
+          const hp = Math.round(coop.health * 100)
+          score += ` · ${goal.what} ${hp}%`
+          if (hp < 35) status = `The ${goal.what} is breaking — get them off it!`
+        }
+        break
+      }
+      case 'activate': {
+        let done = 0
+        for (let i = 0; i < goal.spots.length; i++) if ((coop.parts ?? 0) & (1 << i)) done++
+        score += ` ${done}/${goal.spots.length}`
+        if (goal.seconds > 0) status = `Stand at each ${goal.what.toLowerCase()} until it's done`
+        break
+      }
+    }
     this.progress.hidden = goal.kind === 'reach'
     this.progressFill.style.width = `${Math.round(coop.progress * 100)}%`
-    const status = out
-      ? "You're down — your team brings you back at the next checkpoint"
-      : goal.kind === 'hold' && coop.progress > 0 && coop.progress < 1
-        ? 'Stay in the green area!'
-        : ''
+    if (out) status = "You're down — your team brings you back at the next checkpoint"
     return { score, status }
   }
 

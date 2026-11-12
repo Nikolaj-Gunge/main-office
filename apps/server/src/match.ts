@@ -191,7 +191,7 @@ export class MatchRunner {
     }
     if (this.zombies) {
       this.zombies.step()
-      if (this.zombies.escaped || this.zombies.wiped) this.check()
+      if (this.zombies.escaped || this.zombies.wiped || this.zombies.failed) this.check()
     }
     if (tick % TICK_RATE === 0) this.check()
   }
@@ -223,6 +223,8 @@ export class MatchRunner {
       const clock = `${Math.floor(z.elapsed / 60)}:${String(z.elapsed % 60).padStart(2, '0')}`
       if (z.escaped) return win(null, 1, `You escaped! (${clock})`)
       if (z.wiped) return win(null, 2, `Overrun in the ${z.current?.name ?? 'dark'}`)
+      const goal = z.current?.goal
+      if (z.failed && goal?.kind === 'defend') return win(null, 2, `They wrecked the ${goal.what}`)
       return
     }
 
