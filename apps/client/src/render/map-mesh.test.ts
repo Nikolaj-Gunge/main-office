@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { MAPS } from '@office-fps/shared'
 import { renderBounds } from './map-mesh.ts'
+import { isTransparent } from './textures.ts'
 
 describe('map rendering', () => {
   for (const [id, build] of Object.entries(MAPS)) {
@@ -23,6 +24,15 @@ describe('map rendering', () => {
                   1e-3,
             )
             if (!overlap) continue
+            // Glass is double-sided: touching faces (pane on a frame) fight as well.
+            const glass = [map.boxes[i], map.boxes[j]].some((x) => x && isTransparent(x.material))
+            if (
+              glass &&
+              (Math.abs((a.min[axis] ?? 0) - (b.max[axis] ?? 0)) < 1e-4 ||
+                Math.abs((a.max[axis] ?? 0) - (b.min[axis] ?? 0)) < 1e-4)
+            ) {
+              clashes.push(`#${i} / #${j} glass touching`)
+            }
             for (const side of ['min', 'max'] as const) {
               if (Math.abs((a[side][axis] ?? 0) - (b[side][axis] ?? 0)) < 1e-4) {
                 clashes.push(`#${i} ${map.boxes[i]?.material} / #${j} ${map.boxes[j]?.material}`)

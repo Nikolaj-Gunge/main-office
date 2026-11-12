@@ -83,6 +83,26 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
     }
     out.push(o)
   }
+
+  // Glass is drawn from both sides, so a pane resting on a frame (its bottom touching the
+  // frame's top) fights too: pull such glass faces back from whatever they touch.
+  for (let i = 0; i < out.length; i++) {
+    const o = out[i]
+    const material = map.boxes[i]?.material
+    if (!o || !material || !isTransparent(material)) continue
+    for (let axis = 0; axis < 3; axis++) {
+      for (let j = 0; j < out.length; j++) {
+        const b = out[j]
+        if (j === i || !b || !overlaps(o, b, axis)) continue
+        if (Math.abs((o.min[axis] ?? 0) - (b.max[axis] ?? 0)) < 1e-3) {
+          o.min[axis] = (o.min[axis] ?? 0) + LAYER_STEP
+        }
+        if (Math.abs((o.max[axis] ?? 0) - (b.min[axis] ?? 0)) < 1e-3) {
+          o.max[axis] = (o.max[axis] ?? 0) - LAYER_STEP
+        }
+      }
+    }
+  }
   return out
 }
 
