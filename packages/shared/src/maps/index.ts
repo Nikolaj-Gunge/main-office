@@ -1,4 +1,5 @@
 import { buildCampus } from './campus.ts'
+import { buildCornfield } from './cornfield.ts'
 import { buildGym } from './gym.ts'
 import { buildMall } from './mall.ts'
 import { buildMeetingRoom } from './meeting-room.ts'
@@ -29,12 +30,13 @@ export const MAPS: Record<string, () => MapDef> = {
   outbreak: buildOutbreak,
   mall: buildMall,
   metro: buildMetro,
+  cornfield: buildCornfield,
 }
 
 export const DEFAULT_MAP_ID = 'office'
 
 /** Maps built for co-op (zombies mode needs one; they stay out of the map rotation). */
-export const COOP_MAPS = ['outbreak', 'mall', 'metro'] as const
+export const COOP_MAPS = ['outbreak', 'mall', 'metro', 'cornfield'] as const
 
 export function loadMap(id: string): MapDef {
   const build = MAPS[id]

@@ -1,5 +1,6 @@
 import type { MapSpawn } from '../maps/types.ts'
 import {
+  PERSON_QUERY_GROUPS,
   type PhysicsWorld,
   PLAYER_COLLISION_GROUPS,
   PLAYER_QUERY_GROUPS,
@@ -152,8 +153,13 @@ export class PlayerBody {
   /** Server rules for shooting (spread, infinite ammo); set alongside `config`. */
   weaponRules: WeaponRules = DEFAULT_WEAPON_RULES
 
-  constructor(physics: PhysicsWorld, config: MovementConfig) {
+  /** What the body bumps into: the map, plus foliage unless it goes through it. */
+  private readonly groups: number
+
+  /** `throughFoliage`: zombies and bots walk through corn; people don't (see GROUP_FOLIAGE). */
+  constructor(physics: PhysicsWorld, config: MovementConfig, throughFoliage = false) {
     this.physics = physics
+    this.groups = throughFoliage ? PLAYER_QUERY_GROUPS : PERSON_QUERY_GROUPS
     this.config = config
     this.height = config.standHeight
     this.collider = physics.world.createCollider(
@@ -200,7 +206,7 @@ export class PlayerBody {
         IDENTITY,
         shape,
         undefined,
-        PLAYER_QUERY_GROUPS,
+        this.groups,
         this.collider,
       ) === null
     )
@@ -276,7 +282,7 @@ export class PlayerBody {
       up.moved.y + 0.1,
       true,
       undefined,
-      PLAYER_QUERY_GROUPS,
+      this.groups,
       this.collider,
     )
     if (!hit) return null
@@ -308,7 +314,7 @@ export class PlayerBody {
     c.setSlideEnabled(mode.slide)
     c.setMaxSlopeClimbAngle(mode.climb ? (this.config.maxSlopeDeg * Math.PI) / 180 : 0)
     this.collider.setTranslation({ x: feet.x, y: feet.y + SKIN + this.height / 2, z: feet.z })
-    c.computeColliderMovement(this.collider, delta, undefined, PLAYER_QUERY_GROUPS)
+    c.computeColliderMovement(this.collider, delta, undefined, this.groups)
     const moved = c.computedMovement()
     const normals: MutVec3[] = []
     for (let i = 0; i < c.numComputedCollisions(); i++) {

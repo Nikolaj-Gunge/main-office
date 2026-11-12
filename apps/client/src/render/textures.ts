@@ -308,6 +308,89 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       }
     },
   },
+  // ── Farm ──
+  dirt: {
+    meters: 2,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#4a3a2a'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = ['#5a4733', '#3b2e21', '#665139', '#2f251b'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          1 + Math.floor(rand() * 3),
+          1,
+        )
+      }
+    },
+  },
+  grass: {
+    meters: 2,
+    noise: 0.12,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#2c3d22'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 400; i++) {
+        ctx.fillStyle = ['#3a5129', '#24331c', '#46602f', '#33452a'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 2)
+      }
+    },
+  },
+  corn: {
+    meters: 1,
+    noise: 0.12,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#3f5a26'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 60; i++) {
+        ctx.fillStyle = ['#56742f', '#6d7d34', '#2e4419', '#8a8a3c'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          1,
+          3 + Math.floor(rand() * 6),
+        )
+      }
+    },
+  },
+  hay: {
+    meters: 1,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#b8964a'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 120; i++) {
+        ctx.fillStyle = ['#d4b062', '#9c7c38', '#c9a556', '#8a6a2e'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          2 + Math.floor(rand() * 5),
+          1,
+        )
+      }
+    },
+  },
+  barn: {
+    meters: 2,
+    noise: 0.06,
+    paint: (ctx, size, rand) => {
+      // Weathered red vertical boards with dark seams.
+      ctx.fillStyle = '#7d2a22'
+      ctx.fillRect(0, 0, size, size)
+      for (let x = 0; x < size; x += 8) {
+        ctx.fillStyle = ['#8a3027', '#712620', '#83342a'][Math.floor(rand() * 3)] ?? ''
+        ctx.fillRect(x + 1, 0, 7, size)
+        ctx.fillStyle = '#3a1410'
+        ctx.fillRect(x, 0, 1, size)
+        for (let i = 0; i < 6; i++) {
+          ctx.fillStyle = '#a65a4a'
+          ctx.fillRect(x + 1 + Math.floor(rand() * 6), Math.floor(rand() * size), 1, 2)
+        }
+      }
+    },
+  },
 }
 
 function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {

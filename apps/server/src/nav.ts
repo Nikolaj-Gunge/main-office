@@ -45,7 +45,7 @@ export class NavGrid {
     // Build with every gate open, so the doorways get nodes; then put the gates back.
     setGates(physics, () => true)
     try {
-      this.nodes = findSpawnPoints(map, physics, SPACING)
+      this.nodes = findSpawnPoints(map, physics, SPACING, true)
       this.nodes.forEach((p, i) => {
         this.cell.set(this.key(p[0], p[1], p[2]), i)
       })

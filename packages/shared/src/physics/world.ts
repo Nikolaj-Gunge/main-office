@@ -22,6 +22,17 @@ export const MAP_COLLISION_GROUPS = (GROUP_MAP << 16) | 0xffff
 export const PLAYER_COLLISION_GROUPS = (GROUP_PLAYER << 16) | GROUP_MAP
 /** Scene-query filter for player movement: hits the map only. */
 export const PLAYER_QUERY_GROUPS = (GROUP_PLAYER << 16) | GROUP_MAP
+/**
+ * Foliage (corn): blocks people, but zombies and bots push straight through it, and bullets and
+ * sight pass through it (every query above filters on GROUP_MAP alone, so they never see it).
+ */
+export const GROUP_FOLIAGE = 0x0008
+export const FOLIAGE_COLLISION_GROUPS = (GROUP_FOLIAGE << 16) | 0xffff
+/** Movement filter for people (not zombies or bots): the map plus foliage. */
+export const PERSON_QUERY_GROUPS = PLAYER_QUERY_GROUPS | GROUP_FOLIAGE
+
+/** Materials that are foliage (see GROUP_FOLIAGE). */
+export const FOLIAGE_MATERIALS: ReadonlySet<string> = new Set(['corn'])
 
 export interface PhysicsWorld {
   world: RAPIER.World
@@ -47,7 +58,9 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
       const [hx, hy, hz] = [box.size[0] / 2, box.size[1] / 2, box.size[2] / 2]
       const desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
         .setTranslation(...box.center)
-        .setCollisionGroups(MAP_COLLISION_GROUPS)
+        .setCollisionGroups(
+          FOLIAGE_MATERIALS.has(box.material) ? FOLIAGE_COLLISION_GROUPS : MAP_COLLISION_GROUPS,
+        )
       if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
       const collider = world.createCollider(desc)
       if (box.material === 'glass') seeThrough.add(collider.handle)

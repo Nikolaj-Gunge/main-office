@@ -54,6 +54,7 @@ import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
 import { CoopZoneMarker } from './render/coop-zone.ts'
+import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
@@ -683,6 +684,7 @@ pixels.renderer.setAnimationLoop(() => {
   audio.setListener(camera)
   audio.update(dt)
   remotes.update(now, camera.position)
+  updateCorn(now / 1000, [...remotes.visiblePoses().values(), camera.position], camera.position)
   ragdolls.update(dt)
   damageNumbers.update(dt)
   coopZone.update(dt)

@@ -1,6 +1,7 @@
-import type { MapDef, MaterialId } from '@office-fps/shared'
+import type { MapBox, MapDef, MaterialId } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { buildCorn } from './corn.ts'
 import { createLabel } from './labels.ts'
 import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
 
@@ -121,8 +122,13 @@ export function buildMapObject(map: MapDef): THREE.Group {
   const euler = new THREE.Euler()
 
   const bounds = renderBounds(map)
+  const corn: MapBox[] = []
   map.boxes.forEach((box, i) => {
     if (box.render === false) return
+    if (box.material === 'corn') {
+      corn.push(box)
+      return
+    }
     const b = bounds[i]
     // Axis-aligned boxes use the z-fight-resolved bounds; rotated ones are drawn as they are.
     const size: [number, number, number] = b
@@ -167,6 +173,9 @@ export function buildMapObject(map: MapDef): THREE.Group {
     addMerged(gate, meshes)
     group.add(gate)
   }
+
+  const field = buildCorn(corn)
+  if (field) group.add(field)
 
   for (const label of map.labels) {
     const sprite = createLabel(label.text)

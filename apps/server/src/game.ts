@@ -250,7 +250,7 @@ export class Game {
     this.history.clear()
     this.rulesValue = { ...this.rulesValue, map: map.id }
     for (const p of this.players.values()) {
-      p.body = new PlayerBody(physics, this.movement)
+      p.body = new PlayerBody(physics, this.movement, p.client === NO_CLIENT)
       this.applyRules(p)
       p.queue = []
       if (!p.out) this.respawn(p)
@@ -317,7 +317,8 @@ export class Game {
     const id = this.nextId
     this.nextId = (this.nextId % 0xffff) + 1
     const name = sanitizeName(rawName) || `Player ${id}`
-    const body = new PlayerBody(this.physics, this.movement)
+    // Zombies and bots (no client) go through corn; people walk round it.
+    const body = new PlayerBody(this.physics, this.movement, client === NO_CLIENT)
     const player: ServerPlayer = {
       id,
       name,
