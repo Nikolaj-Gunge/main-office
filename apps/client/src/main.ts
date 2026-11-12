@@ -83,7 +83,8 @@ const minimap = new Minimap(hudRoot, map)
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 500)
+// Near plane 0.1 m (not closer): doubles depth precision, so far-away surfaces don't flicker.
+const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
 
 scene.add(buildMapObject(map))
 createLighting(map, scene)
