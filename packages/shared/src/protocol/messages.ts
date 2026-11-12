@@ -70,6 +70,9 @@ export interface RemotePlayerState {
   weapon: WeaponId
   /** Aiming down sights (with a sniper: scoped — others see the lens glint). */
   aiming: boolean
+  /** Walk cycle 0–1 and horizontal speed (m/s): drive the running animation and its hitboxes. */
+  stride: number
+  speed: number
 }
 
 /** What a shot hit, for drawing tracers and impacts on other clients. */
@@ -277,6 +280,8 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
       (p.aiming ? FLAG_AIMING : 0),
   )
   w.u8(p.weapon)
+  w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
 }
 
 function readRemote(r: BinaryReader): RemotePlayerState {
@@ -289,7 +294,11 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const crouch = r.u8() / 255
   const flags = r.u8()
   const weapon = r.u8() as WeaponId
+  const stride = r.u8() / 255
+  const speed = r.u8() / 10
   return {
+    stride,
+    speed,
     id,
     x,
     y,
@@ -469,6 +478,10 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       for (const p of msg.poses) {
         w.u16(p.id).f32(p.x).f32(p.y).f32(p.z).u16(encodeYaw(p.yaw))
         w.u8(Math.round(p.crouch * 255))
+        w.i16(encodePitch(p.pitch ?? 0))
+        w.u8(Math.round(((((p.stride ?? 0) % 1) + 1) % 1) * 255))
+        w.u8(Math.round(Math.min(25.5, p.speed ?? 0) * 10))
+        w.u8(p.grounded === false ? 0 : 1)
       }
       break
   }
@@ -573,6 +586,10 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
           z: r.f32(),
           yaw: decodeYaw(r.u16()),
           crouch: r.u8() / 255,
+          pitch: decodePitch(r.i16()),
+          stride: r.u8() / 255,
+          speed: r.u8() / 10,
+          grounded: r.u8() === 1,
         })
       }
       return { type, origin, dir, viewTick, poses }

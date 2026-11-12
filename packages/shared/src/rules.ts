@@ -4,7 +4,7 @@ import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
 
 /** Player looks the admin can put everyone in (hitboxes are the same for all of them). */
-export const SKINS = ['slime', 'worker', 'robot'] as const
+export const SKINS = ['worker', 'robot', 'slime'] as const
 export type SkinId = (typeof SKINS)[number]
 
 /** Main weapon everyone spawns with, next to the handgun ('none' = find one on the floor). */
@@ -65,7 +65,7 @@ export const DEFAULT_RULES: GameRules = {
   timeLimit: 10,
   scoreLimit: 30,
   mapRotation: false,
-  skin: 'slime',
+  skin: 'worker',
   jingles: 'arcade',
   spawnWeapon: 'none',
   bots: 0,

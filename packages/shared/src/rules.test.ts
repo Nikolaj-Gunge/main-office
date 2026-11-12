@@ -18,7 +18,7 @@ describe('game rules', () => {
     })
     expect(r.gravity).toBe(0.1)
     expect(r.speed).toBe(1)
-    expect(r.skin).toBe('slime')
+    expect(r.skin).toBe('worker')
     expect(r.map).toBe('gym')
     expect(r.oneShot).toBe(false)
     expect(r.infiniteAmmo).toBe(true)

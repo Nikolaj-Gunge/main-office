@@ -154,6 +154,8 @@ describe('server messages', () => {
           protected: true,
           weapon: WeaponId.Sniper,
           aiming: true,
+          stride: 0,
+          speed: 0,
         },
       ],
     }

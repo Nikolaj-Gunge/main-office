@@ -1,5 +1,8 @@
 import {
-  DEFAULT_MOVEMENT,
+  type BodyPart,
+  bodyParts,
+  PART_SIZES,
+  type PartName,
   PLAYER_COLORS,
   type RemotePlayerState,
   type SkinId,
@@ -7,82 +10,208 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 
-const m = DEFAULT_MOVEMENT
-const capsuleLength = m.standHeight - m.radius * 2
-const sharedGeometry = {
-  body: new THREE.CapsuleGeometry(m.radius, capsuleLength, 4, 12),
-  visor: new THREE.BoxGeometry(0.36, 0.1, 0.12),
-  guns: {
-    [WeaponId.Handgun]: new THREE.BoxGeometry(0.05, 0.08, 0.22),
-    [WeaponId.Rifle]: new THREE.BoxGeometry(0.06, 0.1, 0.7),
-    [WeaponId.Sniper]: new THREE.BoxGeometry(0.06, 0.1, 0.95),
-    [WeaponId.Shotgun]: new THREE.BoxGeometry(0.07, 0.1, 0.8),
-    [WeaponId.Knife]: new THREE.BoxGeometry(0.03, 0.04, 0.3),
-  } as Record<WeaponId, THREE.BoxGeometry>,
-}
-const visorMaterial = new THREE.MeshLambertMaterial({ color: 0x1b1d2a })
+/**
+ * Player models. Every skin is built on the shared animated skeleton (skeleton.ts): each body
+ * part is a group placed exactly where that part's hitbox is, so what you see is what you hit.
+ */
 
-// Office wear: a tie on the chest and a hat, picked per player from these.
+const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
+const lambert = (color: number) => new THREE.MeshLambertMaterial({ color })
+
+const SKIN_TONES = [0xf1c6a0, 0xd9a07a, 0xa86f4c, 0x6e4630, 0xffdbbd]
+const HAIR_COLORS = [0x2a1c12, 0x5a3b1e, 0xc9a35a, 0x161616, 0x8a4a22, 0x9a9a9a]
 const TIE_COLORS = [0x1f2a44, 0x7a1f2b, 0x2d4a3a, 0x3b2d4f, 0x8a6a1f, 0x1c1c1c]
 const HAT_COLORS = [0x2b2b2e, 0x4a3426, 0x2f3b4a, 0x5a5048]
-const tieMaterials = TIE_COLORS.map((color) => new THREE.MeshLambertMaterial({ color }))
-const hatMaterials = HAT_COLORS.map((color) => new THREE.MeshLambertMaterial({ color }))
-const bandMaterial = new THREE.MeshLambertMaterial({ color: 0x111111 })
-const collarMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f0ea })
-const wear = {
-  tie: new THREE.BoxGeometry(0.09, 0.42, 0.03),
-  knot: new THREE.BoxGeometry(0.11, 0.07, 0.04),
-  collar: new THREE.BoxGeometry(0.3, 0.06, 0.05),
-  brim: new THREE.CylinderGeometry(0.44, 0.44, 0.03, 12),
-  crown: new THREE.CylinderGeometry(0.25, 0.28, 0.2, 12),
-  band: new THREE.CylinderGeometry(0.285, 0.285, 0.045, 12),
-  bowler: new THREE.SphereGeometry(0.29, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+const skinMaterials = SKIN_TONES.map(lambert)
+const hairMaterials = HAIR_COLORS.map(lambert)
+const tieMaterials = TIE_COLORS.map(lambert)
+const hatMaterials = HAT_COLORS.map(lambert)
+const trouserMaterial = lambert(0x2f3440)
+const shoeMaterial = lambert(0x1a1a1a)
+const beltMaterial = lambert(0x1c1a18)
+const collarMaterial = lambert(0xf2f0ea)
+const eyeMaterial = lambert(0x15151a)
+const visorMaterial = lambert(0x1b1d2a)
+const metalMaterial = lambert(0x8e96a3)
+const darkMetalMaterial = lambert(0x3c424c)
+const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
+const gunMaterial = lambert(0x2b2d33)
+const pick = <T>(list: T[], i: number): T =>
+  list[((i % list.length) + list.length) % list.length] as T
+
+const GUN_LENGTH: Record<WeaponId, number> = {
+  [WeaponId.Handgun]: 0.22,
+  [WeaponId.Rifle]: 0.7,
+  [WeaponId.Sniper]: 0.95,
+  [WeaponId.Shotgun]: 0.8,
+  [WeaponId.Knife]: 0.3,
+}
+const gunGeometry = Object.fromEntries(
+  Object.entries(GUN_LENGTH).map(([id, length]) => [
+    id,
+    box(
+      Number(id) === WeaponId.Knife ? 0.03 : 0.06,
+      Number(id) === WeaponId.Knife ? 0.04 : 0.1,
+      length,
+    ),
+  ]),
+) as Record<string, THREE.BoxGeometry>
+
+/** Arm meshes are built for this length; the arm group stretches to the real shoulder–hand span. */
+const ARM_LENGTH = PART_SIZES.armR.y * 2
+
+/** A mesh in part space (origin = part centre; limbs run along their local +Y). */
+function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0) {
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.position.set(x, y, z)
+  mesh.castShadow = false
+  return mesh
 }
 
-/** Tie + collar on the chest, attached to the body so they squash with crouching. */
-function makeTie(colorIndex: number): THREE.Group {
-  const g = new THREE.Group()
-  const material = tieMaterials[colorIndex % tieMaterials.length] ?? tieMaterials[0]
-  // Body mesh is centred at half height: chest ≈ 0.3 m above its centre, front at -radius.
-  const front = -m.radius - 0.005
-  const tie = new THREE.Mesh(wear.tie, material)
-  tie.position.set(0, 0.24, front)
-  tie.rotation.x = -0.12 // follows the curve of the belly a little
-  const knot = new THREE.Mesh(wear.knot, material)
-  knot.position.set(0, 0.48, front - 0.005)
-  const collar = new THREE.Mesh(wear.collar, collarMaterial)
-  collar.position.set(0, 0.53, front + 0.01)
-  g.add(tie, knot, collar)
-  return g
-}
-
-/** A fedora or a bowler, sitting on top of the head (head group origin = eyes). */
-function makeHat(colorIndex: number): THREE.Group {
-  const g = new THREE.Group()
-  const material = hatMaterials[colorIndex % hatMaterials.length] ?? hatMaterials[0]
-  const top = m.standHeight - m.standEyeHeight // capsule top above the eyes
-  if (colorIndex % 2 === 0) {
-    const brim = new THREE.Mesh(wear.brim, material)
-    brim.position.y = top - 0.02
-    const crown = new THREE.Mesh(wear.crown, material)
-    crown.position.y = top + 0.09
-    const band = new THREE.Mesh(wear.band, bandMaterial)
-    band.position.y = top + 0.02
-    g.add(brim, crown, band)
-  } else {
-    const brim = new THREE.Mesh(wear.brim, material)
-    brim.scale.set(0.8, 1, 0.8)
-    brim.position.y = top - 0.02
-    const dome = new THREE.Mesh(wear.bowler, material)
-    dome.position.y = top - 0.02
-    g.add(brim, dome)
+/**
+ * The meshes of every body part for a skin, each in its own group (part space). Shared by the
+ * live avatar and the ragdoll, so a body falls exactly as it stood.
+ */
+export function buildBody(
+  skin: SkinId,
+  colorIndex: number,
+  material: THREE.MeshLambertMaterial,
+): Record<Exclude<PartName, 'gun'>, THREE.Group> {
+  const s = PART_SIZES
+  const g = () => new THREE.Group()
+  const body = {
+    head: g(),
+    chest: g(),
+    stomach: g(),
+    armL: g(),
+    armR: g(),
+    thighL: g(),
+    shinL: g(),
+    thighR: g(),
+    shinR: g(),
   }
-  for (const part of g.children) part.castShadow = false
+  const skinTone = pick(skinMaterials, colorIndex)
+  const hair = pick(hairMaterials, colorIndex * 7)
+  const tie = pick(tieMaterials, colorIndex)
+  const W = (h: { x: number; y: number; z: number }) => [h.x * 2, h.y * 2, h.z * 2] as const
+
+  if (skin === 'robot') {
+    body.head.add(
+      part(box(...W(s.head)), metalMaterial),
+      part(box(0.26, 0.07, 0.02), glowMaterial, 0, 0.01, -s.head.z - 0.005),
+      part(box(0.03, 0.18, 0.03), darkMetalMaterial, 0.08, s.head.y + 0.09, 0),
+      part(new THREE.SphereGeometry(0.045, 8, 6), material, 0.08, s.head.y + 0.2, 0),
+    )
+    body.chest.add(
+      part(box(...W(s.chest)), material),
+      part(box(0.24, 0.16, 0.02), metalMaterial, 0, 0.02, -s.chest.z - 0.005),
+    )
+    body.stomach.add(part(box(...W(s.stomach)), metalMaterial))
+    for (const arm of [body.armL, body.armR]) {
+      arm.add(
+        part(box(0.12, 0.46, 0.14), darkMetalMaterial, 0, -0.05, 0),
+        part(box(0.16, 0.12, 0.18), metalMaterial, 0, -ARM_LENGTH / 2 + 0.04, 0),
+        part(box(0.11, 0.1, 0.11), metalMaterial, 0, ARM_LENGTH / 2 - 0.05, 0),
+      )
+    }
+    for (const thigh of [body.thighL, body.thighR])
+      thigh.add(part(box(...W(s.thighL)), darkMetalMaterial))
+    for (const shin of [body.shinL, body.shinR]) {
+      shin.add(
+        part(box(...W(s.shinL)), darkMetalMaterial),
+        part(box(0.2, 0.1, 0.28), metalMaterial, 0, -s.shinL.y + 0.03, -0.04),
+      )
+    }
+    return body
+  }
+
+  if (skin === 'slime') {
+    // The office slime: a jelly person in the player's color, with visor, tie and hat.
+    body.head.add(
+      part(box(...W(s.head)), material),
+      part(box(0.26, 0.09, 0.03), visorMaterial, 0, 0.01, -s.head.z - 0.005),
+      makeHat(colorIndex, s.head.y),
+    )
+    body.chest.add(
+      part(box(...W(s.chest)), material),
+      part(box(0.09, 0.3, 0.03), tie, 0, -0.02, -s.chest.z - 0.01),
+      part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z),
+    )
+    body.stomach.add(part(box(...W(s.stomach)), material))
+    for (const arm of [body.armL, body.armR]) arm.add(part(box(0.12, ARM_LENGTH, 0.14), material))
+    for (const leg of [body.thighL, body.thighR, body.shinL, body.shinR]) {
+      leg.add(part(box(...W(s.thighL)), material))
+    }
+    return body
+  }
+
+  // Office worker (default): shirt in the player's color, tie, trousers, shoes, hair.
+  body.head.add(
+    part(box(...W(s.head)), skinTone),
+    part(box(0.32, 0.09, 0.32), hair, 0, s.head.y + 0.02, 0),
+    part(box(0.32, 0.06, 0.05), hair, 0, s.head.y - 0.04, -s.head.z + 0.01),
+    part(box(0.05, 0.04, 0.02), eyeMaterial, -0.07, 0.01, -s.head.z - 0.005),
+    part(box(0.05, 0.04, 0.02), eyeMaterial, 0.07, 0.01, -s.head.z - 0.005),
+  )
+  body.chest.add(
+    part(box(...W(s.chest)), material),
+    part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z),
+    part(box(0.11, 0.07, 0.04), tie, 0, s.chest.y - 0.08, -s.chest.z - 0.01),
+    part(box(0.09, 0.24, 0.03), tie, 0, -0.04, -s.chest.z - 0.01),
+  )
+  body.stomach.add(
+    part(box(...W(s.stomach)), material),
+    part(box(0.09, 0.2, 0.03), tie, 0, 0.05, -s.stomach.z - 0.01),
+    part(
+      box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
+      beltMaterial,
+      0,
+      -s.stomach.y + 0.03,
+      0,
+    ),
+  )
+  for (const arm of [body.armL, body.armR]) {
+    arm.add(
+      part(box(0.12, ARM_LENGTH - 0.1, 0.14), material, 0, -0.05, 0),
+      part(box(0.11, 0.1, 0.11), skinTone, 0, ARM_LENGTH / 2 - 0.05, 0),
+    )
+  }
+  for (const thigh of [body.thighL, body.thighR])
+    thigh.add(part(box(...W(s.thighL)), trouserMaterial))
+  for (const shin of [body.shinL, body.shinR]) {
+    shin.add(
+      part(box(...W(s.shinL)), trouserMaterial),
+      part(box(0.19, 0.08, 0.26), shoeMaterial, 0, -s.shinL.y + 0.02, -0.04),
+    )
+  }
+  return body
+}
+
+/** A fedora or a bowler on top of a head of half-height `top`. */
+function makeHat(colorIndex: number, top: number): THREE.Group {
+  const g = new THREE.Group()
+  const material = pick(hatMaterials, colorIndex)
+  const brim = part(new THREE.CylinderGeometry(0.26, 0.26, 0.03, 12), material, 0, top + 0.01, 0)
+  if (colorIndex % 2 === 0) {
+    g.add(
+      brim,
+      part(new THREE.CylinderGeometry(0.15, 0.17, 0.16, 12), material, 0, top + 0.1, 0),
+      part(new THREE.CylinderGeometry(0.172, 0.172, 0.04, 12), lambert(0x111111), 0, top + 0.04, 0),
+    )
+  } else {
+    g.add(
+      brim,
+      part(
+        new THREE.SphereGeometry(0.17, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+        material,
+        0,
+        top + 0.01,
+        0,
+      ),
+    )
+  }
   return g
 }
-const gunMaterial = new THREE.MeshLambertMaterial({ color: 0x2b2d33 })
-/** Gun held at the right, slightly below the eyes; its muzzle is at the far end. */
-const GUN_OFFSET = new THREE.Vector3(0.25, -0.2, -0.38)
 
 function makeGlintTexture(): THREE.CanvasTexture {
   const size = 32
@@ -90,11 +219,11 @@ function makeGlintTexture(): THREE.CanvasTexture {
   canvas.width = canvas.height = size
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('2D canvas unavailable')
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  g.addColorStop(0, 'rgba(255,255,255,1)')
-  g.addColorStop(0.2, 'rgba(255,250,220,0.8)')
-  g.addColorStop(1, 'rgba(255,240,200,0)')
-  ctx.fillStyle = g
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.2, 'rgba(255,250,220,0.8)')
+  grad.addColorStop(1, 'rgba(255,240,200,0)')
+  ctx.fillStyle = grad
   ctx.fillRect(0, 0, size, size)
   // Star spikes so it reads as a lens flare even when tiny.
   ctx.fillStyle = 'rgba(255,255,255,0.9)'
@@ -113,358 +242,79 @@ const glintMaterial = new THREE.SpriteMaterial({
   transparent: true,
 })
 
-/** Skin-coloured parts shared by the people skins. */
-const SKIN_TONES = [0xf1c6a0, 0xd9a07a, 0xa86f4c, 0x6e4630, 0xffdbbd]
-const HAIR_COLORS = [0x2a1c12, 0x5a3b1e, 0xc9a35a, 0x161616, 0x8a4a22, 0x9a9a9a]
-const skinMaterials = SKIN_TONES.map((color) => new THREE.MeshLambertMaterial({ color }))
-const hairMaterials = HAIR_COLORS.map((color) => new THREE.MeshLambertMaterial({ color }))
-const trouserMaterial = new THREE.MeshLambertMaterial({ color: 0x2f3440 })
-const shoeMaterial = new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
-const eyeMaterial = new THREE.MeshLambertMaterial({ color: 0x15151a })
-const metalMaterial = new THREE.MeshLambertMaterial({ color: 0x8e96a3 })
-const darkMetalMaterial = new THREE.MeshLambertMaterial({ color: 0x3c424c })
-const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
-const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
-const people = {
-  leg: box(0.17, 0.82, 0.19),
-  shoe: box(0.19, 0.08, 0.26),
-  torso: box(0.46, 0.62, 0.26),
-  arm: box(0.12, 0.56, 0.14),
-  hand: box(0.11, 0.1, 0.11),
-  head: box(0.3, 0.32, 0.3),
-  hair: box(0.32, 0.09, 0.32),
-  fringe: box(0.32, 0.06, 0.05),
-  eye: box(0.05, 0.04, 0.02),
-}
-const robot = {
-  leg: box(0.15, 0.8, 0.17),
-  foot: box(0.2, 0.1, 0.28),
-  hip: box(0.4, 0.12, 0.24),
-  torso: box(0.5, 0.6, 0.3),
-  panel: box(0.26, 0.2, 0.02),
-  shoulder: box(0.16, 0.14, 0.18),
-  arm: box(0.1, 0.52, 0.12),
-  head: box(0.34, 0.3, 0.32),
-  visor: box(0.28, 0.07, 0.02),
-  antenna: box(0.03, 0.18, 0.03),
-  bulb: new THREE.SphereGeometry(0.045, 8, 6),
-}
-
-/** A mesh that doesn't cast sun shadows (the shadow map is static, drawn once). */
-function part(
-  geometry: THREE.BufferGeometry,
-  material: THREE.Material,
-  x: number,
-  y: number,
-  z: number,
-): THREE.Mesh {
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.set(x, y, z)
-  mesh.castShadow = false
-  return mesh
-}
-
-/** Builds a skin: `body` holds everything below the neck (feet at 0), `head` is at the eyes. */
-function dress(
-  skin: SkinId,
-  colorIndex: number,
-  material: THREE.MeshLambertMaterial,
-  body: THREE.Group,
-  head: THREE.Group,
-): void {
-  if (skin === 'worker') {
-    const skinTone = skinMaterials[colorIndex % skinMaterials.length] ?? material
-    const hair = hairMaterials[(colorIndex * 7) % hairMaterials.length] ?? material
-    for (const side of [-1, 1]) {
-      body.add(part(people.leg, trouserMaterial, side * 0.11, 0.45, 0))
-      body.add(part(people.shoe, shoeMaterial, side * 0.11, 0.04, -0.03))
-      body.add(part(people.arm, material, side * 0.3, 1.2, 0))
-      body.add(part(people.hand, skinTone, side * 0.3, 0.87, 0))
-      head.add(part(people.eye, eyeMaterial, side * 0.07, 0.01, -0.151))
-    }
-    body.add(part(people.torso, material, 0, 1.17, 0))
-    const tie = makeTie(colorIndex)
-    tie.position.set(0, 0.93, m.radius - 0.135) // collar at the top of the shirt
-    body.add(tie)
-    head.add(part(people.head, skinTone, 0, 0.0, 0))
-    head.add(part(people.hair, hair, 0, 0.18, 0))
-    head.add(part(people.fringe, hair, 0, 0.13, -0.14))
-    return
-  }
-  if (skin === 'robot') {
-    for (const side of [-1, 1]) {
-      body.add(part(robot.leg, darkMetalMaterial, side * 0.11, 0.45, 0))
-      body.add(part(robot.foot, metalMaterial, side * 0.11, 0.05, -0.03))
-      body.add(part(robot.shoulder, metalMaterial, side * 0.32, 1.42, 0))
-      body.add(part(robot.arm, darkMetalMaterial, side * 0.32, 1.12, 0))
-    }
-    body.add(part(robot.hip, metalMaterial, 0, 0.9, 0))
-    body.add(part(robot.torso, material, 0, 1.2, 0))
-    body.add(part(robot.panel, metalMaterial, 0, 1.25, -0.16))
-    head.add(part(robot.head, metalMaterial, 0, 0.0, 0))
-    head.add(part(robot.visor, glowMaterial, 0, 0.01, -0.165))
-    head.add(part(robot.antenna, darkMetalMaterial, 0.08, 0.24, 0))
-    head.add(part(robot.bulb, material, 0.08, 0.34, 0))
-    return
-  }
-  // Slime (default): a capsule in the player's color with tie, collar, visor and hat.
-  const capsule = part(sharedGeometry.body, material, 0, m.standHeight / 2, 0)
-  capsule.add(makeTie(colorIndex))
-  body.add(capsule)
-  head.add(part(sharedGeometry.visor, visorMaterial, 0, 0, -m.radius + 0.02))
-  head.add(makeHat(colorIndex))
-}
-
-type V3 = [number, number, number]
-
-/** One rigid piece of a ragdoll. */
-export interface RagdollPart {
-  /** Meshes in part-local space (origin = the part's centre). */
-  mesh: THREE.Group
-  /** Centre in the standing pose: feet at the origin, facing -z, size 1. */
-  center: V3
-  /** Half extents of its collision box (a capsule uses x as radius, y as half height). */
-  half: V3
-  shape: 'box' | 'capsule'
-}
-
-export interface RagdollSpec {
-  parts: RagdollPart[]
-  /** Ball joints between parts, at `anchor` in the standing pose. */
-  joints: { a: number; b: number; anchor: V3 }[]
-  /** The player-colored material (the one the ragdoll owns and disposes). */
-  material: THREE.MeshLambertMaterial
-}
-
-/** Builds the pieces of a ragdoll that looks like the avatar in this skin. */
-export function ragdollSpec(skin: SkinId, colorIndex: number): RagdollSpec {
-  const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
-  const material = new THREE.MeshLambertMaterial({ color })
-  const piece = (
-    center: V3,
-    half: V3,
-    children: THREE.Object3D[],
-    shape: 'box' | 'capsule' = 'box',
-  ) => {
-    const mesh = new THREE.Group()
-    mesh.add(...children)
-    return { mesh, center, half, shape }
-  }
-  /** `part()` placed relative to a part centre given in standing coordinates. */
-  const at = (
-    geometry: THREE.BufferGeometry,
-    mat: THREE.Material,
-    c: V3,
-    x: number,
-    y: number,
-    z: number,
-  ) => part(geometry, mat, x - c[0], y - c[1], z - c[2])
-
-  if (skin === 'slime') {
-    const bodyC: V3 = [0, m.standHeight / 2, 0]
-    const capsule = part(sharedGeometry.body, material, 0, 0, 0)
-    capsule.add(makeTie(colorIndex))
-    const visor = at(
-      sharedGeometry.visor,
-      visorMaterial,
-      bodyC,
-      0,
-      m.standEyeHeight,
-      -m.radius + 0.02,
-    )
-    const hatC: V3 = [0, m.standHeight + 0.06, 0]
-    const hat = makeHat(colorIndex)
-    hat.position.y = m.standEyeHeight - hatC[1]
-    return {
-      material,
-      parts: [
-        piece(
-          bodyC,
-          [m.radius, m.standHeight / 2 - m.radius, m.radius],
-          [capsule, visor],
-          'capsule',
-        ),
-        piece(hatC, [0.24, 0.1, 0.24], [hat]), // no joint: the hat flies off
-      ],
-      joints: [],
-    }
-  }
-
-  const eye = m.standEyeHeight
-  if (skin === 'worker') {
-    const skinTone = skinMaterials[colorIndex % skinMaterials.length] ?? material
-    const hair = hairMaterials[(colorIndex * 7) % hairMaterials.length] ?? material
-    const torsoC: V3 = [0, 1.17, 0]
-    const tie = makeTie(colorIndex)
-    tie.position.set(0, 0.93 - torsoC[1], m.radius - 0.135)
-    const headC: V3 = [0, eye, 0]
-    const parts = [
-      piece(torsoC, [0.23, 0.31, 0.13], [at(people.torso, material, torsoC, 0, 1.17, 0), tie]),
-      piece(
-        headC,
-        [0.16, 0.17, 0.16],
-        [
-          at(people.head, skinTone, headC, 0, eye, 0),
-          at(people.hair, hair, headC, 0, eye + 0.18, 0),
-          at(people.fringe, hair, headC, 0, eye + 0.13, -0.14),
-          at(people.eye, eyeMaterial, headC, -0.07, eye + 0.01, -0.151),
-          at(people.eye, eyeMaterial, headC, 0.07, eye + 0.01, -0.151),
-        ],
-      ),
-    ]
-    for (const side of [-1, 1]) {
-      const armC: V3 = [side * 0.3, 1.15, 0]
-      parts.push(
-        piece(
-          armC,
-          [0.06, 0.32, 0.07],
-          [
-            at(people.arm, material, armC, side * 0.3, 1.2, 0),
-            at(people.hand, skinTone, armC, side * 0.3, 0.87, 0),
-          ],
-        ),
-      )
-    }
-    for (const side of [-1, 1]) {
-      const legC: V3 = [side * 0.11, 0.45, 0]
-      parts.push(
-        piece(
-          legC,
-          [0.09, 0.45, 0.12],
-          [
-            at(people.leg, trouserMaterial, legC, side * 0.11, 0.45, 0),
-            at(people.shoe, shoeMaterial, legC, side * 0.11, 0.04, -0.03),
-          ],
-        ),
-      )
-    }
-    return { material, parts, joints: humanJoints(1.48, 0.3, 1.43, 0.11, 0.86) }
-  }
-
-  // Robot.
-  const torsoC: V3 = [0, 1.1, 0]
-  const headC: V3 = [0, eye, 0]
-  const parts = [
-    piece(
-      torsoC,
-      [0.25, 0.36, 0.15],
-      [
-        at(robot.hip, metalMaterial, torsoC, 0, 0.9, 0),
-        at(robot.torso, material, torsoC, 0, 1.2, 0),
-        at(robot.panel, metalMaterial, torsoC, 0, 1.25, -0.16),
-      ],
-    ),
-    piece(
-      headC,
-      [0.17, 0.15, 0.16],
-      [
-        at(robot.head, metalMaterial, headC, 0, eye, 0),
-        at(robot.visor, glowMaterial, headC, 0, eye + 0.01, -0.165),
-        at(robot.antenna, darkMetalMaterial, headC, 0.08, eye + 0.24, 0),
-        at(robot.bulb, material, headC, 0.08, eye + 0.34, 0),
-      ],
-    ),
-  ]
-  for (const side of [-1, 1]) {
-    const armC: V3 = [side * 0.32, 1.2, 0]
-    parts.push(
-      piece(
-        armC,
-        [0.08, 0.3, 0.09],
-        [
-          at(robot.shoulder, metalMaterial, armC, side * 0.32, 1.42, 0),
-          at(robot.arm, darkMetalMaterial, armC, side * 0.32, 1.12, 0),
-        ],
-      ),
-    )
-  }
-  for (const side of [-1, 1]) {
-    const legC: V3 = [side * 0.11, 0.45, 0]
-    parts.push(
-      piece(
-        legC,
-        [0.1, 0.45, 0.14],
-        [
-          at(robot.leg, darkMetalMaterial, legC, side * 0.11, 0.45, 0),
-          at(robot.foot, metalMaterial, legC, side * 0.11, 0.05, -0.03),
-        ],
-      ),
-    )
-  }
-  return { material, parts, joints: humanJoints(1.5, 0.32, 1.45, 0.11, 0.86) }
-}
-
-/** Neck, shoulders and hips for the parts order torso, head, arm L, arm R, leg L, leg R. */
-function humanJoints(
-  neckY: number,
-  shoulderX: number,
-  shoulderY: number,
-  hipX: number,
-  hipY: number,
-) {
-  return [
-    { a: 0, b: 1, anchor: [0, neckY, 0] as V3 },
-    { a: 0, b: 2, anchor: [-shoulderX, shoulderY, 0] as V3 },
-    { a: 0, b: 3, anchor: [shoulderX, shoulderY, 0] as V3 },
-    { a: 0, b: 4, anchor: [-hipX, hipY, 0] as V3 },
-    { a: 0, b: 5, anchor: [hipX, hipY, 0] as V3 },
-  ]
+/** Places a part group at a skeleton part (arms also stretch to their shoulder–hand span). */
+export function placePart(group: THREE.Object3D, p: BodyPart, size: number): void {
+  group.position.set(p.center.x, p.center.y, p.center.z)
+  group.quaternion.set(p.rotation.x, p.rotation.y, p.rotation.z, p.rotation.w)
+  if (p.name === 'armL' || p.name === 'armR')
+    group.scale.set(size, (p.half.y * 2) / ARM_LENGTH, size)
+  else group.scale.setScalar(size)
 }
 
 /**
- * A player as others see them, in the skin the admin picked (slime, office worker, robot) and
- * the player's color. Hitboxes are the same for every skin. Scaled as a whole for tiny people.
- * No floating name tag — names appear when your crosshair is on someone you can see (PLAN.md §6).
+ * Another player as you see them: the skin's part meshes posed on the animated skeleton every
+ * frame (running legs, arms on the gun, head following the aim) — the same pose the server hits.
+ * No floating name tag — names appear when your crosshair is on someone you can see.
  */
 export class Avatar {
   readonly root = new THREE.Group()
-  private readonly body = new THREE.Group()
   private readonly material: THREE.MeshLambertMaterial
-  private readonly head = new THREE.Group()
-  private readonly muzzle = new THREE.Object3D()
+  private readonly parts: Record<Exclude<PartName, 'gun'>, THREE.Group>
+  private readonly gunGroup = new THREE.Group()
   private readonly gun: THREE.Mesh
+  private readonly muzzle = new THREE.Object3D()
   private readonly glint: THREE.Sprite
   private weapon: WeaponId = WeaponId.Rifle
+  /** The pose last drawn (for the ragdoll when they die). */
+  lastParts: BodyPart[] = []
 
-  constructor(name: string, colorIndex: number, skin: SkinId = 'slime') {
+  constructor(name: string, colorIndex: number, skin: SkinId = 'worker') {
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
-    dress(skin, colorIndex, this.material, this.body, this.head)
-
-    this.gun = new THREE.Mesh(sharedGeometry.guns[this.weapon], gunMaterial)
+    this.parts = buildBody(skin, colorIndex, this.material)
+    for (const group of Object.values(this.parts)) this.root.add(group)
+    this.gun = part(gunGeometry[WeaponId.Rifle] as THREE.BoxGeometry, gunMaterial)
     this.glint = new THREE.Sprite(glintMaterial.clone())
     this.glint.visible = false
-    this.head.add(this.gun, this.muzzle, this.glint)
+    this.gunGroup.add(this.gun, this.muzzle, this.glint)
+    this.root.add(this.gunGroup)
     this.setWeapon(WeaponId.Rifle)
-
-    this.root.add(this.body, this.head)
     this.root.name = `avatar:${name}`
   }
 
   private setWeapon(id: WeaponId): void {
     this.weapon = id
-    this.gun.geometry = sharedGeometry.guns[id]
-    const length = sharedGeometry.guns[id].parameters.depth
-    // Gun's back end stays at the hand; longer guns reach further forward.
-    this.gun.position.set(GUN_OFFSET.x, GUN_OFFSET.y, GUN_OFFSET.z - length / 2 + 0.15)
-    this.muzzle.position.set(GUN_OFFSET.x, GUN_OFFSET.y, this.gun.position.z - length / 2)
-    this.glint.position.set(GUN_OFFSET.x, GUN_OFFSET.y + 0.09, -0.25)
+    const length = GUN_LENGTH[id]
+    this.gun.geometry = gunGeometry[id] as THREE.BoxGeometry
+    // Gun part centre sits 0.12 m ahead of the grip; the gun's back end ~0.1 m behind the grip.
+    this.gun.position.set(0, 0, 0.22 - length / 2)
+    this.muzzle.position.set(0, 0, 0.22 - length)
+    this.glint.position.set(0, 0.07, -0.05)
   }
 
   /**
    * @param viewer  your eye position — a scoped sniper's glint is brightest when they look at you.
    */
-  update(s: RemotePlayerState, timeMs: number, viewer?: THREE.Vector3, scale = 1): void {
+  update(s: RemotePlayerState, timeMs: number, viewer?: THREE.Vector3, size = 1): void {
     if (s.weapon !== this.weapon) this.setWeapon(s.weapon)
-    const height = m.standHeight + (m.crouchHeight - m.standHeight) * s.crouch
-    const eye = m.standEyeHeight + (m.crouchEyeHeight - m.standEyeHeight) * s.crouch
     this.root.visible = s.alive
-    this.root.position.set(s.x, s.y, s.z)
-    this.root.rotation.y = s.yaw
-    this.root.scale.setScalar(scale)
-    this.body.scale.y = height / m.standHeight
-    this.head.position.y = eye
-    this.head.rotation.x = s.pitch
+    const parts = bodyParts({
+      x: s.x,
+      y: s.y,
+      z: s.z,
+      yaw: s.yaw,
+      pitch: s.pitch,
+      crouch: s.crouch,
+      stride: s.stride,
+      speed: s.speed,
+      grounded: s.grounded,
+      scale: size,
+    })
+    this.lastParts = parts
+    for (const p of parts) {
+      const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
+      placePart(group, p, size)
+    }
     // Spawn protection: blink so attackers know shots won't count yet.
     this.material.opacity = s.protected && Math.floor(timeMs / 150) % 2 === 0 ? 0.35 : 1
 
@@ -479,7 +329,7 @@ export class Avatar {
       )
       const toViewer = viewer
         .clone()
-        .sub(new THREE.Vector3(s.x, s.y + 1.6 * scale, s.z))
+        .sub(new THREE.Vector3(s.x, s.y + 1.6 * size, s.z))
         .normalize()
       const facing = Math.max(0, look.dot(toViewer))
       const strength = facing ** 6 * (0.85 + 0.15 * Math.sin(timeMs / 90))
@@ -495,7 +345,7 @@ export class Avatar {
 
   /** World position of this player's gun muzzle (for their tracers and flashes). */
   muzzleWorld(target: THREE.Vector3): THREE.Vector3 {
-    this.root.updateMatrixWorld(true)
+    this.gunGroup.updateMatrixWorld(true)
     return target.setFromMatrixPosition(this.muzzle.matrixWorld)
   }
 

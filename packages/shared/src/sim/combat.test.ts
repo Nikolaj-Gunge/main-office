@@ -128,7 +128,9 @@ describe('hitboxes', () => {
     expect(shootAt(1.3)).toBe(HitZone.Chest)
     expect(shootAt(0.95)).toBe(HitZone.Stomach)
     expect(shootAt(0.4, target, 0.1)).toBe(HitZone.Leg)
-    expect(shootAt(1.2, target, 0.3)).toBe(HitZone.Arm)
+    // Arms hold the gun out in front: from the front, the right arm covers the right of the chest.
+    const fromFront = raycastPose({ x: 0.2, y: 1.3, z: -20 }, { x: 0, y: 0, z: 1 }, 100, target)
+    expect(fromFront?.zone).toBe(HitZone.Arm)
     expect(shootAt(1.9)).toBe(HitZone.None)
     expect(shootAt(1.3, target, 0.6)).toBe(HitZone.None)
   })
@@ -152,5 +154,33 @@ describe('hitboxes', () => {
   test('a shot grazing the head from above-front counts as the head', () => {
     const dir = viewDirection(0, -Math.atan2(0.3, 10))
     expect(raycastPose({ x: 0, y: 1.98, z: 0 }, dir, 100, target)?.zone).toBe(HitZone.Head)
+  })
+})
+
+describe('animated hitboxes', () => {
+  const base: HitPose = { x: 0, y: 0, z: -10, yaw: Math.PI, crouch: 0 } // facing the shooter
+  const zoneAt = (pose: HitPose, x: number, y: number) =>
+    raycastPose({ x, y, z: 0 }, { x: 0, y: 0, z: -1 }, 100, pose)?.zone ?? HitZone.None
+
+  test('a running leg swings: the hitbox moves with it', () => {
+    // Shoot just in front of the standing legs: nothing there while standing…
+    const low = (pose: HitPose) =>
+      raycastPose({ x: 0.11, y: 0.5, z: -10.4 }, { x: 0, y: 0, z: 1 }, 0.25, pose)?.zone ??
+      HitZone.None
+    expect(low(base)).toBe(HitZone.None)
+    // …but mid-stride, one knee is out front.
+    const striding = [0.25, 0.75].map((stride) => low({ ...base, stride, speed: 6.5 }))
+    expect(striding).toContain(HitZone.Leg)
+  })
+
+  test('aiming down tilts the head: a shot just over it misses standing, hits looking up', () => {
+    expect(zoneAt(base, 0, 1.86)).toBe(HitZone.None)
+    expect(zoneAt({ ...base, pitch: 0.6 }, 0, 1.86)).not.toBe(HitZone.Chest)
+  })
+
+  test('crouching lowers everything and bends the knees (feet stay on the floor)', () => {
+    const crouched = { ...base, crouch: 1 }
+    expect(zoneAt(crouched, 0, 1.6)).toBe(HitZone.None)
+    expect(zoneAt(crouched, 0.11, 0.1)).toBe(HitZone.Leg)
   })
 })

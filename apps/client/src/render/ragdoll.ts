@@ -1,14 +1,20 @@
 import {
+  type BodyPart,
   createPhysicsWorld,
   DEFAULT_MOVEMENT,
   GROUP_MAP,
   type MapDef,
+  type PartName,
   type PhysicsWorld,
+  PLAYER_COLORS,
   RAPIER,
   type SkinId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { ragdollSpec } from './avatar.ts'
+import { buildBody, placePart } from './avatar.ts'
+
+const quat = (q: { x: number; y: number; z: number; w: number }) =>
+  new THREE.Quaternion(q.x, q.y, q.z, q.w)
 
 /** Collision group of ragdoll parts: they hit the map, never each other or players. */
 const GROUP_RAGDOLL = 0x0004
@@ -19,8 +25,6 @@ const MAX_RAGDOLLS = 10
 /** Seconds a body lies there, then how long it takes to sink into the floor. */
 const LIE_SECONDS = 9
 const SINK_SECONDS = 1.5
-/** Crouched height / standing height (as in the hitboxes). */
-const CROUCH_SCALE = DEFAULT_MOVEMENT.crouchHeight / DEFAULT_MOVEMENT.standHeight
 
 /** How the body is pushed when it falls: away from the shooter, harder for big guns. */
 export interface DeathPush {
@@ -61,15 +65,15 @@ export class Ragdolls {
   }
 
   /**
-   * Drops a ragdoll where a player died.
-   * @param pose     where they stood (feet), facing `yaw`, crouched 0–1
+   * Drops a ragdoll where a player died, starting from the exact pose they were drawn in.
+   * @param parts    their body parts as last drawn (skeleton.ts)
    * @param velocity how they were moving (keeps running bodies tumbling forward)
    */
   spawn(
     skin: SkinId,
     colorIndex: number,
-    pose: { x: number; y: number; z: number; yaw: number; crouch: number },
-    scale: number,
+    parts: BodyPart[],
+    size: number,
     velocity: THREE.Vector3,
     push: DeathPush,
   ): void {
@@ -77,72 +81,84 @@ export class Ragdolls {
       const oldest = this.ragdolls.shift()
       if (oldest) this.remove(oldest)
     }
-    const spec = ragdollSpec(skin, colorIndex)
+    const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
+    const material = new THREE.MeshLambertMaterial({ color })
+    const meshes = buildBody(skin, colorIndex, material)
     const world = this.physics.world
-    const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), pose.yaw)
-    const crouchK = 1 + (CROUCH_SCALE - 1) * pose.crouch
-    /** Standing-pose point → world. */
-    const toWorld = ([x, y, z]: [number, number, number]) =>
-      new THREE.Vector3(x * scale, y * scale * crouchK, z * scale)
-        .applyQuaternion(rotation)
-        .add(new THREE.Vector3(pose.x, pose.y, pose.z))
+    const hit: PartName = push.headshot ? 'head' : 'chest'
+    const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()
+    const placed: { body: RAPIER.RigidBody; mesh: THREE.Group }[] = []
 
-    const hitIndex = push.headshot && spec.parts.length > 1 ? 1 : 0
-    const parts = spec.parts.map((part, i) => {
-      const at = toWorld(part.center)
-      const kick = push.dir.clone().multiplyScalar(i === hitIndex ? push.speed : push.speed * 0.35)
+    for (const p of parts) {
+      if (p.name === 'gun') continue
+      const mesh = meshes[p.name]
+      const kick = push.dir.clone().multiplyScalar(p.name === hit ? push.speed : push.speed * 0.35)
       const v = velocity.clone().add(kick)
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(at.x, at.y, at.z)
-          .setRotation({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w })
+          .setTranslation(p.center.x, p.center.y, p.center.z)
+          .setRotation(p.rotation)
           .setLinvel(v.x, v.y, v.z)
           .setAngvel({
-            x: (Math.random() - 0.5) * 3,
-            y: (Math.random() - 0.5) * 3,
-            z: (Math.random() - 0.5) * 3,
+            x: (Math.random() - 0.5) * 2,
+            y: (Math.random() - 0.5) * 2,
+            z: (Math.random() - 0.5) * 2,
           })
           .setLinearDamping(0.2)
           .setAngularDamping(1.5)
           .setCcdEnabled(true),
       )
-      const [hx, hy, hz] = part.half.map((h) => h * scale) as [number, number, number]
-      const shape =
-        part.shape === 'capsule'
-          ? RAPIER.ColliderDesc.capsule(hy, hx)
-          : RAPIER.ColliderDesc.cuboid(hx, hy, hz)
       world.createCollider(
-        shape.setCollisionGroups(RAGDOLL_GROUPS).setFriction(0.9).setRestitution(0.05),
+        RAPIER.ColliderDesc.cuboid(p.half.x, p.half.y, p.half.z)
+          .setCollisionGroups(RAGDOLL_GROUPS)
+          .setFriction(0.9)
+          .setRestitution(0.05),
         body,
       )
-      part.mesh.scale.setScalar(scale)
-      part.mesh.matrixAutoUpdate = true
-      this.scene.add(part.mesh)
-      return { body, mesh: part.mesh, center: at }
-    })
+      placePart(mesh, p, size)
+      mesh.matrixAutoUpdate = true
+      this.scene.add(mesh)
+      bodies.set(p.name, { body, part: p })
+      placed.push({ body, mesh })
+    }
 
-    for (const joint of spec.joints) {
-      const a = parts[joint.a]
-      const b = parts[joint.b]
-      if (!a || !b) continue
-      const anchor = toWorld(joint.anchor)
-      const local = (p: { center: THREE.Vector3 }) =>
-        anchor.clone().sub(p.center).applyQuaternion(rotation.clone().invert())
-      const la = local(a)
-      const lb = local(b)
+    // Joints where the parts meet: neck, waist, shoulders, hips, knees.
+    const end = (name: PartName, sign: 1 | -1) => {
+      const b = bodies.get(name)
+      if (!b) return null
+      const up = new THREE.Vector3(0, b.part.half.y * sign, 0).applyQuaternion(
+        quat(b.part.rotation),
+      )
+      return new THREE.Vector3(b.part.center.x, b.part.center.y, b.part.center.z).add(up)
+    }
+    const join = (a: PartName, b: PartName, anchor: THREE.Vector3 | null) => {
+      const A = bodies.get(a)
+      const B = bodies.get(b)
+      if (!A || !B || !anchor) return
+      const local = (x: { part: BodyPart }) =>
+        anchor
+          .clone()
+          .sub(new THREE.Vector3(x.part.center.x, x.part.center.y, x.part.center.z))
+          .applyQuaternion(quat(x.part.rotation).invert())
+      const la = local(A)
+      const lb = local(B)
       world.createImpulseJoint(
         RAPIER.JointData.spherical({ x: la.x, y: la.y, z: la.z }, { x: lb.x, y: lb.y, z: lb.z }),
-        a.body,
-        b.body,
+        A.body,
+        B.body,
         true,
       )
     }
+    join('head', 'chest', end('chest', 1))
+    join('chest', 'stomach', end('chest', -1))
+    join('chest', 'armL', end('armL', -1)) // arms run shoulder (−Y) → hand (+Y)
+    join('chest', 'armR', end('armR', -1))
+    join('stomach', 'thighL', end('thighL', 1)) // legs run foot/knee (−Y) → hip/knee (+Y)
+    join('stomach', 'thighR', end('thighR', 1))
+    join('thighL', 'shinL', end('shinL', 1))
+    join('thighR', 'shinR', end('shinR', 1))
 
-    const ragdoll: Ragdoll = {
-      parts: parts.map(({ body, mesh }) => ({ body, mesh })),
-      material: spec.material,
-      age: 0,
-    }
+    const ragdoll: Ragdoll = { parts: placed, material, age: 0 }
     this.ragdolls.push(ragdoll)
     this.sync(ragdoll, 0)
   }

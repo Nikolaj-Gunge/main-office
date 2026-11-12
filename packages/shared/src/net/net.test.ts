@@ -115,6 +115,8 @@ describe('InterpolationBuffer', () => {
     protected: false,
     weapon: 1,
     aiming: false,
+    stride: 0,
+    speed: 0,
   })
 
   test('blends between snapshots', () => {

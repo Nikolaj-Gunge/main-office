@@ -1,5 +1,6 @@
 import {
   Button,
+  bodyParts,
   ClientMsg,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
@@ -188,7 +189,8 @@ remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
   if (dir.lengthSq() < 1e-6) dir.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw)) // falls backwards
   dir.normalize().setY(0.25).normalize()
   const speed = (kill ? PUSH_SPEED[kill.weapon] : 2) + (kill?.headshot ? 1 : 0)
-  ragdolls.spawn(skin, colorIndex, pose, scale, velocity, {
+  const parts = bodyParts({ ...pose, scale })
+  ragdolls.spawn(skin, colorIndex, parts, scale, velocity, {
     dir,
     speed,
     headshot: kill?.headshot ?? false,

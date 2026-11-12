@@ -60,6 +60,13 @@ export class PoseHistory {
       yaw: lerpAngle(a.yaw, b.yaw, t),
       crouch: a.crouch + (b.crouch - a.crouch) * t,
       alive: t < 0.5 ? a.alive : b.alive,
+      pitch: (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * t,
+      stride:
+        ((((a.stride ?? 0) + ((((b.stride ?? 0) - (a.stride ?? 0) + 1.5) % 1) - 0.5) * t) % 1) +
+          1) %
+        1,
+      speed: (a.speed ?? 0) + ((b.speed ?? 0) - (a.speed ?? 0)) * t,
+      grounded: (t < 0.5 ? a.grounded : b.grounded) ?? true,
     }
   }
 }

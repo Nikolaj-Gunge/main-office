@@ -89,7 +89,12 @@ interface ServerPlayer {
   level: number
   levelKills: number
   out: boolean
+  /** Walk cycle 0–1 (advances with distance walked): drives the running animation and hitboxes. */
+  stride: number
 }
+
+/** Metres walked per full walk cycle (two steps). */
+const STRIDE_LENGTH = 1.7
 
 export type { ServerPlayer }
 
@@ -301,6 +306,7 @@ export class Game {
       level: 0,
       levelKills: 0,
       out: false,
+      stride: 0,
     }
     this.match.onJoin(player)
     this.applyRules(player)
@@ -381,7 +387,11 @@ export class Game {
       for (const command of commands) {
         const usePressed =
           hasButton(command.buttons, Button.Use) && !hasButton(player.state.prevButtons, Button.Use)
+        const bx = player.state.pos.x
+        const bz = player.state.pos.z
         const events = stepPlayer(player.state, command, TICK_DT, player.body)
+        const walked = Math.hypot(player.state.pos.x - bx, player.state.pos.z - bz)
+        if (walked < 1) player.stride = (player.stride + walked / STRIDE_LENGTH) % 1
         player.ackSeq = command.seq
         if (events.shot) this.fire(player, events.shot, command.viewTick)
         this.handlePickups(player, usePressed)
@@ -446,7 +456,7 @@ export class Game {
     const targets: { player: ServerPlayer; pose: HitPose & { id: number } }[] = []
     for (const target of this.players.values()) {
       if (target === shooter || !target.state.alive) continue
-      const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target.state)
+      const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target)
       if (!pose.alive) continue
       targets.push({ player: target, pose: { id: target.id, ...pose } })
     }
@@ -798,7 +808,7 @@ export class Game {
 
   private currentPoses(): Map<number, HistoryPose> {
     const poses = new Map<number, HistoryPose>()
-    for (const p of this.players.values()) poses.set(p.id, toHistoryPose(p.state))
+    for (const p of this.players.values()) poses.set(p.id, toHistoryPose(p))
     return poses
   }
 
@@ -887,8 +897,20 @@ function itemSpawnMessage(item: WorldItem): ServerMessage {
   }
 }
 
-function toHistoryPose(s: PlayerState): HistoryPose {
-  return { x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, crouch: s.crouchAmount, alive: s.alive }
+function toHistoryPose(p: ServerPlayer): HistoryPose {
+  const s = p.state
+  return {
+    x: s.pos.x,
+    y: s.pos.y,
+    z: s.pos.z,
+    yaw: s.yaw,
+    pitch: s.pitch,
+    crouch: s.crouchAmount,
+    stride: p.stride,
+    speed: Math.hypot(s.vel.x, s.vel.z),
+    grounded: s.grounded,
+    alive: s.alive,
+  }
 }
 
 function toRemote(p: ServerPlayer, isProtected: boolean): RemotePlayerState {
@@ -906,6 +928,8 @@ function toRemote(p: ServerPlayer, isProtected: boolean): RemotePlayerState {
     protected: isProtected,
     weapon: s.weapon.id,
     aiming: s.alive && hasButton(s.prevButtons, Button.Aim) && s.weapon.aimTime > 0,
+    stride: p.stride,
+    speed: Math.hypot(s.vel.x, s.vel.z),
   }
 }
 

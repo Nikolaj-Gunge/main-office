@@ -44,7 +44,7 @@ export class RemotePlayers {
   private lastUpdateMs = 0
   private readonly poses = new Map<number, HitPose>()
   /** Game rules: what everyone looks like and how big they are. */
-  private skin: SkinId = 'slime'
+  private skin: SkinId = 'worker'
   private scale = 1
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
@@ -157,7 +157,11 @@ export class RemotePlayers {
           y: s.y,
           z: s.z,
           yaw: s.yaw,
+          pitch: s.pitch,
           crouch: s.crouch,
+          stride: s.stride,
+          speed: s.speed,
+          grounded: s.grounded,
           scale: this.scale,
         })
       }

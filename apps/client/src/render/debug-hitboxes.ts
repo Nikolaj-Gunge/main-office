@@ -1,8 +1,6 @@
 import { type Hitbox, type HitPose, poseHitboxes } from '@office-fps/shared'
 import * as THREE from 'three'
 
-const UP = new THREE.Vector3(0, 1, 0)
-
 /** Wireframe set of one player's hitboxes. Built once, re-posed every frame. */
 class HitboxRig {
   readonly group = new THREE.Group()
@@ -17,15 +15,9 @@ class HitboxRig {
       opacity: 0.8,
       fog: false,
     })
-    // One mesh per hitbox in poseHitboxes order; geometry is unit-sized and scaled per pose.
-    for (const box of poseHitboxes({ x: 0, y: 0, z: 0, yaw: 0, crouch: 0 })) {
-      const geometry =
-        box.kind === 'sphere'
-          ? new THREE.SphereGeometry(1, 8, 6)
-          : box.kind === 'capsule'
-            ? new THREE.CylinderGeometry(1, 1, 1, 8, 1, true)
-            : new THREE.BoxGeometry(2, 2, 2)
-      const mesh = new THREE.Mesh(geometry, material)
+    // One box per hitbox, in poseHitboxes order; unit-sized and scaled per pose.
+    for (const _ of poseHitboxes({ x: 0, y: 0, z: 0, yaw: 0, crouch: 0 })) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), material)
       mesh.renderOrder = 10
       this.meshes.push(mesh)
       this.group.add(mesh)
@@ -41,28 +33,9 @@ class HitboxRig {
 }
 
 function place(mesh: THREE.Mesh, box: Hitbox): void {
-  mesh.rotation.set(0, 0, 0)
-  mesh.quaternion.identity()
-  switch (box.kind) {
-    case 'sphere':
-      mesh.position.set(box.center.x, box.center.y, box.center.z)
-      mesh.scale.setScalar(box.radius)
-      break
-    case 'capsule': {
-      const a = new THREE.Vector3(box.a.x, box.a.y, box.a.z)
-      const b = new THREE.Vector3(box.b.x, box.b.y, box.b.z)
-      const axis = b.clone().sub(a)
-      mesh.position.copy(a).add(b).multiplyScalar(0.5)
-      mesh.quaternion.setFromUnitVectors(UP, axis.clone().normalize())
-      mesh.scale.set(box.radius, axis.length() + box.radius * 2, box.radius)
-      break
-    }
-    case 'box':
-      mesh.position.set(box.center.x, box.center.y, box.center.z)
-      mesh.rotation.y = box.yaw
-      mesh.scale.set(box.half.x, box.half.y, box.half.z)
-      break
-  }
+  mesh.position.set(box.center.x, box.center.y, box.center.z)
+  mesh.quaternion.set(box.rotation.x, box.rotation.y, box.rotation.z, box.rotation.w)
+  mesh.scale.set(box.half.x, box.half.y, box.half.z)
 }
 
 /**
