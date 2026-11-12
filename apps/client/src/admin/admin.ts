@@ -11,10 +11,18 @@ interface AdminState {
     skins: string[]
     jingles: string[]
     spawnWeapons: string[]
+    botSkills: string[]
     ranges: Record<string, { min: number; max: number; step: number }>
     defaults: GameRules
   }
-  players: { id: number; name: string; kills: number; deaths: number; ping: number }[]
+  players: {
+    id: number
+    name: string
+    kills: number
+    deaths: number
+    ping: number
+    bot: boolean
+  }[]
 }
 
 type NumericKey =
@@ -26,6 +34,7 @@ type NumericKey =
   | 'recoil'
   | 'damage'
   | 'respawnSeconds'
+  | 'bots'
 
 const PASSWORD_KEY = 'office-fps:admin-password'
 const TINY_SCALE = 0.5
@@ -239,11 +248,43 @@ function render(): void {
     ),
   )
 
+  const botCount = h('input', {
+    id: 'rule-bots',
+    type: 'range',
+    min: '0',
+    max: String(choices.ranges.bots?.max ?? 10),
+    step: '1',
+  })
+  botCount.value = String(rules.bots)
+  const botOutput = h('output', { for: 'rule-bots' }, String(rules.bots))
+  botCount.addEventListener('input', () => {
+    botOutput.textContent = botCount.value
+    change({ bots: Number(botCount.value) })
+  })
+  const botsCard = card(
+    'Bots',
+    'Bots play along like people: they roam, spot you, react and shoot. They make room when people join.',
+    h(
+      'div',
+      { class: 'slider' },
+      h('label', { for: 'rule-bots' }, 'Number of bots'),
+      botCount,
+      botOutput,
+    ),
+    h('br'),
+    choiceGroup(
+      'Bot skill',
+      choices.botSkills.map((id) => ({ id, name: id[0]?.toUpperCase() + id.slice(1) })),
+      rules.botSkill,
+      (id) => change({ botSkill: id as GameRules['botSkill'] }, true),
+    ),
+  )
+
   const presets = h('div', { class: 'choices' })
   for (const preset of PRESETS) {
     const button = h('button', { type: 'button' }, preset.label)
     button.addEventListener('click', () => {
-      const { map, skin, jingles, spawnWeapon, ...normal } = choices.defaults
+      const { map, skin, jingles, spawnWeapon, bots, botSkill, ...normal } = choices.defaults
       change({ ...normal, ...preset.rules }, true)
     })
     presets.append(button)
@@ -327,10 +368,10 @@ function render(): void {
         h(
           'tr',
           {},
-          h('td', {}, p.name),
+          h('td', {}, p.bot ? `${p.name} (bot)` : p.name),
           h('td', { class: 'num' }, String(p.kills)),
           h('td', { class: 'num' }, String(p.deaths)),
-          h('td', { class: 'num' }, `${p.ping} ms`),
+          h('td', { class: 'num' }, p.bot ? '—' : `${p.ping} ms`),
         ),
       ),
     ),
@@ -368,6 +409,7 @@ function render(): void {
     mapCard,
     skinCard,
     loadoutCard,
+    botsCard,
     presetCard,
     rulesCard,
     jingleCard,

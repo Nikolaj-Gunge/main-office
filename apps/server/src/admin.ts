@@ -1,4 +1,5 @@
 import {
+  BOT_SKILLS,
   createPhysicsWorld,
   DEFAULT_RULES,
   type GameRules,
@@ -108,6 +109,7 @@ export class AdminApi {
         skins: SKINS,
         jingles: JINGLES,
         spawnWeapons: SPAWN_WEAPONS,
+        botSkills: BOT_SKILLS,
         ranges: RULE_RANGES,
         defaults: DEFAULT_RULES,
       },
@@ -117,6 +119,7 @@ export class AdminApi {
         kills: p.kills,
         deaths: p.deaths,
         ping: Math.round(p.ping),
+        bot: p.bot !== undefined,
       })),
     }
   }

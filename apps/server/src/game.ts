@@ -44,6 +44,7 @@ import {
   weaponRulesFor,
   ZONE_MULTIPLIER,
 } from '@office-fps/shared'
+import { BOT_NAMES, BotBrain } from './bots.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { SpawnPicker } from './spawning.ts'
@@ -76,7 +77,12 @@ interface ServerPlayer {
   debugFlags: number
   /** Round trip (ms) the client last reported. */
   ping: number
+  /** Set for server-side bots: decides their input every tick. */
+  bot?: BotBrain
 }
+
+/** Bots have nobody to send messages to. */
+const NO_CLIENT: GameClient = { send: () => {} }
 
 /**
  * Inputs simulated per player per tick. Clients send them in batches (INPUT_BATCH_TICKS), so we
@@ -150,6 +156,34 @@ export class Game {
     this.weaponRules = weaponRulesFor(this.rulesValue)
     for (const p of this.players.values()) this.applyRules(p.body)
     this.broadcast({ type: ServerMsg.Rules, rules: this.rulesValue })
+    this.syncBots()
+  }
+
+  /** Adds or removes bots until there are as many as the rules ask for (room permitting). */
+  private syncBots(): void {
+    const bots = [...this.players.values()].filter((p) => p.bot)
+    for (const bot of bots) if (bot.bot) bot.bot.skill = this.rulesValue.botSkill
+    for (let i = bots.length; i < this.rulesValue.bots; i++) {
+      if (this.players.size >= MAX_PLAYERS) break
+      const used = new Set(bots.map((b) => b.name))
+      const name = `Bot ${BOT_NAMES.find((n) => !used.has(`Bot ${n}`)) ?? i + 1}`
+      const id = this.join(name, NO_CLIENT)
+      const player = id === null ? undefined : this.players.get(id)
+      if (!player) break
+      player.bot = new BotBrain(
+        this.rulesValue.botSkill,
+        () => this.physics,
+        () => this.spawns.points,
+        this.random,
+      )
+      bots.push(player)
+    }
+    for (const bot of bots.slice(this.rulesValue.bots)) this.leave(bot.id)
+  }
+
+  /** True for a server-side bot. */
+  isBot(id: number): boolean {
+    return this.players.get(id)?.bot !== undefined
   }
 
   /**
@@ -206,7 +240,12 @@ export class Game {
 
   /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
   join(rawName: string, client: GameClient): number | null {
-    if (this.players.size >= MAX_PLAYERS) return null
+    if (this.players.size >= MAX_PLAYERS) {
+      // A person always gets in: a bot gives up its place.
+      const bot = client === NO_CLIENT ? undefined : [...this.players.values()].find((p) => p.bot)
+      if (!bot) return null
+      this.leave(bot.id)
+    }
     const id = this.nextId
     this.nextId = (this.nextId % 0xffff) + 1
     const name = sanitizeName(rawName) || `Player ${id}`
@@ -265,6 +304,8 @@ export class Game {
     player.body.free()
     this.players.delete(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
+    // A person left: bots may fill up again (after one gave up its place).
+    if (!player.bot) this.syncBots()
   }
 
   handleInput(id: number, commands: InputCommand[]): void {
@@ -293,6 +334,7 @@ export class Game {
   step(): void {
     this.tick++
     const t0 = performance.now()
+    this.thinkBots()
     for (const player of this.players.values()) {
       const take = player.queue.length > CATCH_UP_QUEUE ? MAX_COMMANDS_PER_TICK : 1
       const commands = player.queue.splice(0, take)
@@ -317,6 +359,24 @@ export class Game {
       this.history.record(this.tick, this.currentPoses())
       this.sendSnapshots()
       this.timing.snapshotMs += (performance.now() - t1 - this.timing.snapshotMs) * 0.05
+    }
+  }
+
+  /** Every bot decides this tick's input, from where everyone is right now. */
+  private thinkBots(): void {
+    let views: { id: number; pos: Point; alive: boolean; isProtected: boolean }[] | null = null
+    for (const player of this.players.values()) {
+      if (!player.bot) continue
+      views ??= [...this.players.values()].map((p) => ({
+        id: p.id,
+        pos: p.state.pos,
+        alive: p.state.alive,
+        isProtected: this.tick < p.protectedUntil,
+      }))
+      const others = views.filter((v) => v.id !== player.id)
+      const command = player.bot.think(player.state, others, this.tick, TICK_DT)
+      player.lastQueuedSeq = command.seq
+      player.queue.push(command)
     }
   }
 

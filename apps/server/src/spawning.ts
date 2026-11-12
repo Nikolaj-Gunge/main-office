@@ -24,7 +24,7 @@ export interface Enemy {
  * hide you). Falls back to the farthest spot when the map is too crowded for that.
  */
 export class SpawnPicker {
-  private readonly points: Vec3[]
+  readonly points: Vec3[]
   private readonly physics: PhysicsWorld
   private readonly random: () => number
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })

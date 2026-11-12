@@ -10,6 +10,10 @@ export type SkinId = (typeof SKINS)[number]
 export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'random'] as const
 export type SpawnWeapon = (typeof SPAWN_WEAPONS)[number]
 
+/** How well server bots aim and react. */
+export const BOT_SKILLS = ['easy', 'normal', 'hard'] as const
+export type BotSkill = (typeof BOT_SKILLS)[number]
+
 /** What plays when you get a kill (on top of the kill ding). */
 export const JINGLES = ['off', 'arcade', 'fanfare', 'airhorn'] as const
 export type JingleId = (typeof JINGLES)[number]
@@ -25,6 +29,9 @@ export interface GameRules {
   jingles: JingleId
   /** Spawn loadout: the handgun plus this (in hand). Applies from each player's next spawn. */
   spawnWeapon: SpawnWeapon
+  /** Server-side bots playing along, and how good they are. */
+  bots: number
+  botSkill: BotSkill
   /** Multipliers on the normal values (1 = normal). */
   gravity: number
   speed: number
@@ -50,6 +57,8 @@ export const DEFAULT_RULES: GameRules = {
   skin: 'slime',
   jingles: 'arcade',
   spawnWeapon: 'none',
+  bots: 0,
+  botSkill: 'normal',
   gravity: 1,
   speed: 1,
   jump: 1,
@@ -73,6 +82,7 @@ export const RULE_RANGES = {
   recoil: { min: 0, max: 2, step: 0.05 },
   damage: { min: 0.25, max: 4, step: 0.05 },
   respawnSeconds: { min: 0, max: 10, step: 0.5 },
+  bots: { min: 0, max: 10, step: 1 },
 } as const satisfies Partial<Record<keyof GameRules, { min: number; max: number; step: number }>>
 
 type NumericRule = keyof typeof RULE_RANGES
@@ -104,6 +114,10 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
     const { min, max } = RULE_RANGES[key]
     next[key] = Math.min(max, Math.max(min, value))
+  }
+  next.bots = Math.round(next.bots)
+  if (typeof u.botSkill === 'string' && (BOT_SKILLS as readonly string[]).includes(u.botSkill)) {
+    next.botSkill = u.botSkill as BotSkill
   }
   for (const key of BOOLEAN_RULES) {
     if (typeof u[key] === 'boolean') next[key] = u[key]
