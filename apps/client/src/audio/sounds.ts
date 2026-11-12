@@ -32,6 +32,8 @@ export const SOUNDS = {
   'reload.slide': { variants: 1, recipe: slide },
   bolt: { variants: 1, recipe: boltCycle },
   pump: { variants: 1, recipe: pumpAction },
+  swish: { variants: 3, recipe: knifeSwish },
+  stab: { variants: 2, recipe: knifeStab },
   dryfire: { variants: 1, recipe: dryFire },
   hit: { variants: 1, recipe: hitTick },
   'hit.head': { variants: 1, recipe: headTink },
@@ -152,6 +154,24 @@ function pumpAction(rate: number): Signal {
     normalize(mix(rate, back, [clack, 0.06], [forward, 0.2], [gain(lock, 1.2), 0.26]), 0.7),
     rate,
   )
+}
+
+/** A knife cutting the air: a quick band of noise sweeping up. */
+function knifeSwish(rate: number, v: number): Signal {
+  const air = envelope(
+    bandpass(noise(0.18, rate, 260 + v), rate, 2200 + v * 500, 1.4),
+    rate,
+    0.05,
+    0.05,
+  )
+  return fadeEdges(normalize(air, 0.5), rate)
+}
+
+/** The knife connecting: a dull thud with a wet edge. */
+function knifeStab(rate: number, v: number): Signal {
+  const thud = envelope(sweep(0.1, rate, 160, 70), rate, 0.002, 0.03)
+  const flesh = envelope(lowpass(noise(0.12, rate, 270 + v), rate, 1800), rate, 0.001, 0.035)
+  return fadeEdges(normalize(saturate(mix(rate, thud, gain(flesh, 0.9)), 2), 0.8), rate)
 }
 
 function dryFire(rate: number): Signal {

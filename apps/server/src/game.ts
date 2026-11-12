@@ -1,6 +1,7 @@
 import {
   AUTO_PICKUP_RADIUS,
   Button,
+  carried,
   createPlayerState,
   createWeaponState,
   DEFAULT_RULES,
@@ -14,6 +15,7 @@ import {
   hasButton,
   INPUT_BATCH_TICKS,
   type InputCommand,
+  isPrimary,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   type MapDef,
@@ -403,6 +405,11 @@ export class Game {
       targets.push({ player: target, pose: { id: target.id, ...pose } })
     }
 
+    if (weapon.fireMode === 'melee') {
+      this.swing(shooter, shot, targets)
+      return
+    }
+
     const hits = new Map<ServerPlayer, { amount: number; headshot: boolean; zone: HitZone }>()
     shot.pellets.forEach((dir, i) => {
       const ray = new RAPIER.Ray(origin, dir)
@@ -469,6 +476,69 @@ export class Game {
     for (const [victim, total] of hits) {
       this.damage(victim, shooter, total.zone, total.amount, total.headshot)
     }
+  }
+
+  /**
+   * A knife swing: the closest player any ray of the swing's fan touches within reach takes one
+   * hit — two from the front kill, one from behind (a backstab). Others hear the swing.
+   */
+  private swing(
+    shooter: ServerPlayer,
+    shot: ShotEvent,
+    targets: { player: ServerPlayer; pose: HitPose & { id: number } }[],
+  ): void {
+    const weapon = WEAPONS[shooter.state.weapon.id]
+    const { origin } = shot
+    let best: { victim: ServerPlayer; pose: HitPose; distance: number; zone: HitZone } | null = null
+    let endDir = shot.dir
+    for (const dir of shot.pellets) {
+      const wall = this.physics.world.castRay(
+        new RAPIER.Ray(origin, dir),
+        weapon.range,
+        true,
+        undefined,
+        PLAYER_QUERY_GROUPS,
+      )
+      const reach = wall ? wall.timeOfImpact : weapon.range
+      for (const { player, pose } of targets) {
+        const scaled = { ...pose, scale: this.rulesValue.playerScale }
+        const hit = raycastPose(origin, dir, best?.distance ?? reach, scaled)
+        if (hit) {
+          best = { victim: player, pose, ...hit }
+          endDir = dir
+        }
+      }
+    }
+    const distance = best?.distance ?? weapon.range
+    const swingMsg = encodeServerMessage({
+      type: ServerMsg.ShotFired,
+      shooterId: shooter.id,
+      weapon: weapon.id,
+      end: {
+        x: origin.x + endDir.x * distance,
+        y: origin.y + endDir.y * distance,
+        z: origin.z + endDir.z * distance,
+      },
+      normal: { x: -endDir.x, y: -endDir.y, z: -endDir.z },
+      result: best ? ShotResult.Player : ShotResult.Nothing,
+    })
+    for (const p of this.players.values()) if (p !== shooter) p.client.send(swingMsg)
+    if (!best) return
+
+    // Behind them: the attacker is on the side their back faces.
+    const fx = -Math.sin(best.pose.yaw)
+    const fz = -Math.cos(best.pose.yaw)
+    const ax = shooter.state.pos.x - best.pose.x
+    const az = shooter.state.pos.z - best.pose.z
+    const backstab = (fx * ax + fz * az) / (Math.hypot(ax, az) || 1) < -0.3
+    const rules = this.rulesValue
+    const headshot = best.zone === HitZone.Head
+    if (rules.headshotsOnly && !headshot && !backstab) return
+    const amount =
+      backstab || rules.oneShot
+        ? best.victim.health
+        : Math.round(damageAtDistance(weapon, best.distance) * rules.damage)
+    this.damage(best.victim, shooter, best.zone, amount, headshot)
   }
 
   /**
@@ -591,9 +661,14 @@ export class Game {
   private equip(player: ServerPlayer, item: WorldItem): void {
     if (!this.items.take(item.id, this.tick)) return
     const s = player.state
-    const handgun = s.weapon.id === WeaponId.Handgun ? s.weapon : s.holstered
+    const items = carried(s)
+    const handgun = items.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun)
+    const knife = items.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife)
+    // The new gun goes in your hand; what you were holding becomes "last used" (Q).
+    const previous = s.weapon.id === WeaponId.Knife ? knife : handgun
     s.weapon = newWeapon(item.weapon)
-    s.holstered = handgun ?? newWeapon(WeaponId.Handgun)
+    s.holstered = previous
+    s.pocket = previous === handgun ? knife : handgun
   }
 
   /** Throws the primary a little ahead onto the floor. */
@@ -611,8 +686,14 @@ export class Game {
     )
     const blocked = this.physics.world.castRay(ray, 1.2, true, undefined, PLAYER_QUERY_GROUPS)
     this.items.drop(primary.id, this.floorBelow(blocked ? s.pos : ahead), s.yaw, this.tick)
-    if (s.weapon === primary) s.weapon = s.holstered ?? newWeapon(WeaponId.Handgun)
-    s.holstered = null
+    const rest = carried(s).filter((w) => w !== primary)
+    if (s.weapon === primary) {
+      s.weapon =
+        rest.find((w) => w.id === WeaponId.Handgun) ?? rest[0] ?? newWeapon(WeaponId.Handgun)
+    }
+    const others = rest.filter((w) => w !== s.weapon)
+    s.holstered = others[0] ?? null
+    s.pocket = others[1] ?? null
   }
 
   /** The floor (or desk) surface below a point, so dropped weapons lie on something. */
@@ -702,8 +783,7 @@ function newWeapon(id: WeaponId): WeaponState {
 
 /** The rifle/sniper a player carries (in hand or holstered), or null. */
 function primaryOf(s: PlayerState): WeaponState | null {
-  if (s.weapon.id !== WeaponId.Handgun) return s.weapon
-  return s.holstered && s.holstered.id !== WeaponId.Handgun ? s.holstered : null
+  return carried(s).find((w) => isPrimary(w.id)) ?? null
 }
 
 function itemSpawnMessage(item: WorldItem): ServerMessage {

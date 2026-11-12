@@ -220,8 +220,10 @@ export function stepWeapon(
     }
   }
 
+  const melee = def.fireMode === 'melee'
   const wantFire = def.fireMode === 'auto' ? hasButton(buttons, Button.Fire) : w.fireBuffer > 0
-  const canReload = w.reload === 0 && w.ammo < def.magSize && w.reserve > 0 && w.draw <= EPS
+  const canReload =
+    !melee && w.reload === 0 && w.ammo < def.magSize && w.reserve > 0 && w.draw <= EPS
   if (canReload && (hasButton(pressed, Button.Reload) || (wantFire && w.ammo === 0))) {
     w.reload = w.ammo === 0 ? def.emptyReloadTime : def.reloadTime
     w.fireBuffer = 0
@@ -230,10 +232,10 @@ export function stepWeapon(
     return events
   }
 
-  if (wantFire && w.ammo === 0 && hasButton(pressed, Button.Fire)) events.dryFire = true
+  if (!melee && wantFire && w.ammo === 0 && hasButton(pressed, Button.Fire)) events.dryFire = true
 
   const ready = w.cooldown <= EPS && w.reload === 0 && w.draw <= EPS && w.sprintRecover <= EPS
-  if (wantFire && ready && w.ammo > 0) {
+  if (wantFire && ready && (melee || w.ammo > 0)) {
     const spreadRad = (currentSpread(w, ctx) * Math.PI) / 180
     const multi = (def.pellets ?? 1) > 1
     // Uniform point in a disc: sqrt keeps it from bunching in the middle. A shotgun aims its
@@ -247,7 +249,7 @@ export function stepWeapon(
       shotIndex: w.shotIndex,
       pelletSpread: multi ? spreadRad : 0,
     }
-    w.ammo--
+    if (!melee) w.ammo--
     w.shotIndex++
     w.cooldown = def.fireInterval
     w.fireBuffer = 0

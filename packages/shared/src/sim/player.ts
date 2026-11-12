@@ -52,6 +52,8 @@ export interface PlayerState {
    * (you spawn with only the handgun and pick rifles/snipers up from the floor).
    */
   holstered: WeaponState | null
+  /** The third item you carry (usually the knife), or null. */
+  pocket: WeaponState | null
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -83,6 +85,7 @@ export function createPlayerState(
   spawn?: MapSpawn,
   weapon: WeaponState = createWeaponState(WeaponId.Rifle),
   holstered: WeaponState | null = createWeaponState(WeaponId.Handgun),
+  pocket: WeaponState | null = createWeaponState(WeaponId.Knife),
 ): PlayerState {
   return {
     pos: { x: spawn?.pos[0] ?? 0, y: spawn?.pos[1] ?? 0, z: spawn?.pos[2] ?? 0 },
@@ -98,7 +101,28 @@ export function createPlayerState(
     alive: true,
     weapon,
     holstered,
+    pocket,
   }
+}
+
+/** Everything a player carries: in hand first, then the last-used, then the rest. */
+export function carried(s: PlayerState): WeaponState[] {
+  const out = [s.weapon]
+  if (s.holstered) out.push(s.holstered)
+  if (s.pocket) out.push(s.pocket)
+  return out
+}
+
+/**
+ * Puts `target` (one of the carried items) in your hand. The weapon you had goes to the
+ * "last used" spot, so Q flips between the two most recent.
+ */
+export function drawWeapon(s: PlayerState, target: WeaponState): void {
+  if (target === s.weapon) return
+  const [now, prev] = switchWeapons(s.weapon, target)
+  if (s.pocket === target) s.pocket = s.holstered
+  s.holstered = prev
+  s.weapon = now
 }
 
 export function clonePlayerState(s: PlayerState): PlayerState {
@@ -108,6 +132,7 @@ export function clonePlayerState(s: PlayerState): PlayerState {
     vel: { ...s.vel },
     weapon: { ...s.weapon },
     holstered: s.holstered ? { ...s.holstered } : null,
+    pocket: s.pocket ? { ...s.pocket } : null,
   }
 }
 
@@ -535,13 +560,19 @@ export function stepPlayer(
   }
 
   // --- Weapon: switch first, then fire — after movement, so shots leave from where you are ---
-  const isPrimary = state.weapon.id !== WeaponId.Handgun
-  const wantSwitch =
-    hasButton(pressed, Button.SwapWeapon) ||
-    (hasButton(pressed, Button.Slot1) && !isPrimary) ||
-    (hasButton(pressed, Button.Slot2) && isPrimary)
-  if (wantSwitch && state.holstered) {
-    ;[state.weapon, state.holstered] = switchWeapons(state.weapon, state.holstered)
+  // 1 = main gun, 2 = handgun, 3 = knife, Q / wheel = the last one you had.
+  const items = carried(state)
+  const target = hasButton(pressed, Button.Slot1)
+    ? items.find((w) => w.id !== WeaponId.Handgun && w.id !== WeaponId.Knife)
+    : hasButton(pressed, Button.Slot2)
+      ? items.find((w) => w.id === WeaponId.Handgun)
+      : hasButton(pressed, Button.Slot3)
+        ? items.find((w) => w.id === WeaponId.Knife)
+        : hasButton(pressed, Button.SwapWeapon)
+          ? (state.holstered ?? undefined)
+          : undefined
+  if (target && target !== state.weapon) {
+    drawWeapon(state, target)
     events.switched = true
   }
   events.weapon = stepWeapon(state.weapon, buttons, pressed, dt, {
@@ -558,16 +589,37 @@ export function stepPlayer(
     events.shot = {
       origin: { x: state.pos.x, y: state.pos.y + eyeHeight(state, c), z: state.pos.z },
       dir,
-      pellets: pelletDirections(
-        dir,
-        shot.pelletSpread,
-        WEAPONS[w.id].pellets ?? 1,
-        w.spreadSeed,
-        shot.shotIndex,
-      ),
+      pellets:
+        WEAPONS[w.id].fireMode === 'melee'
+          ? meleeFan(state.yaw + shot.yawOffset, state.pitch + shot.pitchOffset)
+          : pelletDirections(
+              dir,
+              shot.pelletSpread,
+              WEAPONS[w.id].pellets ?? 1,
+              w.spreadSeed,
+              shot.shotIndex,
+            ),
       shotIndex: shot.shotIndex,
     }
   }
 
   return events
+}
+
+/**
+ * A knife swing covers a small fan, not a line: the centre first (it wins ties), then a little
+ * to each side and up/down, so you don't need pixel-perfect aim up close.
+ */
+function meleeFan(yaw: number, pitch: number): MutVec3[] {
+  const out: MutVec3[] = []
+  for (const [dy, dp] of [
+    [0, 0],
+    [-0.14, 0],
+    [0.14, 0],
+    [0, 0.12],
+    [0, -0.12],
+  ] as const) {
+    out.push(viewDirection(yaw + dy, pitch + dp))
+  }
+  return out
 }

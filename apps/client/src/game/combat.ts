@@ -1,5 +1,6 @@
 import {
   aimProgress,
+  carried,
   currentSpread,
   HitZone,
   type JingleId,
@@ -88,6 +89,10 @@ export class ClientCombat {
   /** A shot we just predicted: show it right away. */
   onLocalShot(shot: ShotEvent, weaponId: WeaponId, aiming: boolean): void {
     const weapon = WEAPONS[weaponId]
+    if (weapon.fireMode === 'melee') {
+      this.localSwing(shot, weapon.range)
+      return
+    }
     // Scoped, the gun is hidden: the tracer starts just below the eye instead of the muzzle.
     const { origin } = shot
     const muzzle = this.d.viewmodel.scoped
@@ -114,6 +119,27 @@ export class ClientCombat {
     if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
     if (weapon.fireMode === 'pump') this.d.audio.play('pump', { volume: 0.7, delay: 0.3 })
     this.ejectCasing()
+  }
+
+  /** A knife swing: swish, and a predicted stab + blood if it touches someone we see. */
+  private localSwing(shot: ShotEvent, range: number): void {
+    this.d.viewmodel.onShot()
+    this.d.audio.play('swish', { volume: 0.7 })
+    let best: { distance: number; dir: { x: number; y: number; z: number } } | null = null
+    for (const dir of shot.pellets) {
+      for (const pose of this.d.remotes.visiblePoses().values()) {
+        const hit = raycastPose(shot.origin, dir, best?.distance ?? range, pose)
+        if (hit) best = { distance: hit.distance, dir }
+      }
+    }
+    if (!best) return
+    const { origin } = shot
+    const at = new THREE.Vector3(origin.x, origin.y, origin.z).addScaledVector(
+      new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z),
+      best.distance,
+    )
+    this.d.audio.play('stab', { volume: 0.8 })
+    this.d.effects.bleed(at, new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z), false)
   }
 
   /** Draws one predicted bullet/pellet: tracer to the first wall or visible player. */
@@ -219,6 +245,16 @@ export class ClientCombat {
       case ServerMsg.ShotFired: {
         const from = this.d.remotes.muzzleOf(msg.shooterId)
         if (!from) break
+        if (msg.weapon === WeaponId.Knife) {
+          // Someone else's knife: the swing, and the stab if it connected. No tracer.
+          this.d.audio.playNear('swish', from, 0.7, 15)
+          if (msg.result === ShotResult.Player) {
+            const at = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
+            this.d.audio.playNear('stab', at, 0.8, 20)
+            this.d.effects.bleed(at, at.clone().sub(from).normalize(), false)
+          }
+          break
+        }
         const kind =
           msg.result === ShotResult.Player
             ? 'player'
@@ -342,7 +378,7 @@ export class ClientCombat {
     this.selfPos.z = state.pos.z
     const w = state.weapon
     this.d.viewmodel.update(dt, look.delta, bob, w, state.alive)
-    this.d.hud.setWeapon(w, state.holstered)
+    this.d.hud.setWeapon(carried(state))
     this.d.hud.setSpread(
       currentSpread(w, {
         sprinting: false,

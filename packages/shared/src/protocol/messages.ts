@@ -196,6 +196,8 @@ function writePlayerState(w: BinaryWriter, s: PlayerState): void {
   writeWeapon(w, s.weapon)
   w.u8(s.holstered ? 1 : 0)
   if (s.holstered) writeWeapon(w, s.holstered)
+  w.u8(s.pocket ? 1 : 0)
+  if (s.pocket) writeWeapon(w, s.pocket)
 }
 
 function writeWeapon(w: BinaryWriter, wp: WeaponState): void {
@@ -239,6 +241,7 @@ function readPlayerState(r: BinaryReader): PlayerState {
   const prevButtons = r.u16()
   const weapon = readWeapon(r)
   const holstered = r.u8() ? readWeapon(r) : null
+  const pocket = r.u8() ? readWeapon(r) : null
   return {
     pos,
     vel,
@@ -253,6 +256,7 @@ function readPlayerState(r: BinaryReader): PlayerState {
     alive: (flags & FLAG_DEAD) === 0,
     weapon,
     holstered,
+    pocket,
   }
 }
 

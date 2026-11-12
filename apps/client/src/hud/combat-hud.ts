@@ -108,38 +108,41 @@ export class CombatHud {
     this.vignette.style.opacity = String(h <= 0 ? 0 : Math.max(0, (50 - h) / 50))
   }
 
-  setWeapon(w: WeaponState, holstered: WeaponState | null): void {
+  /** @param carried everything you carry, the one in hand first */
+  setWeapon(carried: WeaponState[]): void {
+    const w = carried[0]
+    if (!w) return
     const def = WEAPONS[w.id]
-    // "1 RIFLE · 2 HANDGUN" with the one in hand highlighted; "1 —" when the slot is empty.
-    const primary = w.id === WeaponId.Handgun ? holstered : w
+    // "1 RIFLE · 2 HANDGUN · 3 KNIFE" with the one in hand highlighted; "1 —" when empty.
+    const primary = carried.find((x) => x.id !== WeaponId.Handgun && x.id !== WeaponId.Knife)
     const slotKey = `${primary?.id ?? '-'}${w.id}`
     if (this.slots.dataset.text !== slotKey) {
       this.slots.dataset.text = slotKey
       this.slots.innerHTML = ''
       const rows: [string, string, boolean][] = [
-        [
-          '1',
-          primary ? WEAPONS[primary.id].name.toUpperCase() : '—',
-          primary !== null && primary === w,
-        ],
+        ['1', primary ? WEAPONS[primary.id].name.toUpperCase() : '—', primary === w],
         ['2', 'HANDGUN', w.id === WeaponId.Handgun],
+        ['3', 'KNIFE', w.id === WeaponId.Knife],
       ]
       for (const [slot, name, active] of rows) {
         el('span', active ? 'slot active' : 'slot', this.slots).textContent = `${slot} ${name}`
       }
     }
-    setText(this.ammoCount, String(w.ammo))
-    setText(this.ammoReserve, ` / ${w.reserve}`)
-    this.ammo.classList.toggle('empty', w.ammo === 0)
+    const melee = def.fireMode === 'melee'
+    setText(this.ammoCount, melee ? '—' : String(w.ammo))
+    setText(this.ammoReserve, melee ? '' : ` / ${w.reserve}`)
+    this.ammo.classList.toggle('empty', !melee && w.ammo === 0)
     setText(
       this.ammoNote,
-      w.reload > 0
-        ? 'RELOADING'
-        : w.ammo === 0 && w.reserve === 0
-          ? 'NO AMMO'
-          : w.ammo <= Math.ceil(def.magSize / 4)
-            ? 'R TO RELOAD'
-            : def.name.toUpperCase(),
+      melee
+        ? def.name.toUpperCase()
+        : w.reload > 0
+          ? 'RELOADING'
+          : w.ammo === 0 && w.reserve === 0
+            ? 'NO AMMO'
+            : w.ammo <= Math.ceil(def.magSize / 4)
+              ? 'R TO RELOAD'
+              : def.name.toUpperCase(),
     )
   }
 

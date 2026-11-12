@@ -14,6 +14,7 @@ import {
   type ServerMessage,
   ServerMsg,
   TICK_RATE,
+  WEAPONS,
   WeaponId,
 } from '@office-fps/shared'
 import { Game, MAX_HEALTH } from './game.ts'
@@ -91,7 +92,12 @@ function duel(): Setup {
 const idle = (seq: number) => ({ seq, buttons: 0, yaw: 0, pitch: 0, viewTick: 0 })
 
 /** Aims from the shooter's eye at a point and clicks once (aiming down sights = tight spread). */
-function shootAt(s: Setup, target: { x: number; y: number; z: number }, viewTick?: number) {
+function shootAt(
+  s: Setup,
+  target: { x: number; y: number; z: number },
+  viewTick?: number,
+  victimYaw = 0,
+) {
   const p = s.game.players.get(s.shooter)
   if (!p) throw new Error('no shooter')
   const eyeHeight = p.body.config.standEyeHeight
@@ -106,13 +112,13 @@ function shootAt(s: Setup, target: { x: number; y: number; z: number }, viewTick
   s.game.handleInput(s.shooter, [
     { seq: s.seq.n++, buttons: Button.Fire | Button.Aim, yaw, pitch, viewTick: vt },
   ])
-  s.game.handleInput(s.victim, [idle(s.seq.n)])
+  s.game.handleInput(s.victim, [{ ...idle(s.seq.n), yaw: victimYaw }])
   s.game.step()
   for (let t = 0; t < 10; t++) {
     s.game.handleInput(s.shooter, [
       { seq: s.seq.n++, buttons: Button.Aim, yaw, pitch, viewTick: vt },
     ])
-    s.game.handleInput(s.victim, [idle(s.seq.n)])
+    s.game.handleInput(s.victim, [{ ...idle(s.seq.n), yaw: victimYaw }])
     s.game.step()
   }
 }
@@ -443,5 +449,59 @@ describe('spawn loadout', () => {
     const victim = s.game.players.get(s.victim)
     expect(victim?.state.weapon.id).toBe(WeaponId.Handgun)
     expect(victim?.state.holstered).toBeNull()
+  })
+})
+
+describe('knife', () => {
+  /** Duel with the shooter's knife drawn, the victim `distance` m away facing `victimYaw`. */
+  function knifeDuel(distance: number, victimYaw: number) {
+    const s = duel()
+    const pa = s.game.players.get(s.shooter)
+    const pb = s.game.players.get(s.victim)
+    if (!pa || !pb) throw new Error('setup')
+    pb.state.pos = { x: 0, y: 0, z: -distance }
+    pb.state.yaw = victimYaw
+    // 3 = knife.
+    s.game.handleInput(s.shooter, [
+      { seq: s.seq.n++, buttons: Button.Slot3, yaw: 0, pitch: 0, viewTick: s.game.tick },
+    ])
+    s.game.handleInput(s.victim, [{ ...idle(s.seq.n), yaw: victimYaw }])
+    s.game.step()
+    for (let t = 0; t < TICK_RATE; t++) {
+      s.game.handleInput(s.shooter, [idle(s.seq.n)])
+      s.game.handleInput(s.victim, [{ ...idle(s.seq.n), yaw: victimYaw }])
+      s.seq.n++
+      s.game.step()
+    }
+    expect(pa.state.weapon.id).toBe(WeaponId.Knife)
+    return s
+  }
+  const chest = (z: number) => ({ x: 0, y: 1.3, z })
+
+  test('two slashes from the front kill', () => {
+    const s = knifeDuel(1.5, Math.PI) // facing the attacker
+    shootAt(s, chest(-1.5), undefined, Math.PI)
+    expect(health(s)).toBe(MAX_HEALTH - WEAPONS[WeaponId.Knife].damage)
+    // Let the swing cool down (both players keep sending input; the sim is client-paced).
+    for (let t = 0; t < 30; t++) {
+      s.game.handleInput(s.shooter, [idle(s.seq.n)])
+      s.game.handleInput(s.victim, [{ ...idle(s.seq.n), yaw: Math.PI }])
+      s.seq.n++
+      s.game.step()
+    }
+    shootAt(s, chest(-1.5), undefined, Math.PI)
+    expect(health(s)).toBe(0)
+  })
+
+  test('a backstab kills in one', () => {
+    const s = knifeDuel(1.5, 0) // back turned to the attacker
+    shootAt(s, chest(-1.5))
+    expect(health(s)).toBe(0)
+  })
+
+  test('out of reach does nothing', () => {
+    const s = knifeDuel(4, Math.PI)
+    shootAt(s, chest(-4), undefined, Math.PI)
+    expect(health(s)).toBe(MAX_HEALTH)
   })
 })

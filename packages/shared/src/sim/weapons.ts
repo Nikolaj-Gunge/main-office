@@ -4,6 +4,8 @@ export const WeaponId = {
   Rifle: 1,
   Sniper: 2,
   Shotgun: 3,
+  /** Everyone always carries one (slot 3). */
+  Knife: 4,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
@@ -20,9 +22,9 @@ export interface WeaponDef {
   name: string
   /**
    * semi: one shot per click · auto: hold to fire · bolt: one shot, then cycle the bolt ·
-   * pump: one shot, then rack the pump.
+   * pump: one shot, then rack the pump · melee: a swing (no ammo, short reach).
    */
-  fireMode: 'semi' | 'auto' | 'bolt' | 'pump'
+  fireMode: 'semi' | 'auto' | 'bolt' | 'pump' | 'melee'
   /** Seconds between shots. */
   fireInterval: number
   magSize: number
@@ -232,6 +234,42 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     pellets: 8,
     pelletHeadMultiplier: 2.5,
   },
+  [WeaponId.Knife]: {
+    id: WeaponId.Knife,
+    name: 'Knife',
+    fireMode: 'melee',
+    fireInterval: 0.5,
+    magSize: 0,
+    reserve: 0,
+    reloadTime: 0,
+    emptyReloadTime: 0,
+    drawTime: 0.3,
+    // Two slashes from the front; from behind (a backstab) it's one.
+    damage: 55,
+    falloffStart: 100,
+    falloffEnd: 101,
+    minDamage: 55,
+    range: 2.1,
+    hipSpread: 0,
+    aimSpread: 0,
+    moveSpread: 0,
+    airSpread: 0,
+    sprintToFire: 0,
+    adsTime: 0,
+    aimZoom: 1,
+    scoped: false,
+    scopeSway: 0,
+    // Knife out = you run a little faster.
+    moveSpeedFactor: 1.1,
+    kickPitch: 0.6,
+    kickYaw: 0.4,
+    recoverTime: 0.2,
+  },
+}
+
+/** Is this a melee weapon (no ammo, short reach, swings)? */
+export function isMelee(id: WeaponId): boolean {
+  return WEAPONS[id].fireMode === 'melee'
 }
 
 /** Damage before hit-zone multipliers, after distance falloff. */

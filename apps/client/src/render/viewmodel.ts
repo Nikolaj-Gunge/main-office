@@ -42,6 +42,8 @@ interface GunModel {
   kick: number
   /** Shotgun: the pump grip, racked back and forward after each shot. */
   pump?: THREE.Object3D
+  /** Knife: swings instead of kicking, no muzzle flash. */
+  melee?: boolean
 }
 
 function marker(x: number, y: number, z: number): THREE.Object3D {
@@ -176,6 +178,30 @@ function shotgun(): GunModel {
   }
 }
 
+function knife(): GunModel {
+  const group = new THREE.Group()
+  group.add(
+    box(0.03, 0.035, 0.11, 0x1c1c20, 0, 0, 0.02), // handle
+    box(0.06, 0.012, 0.016, STEEL, 0, 0, -0.04), // guard
+    box(0.008, 0.032, 0.17, 0xc9ccd2, 0, 0.004, -0.13), // blade
+    box(0.006, 0.012, 0.05, 0xe8eaee, 0, 0.022, -0.19), // edge highlight near the tip
+    box(0.05, 0.06, 0.07, SKIN, 0.005, -0.01, 0.03), // hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.02, -0.03, 0.2), // forearm
+  )
+  const muzzle = marker(0, 0, -0.22)
+  const ejectPort = marker(0, 0, 0)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.17, -0.17, -0.36),
+    ads: new THREE.Vector3(0.17, -0.17, -0.36),
+    kick: 0.3,
+    melee: true,
+  }
+}
+
 function makeFlashTexture(): THREE.CanvasTexture {
   const size = 16
   const canvas = document.createElement('canvas')
@@ -213,6 +239,7 @@ export class Viewmodel {
     [WeaponId.Rifle]: rifle(),
     [WeaponId.Sniper]: sniper(),
     [WeaponId.Shotgun]: shotgun(),
+    [WeaponId.Knife]: knife(),
   }
   private active: GunModel
   private readonly flash: THREE.Mesh
@@ -280,6 +307,7 @@ export class Viewmodel {
     const k = this.active.kick
     this.kickBack.impulse(0.9 * k)
     this.kickUp.impulse(9 * k)
+    if (this.active.melee) return // a swing: no muzzle flash
     this.flashTime = 0.065
     this.flash.rotation.z = Math.random() * Math.PI
   }
@@ -322,6 +350,12 @@ export class Viewmodel {
         ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)
         : 0
 
+    // Knife: a quick slash right-to-left across the view after each swing.
+    const swing =
+      this.active.melee && weapon.cooldown > 0
+        ? Math.sin(Math.min(1, (1 - weapon.cooldown / def.fireInterval) * 2.2) * Math.PI)
+        : 0
+
     // Pump: rack back and forward in the middle of the cooldown (ka-chunk).
     if (this.active.pump) {
       const t = weapon.cooldown > 0 ? 1 - weapon.cooldown / def.fireInterval : 1
@@ -338,15 +372,21 @@ export class Viewmodel {
       .add(
         new THREE.Vector3(
           this.swayX.value * 0.02 + bobX,
-          this.swayY.value * 0.02 + bobY - reloadDip * 0.08 - drawT * 0.18 - boltT * 0.03,
+          this.swayY.value * 0.02 +
+            bobY -
+            reloadDip * 0.08 -
+            drawT * 0.18 -
+            boltT * 0.03 +
+            swing * 0.05,
           this.kickBack.value * 0.06 * (1 - this.aim * 0.5),
         ),
       )
     m.group.rotation.set(
       this.kickUp.value * 0.02 - reloadDip * 0.5 - drawT * 0.8,
       this.swayX.value * 0.03,
-      reloadDip * 0.6 + boltT * 0.35,
+      reloadDip * 0.6 + boltT * 0.35 + swing * 1.1,
     )
+    if (swing > 0) m.group.position.x -= swing * 0.14
 
     this.flashTime -= dt
     const flashing = this.flashTime > 0

@@ -24,6 +24,7 @@ export const ACTIONS = [
   { id: 'reload', label: 'Reload', button: Button.Reload, defaults: ['KeyR'] },
   { id: 'primary', label: 'Primary weapon', button: Button.Slot1, defaults: ['Digit1'] },
   { id: 'secondary', label: 'Handgun', button: Button.Slot2, defaults: ['Digit2'] },
+  { id: 'knife', label: 'Knife', button: Button.Slot3, defaults: ['Digit3'] },
   { id: 'swap', label: 'Switch weapon', button: Button.SwapWeapon, defaults: ['KeyQ', 'Wheel'] },
   { id: 'use', label: 'Swap for weapon on floor', button: Button.Use, defaults: ['KeyE'] },
   { id: 'scoreboard', label: 'Scoreboard (hold)', button: 0, defaults: ['Tab'] },
