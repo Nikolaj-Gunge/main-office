@@ -257,7 +257,10 @@ export function buildCampus(): MapDef {
   finish(A.x0, A.z0, ATRIUM.x0, A.z1, 'carpet')
   finish(ATRIUM.x0, A.z0, ATRIUM.x1, A.z1, 'tile')
   finish(ATRIUM.x1, A.z0, A.x1, A.z1, 'carpet')
-  finish(A.x0, A.z0, A.x1, A.z1, 'carpet', UP)
+  // Upper floor carpet, around the atrium void (not across it).
+  finish(A.x0, A.z0, ATRIUM.x0, A.z1, 'carpet', UP)
+  finish(ATRIUM.x0, A.z0, ATRIUM.x1, ATRIUM.z, 'carpet', UP)
+  finish(ATRIUM.x1, A.z0, A.x1, A.z1, 'carpet', UP)
   // Upper slab with the atrium void (x -18..-2, z -28..-15).
   m.span([A.x0, UP - SLAB, A.z0], [ATRIUM.x0, UP, A.z1], 'concrete')
   m.span([ATRIUM.x0, UP - SLAB, A.z0], [ATRIUM.x1, UP, ATRIUM.z], 'concrete')
