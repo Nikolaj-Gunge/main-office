@@ -29,28 +29,28 @@ interface Skill {
 
 const SKILLS: Record<BotSkill, Skill> = {
   easy: {
-    reaction: 0.7,
-    turnRate: Math.PI * 1.2,
-    aimError: 0.12,
-    fireCone: 0.08,
+    reaction: 1.1,
+    turnRate: Math.PI * 0.8,
+    aimError: 0.2,
+    fireCone: 0.09,
     headshotChance: 0,
-    sight: 35,
+    sight: 28,
   },
   normal: {
-    reaction: 0.4,
-    turnRate: Math.PI * 2.2,
-    aimError: 0.07,
-    fireCone: 0.05,
-    headshotChance: 0.15,
-    sight: 55,
+    reaction: 0.7,
+    turnRate: Math.PI * 1.4,
+    aimError: 0.12,
+    fireCone: 0.06,
+    headshotChance: 0.05,
+    sight: 42,
   },
   hard: {
-    reaction: 0.22,
-    turnRate: Math.PI * 4,
-    aimError: 0.035,
-    fireCone: 0.03,
-    headshotChance: 0.35,
-    sight: 80,
+    reaction: 0.4,
+    turnRate: Math.PI * 2.4,
+    aimError: 0.07,
+    fireCone: 0.04,
+    headshotChance: 0.15,
+    sight: 60,
   },
 }
 
@@ -162,7 +162,7 @@ export class BotBrain {
     if (enemy) {
       this.targetSeenFor += dt
       // Aim error shrinks while tracking (it "settles" on you).
-      const settle = Math.exp(-dt * 1.5)
+      const settle = Math.exp(-dt * 0.9)
       this.errYaw *= settle
       this.errPitch *= settle
       const aimY = enemy.pos.y + (this.aimHead ? HEAD : CHEST)

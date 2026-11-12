@@ -210,16 +210,16 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reloadTime: 2.6,
     emptyReloadTime: 3.1,
     drawTime: 0.6,
-    // Per pellet: 8 × 14 = 112 if every pellet lands in the chest up close — one shot at
-    // point blank, a few at mid range, useless far away.
-    damage: 14,
-    falloffStart: 6,
-    falloffEnd: 20,
-    minDamage: 3,
+    // Per pellet: 8 × 20 = 160 up close, so a body shot is a one-shot kill out to ~5 m even
+    // if a few pellets miss or land on a limb; from there it drops steadily to almost nothing.
+    damage: 20,
+    falloffStart: 5,
+    falloffEnd: 22,
+    minDamage: 2,
     range: 80,
     // The pellet cone (degrees): aiming tightens it a little, it never becomes a rifle.
-    hipSpread: 4.5,
-    aimSpread: 3.2,
+    hipSpread: 3.8,
+    aimSpread: 2.8,
     moveSpread: 0.8,
     airSpread: 1.5,
     sprintToFire: 0.25,

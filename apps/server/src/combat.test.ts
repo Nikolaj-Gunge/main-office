@@ -407,6 +407,19 @@ describe('shotgun', () => {
     expect(health(s)).toBe(0)
   })
 
+  test('still a one-shot kill at 5 m', () => {
+    const s = shotgunDuel(5)
+    shootAt(s, { x: 0, y: 1.25, z: -5 })
+    expect(health(s)).toBe(0)
+  })
+
+  test('damage drops with distance: 12 m hurts, but no longer kills', () => {
+    const s = shotgunDuel(12)
+    shootAt(s, { x: 0, y: 1.25, z: -12 })
+    expect(health(s)).toBeGreaterThan(0)
+    expect(health(s)).toBeLessThan(80)
+  })
+
   test('far away the pellets barely hurt', () => {
     const s = shotgunDuel(30)
     shootAt(s, { x: 0, y: 1.25, z: -30 })
