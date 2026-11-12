@@ -40,6 +40,7 @@ import { LocalPlayer } from './game/local-player.ts'
 import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
+import { Spectator } from './game/spectator.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
@@ -435,6 +436,18 @@ function syncCoop(next: MatchInfo) {
   hud.outText = next.mode === 'zombies' ? 'Back at the next checkpoint' : 'Out until the next round'
 }
 const objective = new ObjectiveMarker(hudRoot)
+// Dead with teammates still up: follow one of them (click for the next, right-click back).
+const spectator = new Spectator(hudRoot)
+const viewRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
+window.addEventListener('mousedown', (e) => {
+  if (spectator.active) spectator.cycle(e.button === 2 ? -1 : 1)
+})
+/** Teammates you can watch: same team, in a mode that has teams (zombies: the survivors). */
+function teammates(): number[] {
+  const team = myTeam()
+  if (!match || team === 0) return []
+  return match.players.filter((p) => p.team === team && p.id !== net.playerId).map((p) => p.id)
+}
 /** What the co-op waypoint says over the goal. */
 function waypointText(goal: CoopGoal): string {
   if (goal.kind === 'hold') return 'HOLD'
@@ -645,6 +658,22 @@ pixels.renderer.setAnimationLoop(() => {
     camera.rotation.z += s.roll
   }
   if (!player.state.alive) recoil.reset()
+  if (!noclip && joined) {
+    spectator.update(
+      dt,
+      player.state.alive,
+      teammates(),
+      remotes.visiblePoses(),
+      camera,
+      (from, dir, max) => {
+        viewRay.origin = from
+        viewRay.dir = dir
+        const hit = physics.world.castRay(viewRay, max, true, undefined, PLAYER_QUERY_GROUPS)
+        return hit ? hit.timeOfImpact : max
+      },
+      (id) => roster.get(id)?.name ?? remotes.nameOf(id) ?? `Player ${id}`,
+    )
+  }
 
   // Aiming down sights zooms the view; sensitivity follows so aim speed feels the same.
   const zoom = 1 + (WEAPONS[player.state.weapon.id].aimZoom - 1) * viewmodel.aimProgress

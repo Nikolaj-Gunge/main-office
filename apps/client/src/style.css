@@ -324,6 +324,32 @@ body {
   opacity: 0.75;
 }
 
+/* Spectating a teammate: their name up top, the death message out of the way at the bottom. */
+.hud-spectate {
+  position: absolute;
+  top: 14%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 18px;
+  letter-spacing: 1px;
+  color: #8fd3ff;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.6);
+}
+
+.spectating .hud-death {
+  top: auto;
+  bottom: 14%;
+}
+
+.spectating .hud-death-text {
+  font-size: 18px;
+}
+
+.spectating .hud-death-tip {
+  display: none;
+}
+
 .hud-prompt {
   position: absolute;
   top: calc(50% + 48px);
