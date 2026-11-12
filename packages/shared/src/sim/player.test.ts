@@ -214,6 +214,65 @@ describe('obstacles', () => {
     expect(state.pos.y).toBeLessThan(0.1)
   })
 
+  test('crouch-jump (crouch in the air) clears a 1.25 m ledge', () => {
+    const { state, body } = setup(ahead(1.25))
+    // Jump at tick 10, pull the legs up from tick 16 (shortly after leaving the ground).
+    run(
+      state,
+      body,
+      seconds(2),
+      (t) => Button.Forward | (t === 10 ? Button.Jump : 0) | (t >= 16 ? Button.Crouch : 0),
+    )
+    expect(state.pos.y).toBeCloseTo(1.25, 1)
+  })
+
+  test('cannot crouch-jump onto 1.6 m', () => {
+    const { state, body } = setup(ahead(1.6))
+    run(
+      state,
+      body,
+      seconds(2),
+      (t) => Button.Forward | (t === 10 ? Button.Jump : 0) | (t >= 16 ? Button.Crouch : 0),
+    )
+    expect(state.pos.y).toBeLessThan(0.1)
+  })
+
+  test('crouching in the air keeps the eye nearly still (no camera pop)', () => {
+    const { state, body } = setup()
+    run(state, body, 1, Button.Jump)
+    run(state, body, 8, 0)
+    const eye = (s: PlayerState) =>
+      s.pos.y +
+      DEFAULT_MOVEMENT.standEyeHeight +
+      (DEFAULT_MOVEMENT.crouchEyeHeight - DEFAULT_MOVEMENT.standEyeHeight) * s.crouchAmount
+    const before = eye(state)
+    const vy = state.vel.y
+    run(state, body, 1, Button.Crouch)
+    // Gravity moves the eye by ~vy·dt this tick; the crouch itself adds no more than a few cm.
+    expect(Math.abs(eye(state) - before - vy * TICK_DT)).toBeLessThan(0.08)
+  })
+
+  test('walking up a ramp is smooth: height only ever goes up, in small steps', () => {
+    let top = 0
+    const { state, body } = setup((m) => {
+      top = m.ramp(0, 0, -1, 3, 4.5, 15.5)
+      m.span([-1.5, 0, -5.5], [1.5, top, -15], 'platform')
+    })
+    let last = state.pos.y
+    const drops: string[] = []
+    let biggestRise = 0
+    run(state, body, seconds(2.5), Button.Forward, (s) => {
+      const onRamp = s.pos.z > -5.4 // the platform after it has sub-mm contact jitter
+      if (onRamp && s.pos.y < last - 1e-3)
+        drops.push(`z ${s.pos.z.toFixed(2)}: ${(s.pos.y - last).toFixed(4)}`)
+      biggestRise = Math.max(biggestRise, s.pos.y - last)
+      last = s.pos.y
+    })
+    expect(state.pos.y).toBeCloseTo(top, 1)
+    expect(drops).toEqual([])
+    expect(biggestRise).toBeLessThan(0.06) // ~ speed × dt × tan(15.5°), never a stair hop
+  })
+
   test('climbs stairs (0.25 rise / 0.3 run)', () => {
     const { state, body } = setup((m) => {
       for (let i = 1; i <= 8; i++)

@@ -124,6 +124,7 @@ export function movementFor(
     crouchHeight: base.crouchHeight * s,
     standEyeHeight: base.standEyeHeight * s,
     crouchEyeHeight: base.crouchEyeHeight * s,
+    crouchJumpLift: base.crouchJumpLift * s,
     // Tiny people still climb the stairs (0.25 m steps).
     stepHeight: Math.max(0.3, base.stepHeight * s),
     walkSpeed: base.walkSpeed * rules.speed,

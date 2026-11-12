@@ -211,6 +211,11 @@ export class PlayerBody {
     const wantH = Math.hypot(delta.x, delta.z)
     const plainH = Math.hypot(plain.moved.x, plain.moved.z)
     if (wantH < 1e-6 || plainH >= wantH * 0.98) return plain
+    // Slowed by a walkable slope (walking up a ramp), not by a wall: let the slope carry us.
+    // Stepping here would hop up onto the ramp ahead and drop back — a ramp that feels like stairs.
+    const walkable = Math.cos((this.config.maxSlopeDeg * Math.PI) / 180)
+    const wall = plain.normals.some((n) => n.y < walkable && n.y > -0.5)
+    if (!wall) return plain
 
     const rise = this.findStep(feet, delta.x / wantH, delta.z / wantH)
     if (rise === null) return plain
@@ -386,13 +391,30 @@ export function stepPlayer(
   body.setHeight(state.crouched ? c.crouchHeight : c.standHeight)
 
   // --- Crouch: shrink instantly, stand up only when there's head room ----------------------
+  // In mid-air, crouching pulls the feet up instead of lowering the head (CS crouch-jump), so a
+  // crouch-jump clears higher ledges; the eye moves with the head, so the view barely changes.
   const wantCrouch = hasButton(buttons, Button.Crouch)
+  const tuck = state.grounded ? 0 : Math.min(c.crouchJumpLift, c.standHeight - c.crouchHeight)
+  const eyeRange = Math.max(1e-6, c.standEyeHeight - c.crouchEyeHeight)
   if (wantCrouch && !state.crouched) {
     state.crouched = true
     body.setHeight(c.crouchHeight)
-  } else if (!wantCrouch && state.crouched && body.fits(state.pos, c.standHeight)) {
-    state.crouched = false
-    body.setHeight(c.standHeight)
+    if (tuck > 0 && body.fits({ ...state.pos, y: state.pos.y + tuck }, c.crouchHeight)) {
+      state.pos.y += tuck
+      state.crouchAmount = Math.min(1, state.crouchAmount + tuck / eyeRange)
+    }
+  } else if (!wantCrouch && state.crouched) {
+    const lowered = { ...state.pos, y: state.pos.y - tuck }
+    if (tuck > 0 && body.fits(lowered, c.standHeight)) {
+      // Legs back down in the air.
+      state.pos.y = lowered.y
+      state.crouchAmount = Math.max(0, state.crouchAmount - tuck / eyeRange)
+      state.crouched = false
+      body.setHeight(c.standHeight)
+    } else if (body.fits(state.pos, c.standHeight)) {
+      state.crouched = false
+      body.setHeight(c.standHeight)
+    }
   }
   const crouchTarget = state.crouched ? 1 : 0
   const crouchStep = c.crouchTransitionSpeed * dt

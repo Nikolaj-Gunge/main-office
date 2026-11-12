@@ -6,6 +6,7 @@ import rapierWasm from './rapier.wasm'
 globalThis.__RAPIER_WASM__ = rapierWasm
 
 export { GameRoom } from './room.ts'
+export { Settings } from './settings.ts'
 
 /**
  * Static client files (game and admin page) are served by Workers Assets before this runs (free,

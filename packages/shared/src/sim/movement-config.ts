@@ -11,6 +11,11 @@ export interface MovementConfig {
   crouchEyeHeight: number
   /** Eye height transition speed (fraction of the full crouch per second). */
   crouchTransitionSpeed: number
+  /**
+   * Crouching in mid-air pulls your feet up this far (CS crouch-jump): a jump clears ~1 m, a
+   * crouch-jump ~1.4 m — enough for 1.25 m ledges and crates.
+   */
+  crouchJumpLift: number
 
   walkSpeed: number
   sprintMultiplier: number
@@ -41,6 +46,7 @@ export const DEFAULT_MOVEMENT: MovementConfig = {
   standEyeHeight: 1.65,
   crouchEyeHeight: 1.1,
   crouchTransitionSpeed: 7,
+  crouchJumpLift: 0.45,
 
   walkSpeed: 5.2,
   sprintMultiplier: 1.35,

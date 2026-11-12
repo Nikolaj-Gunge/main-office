@@ -38,12 +38,21 @@ export class GameRoom extends DurableObject {
       const map = loadMap(DEFAULT_MAP_ID)
       this.game = new Game(map, createPhysicsWorld(map))
       this.loop = new GameLoop(TICK_RATE, () => this.tick())
+      // Rules live in the Settings object, so they survive this room being evicted while the
+      // office is empty, deploys, and updates that start a new room.
+      const settings = env.SETTINGS.get(env.SETTINGS.idFromName('office'))
       this.admin = new AdminApi(this.game, {
         password: env.ADMIN_PASSWORD,
-        // Rules survive the room being evicted while the office is empty, and deploys.
-        onRulesChanged: (rules) => void ctx.storage.put('rules', rules),
+        onRulesChanged: (rules) =>
+          void settings.fetch('https://settings/rules', {
+            method: 'PUT',
+            body: JSON.stringify(rules),
+          }),
       })
-      const saved = await ctx.storage.get('rules')
+      const saved = await settings
+        .fetch('https://settings/rules')
+        .then((r) => r.json())
+        .catch(() => null)
       if (saved) this.admin.apply(mergeRules(DEFAULT_RULES, saved))
       console.log(`[room] map "${this.game.mapId}" ready, ${this.game.spawnPointCount} spawn spots`)
     })
