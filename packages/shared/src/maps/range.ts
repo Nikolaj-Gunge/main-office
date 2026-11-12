@@ -63,6 +63,17 @@ export function buildRange(): MapDef {
     m.light({ kind: 'point', pos: [0, H - 0.6, z], color: 0xfff1dc, intensity: 18, distance: 18 })
   }
 
+  // Every gun on the floor in the spawn area, back 2 s after it's taken (walk over one with an
+  // empty slot, or press E to swap). Full ammo each time.
+  const RIFLE = 1
+  const SNIPER = 2
+  const SHOTGUN = 3
+  m.pickup(-4, 0, 3.4, RIFLE, 2)
+  m.pickup(-1.3, 0, 3.4, SHOTGUN, 2)
+  m.pickup(1.3, 0, 3.4, SNIPER, 2)
+  m.pickup(4, 0, 3.4, RIFLE, 2)
+  m.label(0, 0.6, 4.4, 'GUNS')
+
   m.spawn(0, 0, 3, 0)
   m.randomSpawnsIn([X0 + 1, 1.6], [X1 - 1, Z1 - 0.8]) // only behind the firing line
   return m.build()
