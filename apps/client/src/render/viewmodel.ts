@@ -38,12 +38,47 @@ interface GunModel {
   /** View-space position at the hip and when aiming down sights (sights on screen center). */
   hip: THREE.Vector3
   ads: THREE.Vector3
-  /** How hard each shot shoves the model back/up (visual only). */
-  kick: number
+  /** How each shot throws the model about (visual only). */
+  recoil: Recoil
+  /** Slide / charging handle that snaps back on each shot. */
+  action?: Action
+  /** Sniper: the bolt handle, worked back and forward between shots. */
+  bolt?: THREE.Object3D
   /** Shotgun: the pump grip, racked back and forward after each shot. */
   pump?: THREE.Object3D
   /** Knife: swings instead of kicking, no muzzle flash. */
   melee?: boolean
+}
+
+/**
+ * One shot's kick, as the peak of each motion. Springs carry it, so automatic fire stacks the
+ * kicks into a shake and a slow `recover` makes a heavy gun feel heavy.
+ */
+interface Recoil {
+  /** Shove towards the eye (m). */
+  back: number
+  /** Muzzle flip (radians). */
+  climb: number
+  /** Twist (radians), mostly clockwise. */
+  roll: number
+  /** Random left/right jerk (radians). */
+  side: number
+  /** Spring frequency (rad/s): how fast it settles. */
+  recover: number
+}
+
+interface Action {
+  part: THREE.Object3D
+  /** How far it travels back (m) and how long until it's home again (s). */
+  travel: number
+  time: number
+  rest: number
+  /** Pistol: stays back on an empty magazine. */
+  lockOpen?: boolean
+}
+
+function action(part: THREE.Object3D, travel: number, time: number, lockOpen = false): Action {
+  return { part, travel, time, rest: part.position.z, lockOpen }
 }
 
 function marker(x: number, y: number, z: number): THREE.Object3D {
@@ -56,12 +91,17 @@ function handgun(): GunModel {
   const group = new THREE.Group()
   const grip = box(0.028, 0.095, 0.042, FRAME, 0, -0.06, 0.05)
   grip.rotateX(0.18)
-  group.add(
-    box(0.032, 0.03, 0.19, STEEL, 0, 0.012, -0.02), // slide
-    box(0.03, 0.022, 0.16, FRAME, 0, -0.012, -0.005), // frame
-    grip,
+  // The slide carries the sights, so they blow back with it.
+  const slide = new THREE.Group()
+  slide.add(
+    box(0.032, 0.03, 0.19, STEEL, 0, 0.012, -0.02),
     box(0.006, 0.006, 0.006, SIGHT, 0, 0.03, -0.11), // front sight
     box(0.022, 0.006, 0.006, SIGHT, 0, 0.03, 0.065), // rear sight
+  )
+  group.add(
+    slide,
+    box(0.03, 0.022, 0.16, FRAME, 0, -0.012, -0.005), // frame
+    grip,
     box(0.045, 0.06, 0.06, SKIN, 0.004, -0.065, 0.055), // hand
     box(0.06, 0.07, 0.25, SLEEVE, 0.02, -0.09, 0.2), // forearm
   )
@@ -74,7 +114,9 @@ function handgun(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.15, -0.15, -0.38),
     ads: new THREE.Vector3(0, -0.071, -0.24),
-    kick: 1.8,
+    // Snappy flip, back on target quickly.
+    recoil: { back: 0.03, climb: 0.2, roll: 0.06, side: 0.03, recover: 20 },
+    action: action(slide, 0.035, 0.09, true),
   }
 }
 
@@ -84,8 +126,10 @@ function rifle(): GunModel {
   mag.rotateX(-0.25)
   const grip = box(0.028, 0.08, 0.04, FRAME, 0, -0.065, 0.08)
   grip.rotateX(0.3)
+  const handle = box(0.014, 0.014, 0.035, SIGHT, 0.03, 0.012, -0.02) // charging handle
   group.add(
     box(0.045, 0.06, 0.3, FRAME, 0, 0, 0), // receiver
+    handle,
     box(0.05, 0.05, 0.2, STEEL, 0, -0.005, -0.24), // handguard
     box(0.018, 0.018, 0.16, STEEL, 0, 0.005, -0.42), // barrel
     // Red-dot sight on a tall riser: you look through an open frame over the gun, so aiming
@@ -112,7 +156,8 @@ function rifle(): GunModel {
     hip: new THREE.Vector3(0.16, -0.16, -0.44),
     // The dot sits on screen centre, ~0.3 m in front of the eye; the gun itself stays low.
     ads: new THREE.Vector3(0, -RED_DOT_Y, -0.26),
-    kick: 0.7,
+    recoil: { back: 0.018, climb: 0.05, roll: 0.03, side: 0.02, recover: 20 },
+    action: action(handle, 0.03, 0.07),
   }
 }
 
@@ -141,7 +186,9 @@ function sniper(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.16, -0.17, -0.44),
     ads: new THREE.Vector3(0, -0.06, -0.12),
-    kick: 1.6,
+    // A big slow heave.
+    recoil: { back: 0.06, climb: 0.28, roll: 0.12, side: 0.03, recover: 11 },
+    bolt,
   }
 }
 
@@ -173,7 +220,8 @@ function shotgun(): GunModel {
     hip: new THREE.Vector3(0.16, -0.17, -0.44),
     // Bead sight on screen centre, gun held low and a little away from the eye.
     ads: new THREE.Vector3(0, -0.05, -0.2),
-    kick: 2.2,
+    // The hardest kick: a shove into the shoulder and a big flip.
+    recoil: { back: 0.075, climb: 0.32, roll: 0.1, side: 0.04, recover: 12 },
     pump,
   }
 }
@@ -184,8 +232,10 @@ function mp5(): GunModel {
   mag.rotateX(-0.35) // the MP5's curved magazine, raked forward
   const grip = box(0.026, 0.075, 0.035, FRAME, 0, -0.06, 0.07)
   grip.rotateX(0.3)
+  const handle = box(0.03, 0.01, 0.01, SIGHT, -0.03, 0.018, -0.15) // cocking lever, front left
   group.add(
     box(0.04, 0.055, 0.26, STEEL, 0, 0, -0.02), // receiver
+    handle,
     box(0.045, 0.045, 0.12, FRAME, 0, -0.01, -0.2), // handguard
     box(0.016, 0.016, 0.06, STEEL, 0, 0.005, -0.29), // barrel
     // Tall sights on posts: aiming, you look over the gun, not into it.
@@ -210,7 +260,9 @@ function mp5(): GunModel {
     hip: new THREE.Vector3(0.15, -0.15, -0.4),
     // Sight tips on screen centre, held well out and low so the gun stays out of the view.
     ads: new THREE.Vector3(0, -0.088, -0.3),
-    kick: 0.5,
+    // Light and fast: a buzz more than a kick.
+    recoil: { back: 0.012, climb: 0.03, roll: 0.02, side: 0.025, recover: 26 },
+    action: action(handle, 0.02, 0.05),
   }
 }
 
@@ -218,8 +270,10 @@ function lmg(): GunModel {
   const group = new THREE.Group()
   const grip = box(0.03, 0.08, 0.04, FRAME, 0, -0.07, 0.1)
   grip.rotateX(0.3)
+  const handle = box(0.016, 0.016, 0.04, SIGHT, -0.038, 0.01, -0.1) // charging handle, left
   group.add(
     box(0.06, 0.07, 0.34, FRAME, 0, 0, 0), // receiver
+    handle,
     box(0.05, 0.05, 0.24, STEEL, 0, 0, -0.28), // barrel shroud
     box(0.022, 0.022, 0.2, STEEL, 0, 0, -0.5), // barrel
     box(0.09, 0.09, 0.1, FRAME, 0.02, -0.08, -0.04), // ammo box
@@ -244,7 +298,9 @@ function lmg(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.17, -0.18, -0.46),
     ads: new THREE.Vector3(0, -0.108, -0.34),
-    kick: 0.9,
+    // Heavy: shudders side to side as the belt runs.
+    recoil: { back: 0.02, climb: 0.05, roll: 0.05, side: 0.04, recover: 16 },
+    action: action(handle, 0.035, 0.07),
   }
 }
 
@@ -267,7 +323,7 @@ function knife(): GunModel {
     ejectPort,
     hip: new THREE.Vector3(0.17, -0.17, -0.36),
     ads: new THREE.Vector3(0.17, -0.17, -0.36),
-    kick: 0.3,
+    recoil: { back: 0.01, climb: 0.03, roll: 0, side: 0, recover: 18 },
     melee: true,
   }
 }
@@ -323,9 +379,13 @@ export class Viewmodel {
   /** True while looking through a scope: the gun is hidden and the HUD draws the scope. */
   scoped = false
 
-  // Springs: kick back / up, sway (look lag), each with its own snappiness.
+  // Springs: kick back / up / twist / sideways, sway (look lag), each with its own snappiness.
   private readonly kickBack = new Spring(18)
   private readonly kickUp = new Spring(16)
+  private readonly kickRoll = new Spring(16)
+  private readonly kickSide = new Spring(16)
+  /** Seconds since the last shot (drives the slide / charging handle). */
+  private sinceShot = Number.POSITIVE_INFINITY
   private readonly swayX = new Spring(10)
   private readonly swayY = new Spring(10)
 
@@ -371,6 +431,12 @@ export class Viewmodel {
     this.active.group.visible = false
     this.active = model
     model.group.visible = true
+    const { recover } = model.recoil
+    this.kickBack.frequency = recover * 1.1
+    this.kickUp.frequency = recover
+    this.kickRoll.frequency = recover
+    this.kickSide.frequency = recover * 1.2
+    this.sinceShot = Number.POSITIVE_INFINITY
     // Flash and its light ride on the active gun's muzzle.
     model.muzzle.add(this.flash, this.flashLight)
     this.flash.position.set(0, 0, -0.03)
@@ -378,9 +444,17 @@ export class Viewmodel {
 
   /** Recoil and muzzle flash for one shot. */
   onShot(): void {
-    const k = this.active.kick
-    this.kickBack.impulse(0.9 * k)
-    this.kickUp.impulse(9 * k)
+    const r = this.active.recoil
+    // Less of it while aiming, so the sights stay usable.
+    const aimed = 1 - this.aim * 0.55
+    // A critically damped spring kicked with velocity v peaks at v / (frequency · e).
+    const kick = (spring: Spring, peak: number) => spring.impulse(peak * spring.frequency * Math.E)
+    const vary = () => 0.8 + Math.random() * 0.4
+    kick(this.kickBack, r.back * vary() * (1 - this.aim * 0.4))
+    kick(this.kickUp, r.climb * vary() * aimed)
+    kick(this.kickRoll, r.roll * vary() * aimed * (Math.random() < 0.75 ? 1 : -1))
+    kick(this.kickSide, r.side * (Math.random() * 2 - 1) * aimed)
+    this.sinceShot = 0
     if (this.active.melee) return // a swing: no muzzle flash
     this.flashTime = 0.065
     this.flash.rotation.z = Math.random() * Math.PI
@@ -411,6 +485,9 @@ export class Viewmodel {
     this.swayY.impulse(look.pitch * 1.5 * hipWeight)
     this.kickBack.update(dt)
     this.kickUp.update(dt)
+    this.kickRoll.update(dt)
+    this.kickSide.update(dt)
+    this.sinceShot += dt
     this.swayX.update(dt)
     this.swayY.update(dt)
 
@@ -437,6 +514,16 @@ export class Viewmodel {
       this.active.pump.position.z = rack * 0.09
     }
 
+    // Slide / charging handle: slams back with the shot, rides home again.
+    const act = this.active.action
+    if (act) {
+      const home = Math.min(1, this.sinceShot / act.time)
+      const back = act.lockOpen && weapon.ammo === 0 ? 1 : (1 - home) ** 2
+      act.part.position.z = act.rest + back * act.travel
+    }
+    // Sniper bolt: worked back and forward in step with the rock of the gun.
+    if (this.active.bolt) this.active.bolt.position.z = 0.04 + boltT * 0.07
+
     const bobX = Math.cos(bob.phase) * 0.008 * bob.weight * hipWeight
     const bobY = -Math.abs(Math.sin(bob.phase)) * 0.01 * bob.weight * hipWeight
 
@@ -452,13 +539,13 @@ export class Viewmodel {
             drawT * 0.18 -
             boltT * 0.03 +
             swing * 0.05,
-          this.kickBack.value * 0.06 * (1 - this.aim * 0.5),
+          this.kickBack.value,
         ),
       )
     m.group.rotation.set(
-      this.kickUp.value * 0.02 - reloadDip * 0.5 - drawT * 0.8,
-      this.swayX.value * 0.03,
-      reloadDip * 0.6 + boltT * 0.35 + swing * 1.1,
+      this.kickUp.value - reloadDip * 0.5 - drawT * 0.8,
+      this.swayX.value * 0.03 + this.kickSide.value,
+      reloadDip * 0.6 + boltT * 0.35 + swing * 1.1 - this.kickRoll.value,
     )
     if (swing > 0) m.group.position.x -= swing * 0.14
 
