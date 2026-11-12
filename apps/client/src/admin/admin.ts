@@ -12,6 +12,7 @@ interface AdminState {
     jingles: string[]
     spawnWeapons: string[]
     botSkills: string[]
+    modes: { id: string; name: string }[]
     ranges: Record<string, { min: number; max: number; step: number }>
     defaults: GameRules
   }
@@ -35,6 +36,8 @@ type NumericKey =
   | 'damage'
   | 'respawnSeconds'
   | 'bots'
+  | 'timeLimit'
+  | 'scoreLimit'
 
 const PASSWORD_KEY = 'office-fps:admin-password'
 const TINY_SCALE = 0.5
@@ -226,6 +229,56 @@ function render(): void {
     }),
   )
 
+  /** A labelled slider that sends its value (debounced) as `key`. */
+  const slider = (key: NumericKey, label: string, unit: string) => {
+    const range = choices.ranges[key]
+    const id = `rule-${key}`
+    const input = h('input', {
+      id,
+      type: 'range',
+      min: String(range?.min ?? 0),
+      max: String(range?.max ?? 1),
+      step: String(range?.step ?? 1),
+    })
+    input.value = String(rules[key])
+    const output = h('output', { for: id }, `${rules[key]}${unit}`)
+    input.addEventListener('input', () => {
+      output.textContent = `${input.value}${unit}`
+      change({ [key]: Number(input.value) })
+    })
+    return h('div', { class: 'slider' }, h('label', { for: id }, label), input, output)
+  }
+  const rotation = h('input', { type: 'checkbox' })
+  rotation.checked = rules.mapRotation
+  rotation.addEventListener('change', () => change({ mapRotation: rotation.checked }, true))
+  const newRound = h('button', { type: 'button' }, 'Start new round')
+  newRound.addEventListener('click', async () => {
+    state = await api('new-round', {})
+    flashSaved()
+    render()
+  })
+  const modeCard = card(
+    'Game mode',
+    'Switching mode starts a new round. A round ends on time or when the score limit is reached, shows the winner, then the next one starts.',
+    choiceGroup('Game mode', choices.modes, rules.mode, (id) => {
+      if (id !== rules.mode) change({ mode: id as GameRules['mode'] }, true)
+    }),
+    h('br'),
+    h(
+      'div',
+      { class: 'sliders' },
+      slider('timeLimit', 'Round time', ' min'),
+      slider('scoreLimit', 'Score limit', ' kills'),
+    ),
+    h('br'),
+    h(
+      'div',
+      { class: 'row' },
+      h('label', { class: 'toggle' }, rotation, 'Next map after every round'),
+      newRound,
+    ),
+  )
+
   const skinCard = card(
     'Skin for everyone',
     null,
@@ -284,7 +337,19 @@ function render(): void {
   for (const preset of PRESETS) {
     const button = h('button', { type: 'button' }, preset.label)
     button.addEventListener('click', () => {
-      const { map, skin, jingles, spawnWeapon, bots, botSkill, ...normal } = choices.defaults
+      const {
+        map,
+        skin,
+        jingles,
+        spawnWeapon,
+        bots,
+        botSkill,
+        mode,
+        timeLimit,
+        scoreLimit,
+        mapRotation,
+        ...normal
+      } = choices.defaults
       change({ ...normal, ...preset.rules }, true)
     })
     presets.append(button)
@@ -406,6 +471,7 @@ function render(): void {
   root.replaceChildren(
     h('div', { class: 'row' }, h('h1', {}, 'ADMIN'), logout),
     h('p', { class: 'subtitle' }, 'Office FPS server controls — changes go live for everyone.'),
+    modeCard,
     mapCard,
     skinCard,
     loadoutCard,

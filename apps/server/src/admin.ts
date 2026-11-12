@@ -6,6 +6,8 @@ import {
   JINGLES,
   loadMap,
   MAPS,
+  MODE_NAMES,
+  MODES,
   mergeRules,
   RULE_RANGES,
   SKINS,
@@ -82,6 +84,9 @@ export class AdminApi {
         this.apply(mergeRules(this.game.rules, body))
         return json(this.state())
       }
+      case 'POST /admin/api/new-round':
+        this.game.match.startRound(false)
+        return json(this.state())
       case 'POST /admin/api/reset-scores':
         this.game.resetScores()
         return json(this.state())
@@ -110,6 +115,7 @@ export class AdminApi {
         jingles: JINGLES,
         spawnWeapons: SPAWN_WEAPONS,
         botSkills: BOT_SKILLS,
+        modes: MODES.map((id) => ({ id, name: MODE_NAMES[id] })),
         ranges: RULE_RANGES,
         defaults: DEFAULT_RULES,
       },

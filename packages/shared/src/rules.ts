@@ -1,4 +1,5 @@
 import { DEFAULT_MAP_ID, MAPS } from './maps/index.ts'
+import { MODES, type ModeId } from './modes.ts'
 import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
 
@@ -25,6 +26,12 @@ export type JingleId = (typeof JINGLES)[number]
  */
 export interface GameRules {
   map: string
+  mode: ModeId
+  /** Round length (minutes) and the score that ends it early (kills, or team kills). */
+  timeLimit: number
+  scoreLimit: number
+  /** Move to the next map after every round. */
+  mapRotation: boolean
   skin: SkinId
   jingles: JingleId
   /** Spawn loadout: the handgun plus this (in hand). Applies from each player's next spawn. */
@@ -54,6 +61,10 @@ export interface GameRules {
 
 export const DEFAULT_RULES: GameRules = {
   map: DEFAULT_MAP_ID,
+  mode: 'ffa',
+  timeLimit: 10,
+  scoreLimit: 30,
+  mapRotation: false,
   skin: 'slime',
   jingles: 'arcade',
   spawnWeapon: 'none',
@@ -83,10 +94,12 @@ export const RULE_RANGES = {
   damage: { min: 0.25, max: 4, step: 0.05 },
   respawnSeconds: { min: 0, max: 10, step: 0.5 },
   bots: { min: 0, max: 10, step: 1 },
+  timeLimit: { min: 1, max: 30, step: 1 },
+  scoreLimit: { min: 5, max: 150, step: 5 },
 } as const satisfies Partial<Record<keyof GameRules, { min: number; max: number; step: number }>>
 
 type NumericRule = keyof typeof RULE_RANGES
-const BOOLEAN_RULES = ['oneShot', 'headshotsOnly', 'infiniteAmmo'] as const
+const BOOLEAN_RULES = ['oneShot', 'headshotsOnly', 'infiniteAmmo', 'mapRotation'] as const
 
 /**
  * Applies an untrusted partial update (from the admin page or storage) on top of `base`.
@@ -97,6 +110,9 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   if (typeof update !== 'object' || update === null) return next
   const u = update as Record<string, unknown>
   if (typeof u.map === 'string' && u.map in MAPS) next.map = u.map
+  if (typeof u.mode === 'string' && (MODES as readonly string[]).includes(u.mode)) {
+    next.mode = u.mode as ModeId
+  }
   if (typeof u.skin === 'string' && (SKINS as readonly string[]).includes(u.skin)) {
     next.skin = u.skin as SkinId
   }

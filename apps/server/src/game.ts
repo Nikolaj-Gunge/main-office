@@ -36,6 +36,7 @@ import {
   SNAPSHOT_RATE,
   type SpawnWeapon,
   stepPlayer,
+  type TeamId,
   TICK_DT,
   TICK_RATE,
   USE_PICKUP_RADIUS,
@@ -49,6 +50,7 @@ import {
 import { BOT_NAMES, BotBrain } from './bots.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
+import { MatchRunner } from './match.ts'
 import { SpawnPicker } from './spawning.ts'
 
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
@@ -81,7 +83,15 @@ interface ServerPlayer {
   ping: number
   /** Set for server-side bots: decides their input every tick. */
   bot?: BotBrain
+  /** Game mode standing (see match.ts): team, gun game level, last-man-standing "out". */
+  team: TeamId
+  headshots: number
+  level: number
+  levelKills: number
+  out: boolean
 }
+
+export type { ServerPlayer }
 
 /** Bots have nobody to send messages to. */
 const NO_CLIENT: GameClient = { send: () => {} }
@@ -130,6 +140,8 @@ export class Game {
   private rulesValue: GameRules = DEFAULT_RULES
   private movement: MovementConfig = movementFor(DEFAULT_RULES)
   private weaponRules: WeaponRules = weaponRulesFor(DEFAULT_RULES)
+  /** Rounds, teams and scoring for the current game mode. */
+  readonly match: MatchRunner
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
@@ -138,6 +150,7 @@ export class Game {
     this.rulesValue = { ...DEFAULT_RULES, map: map.id }
     this.spawns = new SpawnPicker(findSpawnPoints(map, physics), physics, random)
     this.items = this.createItems(map)
+    this.match = new MatchRunner(this)
   }
 
   get mapId(): string {
@@ -153,12 +166,14 @@ export class Game {
    * the new world and calls `changeMap`), so `rules.map` is kept as the map actually running.
    */
   setRules(rules: GameRules): void {
+    const before = this.rulesValue
     this.rulesValue = { ...rules, map: this.map.id }
     this.movement = movementFor(this.rulesValue)
     this.weaponRules = weaponRulesFor(this.rulesValue)
-    for (const p of this.players.values()) this.applyRules(p.body)
+    for (const p of this.players.values()) this.applyRules(p)
     this.broadcast({ type: ServerMsg.Rules, rules: this.rulesValue })
     this.syncBots()
+    this.match.onRulesChanged(before)
   }
 
   /** Adds or removes bots until there are as many as the rules ask for (room permitting). */
@@ -203,9 +218,9 @@ export class Game {
     this.rulesValue = { ...this.rulesValue, map: map.id }
     for (const p of this.players.values()) {
       p.body = new PlayerBody(physics, this.movement)
-      this.applyRules(p.body)
+      this.applyRules(p)
       p.queue = []
-      this.respawn(p)
+      if (!p.out) this.respawn(p)
     }
     old.world.free()
     for (const p of this.players.values()) this.sendWorld(p)
@@ -216,13 +231,25 @@ export class Game {
     for (const p of this.players.values()) {
       p.kills = 0
       p.deaths = 0
+      p.headshots = 0
     }
     this.sendScoreboard()
   }
 
-  private applyRules(body: PlayerBody): void {
-    body.configure(this.movement)
-    body.weaponRules = this.weaponRules
+  /** Movement and weapon rules for one player (the infected run faster). */
+  applyRules(player: ServerPlayer): void {
+    const speedUp = this.match.speedFactor(player)
+    player.body.configure(
+      speedUp === 1
+        ? this.movement
+        : movementFor({ ...this.rulesValue, speed: this.rulesValue.speed * speedUp }),
+    )
+    player.body.weaponRules = this.weaponRules
+  }
+
+  /** The map's spawn spots and physics, for the match runner (map rotation) and bots. */
+  get world(): { map: MapDef; physics: PhysicsWorld } {
+    return { map: this.map, physics: this.physics }
   }
 
   private createItems(map: MapDef): WorldItems {
@@ -252,14 +279,13 @@ export class Game {
     this.nextId = (this.nextId % 0xffff) + 1
     const name = sanitizeName(rawName) || `Player ${id}`
     const body = new PlayerBody(this.physics, this.movement)
-    this.applyRules(body)
     const player: ServerPlayer = {
       id,
       name,
       color: this.pickColor(),
       client,
       body,
-      state: this.freshState(0),
+      state: createPlayerState(),
       queue: [],
       lastQueuedSeq: 0,
       ackSeq: 0,
@@ -270,7 +296,16 @@ export class Game {
       deaths: 0,
       debugFlags: 0,
       ping: 0,
+      team: 0,
+      headshots: 0,
+      level: 0,
+      levelKills: 0,
+      out: false,
     }
+    this.match.onJoin(player)
+    this.applyRules(player)
+    player.state = this.freshState(player)
+    if (player.out) player.state.alive = false
 
     this.sendWorld(player)
     for (const other of this.players.values()) {
@@ -283,6 +318,7 @@ export class Game {
     }
     this.players.set(id, player)
     this.broadcast({ type: ServerMsg.PlayerJoined, id, color: player.color, name })
+    this.match.broadcast()
     return id
   }
 
@@ -297,6 +333,7 @@ export class Game {
       mapId: this.map.id,
     })
     send(player.client, { type: ServerMsg.Rules, rules: this.rulesValue })
+    send(player.client, { type: ServerMsg.Match, match: this.match.info() })
     for (const item of this.items.items.values()) send(player.client, itemSpawnMessage(item))
   }
 
@@ -308,6 +345,7 @@ export class Game {
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
     if (!player.bot) this.syncBots()
+    this.match.check()
   }
 
   handleInput(id: number, commands: InputCommand[]): void {
@@ -351,12 +389,16 @@ export class Game {
     }
     this.items.step(this.tick)
     for (const player of this.players.values()) {
-      if (!player.state.alive && this.tick >= player.respawnAt) this.respawn(player)
+      if (!player.state.alive && !player.out && this.tick >= player.respawnAt) this.respawn(player)
     }
+    this.match.step()
     const t1 = performance.now()
     this.timing.simMs += (t1 - t0 - this.timing.simMs) * 0.05
 
-    if (this.tick % TICK_RATE === 0) this.sendScoreboard()
+    if (this.tick % TICK_RATE === 0) {
+      this.sendScoreboard()
+      this.match.broadcast()
+    }
     if (this.tick % TICKS_PER_SNAPSHOT === 0) {
       this.history.record(this.tick, this.currentPoses())
       this.sendSnapshots()
@@ -366,7 +408,9 @@ export class Game {
 
   /** Every bot decides this tick's input, from where everyone is right now. */
   private thinkBots(): void {
-    let views: { id: number; pos: Point; alive: boolean; isProtected: boolean }[] | null = null
+    let views:
+      | { id: number; pos: Point; alive: boolean; isProtected: boolean; team: number }[]
+      | null = null
     for (const player of this.players.values()) {
       if (!player.bot) continue
       views ??= [...this.players.values()].map((p) => ({
@@ -374,8 +418,10 @@ export class Game {
         pos: p.state.pos,
         alive: p.state.alive,
         isProtected: this.tick < p.protectedUntil,
+        team: p.team,
       }))
       const others = views.filter((v) => v.id !== player.id)
+      player.bot.team = player.team
       const command = player.bot.think(player.state, others, this.tick, TICK_DT)
       player.lastQueuedSeq = command.seq
       player.queue.push(command)
@@ -571,6 +617,7 @@ export class Game {
     headshot: boolean,
   ) {
     if (this.tick < victim.protectedUntil) return
+    if (!this.match.canHurt(attacker, victim)) return
     const dealt = Math.min(victim.health, amount)
     victim.health -= dealt
     const killed = victim.health === 0
@@ -602,20 +649,57 @@ export class Game {
     victim.state.vel = { x: 0, y: 0, z: 0 }
     victim.respawnAt = this.tick + Math.round(this.rulesValue.respawnSeconds * TICK_RATE)
     victim.deaths++
-    if (killer !== victim) killer.kills++
+    if (killer !== victim) {
+      killer.kills++
+      if (headshot) killer.headshots++
+    }
+    const weapon = killer.state.weapon.id
     this.broadcast({
       type: ServerMsg.Kill,
       killerId: killer.id,
       victimId: victim.id,
-      weapon: killer.state.weapon.id,
+      weapon,
       headshot,
     })
+    this.match.onKill(victim, killer, weapon)
     this.sendScoreboard()
+  }
+
+  /** Kills `victimId` as if `killerId` shot them (tests, and a future admin "slay"). */
+  killPlayer(victimId: number, killerId: number, headshot = false): void {
+    const victim = this.players.get(victimId)
+    const killer = this.players.get(killerId)
+    if (!victim || !killer || !victim.state.alive) return
+    victim.health = 0
+    this.kill(victim, killer, headshot)
+  }
+
+  /** Puts `player` back in, fresh, at a safe spot (also used by the match runner). */
+  respawnNow(player: ServerPlayer): void {
+    this.respawn(player)
+  }
+
+  /** Swaps the weapon in a player's hand (gun game level-up), keeping the knife. */
+  giveWeapon(player: ServerPlayer, id: WeaponId): void {
+    const s = player.state
+    s.weapon = newWeapon(id)
+    s.holstered = id === WeaponId.Knife ? null : newWeapon(WeaponId.Knife)
+    s.pocket = null
+  }
+
+  /** Every connected client. */
+  broadcastMessage(msg: ServerMessage): void {
+    this.broadcast(msg)
+  }
+
+  /** Switches map from inside the game (map rotation between rounds). */
+  rotateMap(next: MapDef, physics: PhysicsWorld): void {
+    this.changeMap(next, physics)
   }
 
   private respawn(player: ServerPlayer): void {
     const previous = player.state
-    player.state = this.freshState(player.id)
+    player.state = this.freshState(player)
     // Keep input edge detection continuous so a held button isn't seen as a new press.
     player.state.prevButtons = previous.prevButtons
     player.health = MAX_HEALTH
@@ -626,8 +710,15 @@ export class Game {
    * Everyone spawns with the handgun, plus the rules' spawn weapon in hand if the admin set one
    * (otherwise rifles, snipers and shotguns are found on the floor).
    */
-  private freshState(excludeId: number): PlayerState {
-    const spawn = this.pickSpawn(excludeId)
+  private freshState(player: ServerPlayer): PlayerState {
+    const spawn = this.pickSpawn(player)
+    // Gun game and the infected: the mode decides what you carry.
+    const forced = this.match.loadout(player)
+    if (forced) {
+      return forced === WeaponId.Knife
+        ? createPlayerState(spawn, newWeapon(WeaponId.Knife), null, null)
+        : createPlayerState(spawn, newWeapon(forced), newWeapon(WeaponId.Knife), null)
+    }
     const primary = spawnPrimary(this.rulesValue.spawnWeapon, this.random)
     const handgun = newWeapon(WeaponId.Handgun)
     return primary === null
@@ -642,7 +733,7 @@ export class Game {
    * your rifle/sniper is thrown on the floor and the new one goes in your hands.
    */
   private handlePickups(player: ServerPlayer, usePressed: boolean): void {
-    if (!player.state.alive) return
+    if (!player.state.alive || !this.match.canPickUp(player)) return
     const s = player.state
     const primary = primaryOf(s)
     if (!primary) {
@@ -747,10 +838,10 @@ export class Game {
     for (const player of this.players.values()) player.client.send(bytes)
   }
 
-  /** A random spot away from, and out of sight of, every living enemy. */
-  private pickSpawn(excludeId = 0) {
+  /** A random spot away from, and out of sight of, every living enemy (not teammates). */
+  private pickSpawn(player: ServerPlayer) {
     const enemies = [...this.players.values()]
-      .filter((p) => p.id !== excludeId && p.state.alive)
+      .filter((p) => p !== player && p.state.alive && (p.team === 0 || p.team !== player.team))
       .map((p) => p.state.pos)
     return this.spawns.pick(enemies)
   }

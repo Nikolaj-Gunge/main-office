@@ -5,14 +5,17 @@ import {
   DEFAULT_MAP_ID,
   DebugFlag,
   type GameRules,
+  INFECTED_SPEED,
   INPUT_BATCH_TICKS,
   type InputCommand,
   initPhysics,
   loadMap,
   MAPS,
+  type MatchInfo,
   PLAYER_QUERY_GROUPS,
   RAPIER,
   ServerMsg,
+  TEAMS,
   TICK_DT,
   WEAPONS,
   WeaponId,
@@ -31,6 +34,7 @@ import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { CombatHud } from './hud/combat-hud.ts'
+import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
 import { Minimap } from './hud/minimap.ts'
 import { Overlay } from './hud/overlay.ts'
@@ -283,6 +287,9 @@ const net = new Connection({
       case ServerMsg.Rules:
         applyRules(msg.rules)
         break
+      case ServerMsg.Match:
+        onMatch(msg.match)
+        break
       case ServerMsg.Kill: {
         const killer =
           msg.killerId === net.playerId ? camera.position.clone() : remotes.muzzleOf(msg.killerId)
@@ -306,12 +313,37 @@ const net = new Connection({
 })
 
 /** Server game rules (admin page): movement, shooting, looks and kill jingles. */
+let lastRules: GameRules | null = null
+let match: MatchInfo | null = null
 function applyRules(rules: GameRules) {
-  player.applyRules(rules)
+  lastRules = rules
+  // Infected run faster: predict with the same speed the server uses for us.
+  const infected = match?.mode === 'infection' && myTeam() === 2
+  player.applyRules(infected ? { ...rules, speed: rules.speed * INFECTED_SPEED } : rules)
   recoil.amount = rules.recoil
   remotes.setLook(rules.skin, rules.playerScale)
   combat.jingles = rules.jingles
   ragdolls.setGravity(rules.gravity)
+}
+
+const matchHud = new MatchHud(hudRoot)
+matchHud.onRoundEnd = (won) =>
+  audio.play('jingle.fanfare', { bus: 'ui', rate: 1, volume: 0.8, variant: won ? 2 : 0 })
+function myTeam(): number {
+  return match?.players.find((p) => p.id === net.playerId)?.team ?? 0
+}
+/** Mode, clock, scores and teams (once a second, and when something changes). */
+function onMatch(next: MatchInfo) {
+  const wasTeam = myTeam()
+  match = next
+  matchHud.update(next, net.playerId, (id) => roster.get(id)?.name ?? `Player ${id}`)
+  const teams = TEAMS[next.mode]
+  const teamOf = new Map(next.players.map((p) => [p.id, p.team]))
+  remotes.setTeams((id) => {
+    const team = teamOf.get(id) ?? 0
+    return teams && team !== 0 ? teams[team as 1 | 2].color : null
+  })
+  if (myTeam() !== wasTeam && lastRules) applyRules(lastRules)
 }
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the

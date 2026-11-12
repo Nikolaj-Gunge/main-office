@@ -222,7 +222,14 @@ export class CombatHud {
   }
 
   setDeathTimer(seconds: number): void {
-    setText(this.deathTimer, seconds > 0 ? `Respawn in ${Math.ceil(seconds)}` : '')
+    setText(
+      this.deathTimer,
+      !Number.isFinite(seconds)
+        ? 'Out until the next round'
+        : seconds > 0
+          ? `Respawn in ${Math.ceil(seconds)}`
+          : '',
+    )
   }
 
   hideDeath(): void {

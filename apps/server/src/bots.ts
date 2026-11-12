@@ -83,6 +83,8 @@ export interface BotView {
   pos: { x: number; y: number; z: number }
   alive: boolean
   isProtected: boolean
+  /** 0 = no teams; same non-zero team = friend. */
+  team: number
 }
 
 /**
@@ -126,6 +128,9 @@ export class BotBrain {
   }
 
   /** The next input command for a bot in `self`'s state, given everyone else. */
+  /** The bot's own team (0 = everyone is an enemy). */
+  team = 0
+
   think(self: PlayerState, others: BotView[], viewTick: number, dt: number): InputCommand {
     const skill = SKILLS[this.skill]
     this.tick++
@@ -178,12 +183,24 @@ export class BotBrain {
       }
       buttons |= this.strafe > 0 ? Button.Right : Button.Left
       const weapon = WEAPONS[self.weapon.id]
-      const ideal = weapon.id === WeaponId.Sniper ? 30 : weapon.id === WeaponId.Shotgun ? 6 : 14
-      if (flat > ideal * 1.3) buttons |= Button.Forward
+      const melee = weapon.fireMode === 'melee'
+      const ideal = melee
+        ? 1.2
+        : weapon.id === WeaponId.Sniper
+          ? 30
+          : weapon.id === WeaponId.Shotgun
+            ? 6
+            : 14
+      if (flat > ideal * 1.3) buttons |= Button.Forward | (melee ? Button.Sprint : 0)
       else if (flat < ideal * 0.5) buttons |= Button.Back
-      if (weapon.scoped || flat > 12) buttons |= Button.Aim
+      if (!melee && (weapon.scoped || flat > 12)) buttons |= Button.Aim
+      const inReach = !melee || flat < weapon.range + 0.3
 
-      if (this.targetSeenFor >= skill.reaction && off < skill.fireCone) {
+      if (
+        this.targetSeenFor >= skill.reaction &&
+        off < skill.fireCone * (melee ? 3 : 1) &&
+        inReach
+      ) {
         // Automatic weapons: hold. Others need a fresh click each shot.
         if (weapon.fireMode === 'auto') buttons |= Button.Fire
         else {
@@ -246,6 +263,7 @@ export class BotBrain {
 
   private canFight(self: PlayerState, o: BotView, skill: Skill): boolean {
     if (!o.alive || o.isProtected) return false
+    if (this.team !== 0 && o.team === this.team) return false
     const d = Math.hypot(o.pos.x - self.pos.x, o.pos.y - self.pos.y, o.pos.z - self.pos.z)
     if (d > skill.sight) return false
     const from = { x: self.pos.x, y: self.pos.y + EYE, z: self.pos.z }

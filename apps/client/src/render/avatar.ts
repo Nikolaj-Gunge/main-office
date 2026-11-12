@@ -488,6 +488,11 @@ export class Avatar {
     }
   }
 
+  /** Team color instead of the player's own (team modes); null = back to their own. */
+  setTint(color: number | null, own: number): void {
+    this.material.color.setHex(color ?? own)
+  }
+
   /** World position of this player's gun muzzle (for their tracers and flashes). */
   muzzleWorld(target: THREE.Vector3): THREE.Vector3 {
     this.root.updateMatrixWorld(true)

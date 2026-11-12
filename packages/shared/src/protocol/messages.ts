@@ -1,3 +1,4 @@
+import type { MatchInfo } from '../modes.ts'
 import { DEFAULT_RULES, type GameRules, mergeRules } from '../rules.ts'
 import type { HitPose, HitZone } from '../sim/hitboxes.ts'
 import type { PlayerInput } from '../sim/input.ts'
@@ -32,6 +33,7 @@ export const ServerMsg = {
   ItemSpawn: 0x8c,
   ItemRemove: 0x8d,
   Rules: 0x8e,
+  Match: 0x8f,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -121,6 +123,8 @@ export type ServerMessage =
   | { type: typeof ServerMsg.PlayerJoined; id: number; color: number; name: string }
   /** The server's game rules (admin page); sent on join and whenever they change. */
   | { type: typeof ServerMsg.Rules; rules: GameRules }
+  /** Mode, round clock, scores and the round result (every second and on changes). */
+  | { type: typeof ServerMsg.Match; match: MatchInfo }
   | { type: typeof ServerMsg.PlayerLeft; id: number }
   | { type: typeof ServerMsg.Pong; clientTime: number; serverTime: number; tickMs: number }
   | {
@@ -445,6 +449,9 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
     case ServerMsg.Rules:
       w.str16(JSON.stringify(msg.rules))
       break
+    case ServerMsg.Match:
+      w.str16(JSON.stringify(msg.match))
+      break
     case ServerMsg.Scoreboard:
       w.u8(msg.entries.length)
       for (const e of msg.entries) {
@@ -542,6 +549,8 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       return { type, id: r.u16() }
     case ServerMsg.Rules:
       return { type, rules: mergeRules(DEFAULT_RULES, JSON.parse(r.str16())) }
+    case ServerMsg.Match:
+      return { type, match: JSON.parse(r.str16()) as MatchInfo }
     case ServerMsg.Scoreboard: {
       const count = r.u8()
       const entries: ScoreEntry[] = []

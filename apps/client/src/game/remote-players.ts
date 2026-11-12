@@ -1,6 +1,7 @@
 import {
   type HitPose,
   InterpolationBuffer,
+  PLAYER_COLORS,
   type RemotePlayerState,
   ServerClock,
   type SkinId,
@@ -104,6 +105,13 @@ export class RemotePlayers {
       p.avatar.root.visible = visible
       this.scene.add(p.avatar.root)
       this.players.set(id, p)
+    }
+  }
+
+  /** Colors players by team (team modes), or back to their own colors. */
+  setTeams(teamColor: (id: number) => number | null): void {
+    for (const [id, p] of this.players) {
+      p.avatar.setTint(teamColor(id), PLAYER_COLORS[p.color % PLAYER_COLORS.length] ?? 0xffffff)
     }
   }
 

@@ -707,3 +707,97 @@ body {
     opacity: 0.4;
   }
 }
+
+/* --- Game mode: match bar and winner screen ---------------------------------------------- */
+
+.hud-match,
+.hud-match-status,
+.hud-round-end {
+  position: absolute;
+  color: #f2f2f2;
+}
+
+.hud-match-status[hidden],
+.hud-round-end[hidden],
+.hud-match[hidden] {
+  display: none;
+}
+
+.hud-match {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 4px 14px;
+  background: rgb(10 10 14 / 0.6);
+  border: 2px solid rgb(242 242 242 / 0.6);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.hud-match-mode {
+  opacity: 0.7;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.hud-match-clock {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-match-status {
+  top: 48px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 14px;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.hud-round-end {
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: min(520px, 90vw);
+  padding: 20px 28px;
+  background: #1b1d2a;
+  border: 3px solid #f2f2f2;
+  box-shadow: 6px 6px 0 #000;
+  text-align: center;
+}
+
+.hud-round-end-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.hud-round-end-award {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid #333849;
+  font-size: 16px;
+}
+
+.hud-round-end-award .title {
+  text-align: left;
+  color: #f5c542;
+}
+
+.hud-round-end-award .value {
+  text-align: right;
+  opacity: 0.8;
+}
+
+.hud-round-end-next {
+  margin-top: 12px;
+  opacity: 0.6;
+  font-size: 14px;
+}

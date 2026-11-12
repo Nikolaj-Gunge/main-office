@@ -451,8 +451,13 @@ Built in 3 testable parts on `phase-11`:
    - Skins: slime, office worker and robot, all with the same hitboxes. Kill jingles are synthesized (arcade, fanfare, airhorn) and escalate on streaks.
    - Map switch: `Game.changeMap` respawns everyone and re-sends Welcome. Clients reload into the new map and rejoin automatically.
    - Rules persist in Durable Object storage.
-2. **Game modes with rounds**: free-for-all, team deathmatch, last man standing.
-3. **Two new maps.**
+2. **Game modes with rounds** ✅
+   - Modes: free for all, team deathmatch (Marketing vs IT), last man standing, gun game (rifle → shotgun → sniper → handgun → knife, 2 kills each, a knife kill drops the victim a level), and infection (patient zero is knife-only and 20% faster, the killed join them, survivors win on time).
+   - Rounds end on time or the score limit. An 8 s winner screen follows (headline, MVP, best K/D, sharpshooter), then the next round starts, optionally on the next map.
+   - All of this lives in `apps/server/src/match.ts` (`MatchRunner`), sent as `ServerMsg.Match`.
+   - Everyone always carries a knife (slot 3); a backstab kills in one.
+   - Admin bots (0–10, easy/normal/hard) play every mode.
+3. **New maps** ✅ Meeting Room, Rooftop, Warehouse, Campus.
 
 ### Phase 12 — Polish & extensions (backlog, pick freely)
 
