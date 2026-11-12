@@ -123,7 +123,14 @@ export type ServerMessage =
       protected: boolean
       players: RemotePlayerState[]
     }
-  | { type: typeof ServerMsg.PlayerJoined; id: number; color: number; name: string }
+  | {
+      type: typeof ServerMsg.PlayerJoined
+      id: number
+      color: number
+      name: string
+      /** 0 = a person or normal bot; otherwise a ZombieKind (zombies mode). */
+      kind?: number
+    }
   /** The server's game rules (admin page); sent on join and whenever they change. */
   | { type: typeof ServerMsg.Rules; rules: GameRules }
   /** Mode, round clock, scores and the round result (every second and on changes). */
@@ -415,7 +422,10 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       for (const p of msg.players) writeRemote(w, p)
       break
     case ServerMsg.PlayerJoined:
-      w.u16(msg.id).u8(msg.color).str8(msg.name)
+      w.u16(msg.id)
+        .u8(msg.color)
+        .str8(msg.name)
+        .u8(msg.kind ?? 0)
       break
     case ServerMsg.PlayerLeft:
       w.u16(msg.id)
@@ -513,8 +523,11 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       for (let i = 0; i < count; i++) players.push(readRemote(r))
       return { type, tick, ackSeq, self, health, respawnIn, protected: isProtected, players }
     }
-    case ServerMsg.PlayerJoined:
-      return { type, id: r.u16(), color: r.u8(), name: r.str8() }
+    case ServerMsg.PlayerJoined: {
+      const joined = { type, id: r.u16(), color: r.u8(), name: r.str8() }
+      const kind = r.u8()
+      return kind === 0 ? joined : { ...joined, kind }
+    }
     case ServerMsg.PlayerLeft:
       return { type, id: r.u16() }
     case ServerMsg.Pong:

@@ -106,12 +106,16 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
   return out
 }
 
-/** Builds the static map: one merged mesh per material (few draw calls) plus labels. */
+/**
+ * Builds the static map: one merged mesh per material (few draw calls) plus labels. Gates
+ * (co-op maps) get their own group each, named `gate:<id>`, so they can be hidden when open.
+ */
 export function buildMapObject(map: MapDef): THREE.Group {
   const group = new THREE.Group()
   group.name = `map:${map.id}`
 
   const byMaterial = new Map<MaterialId, THREE.BufferGeometry[]>()
+  const gates = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
   const matrix = new THREE.Matrix4()
   const quaternion = new THREE.Quaternion()
   const euler = new THREE.Euler()
@@ -133,21 +137,35 @@ export function buildMapObject(map: MapDef): THREE.Group {
     matrix.compose(new THREE.Vector3(...center), quaternion, new THREE.Vector3(1, 1, 1))
     geometry.applyMatrix4(matrix)
     applyWorldUVs(geometry)
-    const list = byMaterial.get(box.material) ?? []
+    let target = byMaterial
+    if (box.gate !== undefined) {
+      target = gates.get(box.gate) ?? new Map()
+      gates.set(box.gate, target)
+    }
+    const list = target.get(box.material) ?? []
     list.push(geometry)
-    byMaterial.set(box.material, list)
+    target.set(box.material, list)
   })
 
-  for (const [material, geometries] of byMaterial) {
-    const merged = mergeGeometries(geometries)
-    for (const g of geometries) g.dispose()
-    const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
-    mesh.name = `surface:${material}`
-    mesh.castShadow = castsShadow(material)
-    mesh.receiveShadow = !isTransparent(material)
-    // Glass after everything opaque so you see what's behind it.
-    if (isTransparent(material)) mesh.renderOrder = 1
-    group.add(mesh)
+  const addMerged = (parent: THREE.Group, meshes: Map<MaterialId, THREE.BufferGeometry[]>) => {
+    for (const [material, geometries] of meshes) {
+      const merged = mergeGeometries(geometries)
+      for (const g of geometries) g.dispose()
+      const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
+      mesh.name = `surface:${material}`
+      mesh.castShadow = castsShadow(material)
+      mesh.receiveShadow = !isTransparent(material)
+      // Glass after everything opaque so you see what's behind it.
+      if (isTransparent(material)) mesh.renderOrder = 1
+      parent.add(mesh)
+    }
+  }
+  addMerged(group, byMaterial)
+  for (const [id, meshes] of gates) {
+    const gate = new THREE.Group()
+    gate.name = `gate:${id}`
+    addMerged(gate, meshes)
+    group.add(gate)
   }
 
   for (const label of map.labels) {

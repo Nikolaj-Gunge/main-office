@@ -44,6 +44,8 @@ export const SOUNDS = {
   'impact.flesh': { variants: 3, recipe: impactFlesh },
   casing: { variants: 4, recipe: casing },
   heartbeat: { variants: 1, recipe: heartbeat },
+  groan: { variants: 4, recipe: zombieGroan },
+  claw: { variants: 2, recipe: clawHit },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -283,6 +285,54 @@ function hurt(rate: number, v: number): Signal {
   const thump = envelope(sweep(0.12, rate, 95, 50), rate, 0.002, 0.03)
   const smack = envelope(lowpass(noise(0.1, rate, 310 + v), rate, 1200), rate, 0.001, 0.02)
   return fadeEdges(normalize(saturate(mix(rate, thump, gain(smack, 0.8)), 2), 0.8), rate)
+}
+
+/**
+ * A zombie groan: a low, rough voice (a buzz of harmonics wobbling in pitch) through two vowel
+ * formants, swelling in and dying away, with breath on top. Variants differ in pitch, length
+ * and vowel.
+ */
+function zombieGroan(rate: number, v: number): Signal {
+  const r = rng(900 + v)
+  const seconds = 0.9 + r() * 0.7
+  const base = 70 + r() * 45
+  const out = new Float32Array(Math.round(seconds * rate))
+  let phase = 0
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate
+    const wobble = 1 + 0.06 * Math.sin(t * 7 + v) + 0.04 * Math.sin(t * 2.3) - 0.12 * (t / seconds)
+    phase += (2 * Math.PI * base * wobble) / rate
+    let s = 0
+    for (let h = 1; h <= 12; h++) s += Math.sin(phase * h) / h
+    out[i] = s
+  }
+  const vowel = [
+    [480, 950],
+    [560, 1100],
+    [400, 800],
+    [620, 1250],
+  ][v % 4] ?? [500, 1000]
+  const voice = mix(
+    rate,
+    gain(bandpass(out.slice(), rate, vowel[0] ?? 500, 3), 1),
+    gain(bandpass(out.slice(), rate, vowel[1] ?? 1000, 4), 0.6),
+    gain(lowpass(out, rate, 300), 0.5),
+  )
+  const breath = bandpass(noise(seconds, rate, 950 + v), rate, 900, 0.8)
+  const body = saturate(mix(rate, voice, gain(breath, 0.25)), 2.5)
+  // Swell in, hold, fade.
+  for (let i = 0; i < body.length; i++) {
+    const t = i / body.length
+    body[i] = (body[i] ?? 0) * Math.min(1, t * 5) * Math.min(1, (1 - t) * 2.5)
+  }
+  return fadeEdges(normalize(body, 0.7), rate)
+}
+
+/** Claws raking you: a wet slash. */
+function clawHit(rate: number, v: number): Signal {
+  const rake = envelope(bandpass(noise(0.16, rate, 970 + v), rate, 1500, 1.2), rate, 0.005, 0.05)
+  const thud = envelope(sweep(0.1, rate, 140, 60), rate, 0.002, 0.03)
+  return fadeEdges(normalize(saturate(mix(rate, rake, gain(thud, 0.8)), 2), 0.8), rate)
 }
 
 /** Supersonic crack + whoosh of a bullet passing close by. */

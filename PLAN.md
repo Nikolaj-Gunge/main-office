@@ -461,6 +461,27 @@ Built in 3 testable parts on `phase-11`:
 
 ### Phase 12 — Polish & extensions (backlog, pick freely)
 
+**Built on `phase-12` (user request, awaiting test):**
+
+- **MP5** (weapon 5): 800 rpm, 22 damage falling to 14 between 12 and 30 m, light recoil. On the floor on every map, available as a spawn loadout, and in the gun game ladder.
+- **Shotgun range:** pellets now fade from 20 to 8 between 5 and 35 m (before: 2 at 22 m).
+- **Zombies (co-op)**, mode `zombies` on the **Outbreak** map (`maps/outbreak.ts`, 160 m long, one floor).
+  - Five stages, each with a goal: Lobby (kill), Open office (reach), Server room (hold), Parking garage (hold), Loading yard (hold).
+  - Finishing a goal opens the stage's gate (`MapBox.gate`).
+    - Gates are colliders switched on and off on both sides (`setGates`), and the client hides their meshes.
+    - Finishing also revives fallen survivors at the checkpoint and refills everyone.
+  - Everyone down means "Overrun" and a retry of the same stage. Finishing the last stage means "Escaped".
+  - Server pieces:
+    - `zombies.ts` (`ZombieDirector`) runs a pool of up to 20 zombie players: walkers, and runners (faster, less health) that become more common in later stages. They spawn out of sight, ≥ 9 m away.
+    - `zombie-brain.ts` handles chasing, clawing and spreading apart.
+    - `nav.ts` builds a 0.8 m walking grid with distance fields. Survivor bots use it to follow the team and stand in goal zones.
+  - Bot difficulty sets how many zombies come, how much health they have and how hard they claw.
+  - Choosing zombies moves the server to Outbreak. Co-op maps are kept out of the map rotation.
+  - Client: zombie and runner bodies, groans and claw sounds, objective bar with progress, a "GATE OPEN" banner, the goal area marked on the floor and a waypoint on the HUD.
+  - Only your own zombie kills appear in the kill feed.
+  - Protocol v15: `PlayerJoined.kind`, `MatchInfo.coop`.
+- Next co-op idea (user): a heist map — sneak past guards and police.
+
 - Slide and mantle; lean (Q/E).
 - Wall penetration for thin materials; destructible glass.
 - Game modes: Team Deathmatch, Gun Game, "Last one standing at 17:00".

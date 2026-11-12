@@ -1,4 +1,4 @@
-import { DEFAULT_MAP_ID, MAPS } from './maps/index.ts'
+import { COOP_MAPS, DEFAULT_MAP_ID, MAPS } from './maps/index.ts'
 import { MODES, type ModeId } from './modes.ts'
 import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
@@ -147,7 +147,17 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   for (const key of BOOLEAN_RULES) {
     if (typeof u[key] === 'boolean') next[key] = u[key]
   }
+  // Zombies is played on a co-op map: picking zombies moves there, picking another map ends it.
+  if (next.mode === 'zombies' && !isCoopMap(next.map)) {
+    if (u.mode === 'zombies') next.map = COOP_MAPS[0]
+    else next.mode = 'ffa'
+  }
   return next
+}
+
+/** Is this one of the co-op maps (zombies mode)? */
+export function isCoopMap(id: string): boolean {
+  return (COOP_MAPS as readonly string[]).includes(id)
 }
 
 /** The movement config everyone simulates with under these rules. */

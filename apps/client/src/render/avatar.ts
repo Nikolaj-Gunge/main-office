@@ -15,6 +15,9 @@ import * as THREE from 'three'
  * part is a group placed exactly where that part's hitbox is, so what you see is what you hit.
  */
 
+/** What a body looks like: the admin's skin, or one of the zombies (zombies mode). */
+export type BodyLook = SkinId | 'zombie' | 'runner'
+
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
 const lambert = (color: number) => new THREE.MeshLambertMaterial({ color })
 
@@ -36,6 +39,13 @@ const metalMaterial = lambert(0x8e96a3)
 const darkMetalMaterial = lambert(0x3c424c)
 const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
 const gunMaterial = lambert(0x2b2d33)
+// Zombies: rotting skin, blood, glowing eyes (walkers red, runners yellow).
+const zombieSkin = lambert(0x7d9a63)
+const runnerSkin = lambert(0xa3ab7e)
+const bloodMaterial = lambert(0x5e1212)
+const raggedMaterial = lambert(0x3a3a36)
+const zombieEyes = new THREE.MeshBasicMaterial({ color: 0xff4a2a })
+const runnerEyes = new THREE.MeshBasicMaterial({ color: 0xffe23a })
 const pick = <T>(list: T[], i: number): T =>
   list[((i % list.length) + list.length) % list.length] as T
 
@@ -46,6 +56,7 @@ const GUN_LENGTH: Record<WeaponId, number> = {
   [WeaponId.Shotgun]: 0.8,
   [WeaponId.Knife]: 0.3,
   [WeaponId.Smg]: 0.5,
+  [WeaponId.Claws]: 0.01,
 }
 const gunGeometry = Object.fromEntries(
   Object.entries(GUN_LENGTH).map(([id, length]) => [
@@ -74,7 +85,7 @@ function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y
  * live avatar and the ragdoll, so a body falls exactly as it stood.
  */
 export function buildBody(
-  skin: SkinId,
+  skin: BodyLook,
   colorIndex: number,
   material: THREE.MeshLambertMaterial,
 ): Record<Exclude<PartName, 'gun'>, THREE.Group> {
@@ -142,6 +153,51 @@ export function buildBody(
     for (const arm of [body.armL, body.armR]) arm.add(part(box(0.12, ARM_LENGTH, 0.14), material))
     for (const leg of [body.thighL, body.thighR, body.shinL, body.shinR]) {
       leg.add(part(box(...W(s.thighL)), material))
+    }
+    return body
+  }
+
+  if (skin === 'zombie' || skin === 'runner') {
+    // A dead office worker: torn shirt (in the player's color), blood, no shoes, glowing eyes.
+    const flesh = skin === 'runner' ? runnerSkin : zombieSkin
+    const eyes = skin === 'runner' ? runnerEyes : zombieEyes
+    body.head.add(
+      part(box(...W(s.head)), flesh),
+      part(box(0.2, 0.05, 0.22), hair, -0.04, s.head.y + 0.01, 0.03), // patchy hair
+      part(box(0.06, 0.04, 0.02), eyes, -0.07, 0.02, -s.head.z - 0.006),
+      part(box(0.06, 0.04, 0.02), eyes, 0.07, 0.02, -s.head.z - 0.006),
+      part(box(0.14, 0.05, 0.02), bloodMaterial, 0, -0.08, -s.head.z - 0.006), // jaw
+    )
+    body.chest.add(
+      part(box(...W(s.chest)), material),
+      part(box(0.16, 0.12, 0.02), bloodMaterial, 0.05, -0.02, -s.chest.z - 0.006),
+      part(box(0.1, 0.08, 0.02), flesh, -0.1, 0.05, -s.chest.z - 0.007), // torn open
+    )
+    body.stomach.add(
+      part(box(...W(s.stomach)), material),
+      part(box(0.12, 0.1, 0.02), bloodMaterial, -0.06, 0.03, -s.stomach.z - 0.006),
+      part(
+        box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
+        beltMaterial,
+        0,
+        -s.stomach.y + 0.03,
+        0,
+      ),
+    )
+    for (const arm of [body.armL, body.armR]) {
+      arm.add(
+        part(box(0.12, ARM_LENGTH * 0.55, 0.14), material, 0, -ARM_LENGTH * 0.22, 0), // sleeve
+        part(box(0.1, ARM_LENGTH * 0.5, 0.11), flesh, 0, ARM_LENGTH * 0.24, 0), // bare forearm
+      )
+    }
+    for (const thigh of [body.thighL, body.thighR])
+      thigh.add(part(box(...W(s.thighL)), raggedMaterial))
+    for (const shin of [body.shinL, body.shinR]) {
+      shin.add(
+        part(box(s.shinL.x * 2, s.shinL.y, s.shinL.z * 2), raggedMaterial, 0, s.shinL.y / 2, 0),
+        part(box(0.14, s.shinL.y, 0.15), flesh, 0, -s.shinL.y / 2, 0), // bare, torn trousers
+        part(box(0.16, 0.06, 0.24), flesh, 0, -s.shinL.y + 0.02, -0.04), // feet
+      )
     }
     return body
   }
@@ -269,7 +325,7 @@ export class Avatar {
   /** The pose last drawn (for the ragdoll when they die). */
   lastParts: BodyPart[] = []
 
-  constructor(name: string, colorIndex: number, skin: SkinId = 'worker') {
+  constructor(name: string, colorIndex: number, skin: BodyLook = 'worker') {
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.parts = buildBody(skin, colorIndex, this.material)
@@ -287,6 +343,7 @@ export class Avatar {
     this.weapon = id
     const length = GUN_LENGTH[id]
     this.gun.geometry = gunGeometry[id] as THREE.BoxGeometry
+    this.gun.visible = id !== WeaponId.Claws // zombies hold nothing
     // Gun part centre sits 0.12 m ahead of the grip; the gun's back end ~0.1 m behind the grip.
     this.gun.position.set(0, 0, 0.22 - length / 2)
     this.muzzle.position.set(0, 0, 0.22 - length)

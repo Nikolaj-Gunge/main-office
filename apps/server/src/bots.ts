@@ -77,6 +77,9 @@ const LOOK_EVERY_TICKS = 6
 const WANDER_PICKS = 10
 const STUCK_SECONDS = 1.2
 
+/** Where a co-op bot should head: a waypoint, or 'stay' where it is. */
+export type BotLead = { x: number; y: number; z: number } | 'stay' | null
+
 /** What a bot can know about another player. */
 export interface BotView {
   id: number
@@ -130,6 +133,11 @@ export class BotBrain {
   /** The next input command for a bot in `self`'s state, given everyone else. */
   /** The bot's own team (0 = everyone is an enemy). */
   team = 0
+  /**
+   * Co-op: where to go when nobody's in sight — the next waypoint, 'stay' (hold this spot),
+   * or null to roam as usual.
+   */
+  follow: ((pos: { x: number; y: number; z: number }) => BotLead) | null = null
 
   think(self: PlayerState, others: BotView[], viewTick: number, dt: number): InputCommand {
     const skill = SKILLS[this.skill]
@@ -213,7 +221,17 @@ export class BotBrain {
       return this.command(buttons, viewTick)
     }
 
-    // --- Nobody in sight: roam the map ------------------------------------------------------
+    // --- Nobody in sight: keep up with the team (co-op), or roam the map --------------------
+    const lead = this.follow?.(self.pos) ?? null
+    if (lead === 'stay') return this.command(0, viewTick)
+    if (lead) {
+      const dx = lead.x - self.pos.x
+      const dz = lead.z - self.pos.z
+      this.turnTowards(Math.atan2(-dx, -dz), 0, skill.turnRate * dt)
+      buttons |= Button.Forward
+      if (Math.hypot(dx, dz) > 1.5 && self.weapon.reload === 0) buttons |= Button.Sprint
+      return this.command(buttons, viewTick)
+    }
     const moved = Math.hypot(self.pos.x - this.lastPos.x, self.pos.z - this.lastPos.z)
     this.lastPos = { x: self.pos.x, z: self.pos.z }
     this.stuckFor = moved < 0.5 * dt ? this.stuckFor + dt : Math.max(0, this.stuckFor - dt)

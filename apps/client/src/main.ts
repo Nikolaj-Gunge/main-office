@@ -18,11 +18,13 @@ import {
   PLAYER_QUERY_GROUPS,
   RAPIER,
   ServerMsg,
+  setGates,
   TEAMS,
   TICK_DT,
   WEAPONS,
   WeaponId,
   weaponSway,
+  ZombieKind,
 } from '@office-fps/shared'
 import Stats from 'stats-gl'
 import * as THREE from 'three'
@@ -40,6 +42,7 @@ import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
 import { Minimap } from './hud/minimap.ts'
+import { ObjectiveMarker } from './hud/objective-marker.ts'
 import { Overlay } from './hud/overlay.ts'
 import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
 import { actionFor, keyLabel } from './input/bindings.ts'
@@ -47,6 +50,7 @@ import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
+import { CoopZoneMarker } from './render/coop-zone.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
@@ -94,7 +98,11 @@ const scene = new THREE.Scene()
 // Near plane 0.1 m (not closer): doubles depth precision, so far-away surfaces don't flicker.
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
 
-scene.add(buildMapObject(map))
+const mapObject = buildMapObject(map)
+scene.add(mapObject)
+// Zombies mode: the current goal area in the world, and a waypoint to it on the HUD.
+const coopZone = new CoopZoneMarker()
+scene.add(coopZone.root)
 createLighting(map, scene)
 // The map never moves: draw the sun's (big) shadow map once instead of every frame — the
 // single most expensive thing a laptop GPU was doing each frame.
@@ -172,6 +180,7 @@ player.feel.onFootstep = () => {
 }
 remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
+remotes.onGroan = (at) => audio.playNear('groan', at, 0.9, 28)
 
 // Ragdolls: players who die fall over instead of vanishing. The Kill message (which arrives
 // ~100 ms before we draw the death) says who shot them, so the body flies the right way.
@@ -183,6 +192,7 @@ const PUSH_SPEED: Record<WeaponId, number> = {
   [WeaponId.Shotgun]: 6,
   [WeaponId.Knife]: 2.5,
   [WeaponId.Smg]: 3,
+  [WeaponId.Claws]: 2,
 }
 const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()
 remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
@@ -266,11 +276,16 @@ const net = new Connection({
         everJoined = true
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
-      case ServerMsg.PlayerJoined:
-        combat.setName(msg.id, msg.name)
-        roster.set(msg.id, { name: msg.name, color: msg.color })
-        if (msg.id !== net.playerId) remotes.add(msg.id, msg.name, msg.color)
+      case ServerMsg.PlayerJoined: {
+        // Zombies (zombies mode) are drawn and named as such, and stay off the scoreboard.
+        const kind = msg.kind ?? 0
+        const name = kind === ZombieKind.Runner ? 'Runner' : kind !== 0 ? 'Zombie' : msg.name
+        combat.setName(msg.id, name)
+        if (kind === 0) roster.set(msg.id, { name: msg.name, color: msg.color })
+        else roster.delete(msg.id)
+        if (msg.id !== net.playerId) remotes.add(msg.id, name, msg.color, kind)
         break
+      }
       case ServerMsg.PlayerLeft:
         combat.forget(msg.id)
         roster.delete(msg.id)
@@ -369,6 +384,9 @@ function showDamageNumber(victimId: number, zone: HitZone, damage: number, kille
 }
 
 const matchHud = new MatchHud(hudRoot)
+matchHud.coop = map.coop
+matchHud.onStageDone = () =>
+  audio.play('jingle.fanfare', { bus: 'ui', rate: 1, volume: 0.6, variant: 1 })
 matchHud.onRoundEnd = (won) =>
   audio.play('jingle.fanfare', { bus: 'ui', rate: 1, volume: 0.8, variant: won ? 2 : 0 })
 function myTeam(): number {
@@ -378,6 +396,8 @@ function myTeam(): number {
 function onMatch(next: MatchInfo) {
   const wasTeam = myTeam()
   match = next
+  syncCoop(next)
+  menu.setMode(next.mode)
   matchHud.update(next, net.playerId, (id) => roster.get(id)?.name ?? `Player ${id}`)
   const teams = TEAMS[next.mode]
   const teamOf = new Map(next.players.map((p) => [p.id, p.team]))
@@ -387,6 +407,28 @@ function onMatch(next: MatchInfo) {
   })
   if (myTeam() !== wasTeam && lastRules) applyRules(lastRules)
 }
+
+/** Zombies mode: open gates (physics, ragdolls and what you see) and the goal marker. */
+let gatesShown = -1
+function syncCoop(next: MatchInfo) {
+  const coop = next.mode === 'zombies' ? next.coop : undefined
+  const open = coop ? coop.gates : 0xffff
+  if (open !== gatesShown) {
+    gatesShown = open
+    const isOpen = (id: number) => (open & (1 << id)) !== 0
+    setGates(physics, isOpen)
+    ragdolls.setGates(isOpen)
+    for (const child of mapObject.children) {
+      if (child.name.startsWith('gate:')) child.visible = !isOpen(Number(child.name.slice(5)))
+    }
+    pixels.renderer.shadowMap.needsUpdate = true
+  }
+  const goal = coop ? map.coop?.stages[coop.stage]?.goal : undefined
+  coopZone.set(goal && goal.kind !== 'kill' && next.phase === 'playing' ? goal.zone : null)
+  hud.outText = next.mode === 'zombies' ? 'Back at the next checkpoint' : 'Out until the next round'
+}
+const objective = new ObjectiveMarker(hudRoot)
+const goalAt = new THREE.Vector3()
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the
 // mouse still needs one click to lock — browsers require it).
@@ -601,6 +643,14 @@ pixels.renderer.setAnimationLoop(() => {
   remotes.update(now, camera.position)
   ragdolls.update(dt)
   damageNumbers.update(dt)
+  coopZone.update(dt)
+  matchHud.tick()
+  const stage = match?.coop ? map.coop?.stages[match.coop.stage] : undefined
+  objective.update(
+    camera,
+    joined && !noclip && match?.phase === 'playing' ? coopZone.centre(goalAt) : null,
+    stage?.goal.kind === 'hold' ? 'HOLD' : 'GO',
+  )
   worldItems.update(dt)
   minimap.setItems(worldItems.positions())
   updatePickups()

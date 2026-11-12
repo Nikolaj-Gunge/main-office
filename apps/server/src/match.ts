@@ -3,8 +3,11 @@ import {
   type GameRules,
   GUN_GAME_LADDER,
   INFECTED_SPEED,
+  type InputCommand,
+  isCoopMap,
   loadMap,
   MAPS,
+  type MapSpawn,
   type MatchInfo,
   MODE_NAMES,
   ROUND_END_SECONDS,
@@ -13,9 +16,13 @@ import {
   TEAMS,
   type TeamId,
   TICK_RATE,
+  WEAPONS,
   WeaponId,
 } from '@office-fps/shared'
+import type { BotLead } from './bots.ts'
 import type { Game, ServerPlayer } from './game.ts'
+import type { Point } from './items.ts'
+import { ZombieDirector } from './zombies.ts'
 
 /** A finished round: winner, winning team, headline. */
 type Verdict = [ServerPlayer | null, TeamId, string]
@@ -23,7 +30,8 @@ type Verdict = [ServerPlayer | null, TeamId, string]
 /** Infection: people who join this long into a round start infected. */
 const LATE_JOIN_INFECTED_SECONDS = 30
 /** Maps the rotation cycles through (the gym is a test range, not a play map). */
-const ROTATION = () => Object.keys(MAPS).filter((id) => id !== 'gym' && id !== 'range')
+const ROTATION = () =>
+  Object.keys(MAPS).filter((id) => id !== 'gym' && id !== 'range' && !isCoopMap(id))
 
 /**
  * Rounds and scoring for every game mode. The Game asks it what a player may do (hurt,
@@ -36,6 +44,8 @@ const ROTATION = () => Object.keys(MAPS).filter((id) => id !== 'gym' && id !== '
  *   gungame   every 2 kills → the next weapon; first kill with the knife at the end wins
  *   infection one infected (knife only, faster); whoever they kill joins them; survivors win
  *             if anyone is alive when the time runs out
+ *   zombies   co-op on a co-op map: everyone against server-run zombies, stage by stage
+ *             (zombies.ts); all down = retry the stage, last stage done = escaped
  */
 export class MatchRunner {
   private readonly game: Game
@@ -44,6 +54,8 @@ export class MatchRunner {
   private phaseEnds = 0
   private teamScores: [number, number, number] = [0, 0, 0]
   private result: RoundResult | null = null
+  /** Zombies mode: runs the horde and the stages. */
+  private zombies: ZombieDirector | null = null
 
   constructor(game: Game) {
     this.game = game
@@ -60,8 +72,8 @@ export class MatchRunner {
 
   /** People (and bots) in the game. */
   private get everyone(): ServerPlayer[] {
-    // Shooting-range dummies are props, not players: they don't win, score or end rounds.
-    return [...this.game.players.values()].filter((p) => !p.dummy)
+    // Shooting-range dummies and zombies aren't players: they don't win, score or end rounds.
+    return [...this.game.players.values()].filter((p) => !p.dummy && !p.zombie)
   }
 
   // --- What the game asks ----------------------------------------------------------------
@@ -84,18 +96,43 @@ export class MatchRunner {
       return GUN_GAME_LADDER[Math.min(player.level, GUN_GAME_LADDER.length - 1)]?.weapon ?? null
     }
     if (this.rules.mode === 'infection' && player.team === 2) return WeaponId.Knife
+    if (player.zombie) return WeaponId.Claws
     return null
   }
 
   speedFactor(player: ServerPlayer): number {
+    if (this.zombies) return this.zombies.speedFactor(player)
     return this.rules.mode === 'infection' && player.team === 2 ? INFECTED_SPEED : 1
+  }
+
+  /** Where the mode wants this player to (re)spawn, or null for anywhere safe. */
+  spawnFor(player: ServerPlayer): MapSpawn | null {
+    return this.zombies?.spawnFor(player) ?? null
+  }
+
+  thinkZombie(zombie: ServerPlayer): InputCommand | null {
+    return this.zombies?.thinkZombie(zombie) ?? null
+  }
+
+  /** Co-op: where a survivor bot should head when it has nobody to shoot. */
+  botFollow(bot: ServerPlayer): ((pos: Point) => BotLead) | null {
+    return this.zombies?.botFollow(bot) ?? null
+  }
+
+  clawDamage(): number {
+    return this.zombies?.clawDamage() ?? WEAPONS[WeaponId.Claws].damage
   }
 
   // --- What the game tells us ------------------------------------------------------------
 
   onJoin(player: ServerPlayer): void {
     if (player.dummy) return
+    if (player.zombie) {
+      player.team = 2
+      return
+    }
     const mode = this.rules.mode
+    if (mode === 'zombies') player.team = 1
     if (mode === 'tdm') player.team = this.smallerTeam()
     if (mode === 'infection') {
       const late = this.game.tick - this.roundStart > LATE_JOIN_INFECTED_SECONDS * TICK_RATE
@@ -106,7 +143,12 @@ export class MatchRunner {
   }
 
   onKill(victim: ServerPlayer, killer: ServerPlayer, weapon: WeaponId): void {
-    if (this.phase === 'ended' || victim.dummy) return
+    if (victim.dummy) return
+    if (this.zombies) {
+      if (victim.zombie) this.zombies.onZombieKilled(victim)
+      else this.zombies.onSurvivorKilled(victim)
+    }
+    if (this.phase === 'ended') return
     const mode = this.rules.mode
     if (mode === 'tdm' && killer !== victim && killer.team !== victim.team) {
       this.teamScores[killer.team]++
@@ -124,6 +166,12 @@ export class MatchRunner {
     this.broadcast()
   }
 
+  /** A new map is in: zombies start the run over on it; other modes open every gate. */
+  onMapChanged(): void {
+    if (this.zombies && this.rules.mode === 'zombies') this.zombies.startRun(0)
+    else this.game.setGates(0xffff)
+  }
+
   /** Rules changed on the admin page: a new mode (or map rotation) starts a new round. */
   onRulesChanged(before: GameRules): void {
     if (before.mode !== this.rules.mode) this.startRound(false)
@@ -135,6 +183,10 @@ export class MatchRunner {
     if (this.phase === 'ended') {
       if (tick >= this.phaseEnds) this.startRound(this.rules.mapRotation)
       return
+    }
+    if (this.zombies) {
+      this.zombies.step()
+      if (this.zombies.escaped || this.zombies.wiped) this.check()
     }
     if (tick % TICK_RATE === 0) this.check()
   }
@@ -159,6 +211,15 @@ export class MatchRunner {
     const players = this.everyone
     const timeUp = this.game.tick >= this.roundEnds
     const name = (p: ServerPlayer) => p.name
+
+    if (mode === 'zombies') {
+      const z = this.zombies
+      if (!z) return
+      const clock = `${Math.floor(z.elapsed / 60)}:${String(z.elapsed % 60).padStart(2, '0')}`
+      if (z.escaped) return win(null, 1, `You escaped! (${clock})`)
+      if (z.wiped) return win(null, 2, `Overrun in the ${z.current?.name ?? 'dark'}`)
+      return
+    }
 
     if (mode === 'ffa') {
       const top = [...players].sort((a, b) => b.kills - a.kills)[0]
@@ -207,7 +268,12 @@ export class MatchRunner {
 
   /** Starts a fresh round: scores reset, teams drawn, everyone respawned. */
   startRound(nextMap: boolean): void {
-    if (nextMap) {
+    // Zombies: a wipe retries the stage the team got to; otherwise a fresh run.
+    const retry =
+      this.zombies && this.rules.mode === 'zombies' && this.result?.winnerTeam === 2
+        ? this.zombies.stage
+        : 0
+    if (nextMap && this.rules.mode !== 'zombies') {
       const maps = ROTATION()
       const next = maps[(maps.indexOf(this.game.mapId) + 1) % maps.length]
       if (next && next !== this.game.mapId) {
@@ -223,16 +289,27 @@ export class MatchRunner {
     const mode = this.rules.mode
     // Teams: shuffled, then alternated (balanced). Infection: one random patient zero.
     const shuffled = [...players].sort(() => Math.random() - 0.5)
+    const keepScores = mode === 'zombies' && retry > 0
     shuffled.forEach((p, i) => {
       p.team = mode === 'tdm' ? (((i % 2) + 1) as TeamId) : mode === 'infection' ? 1 : 0
-      p.kills = 0
-      p.deaths = 0
-      p.headshots = 0
+      if (!keepScores) {
+        p.kills = 0
+        p.deaths = 0
+        p.headshots = 0
+      }
       p.level = 0
       p.levelKills = 0
       p.out = false
     })
     if (mode === 'infection' && shuffled[0] && shuffled.length >= 2) shuffled[0].team = 2
+    if (mode === 'zombies') {
+      for (const p of players) p.team = 1
+      this.zombies ??= new ZombieDirector(this.game)
+      this.zombies.startRun(retry)
+    } else if (this.zombies) {
+      this.zombies.dispose()
+      this.zombies = null
+    } else this.game.setGates(0xffff)
     for (const p of players) {
       this.game.applyRules(p)
       this.game.respawnNow(p)
@@ -306,7 +383,11 @@ export class MatchRunner {
 
   info(): MatchInfo {
     const ticksLeft =
-      this.phase === 'ended' ? this.phaseEnds - this.game.tick : this.roundEnds - this.game.tick
+      this.phase === 'ended'
+        ? this.phaseEnds - this.game.tick
+        : this.zombies
+          ? this.zombies.elapsed * TICK_RATE // co-op: the clock counts up
+          : this.roundEnds - this.game.tick
     return {
       mode: this.rules.mode,
       phase: this.phase,
@@ -323,6 +404,7 @@ export class MatchRunner {
         out: p.out,
       })),
       result: this.result,
+      ...(this.zombies ? { coop: this.zombies.info() } : {}),
     }
   }
 

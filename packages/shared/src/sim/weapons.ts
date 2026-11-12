@@ -8,6 +8,8 @@ export const WeaponId = {
   Knife: 4,
   /** MP5 submachine gun: fast, light, short range. */
   Smg: 5,
+  /** Zombies' bare hands (zombies mode): they have nothing else. */
+  Claws: 6,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
@@ -326,6 +328,36 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       [0.1, 0.22],
       [0.1, 0.15],
     ],
+  },
+  [WeaponId.Claws]: {
+    id: WeaponId.Claws,
+    name: 'Zombie',
+    fireMode: 'melee',
+    fireInterval: 0.9,
+    magSize: 0,
+    reserve: 0,
+    reloadTime: 0,
+    emptyReloadTime: 0,
+    drawTime: 0.2,
+    // The server scales this with the bot difficulty (zombies.ts).
+    damage: 20,
+    falloffStart: 100,
+    falloffEnd: 101,
+    minDamage: 20,
+    range: 1.7,
+    hipSpread: 0,
+    aimSpread: 0,
+    moveSpread: 0,
+    airSpread: 0,
+    sprintToFire: 0,
+    adsTime: 0,
+    aimZoom: 1,
+    scoped: false,
+    scopeSway: 0,
+    moveSpeedFactor: 1,
+    kickPitch: 0,
+    kickYaw: 0,
+    recoverTime: 0.2,
   },
 }
 

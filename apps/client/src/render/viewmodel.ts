@@ -274,6 +274,8 @@ export class Viewmodel {
     [WeaponId.Shotgun]: shotgun(),
     [WeaponId.Knife]: knife(),
     [WeaponId.Smg]: mp5(),
+    // Only zombies have claws, and nobody plays one: no first-person model.
+    [WeaponId.Claws]: knife(),
   }
   private active: GunModel
   private readonly flash: THREE.Mesh

@@ -221,11 +221,14 @@ export class CombatHud {
       : 'You died'
   }
 
+  /** Shown instead of a countdown when you don't respawn on your own. */
+  outText = 'Out until the next round'
+
   setDeathTimer(seconds: number): void {
     setText(
       this.deathTimer,
       !Number.isFinite(seconds)
-        ? 'Out until the next round'
+        ? this.outText
         : seconds > 0
           ? `Respawn in ${Math.ceil(seconds)}`
           : '',

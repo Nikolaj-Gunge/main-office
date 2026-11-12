@@ -245,6 +245,16 @@ export class ClientCombat {
       case ServerMsg.ShotFired: {
         const from = this.d.remotes.muzzleOf(msg.shooterId)
         if (!from) break
+        if (msg.weapon === WeaponId.Claws) {
+          // A zombie lashing out: a swipe, and a slash if it got someone.
+          this.d.audio.playNear('swish', from, 0.5, 12)
+          if (msg.result === ShotResult.Player) {
+            const at = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
+            this.d.audio.playNear('claw', at, 0.9, 20)
+            this.d.effects.bleed(at, at.clone().sub(from).normalize(), false)
+          }
+          break
+        }
         if (msg.weapon === WeaponId.Knife) {
           // Someone else's knife: the swing, and the stab if it connected. No tracer.
           this.d.audio.playNear('swish', from, 0.7, 15)
@@ -302,14 +312,17 @@ export class ClientCombat {
           msg.victimId === me ? this.selfPos : this.d.remotes.visiblePoses().get(msg.victimId)
         if (fell) this.d.effects.deathPool(new THREE.Vector3(fell.x, fell.y, fell.z))
         const weapon = WEAPONS[msg.weapon].name
-        this.d.hud.kill(
-          this.name(msg.killerId),
-          this.name(msg.victimId),
-          weapon,
-          msg.headshot,
-          msg.killerId === me || msg.victimId === me,
-        )
-        if (msg.killerId === me && msg.victimId !== me) this.killJingle()
+        // Zombies mode: the horde dies by the dozen — only your own zombie kills are listed.
+        const zombie = this.d.remotes.kindOf(msg.victimId) !== 0
+        if (!zombie || msg.killerId === me)
+          this.d.hud.kill(
+            this.name(msg.killerId),
+            this.name(msg.victimId),
+            weapon,
+            msg.headshot,
+            msg.killerId === me || msg.victimId === me,
+          )
+        if (msg.killerId === me && msg.victimId !== me && !zombie) this.killJingle()
         if (msg.victimId === me) {
           this.streak = []
           this.lastDeath = {

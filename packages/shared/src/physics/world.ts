@@ -29,6 +29,8 @@ export interface PhysicsWorld {
   mapColliders: RAPIER.Collider[]
   /** Handles of colliders you can see through (glass): they block bullets, not line of sight. */
   seeThrough: Set<number>
+  /** Colliders of each gate (co-op maps), removed while the gate is open. */
+  gates: Map<number, RAPIER.Collider[]>
 }
 
 /**
@@ -38,6 +40,7 @@ export interface PhysicsWorld {
 export function createPhysicsWorld(map: MapDef): PhysicsWorld {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
   const seeThrough = new Set<number>()
+  const gates = new Map<number, RAPIER.Collider[]>()
   const mapColliders = map.boxes
     .filter((box) => box.collide !== false)
     .map((box) => {
@@ -48,11 +51,30 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
       if (box.rotation) desc.setRotation(eulerToQuaternion(...box.rotation))
       const collider = world.createCollider(desc)
       if (box.material === 'glass') seeThrough.add(collider.handle)
+      if (box.gate !== undefined) gates.set(box.gate, [...(gates.get(box.gate) ?? []), collider])
       return collider
     })
   // One step builds the broad phase so scene queries see the colliders.
   world.step()
-  return { world, mapColliders, seeThrough }
+  return { world, mapColliders, seeThrough, gates }
+}
+
+/**
+ * Opens (removes) or shuts every gate: `open(id)` says which. Server and client call this with
+ * the same gate states, so prediction collides with exactly what the server does.
+ */
+export function setGates(physics: PhysicsWorld, open: (id: number) => boolean): void {
+  let changed = false
+  for (const [id, colliders] of physics.gates) {
+    for (const collider of colliders) {
+      const enabled = !open(id)
+      if (collider.isEnabled() === enabled) continue
+      collider.setEnabled(enabled)
+      changed = true
+    }
+  }
+  // One step refreshes the broad phase that scene queries use (there are no moving bodies).
+  if (changed) physics.world.step()
 }
 
 /** Euler XYZ (radians, Three.js default order) → quaternion. */

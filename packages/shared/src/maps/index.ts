@@ -2,6 +2,7 @@ import { buildCampus } from './campus.ts'
 import { buildGym } from './gym.ts'
 import { buildMeetingRoom } from './meeting-room.ts'
 import { buildOffice } from './office.ts'
+import { buildOutbreak } from './outbreak.ts'
 import { buildRange } from './range.ts'
 import { buildRooftop } from './rooftop.ts'
 import type { MapDef } from './types.ts'
@@ -22,9 +23,14 @@ export const MAPS: Record<string, () => MapDef> = {
   // Large
   warehouse: buildWarehouse,
   campus: buildCampus,
+  // Co-op (zombies mode)
+  outbreak: buildOutbreak,
 }
 
 export const DEFAULT_MAP_ID = 'office'
+
+/** Maps built for co-op (zombies mode needs one; they stay out of the map rotation). */
+export const COOP_MAPS = ['outbreak'] as const
 
 export function loadMap(id: string): MapDef {
   const build = MAPS[id]

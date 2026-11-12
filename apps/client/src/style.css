@@ -801,3 +801,73 @@ body {
   opacity: 0.6;
   font-size: 14px;
 }
+
+/* Zombies (co-op): objective progress, stage banner, waypoint */
+.hud-coop-progress {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(320px, 60vw);
+  height: 8px;
+  background: rgb(10 10 14 / 0.6);
+  border: 2px solid rgb(242 242 242 / 0.6);
+}
+
+.hud-coop-progress[hidden],
+.hud-coop-banner[hidden],
+.hud-waypoint[hidden] {
+  display: none;
+}
+
+.hud-coop-progress > div {
+  height: 100%;
+  background: #8fd14f;
+  transition: width 0.3s linear;
+}
+
+.hud-coop-progress:not([hidden]) ~ .hud-match-status {
+  top: 60px;
+}
+
+.hud-coop-banner {
+  position: absolute;
+  top: 26%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #f2f2f2;
+  text-shadow: 3px 3px 0 #000;
+  pointer-events: none;
+}
+
+.hud-coop-banner .big {
+  font-size: 34px;
+  font-weight: 700;
+  color: #8fd14f;
+}
+
+.hud-coop-banner .small {
+  margin-top: 6px;
+  font-size: 17px;
+}
+
+.hud-waypoint {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #8fd14f;
+  font-size: 13px;
+  text-align: center;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.hud-waypoint .diamond {
+  width: 12px;
+  height: 12px;
+  margin: 0 auto 3px;
+  border: 2px solid #8fd14f;
+  background: rgb(143 209 79 / 0.25);
+  transform: rotate(45deg);
+}

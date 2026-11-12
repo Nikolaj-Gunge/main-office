@@ -41,6 +41,11 @@ export interface MapBox {
   collide?: boolean
   /** Default true. False = invisible collider (e.g. one solid block around a detailed desk). */
   render?: boolean
+  /**
+   * Part of a gate (co-op maps): solid and drawn while the gate is shut, gone once it opens.
+   * Gates open as the team completes stages (CoopStage.opens).
+   */
+  gate?: number
 }
 
 /** A light placed in the map (client only). */
@@ -112,4 +117,54 @@ export interface MapDef {
    * shoot, respawn in place, and don't count for scores.
    */
   targets?: MapSpawn[]
+  /** Co-op map (zombies mode): the stages the team fights through, in order. */
+  coop?: CoopDef
+}
+
+/** An axis-aligned area (min/max corners, feet height included). */
+export interface CoopZone {
+  min: Vec3
+  max: Vec3
+}
+
+/** What a stage asks of the team. */
+export type CoopGoal =
+  /** Kill this many zombies (scaled by the number of survivors). */
+  | { kind: 'kill'; count: number }
+  /** Any survivor gets into the zone. */
+  | { kind: 'reach'; zone: CoopZone }
+  /** Survivors stay in the zone this long in total (the clock only runs while someone is in). */
+  | { kind: 'hold'; zone: CoopZone; seconds: number }
+
+export interface CoopStage {
+  name: string
+  /** The order on the HUD, e.g. "Clear the lobby". */
+  task: string
+  goal: CoopGoal
+  /** Where survivors start (and come back) in this stage. */
+  start: MapSpawn[]
+  /** Where zombies come from in this stage (spots out of the team's sight are preferred). */
+  zombieSpawns: Vec3[]
+  /** Gate that opens when the stage is done (MapBox.gate). The last stage ends the map. */
+  opens?: number
+  /** Zombies at once, relative to normal (1). */
+  intensity: number
+  /** Share of zombies that are runners (fast, fragile). */
+  runners: number
+}
+
+export interface CoopDef {
+  stages: CoopStage[]
+}
+
+/** Is `p` (feet) inside the zone? */
+export function inZone(zone: CoopZone, p: { x: number; y: number; z: number }): boolean {
+  return (
+    p.x >= zone.min[0] &&
+    p.x <= zone.max[0] &&
+    p.y >= zone.min[1] - 0.5 &&
+    p.y <= zone.max[1] &&
+    p.z >= zone.min[2] &&
+    p.z <= zone.max[2]
+  )
 }

@@ -1,4 +1,5 @@
 import type {
+  CoopStage,
   MapBox,
   MapDef,
   MapLabel,
@@ -14,6 +15,7 @@ import type {
 export interface BoxFlags {
   collide?: boolean
   render?: boolean
+  gate?: number
 }
 
 /**
@@ -29,6 +31,7 @@ export class MapBuilder {
   private readonly pickups: MapPickup[] = []
   private spawnArea: MapDef['spawnArea']
   private readonly targets: MapSpawn[] = []
+  private readonly stages: CoopStage[] = []
 
   private readonly id: string
   private readonly name: string
@@ -134,6 +137,12 @@ export class MapBuilder {
     return this
   }
 
+  /** The next co-op stage (zombies mode), in play order. */
+  stage(stage: CoopStage) {
+    this.stages.push(stage)
+    return this
+  }
+
   withSkyline() {
     this.skyline = true
     return this
@@ -157,6 +166,7 @@ export class MapBuilder {
       pickups: this.pickups,
       ...(this.spawnArea ? { spawnArea: this.spawnArea } : {}),
       ...(this.targets.length > 0 ? { targets: this.targets } : {}),
+      ...(this.stages.length > 0 ? { coop: { stages: this.stages } } : {}),
     }
   }
 }
