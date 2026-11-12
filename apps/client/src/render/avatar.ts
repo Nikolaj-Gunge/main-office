@@ -45,6 +45,7 @@ const GUN_LENGTH: Record<WeaponId, number> = {
   [WeaponId.Sniper]: 0.95,
   [WeaponId.Shotgun]: 0.8,
   [WeaponId.Knife]: 0.3,
+  [WeaponId.Smg]: 0.5,
 }
 const gunGeometry = Object.fromEntries(
   Object.entries(GUN_LENGTH).map(([id, length]) => [

@@ -898,6 +898,7 @@ const SPAWN_PRIMARIES: Record<Exclude<SpawnWeapon, 'none' | 'random'>, WeaponId>
   rifle: WeaponId.Rifle,
   sniper: WeaponId.Sniper,
   shotgun: WeaponId.Shotgun,
+  mp5: WeaponId.Smg,
 }
 
 /** The main weapon a spawn gets under the rules ('random' picks one per spawn), or null. */

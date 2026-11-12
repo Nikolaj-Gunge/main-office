@@ -477,13 +477,14 @@ export function buildWarehouse(): MapDef {
   const RIFLE = 1
   const SNIPER = 2
   const SHOTGUN = 3
+  const MP5 = 5
   m.pickup(-43, UP, -14.5, SNIPER) // west platform, back corner
   m.pickup(43.5, UP, 20.5, SNIPER) // east mezzanine, south end
   m.pickup(0, UP, -14, SNIPER) // middle of the catwalk: exposed
   m.pickup(-26, DOCK, -25, RIFLE) // dock
-  m.pickup(-38, 0, 16, RIFLE) // west yard
+  m.pickup(-38, 0, 16, MP5) // west yard
   m.pickup(-4, 0, 27, RIFLE) // south yard, behind the stacked containers
-  m.pickup(0, 0, 5.1, RIFLE) // cross aisle
+  m.pickup(0, 0, 5.1, MP5) // cross aisle
   m.pickup(-2.5, 0, -19.4, SHOTGUN) // inside the open container
   m.pickup(41, 0, -12.5, SHOTGUN) // pallet maze under the mezzanine
   m.pickup(33.5, 0, -25, SHOTGUN) // break room

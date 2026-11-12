@@ -29,6 +29,7 @@ export interface TeamStyle {
 /** Gun game: the weapon for each level, and kills needed to move up from it. */
 export const GUN_GAME_LADDER: { weapon: WeaponId; kills: number }[] = [
   { weapon: WeaponId.Rifle, kills: 2 },
+  { weapon: WeaponId.Smg, kills: 2 },
   { weapon: WeaponId.Shotgun, kills: 2 },
   { weapon: WeaponId.Sniper, kills: 2 },
   { weapon: WeaponId.Handgun, kills: 2 },

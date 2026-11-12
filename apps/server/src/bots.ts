@@ -190,7 +190,9 @@ export class BotBrain {
           ? 30
           : weapon.id === WeaponId.Shotgun
             ? 6
-            : 14
+            : weapon.id === WeaponId.Smg
+              ? 9
+              : 14
       if (flat > ideal * 1.3) buttons |= Button.Forward | (melee ? Button.Sprint : 0)
       else if (flat < ideal * 0.5) buttons |= Button.Back
       if (!melee && (weapon.scoped || flat > 12)) buttons |= Button.Aim

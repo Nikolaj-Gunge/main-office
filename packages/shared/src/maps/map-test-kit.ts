@@ -5,6 +5,7 @@ import { Button, type PlayerInput } from '../sim/input.ts'
 import { DEFAULT_MOVEMENT } from '../sim/movement-config.ts'
 import { AUTO_PICKUP_RADIUS } from '../sim/pickups.ts'
 import { createPlayerState, PlayerBody, type PlayerState, stepPlayer } from '../sim/player.ts'
+import { PRIMARY_WEAPONS } from '../sim/weapons.ts'
 import { findSpawnPoints } from './spawn-points.ts'
 import type { MapDef, MaterialId, Vec3 } from './types.ts'
 
@@ -250,7 +251,7 @@ export function describeMapRules(rules: MapRules) {
       expect(pickups.length).toBeLessThanOrEqual(12)
       expect(pickups.some((p) => p.weapon === 2)).toBe(true)
       for (const p of pickups) {
-        expect([1, 2, 3]).toContain(p.weapon)
+        expect(PRIMARY_WEAPONS as readonly number[]).toContain(p.weapon)
         expect(inside(p.pos[0], p.pos[2])).toBe(true)
         expect(p.pos[1]).toBeGreaterThanOrEqual(0)
         expect(p.pos[1]).toBeLessThan(bounds.yMax)

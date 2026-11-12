@@ -377,9 +377,10 @@ export function buildOffice(): MapDef {
   const RIFLE = 1
   const SNIPER = 2
   const SHOTGUN = 3
+  const MP5 = 5
   m.pickup(22, 1, 6.6, RIFLE) // kitchen island
   m.pickup(-20.5, 1.1, 4, SHOTGUN) // reception desk
-  m.pickup(-3, 0, 7, RIFLE) // open-plan aisle
+  m.pickup(-3, 0, 7, MP5) // open-plan aisle
   m.pickup(8, 0, -10.5, RIFLE) // quiet room
   m.pickup(-22, UP, -15, SHOTGUN) // games room
   m.pickup(-15, 0.75, -13.3, SHOTGUN) // boardroom table, near the edge

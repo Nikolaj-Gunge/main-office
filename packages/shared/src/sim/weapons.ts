@@ -6,11 +6,18 @@ export const WeaponId = {
   Shotgun: 3,
   /** Everyone always carries one (slot 3). */
   Knife: 4,
+  /** MP5 submachine gun: fast, light, short range. */
+  Smg: 5,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
 /** Weapons you can pick as your primary (the handgun is always the secondary). */
-export const PRIMARY_WEAPONS = [WeaponId.Rifle, WeaponId.Sniper, WeaponId.Shotgun] as const
+export const PRIMARY_WEAPONS = [
+  WeaponId.Rifle,
+  WeaponId.Sniper,
+  WeaponId.Shotgun,
+  WeaponId.Smg,
+] as const
 export type PrimaryWeapon = (typeof PRIMARY_WEAPONS)[number]
 
 export function isPrimary(id: number): id is PrimaryWeapon {
@@ -211,12 +218,13 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     emptyReloadTime: 3.1,
     drawTime: 0.6,
     // Per pellet: 8 × 20 = 160 up close, so a body shot is a one-shot kill out to ~5 m even
-    // if a few pellets miss or land on a limb; from there it drops steadily to almost nothing.
+    // if a few pellets miss or land on a limb; from there it fades slowly: ~15 a pellet at
+    // 15 m, 8 at 35 m and beyond (the spreading cone means fewer pellets land, too).
     damage: 20,
     falloffStart: 5,
-    falloffEnd: 22,
-    minDamage: 2,
-    range: 80,
+    falloffEnd: 35,
+    minDamage: 8,
+    range: 90,
     // The pellet cone (degrees): aiming tightens it a little, it never becomes a rifle.
     hipSpread: 3.8,
     aimSpread: 2.8,
@@ -264,6 +272,60 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kickPitch: 0.6,
     kickYaw: 0.4,
     recoverTime: 0.2,
+  },
+  [WeaponId.Smg]: {
+    id: WeaponId.Smg,
+    name: 'MP5',
+    fireMode: 'auto',
+    // ~800 rounds a minute: 5 body hits up close, falls off past 12 m.
+    fireInterval: 0.075,
+    magSize: 30,
+    reserve: 120,
+    reloadTime: 1.9,
+    emptyReloadTime: 2.4,
+    drawTime: 0.45,
+    damage: 22,
+    falloffStart: 12,
+    falloffEnd: 30,
+    minDamage: 14,
+    range: 200,
+    hipSpread: 1.4,
+    aimSpread: 0.45,
+    moveSpread: 1.2,
+    airSpread: 4,
+    sprintToFire: 0.12,
+    adsTime: 0.16,
+    aimZoom: 1.12,
+    scoped: false,
+    scopeSway: 0,
+    // Light: you run as fast as with the handgun.
+    moveSpeedFactor: 1.07,
+    kickPitch: 0.35,
+    kickYaw: 0.2,
+    recoverTime: 0.2,
+    // Gentle climb for ~8 shots, then a small side to side wobble (~4° total).
+    recoilPattern: [
+      [0.4, 0],
+      [0.45, 0.04],
+      [0.5, 0.08],
+      [0.5, 0.06],
+      [0.45, -0.02],
+      [0.4, -0.1],
+      [0.35, -0.16],
+      [0.3, -0.18],
+      [0.15, -0.12],
+      [0.12, 0.05],
+      [0.12, 0.2],
+      [0.12, 0.25],
+      [0.1, 0.12],
+      [0.1, -0.08],
+      [0.1, -0.22],
+      [0.1, -0.25],
+      [0.1, -0.1],
+      [0.1, 0.1],
+      [0.1, 0.22],
+      [0.1, 0.15],
+    ],
   },
 }
 

@@ -178,6 +178,39 @@ function shotgun(): GunModel {
   }
 }
 
+function mp5(): GunModel {
+  const group = new THREE.Group()
+  const mag = box(0.025, 0.1, 0.035, STEEL, 0, -0.08, -0.1)
+  mag.rotateX(-0.35) // the MP5's curved magazine, raked forward
+  const grip = box(0.026, 0.075, 0.035, FRAME, 0, -0.06, 0.07)
+  grip.rotateX(0.3)
+  group.add(
+    box(0.04, 0.055, 0.26, STEEL, 0, 0, -0.02), // receiver
+    box(0.045, 0.045, 0.12, FRAME, 0, -0.01, -0.2), // handguard
+    box(0.016, 0.016, 0.06, STEEL, 0, 0.005, -0.29), // barrel
+    box(0.014, 0.022, 0.012, SIGHT, 0, 0.038, -0.24), // front sight post
+    box(0.03, 0.016, 0.012, SIGHT, 0, 0.035, 0.08), // rear drum sight
+    box(0.02, 0.05, 0.14, FRAME, 0, -0.005, 0.18), // collapsed stock
+    mag,
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.07, 0.08), // trigger hand
+    box(0.055, 0.04, 0.07, SKIN, -0.01, -0.045, -0.2), // support hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.24), // forearm
+  )
+  const muzzle = marker(0, 0.005, -0.33)
+  const ejectPort = marker(0.022, 0.015, -0.04)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.15, -0.15, -0.4),
+    // Sights on screen centre; compact, so it sits close.
+    ads: new THREE.Vector3(0, -0.04, -0.22),
+    kick: 0.5,
+  }
+}
+
 function knife(): GunModel {
   const group = new THREE.Group()
   group.add(
@@ -240,6 +273,7 @@ export class Viewmodel {
     [WeaponId.Sniper]: sniper(),
     [WeaponId.Shotgun]: shotgun(),
     [WeaponId.Knife]: knife(),
+    [WeaponId.Smg]: mp5(),
   }
   private active: GunModel
   private readonly flash: THREE.Mesh
