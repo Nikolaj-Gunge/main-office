@@ -56,6 +56,8 @@ export interface GameRules {
   headshotsOnly: boolean
   /** Reloading never uses up spare ammo. */
   infiniteAmmo: boolean
+  /** Floating damage numbers next to whoever you hit (testing guns). */
+  showDamage: boolean
   respawnSeconds: number
 }
 
@@ -80,6 +82,7 @@ export const DEFAULT_RULES: GameRules = {
   oneShot: false,
   headshotsOnly: false,
   infiniteAmmo: false,
+  showDamage: false,
   respawnSeconds: 3,
 }
 
@@ -99,7 +102,13 @@ export const RULE_RANGES = {
 } as const satisfies Partial<Record<keyof GameRules, { min: number; max: number; step: number }>>
 
 type NumericRule = keyof typeof RULE_RANGES
-const BOOLEAN_RULES = ['oneShot', 'headshotsOnly', 'infiniteAmmo', 'mapRotation'] as const
+const BOOLEAN_RULES = [
+  'oneShot',
+  'headshotsOnly',
+  'infiniteAmmo',
+  'mapRotation',
+  'showDamage',
+] as const
 
 /**
  * Applies an untrusted partial update (from the admin page or storage) on top of `base`.

@@ -6,6 +6,7 @@ import {
   DEFAULT_MAP_ID,
   DebugFlag,
   type GameRules,
+  HitZone,
   INFECTED_SPEED,
   INPUT_BATCH_TICKS,
   type InputCommand,
@@ -13,6 +14,7 @@ import {
   loadMap,
   MAPS,
   type MatchInfo,
+  type PartName,
   PLAYER_QUERY_GROUPS,
   RAPIER,
   ServerMsg,
@@ -45,6 +47,7 @@ import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
+import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
 import { createLighting } from './render/lighting.ts'
@@ -292,6 +295,9 @@ const net = new Connection({
       case ServerMsg.Match:
         onMatch(msg.match)
         break
+      case ServerMsg.HitConfirm:
+        if (lastRules?.showDamage) showDamageNumber(msg.victimId, msg.zone, msg.damage, msg.killed)
+        break
       case ServerMsg.Kill: {
         const killer =
           msg.killerId === net.playerId ? camera.position.clone() : remotes.muzzleOf(msg.killerId)
@@ -326,6 +332,39 @@ function applyRules(rules: GameRules) {
   remotes.setLook(rules.skin, rules.playerScale)
   combat.jingles = rules.jingles
   ragdolls.setGravity(rules.gravity)
+}
+
+// "Show damage" (admin): a number next to the body part you hit, with the zone and distance.
+const damageNumbers = new DamageNumbers(scene)
+const ZONE_PART: Record<number, PartName> = {
+  [HitZone.Head]: 'head',
+  [HitZone.Chest]: 'chest',
+  [HitZone.Stomach]: 'stomach',
+  [HitZone.Arm]: 'armR',
+  [HitZone.Leg]: 'thighR',
+}
+const ZONE_LABEL: Record<number, string> = {
+  [HitZone.Head]: 'HEAD',
+  [HitZone.Chest]: 'chest',
+  [HitZone.Stomach]: 'stomach',
+  [HitZone.Arm]: 'arm',
+  [HitZone.Leg]: 'leg',
+}
+function showDamageNumber(victimId: number, zone: HitZone, damage: number, killed: boolean) {
+  const pose = remotes.visiblePoses().get(victimId)
+  if (!pose) return
+  const part = bodyParts(pose).find((p) => p.name === ZONE_PART[zone]) ?? bodyParts(pose)[0]
+  if (!part) return
+  // Beside the body (to the right as you look at them), at the height of the part you hit.
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize()
+  const at = new THREE.Vector3(part.center.x, part.center.y, part.center.z).addScaledVector(
+    right,
+    0.55,
+  )
+  const distance = camera.position.distanceTo(new THREE.Vector3(pose.x, pose.y, pose.z))
+  const detail = `${killed ? 'KILL · ' : ''}${ZONE_LABEL[zone] ?? ''} · ${distance.toFixed(1)} m`
+  const color = killed ? '#ff4a3d' : zone === HitZone.Head ? '#ffd23d' : '#ffffff'
+  damageNumbers.show(at, damage, detail, color)
 }
 
 const matchHud = new MatchHud(hudRoot)
@@ -560,6 +599,7 @@ pixels.renderer.setAnimationLoop(() => {
   audio.update(dt)
   remotes.update(now, camera.position)
   ragdolls.update(dt)
+  damageNumbers.update(dt)
   worldItems.update(dt)
   minimap.setItems(worldItems.positions())
   updatePickups()
@@ -625,6 +665,7 @@ if (import.meta.env.DEV) {
       viewmodel,
       worldItems,
       ragdolls,
+      damageNumbers,
     },
   })
 }

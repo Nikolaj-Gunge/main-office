@@ -348,6 +348,7 @@ function render(): void {
         timeLimit,
         scoreLimit,
         mapRotation,
+        showDamage,
         ...normal
       } = choices.defaults
       change({ ...normal, ...preset.rules }, true)
@@ -371,6 +372,7 @@ function render(): void {
     toggle('One-shot kills', rules.oneShot, (on) => change({ oneShot: on }, true)),
     toggle('Headshots only', rules.headshotsOnly, (on) => change({ headshotsOnly: on }, true)),
     toggle('Infinite ammo', rules.infiniteAmmo, (on) => change({ infiniteAmmo: on }, true)),
+    toggle('Show damage numbers', rules.showDamage, (on) => change({ showDamage: on }, true)),
   )
 
   const sliders = h('div', { class: 'sliders' })

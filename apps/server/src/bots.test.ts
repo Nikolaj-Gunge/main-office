@@ -98,3 +98,27 @@ describe('bots', () => {
     })
   }
 })
+
+describe('shooting range dummies', () => {
+  test('stand exactly on their marks, never move or turn, and come back in place', () => {
+    const map = loadMap('range')
+    const game = new Game(map, createPhysicsWorld(map), mulberry(1))
+    const dummies = [...game.players.values()].filter((p) => p.dummy)
+    expect(dummies.length).toBe(map.targets?.length ?? -1)
+    const me = game.join('Tester', client()) ?? 0
+    for (let t = 0; t < 5 * TICK_RATE; t++) game.step()
+    for (const d of dummies) {
+      const mark = d.dummy?.pos ?? [0, 0, 0]
+      expect(Math.hypot(d.state.pos.x - mark[0], d.state.pos.z - mark[2])).toBeLessThan(0.01)
+      expect(d.state.yaw).toBeCloseTo(d.dummy?.yaw ?? 0)
+    }
+    const first = dummies[0]
+    if (!first) throw new Error('no dummy')
+    game.killPlayer(first.id, me)
+    expect(first.state.alive).toBe(false)
+    expect(game.players.get(me)?.kills).toBe(0) // dummies don't count
+    for (let t = 0; t < 1.5 * TICK_RATE; t++) game.step()
+    expect(first.state.alive).toBe(true)
+    expect(first.state.pos.z).toBeCloseTo(first.dummy?.pos[2] ?? 0)
+  })
+})

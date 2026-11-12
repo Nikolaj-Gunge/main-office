@@ -23,7 +23,7 @@ type Verdict = [ServerPlayer | null, TeamId, string]
 /** Infection: people who join this long into a round start infected. */
 const LATE_JOIN_INFECTED_SECONDS = 30
 /** Maps the rotation cycles through (the gym is a test range, not a play map). */
-const ROTATION = () => Object.keys(MAPS).filter((id) => id !== 'gym')
+const ROTATION = () => Object.keys(MAPS).filter((id) => id !== 'gym' && id !== 'range')
 
 /**
  * Rounds and scoring for every game mode. The Game asks it what a player may do (hurt,
@@ -60,7 +60,8 @@ export class MatchRunner {
 
   /** People (and bots) in the game. */
   private get everyone(): ServerPlayer[] {
-    return [...this.game.players.values()]
+    // Shooting-range dummies are props, not players: they don't win, score or end rounds.
+    return [...this.game.players.values()].filter((p) => !p.dummy)
   }
 
   // --- What the game asks ----------------------------------------------------------------
@@ -93,6 +94,7 @@ export class MatchRunner {
   // --- What the game tells us ------------------------------------------------------------
 
   onJoin(player: ServerPlayer): void {
+    if (player.dummy) return
     const mode = this.rules.mode
     if (mode === 'tdm') player.team = this.smallerTeam()
     if (mode === 'infection') {
@@ -104,7 +106,7 @@ export class MatchRunner {
   }
 
   onKill(victim: ServerPlayer, killer: ServerPlayer, weapon: WeaponId): void {
-    if (this.phase === 'ended') return
+    if (this.phase === 'ended' || victim.dummy) return
     const mode = this.rules.mode
     if (mode === 'tdm' && killer !== victim && killer.team !== victim.team) {
       this.teamScores[killer.team]++

@@ -107,4 +107,9 @@ export interface MapDef {
    * it, only the fixed spawns are used.
    */
   spawnArea?: { min: [number, number]; max: [number, number] }
+  /**
+   * Shooting-range dummies: bots that stand exactly here facing `yaw`, never move, turn or
+   * shoot, respawn in place, and don't count for scores.
+   */
+  targets?: MapSpawn[]
 }

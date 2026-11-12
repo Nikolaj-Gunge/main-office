@@ -28,6 +28,7 @@ export class MapBuilder {
   private skyline = false
   private readonly pickups: MapPickup[] = []
   private spawnArea: MapDef['spawnArea']
+  private readonly targets: MapSpawn[] = []
 
   private readonly id: string
   private readonly name: string
@@ -110,6 +111,12 @@ export class MapBuilder {
     return this
   }
 
+  /** A training dummy standing here (feet), facing `yawDeg` (see MapDef.targets). */
+  target(x: number, y: number, z: number, yawDeg = 0) {
+    this.targets.push({ pos: [x, y, z], yaw: (yawDeg * Math.PI) / 180 })
+    return this
+  }
+
   light(light: MapLight) {
     this.lights.push(light)
     return this
@@ -149,6 +156,7 @@ export class MapBuilder {
       skyline: this.skyline,
       pickups: this.pickups,
       ...(this.spawnArea ? { spawnArea: this.spawnArea } : {}),
+      ...(this.targets.length > 0 ? { targets: this.targets } : {}),
     }
   }
 }

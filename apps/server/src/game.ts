@@ -19,6 +19,7 @@ import {
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   type MapDef,
+  type MapSpawn,
   type MovementConfig,
   movementFor,
   type PhysicsWorld,
@@ -91,7 +92,12 @@ interface ServerPlayer {
   out: boolean
   /** Walk cycle 0–1 (advances with distance walked): drives the running animation and hitboxes. */
   stride: number
+  /** Shooting-range dummy: stands exactly here, never moves, turns or shoots. */
+  dummy?: MapSpawn
 }
+
+/** Range dummies come back this fast after being dropped. */
+const DUMMY_RESPAWN_SECONDS = 1
 
 /** Metres walked per full walk cycle (two steps). */
 const STRIDE_LENGTH = 1.7
@@ -156,6 +162,18 @@ export class Game {
     this.spawns = new SpawnPicker(findSpawnPoints(map, physics), physics, random)
     this.items = this.createItems(map)
     this.match = new MatchRunner(this)
+    this.syncDummies()
+  }
+
+  /** One dummy per map target (shooting range); removes dummies from the previous map. */
+  private syncDummies(): void {
+    for (const p of [...this.players.values()]) if (p.dummy) this.leave(p.id)
+    for (const target of this.map.targets ?? []) {
+      const distance = Math.round(-target.pos[2])
+      const id = this.join(`Dummy ${distance} m`, NO_CLIENT, target)
+      const dummy = id === null ? undefined : this.players.get(id)
+      if (dummy) dummy.protectedUntil = 0
+    }
   }
 
   get mapId(): string {
@@ -229,6 +247,7 @@ export class Game {
     }
     old.world.free()
     for (const p of this.players.values()) this.sendWorld(p)
+    this.syncDummies()
   }
 
   /** Zeroes everyone's kills and deaths. */
@@ -273,7 +292,7 @@ export class Game {
   }
 
   /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
-  join(rawName: string, client: GameClient): number | null {
+  join(rawName: string, client: GameClient, dummy?: MapSpawn): number | null {
     if (this.players.size >= MAX_PLAYERS) {
       // A person always gets in: a bot gives up its place.
       const bot = client === NO_CLIENT ? undefined : [...this.players.values()].find((p) => p.bot)
@@ -307,6 +326,7 @@ export class Game {
       levelKills: 0,
       out: false,
       stride: 0,
+      ...(dummy ? { dummy } : {}),
     }
     this.match.onJoin(player)
     this.applyRules(player)
@@ -350,7 +370,7 @@ export class Game {
     this.players.delete(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
-    if (!player.bot) this.syncBots()
+    if (!player.bot && !player.dummy) this.syncBots()
     this.match.check()
   }
 
@@ -422,6 +442,13 @@ export class Game {
       | { id: number; pos: Point; alive: boolean; isProtected: boolean; team: number }[]
       | null = null
     for (const player of this.players.values()) {
+      if (player.dummy) {
+        // Dummies stand still facing their way: an idle input keeps their sim (and pose) going.
+        const seq = player.lastQueuedSeq + 1
+        player.lastQueuedSeq = seq
+        player.queue.push({ seq, buttons: 0, yaw: player.dummy.yaw, pitch: 0, viewTick: this.tick })
+        continue
+      }
       if (!player.bot) continue
       views ??= [...this.players.values()].map((p) => ({
         id: p.id,
@@ -657,9 +684,10 @@ export class Game {
       this.items.drop(primary.id, this.floorBelow(victim.state.pos), victim.state.yaw, this.tick)
     victim.state.alive = false
     victim.state.vel = { x: 0, y: 0, z: 0 }
-    victim.respawnAt = this.tick + Math.round(this.rulesValue.respawnSeconds * TICK_RATE)
-    victim.deaths++
-    if (killer !== victim) {
+    const respawnSeconds = victim.dummy ? DUMMY_RESPAWN_SECONDS : this.rulesValue.respawnSeconds
+    victim.respawnAt = this.tick + Math.round(respawnSeconds * TICK_RATE)
+    if (!victim.dummy) victim.deaths++
+    if (killer !== victim && !victim.dummy) {
       killer.kills++
       if (headshot) killer.headshots++
     }
@@ -713,7 +741,7 @@ export class Game {
     // Keep input edge detection continuous so a held button isn't seen as a new press.
     player.state.prevButtons = previous.prevButtons
     player.health = MAX_HEALTH
-    player.protectedUntil = this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
+    player.protectedUntil = player.dummy ? 0 : this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
   }
 
   /**
@@ -721,7 +749,7 @@ export class Game {
    * (otherwise rifles, snipers and shotguns are found on the floor).
    */
   private freshState(player: ServerPlayer): PlayerState {
-    const spawn = this.pickSpawn(player)
+    const spawn = player.dummy ?? this.pickSpawn(player)
     // Gun game and the infected: the mode decides what you carry.
     const forced = this.match.loadout(player)
     if (forced) {
@@ -851,7 +879,10 @@ export class Game {
   /** A random spot away from, and out of sight of, every living enemy (not teammates). */
   private pickSpawn(player: ServerPlayer) {
     const enemies = [...this.players.values()]
-      .filter((p) => p !== player && p.state.alive && (p.team === 0 || p.team !== player.team))
+      .filter(
+        (p) =>
+          p !== player && p.state.alive && !p.dummy && (p.team === 0 || p.team !== player.team),
+      )
       .map((p) => p.state.pos)
     return this.spawns.pick(enemies)
   }
