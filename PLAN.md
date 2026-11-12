@@ -401,7 +401,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - **Done when:** a new colleague can open the URL and play without being told anything.
 - **Implementation notes:** one menu serves as join screen and Esc pause menu (PLAY / SETTINGS / CONTROLS tabs); every action is rebindable (keyboard, mouse buttons, wheel), stored with the other settings in localStorage. The server sends a scoreboard once a second and after every kill; clients report their measured RTT in pings for the ping column. Names show only for the player under your crosshair within line of sight (world raycast + hitboxes). Minimap is drawn once from the map boxes, rotated with the player; enemies appear only as red pings when they fire. Pixel font: Pixelify Sans (OFL), bundled — no external requests. lil-gui (F1) stays as the developer/tuning panel.
 
-### Phase 8 — The office map
+### Phase 8 — The office map ✅
 
 - Greybox in Blender following metrics → playtest → iterate → art pass.
 - glTF loader with `COL_` / `SPAWN_` / `LIGHT_` conventions; baked lighting; pixel textures; landmark props.
@@ -411,7 +411,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 
 - **Spawns & weapon pickups (added during phase 8 at the user's request):** spawn anywhere — the server precomputes ~950 free floor spots on both floors and picks a random one ≥ 10 m from and out of sight of every living enemy (glass doesn't hide you). Everyone spawns with only the handgun; 9 map spots hold rifles/snipers (full ammo, back 25 s after being taken). Empty slot → walk over to pick up and draw; full slot → E swaps and throws yours down; dying drops your rifle/sniper (30 s on the floor). The loadout choice from phase 6 is gone. Tests check every weapon spot is reachable by walking over it.
 
-### Phase 9 — Characters & animation
+### Phase 9 — Characters & animation ✅
 
 - Low-poly pixel-textured character (Blockbench), third-person weapon models, team-less color/hat customization.
 - Animations: idle, walk/run (blend by speed), crouch, jump, ADS pose, reload, death (ragdoll-ish or canned).
@@ -419,7 +419,7 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - First-person hands model for viewmodels with reload/draw animations.
 - **Done when:** you can read what an enemy is doing (crouching, reloading, aiming) from their silhouette.
 
-### Phase 10 — Always-on deployment
+### Phase 10 — Always-on deployment ✅
 
 > **Implementation notes:**
 > - Host: Cloudflare free plan (user's choice).
@@ -437,11 +437,11 @@ Every phase ends with something you can run and feel. Don't start the next phase
 - SQLite stats: all-time kills/deaths/headshots per name, leaderboard page.
 - **Done when:** server ran for 7 days without manual intervention.
 
-### Phase 11 — Admin page, game rules, modes, maps (user request)
+### Phase 11 — Admin page, game rules, modes, maps (user request) ✅
 
 Built in 3 testable parts on `phase-11`:
 
-1. **Admin + rules + skins + jingles** ✅ (built, awaiting test)
+1. **Admin + rules + skins + jingles** ✅
    - `/admin` page with a password (the `ADMIN_PASSWORD` secret), using the `AdminApi` in `apps/server/src/admin.ts`. The Bun server and the Durable Object share it.
    - `GameRules` (`packages/shared/src/rules.ts`) cover: map, skin, jingles, gravity, speed, jump, playerScale, spread, recoil, damage, oneShot, headshotsOnly, infiniteAmmo, respawnSeconds.
      - The server sends them (`ServerMsg.Rules`, protocol v8).
