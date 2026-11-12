@@ -9,6 +9,8 @@ import {
   TICK_DT,
   TICK_RATE,
   type Vec3,
+  WEAPON_TIER,
+  type WeaponId,
   ZombieKind,
 } from '@office-fps/shared'
 import type { BotLead } from './bots.ts'
@@ -18,7 +20,7 @@ import { NavGrid } from './nav.ts'
 import { ZombieBrain } from './zombie-brain.ts'
 
 /** Most zombies the server runs at once (each one is a full player on the server). */
-export const MAX_ZOMBIES = 20
+export const MAX_ZOMBIES = 24
 /** Places kept free for people joining while the horde is out. */
 const FREE_SLOTS = 4
 /** Quiet seconds at the start of a run (or stage retry) before the first zombie shows up. */
@@ -37,9 +39,9 @@ const FOLLOW_STEPS = 6
 
 /** How the difficulty (the admin's bot skill) plays out. */
 const DIFFICULTY = {
-  easy: { count: 0.7, health: 0.75, claws: 12 },
-  normal: { count: 1, health: 1, claws: 20 },
-  hard: { count: 1.35, health: 1.3, claws: 30 },
+  easy: { count: 0.7, health: 0.75, claws: 17 },
+  normal: { count: 1, health: 1, claws: 27 },
+  hard: { count: 1.35, health: 1.3, claws: 38 },
 } as const
 
 const KIND_HEALTH: Record<ZombieKind, number> = {
@@ -175,12 +177,15 @@ export class ZombieDirector {
     this.stage++
     this.done = 0
     this.toGoal = this.goalField()
-    // Checkpoint: the fallen come back here, everyone is patched up and restocked.
+    // Checkpoint: the fallen come back here, everyone is patched up, restocked and handed this
+    // stage's gun if it's bigger than theirs.
+    const armory = this.armory()
     for (const p of this.survivors()) {
       if (!p.state.alive) {
         p.out = false
         this.game.respawnNow(p)
       }
+      if (armory !== null) this.game.arm(p, armory)
       this.game.refill(p)
     }
     this.game.match.broadcast()
@@ -244,7 +249,8 @@ export class ZombieDirector {
     if (awake < want && tick >= this.nextSpawn) {
       const sleeper = zombies.find((z) => !z.state.alive)
       if (sleeper && this.spawn(sleeper, stage, team)) {
-        this.nextSpawn = tick + Math.round(SPAWN_EVERY * TICK_RATE)
+        // Later stages: they pour in faster, too.
+        this.nextSpawn = tick + Math.round((SPAWN_EVERY / stage.intensity) * TICK_RATE)
       }
     }
     if (tick % TICK_RATE === 0) this.recycleLost(zombies)
@@ -389,6 +395,16 @@ export class ZombieDirector {
 
   clawDamage(): number {
     return this.difficulty.claws
+  }
+
+  /** The biggest gun handed out so far this run (stages up to the current one), or null. */
+  armory(): WeaponId | null {
+    let best: WeaponId | null = null
+    for (const s of this.coop?.stages.slice(0, this.stage + 1) ?? []) {
+      const id = s.armory as WeaponId | undefined
+      if (id !== undefined && (best === null || WEAPON_TIER[id] >= WEAPON_TIER[best])) best = id
+    }
+    return best
   }
 
   speedFactor(player: ServerPlayer): number {

@@ -56,6 +56,7 @@ const GUN_LENGTH: Record<WeaponId, number> = {
   [WeaponId.Shotgun]: 0.8,
   [WeaponId.Knife]: 0.3,
   [WeaponId.Smg]: 0.5,
+  [WeaponId.Lmg]: 0.95,
   [WeaponId.Claws]: 0.01,
 }
 const gunGeometry = Object.fromEntries(

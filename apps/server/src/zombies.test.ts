@@ -156,4 +156,23 @@ describe('zombies mode', () => {
     expect(held).toBeGreaterThan(0.08)
     expect(held).toBeLessThan(0.2)
   })
+
+  test('later stages hand out bigger guns, and zombies follow you up the tower ramps', () => {
+    const { ids, player, game, run, zombies } = setup(1)
+    const me = player(ids[0] ?? 0)
+    const director = (game.match as unknown as { zombies: { startRun(s: number): void } }).zombies
+    director.startRun(1)
+    game.respawnNow(me)
+    expect(me.state.weapon.id).toBe(WeaponId.Smg)
+    director.startRun(6) // third floor: the LMG, zombies coming up from the floor below
+    game.respawnNow(me)
+    me.protectedUntil = Number.POSITIVE_INFINITY
+    expect(me.state.weapon.id).toBe(WeaponId.Lmg)
+    expect(me.state.pos.y).toBeCloseTo(9, 1)
+    run(30)
+    const upHere = zombies().filter(
+      (z) => z.state.alive && Math.abs(z.state.pos.y - me.state.pos.y) < 0.3,
+    )
+    expect(upHere.length).toBeGreaterThan(3)
+  })
 })

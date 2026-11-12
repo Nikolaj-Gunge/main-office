@@ -66,6 +66,16 @@ export function buildGunModel(id: WeaponId): THREE.Group {
         box(0.05, 0.075, 0.24, WOOD, 0, 0.055, 0.24), // stock
       )
       break
+    case WeaponId.Lmg:
+      g.add(
+        box(0.06, 0.07, 0.34, FRAME, 0, 0.09, 0), // receiver
+        box(0.05, 0.05, 0.24, STEEL, 0, 0.09, -0.28), // barrel shroud
+        box(0.022, 0.022, 0.2, STEEL, 0, 0.09, -0.5), // barrel
+        box(0.09, 0.09, 0.1, FRAME, 0.02, 0.04, -0.04), // ammo box
+        box(0.03, 0.07, 0.04, FRAME, 0, 0.035, 0.1), // grip
+        box(0.05, 0.08, 0.2, FRAME, 0, 0.07, 0.27), // stock
+      )
+      break
     case WeaponId.Smg:
       g.add(
         box(0.04, 0.055, 0.26, STEEL, 0, 0.085, -0.02), // receiver

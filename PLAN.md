@@ -480,6 +480,14 @@ Built in 3 testable parts on `phase-11`:
   - Client: zombie and runner bodies, groans and claw sounds, objective bar with progress, a "GATE OPEN" banner, the goal area marked on the floor and a waypoint on the HUD.
   - Only your own zombie kills appear in the kill feed.
   - Protocol v15: `PlayerJoined.kind`, `MatchInfo.coop`.
+- **Zombies round 2:**
+  - Outbreak is now 8 stages: the yard became a 4-floor loading tower (bay, 2nd floor, 3rd floor, roof helipad).
+    - Floors are joined by walled 20° ramps, each gated at the bottom.
+    - The nav grid joins floors via `MapDef.navLinks`. `nearest()` also finds a node for someone on a ramp.
+  - Checkpoints hand out bigger guns (`CoopStage.armory`, `WEAPON_TIER`): MP5, then rifle, then the new LMG (weapon 7, 100-round belt).
+  - More zombies the further you get: intensity 0.8 → 2.4, a pool of 24, faster spawning in later stages.
+  - Claws hit harder: 17 / 27 / 38 for easy / normal / hard.
+  - MP5 and LMG: tall open sights, and the gun held lower and further out when aiming.
 - Next co-op idea (user): a heist map — sneak past guards and police.
 
 - Slide and mantle; lean (Q/E).

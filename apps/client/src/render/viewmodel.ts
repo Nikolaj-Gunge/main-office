@@ -188,8 +188,11 @@ function mp5(): GunModel {
     box(0.04, 0.055, 0.26, STEEL, 0, 0, -0.02), // receiver
     box(0.045, 0.045, 0.12, FRAME, 0, -0.01, -0.2), // handguard
     box(0.016, 0.016, 0.06, STEEL, 0, 0.005, -0.29), // barrel
-    box(0.014, 0.022, 0.012, SIGHT, 0, 0.038, -0.24), // front sight post
-    box(0.03, 0.016, 0.012, SIGHT, 0, 0.035, 0.08), // rear drum sight
+    // Tall sights on posts: aiming, you look over the gun, not into it.
+    box(0.008, 0.06, 0.012, STEEL, 0, 0.055, -0.24), // front sight post
+    box(0.004, 0.012, 0.012, SIGHT, 0, 0.088, -0.24), // front sight tip
+    box(0.008, 0.06, 0.012, STEEL, -0.012, 0.055, 0.08), // rear sight, left ear
+    box(0.008, 0.06, 0.012, STEEL, 0.012, 0.055, 0.08), // rear sight, right ear
     box(0.02, 0.05, 0.14, FRAME, 0, -0.005, 0.18), // collapsed stock
     mag,
     grip,
@@ -205,9 +208,43 @@ function mp5(): GunModel {
     muzzle,
     ejectPort,
     hip: new THREE.Vector3(0.15, -0.15, -0.4),
-    // Sights on screen centre; compact, so it sits close.
-    ads: new THREE.Vector3(0, -0.04, -0.22),
+    // Sight tips on screen centre, held well out and low so the gun stays out of the view.
+    ads: new THREE.Vector3(0, -0.088, -0.3),
     kick: 0.5,
+  }
+}
+
+function lmg(): GunModel {
+  const group = new THREE.Group()
+  const grip = box(0.03, 0.08, 0.04, FRAME, 0, -0.07, 0.1)
+  grip.rotateX(0.3)
+  group.add(
+    box(0.06, 0.07, 0.34, FRAME, 0, 0, 0), // receiver
+    box(0.05, 0.05, 0.24, STEEL, 0, 0, -0.28), // barrel shroud
+    box(0.022, 0.022, 0.2, STEEL, 0, 0, -0.5), // barrel
+    box(0.09, 0.09, 0.1, FRAME, 0.02, -0.08, -0.04), // ammo box
+    box(0.04, 0.02, 0.06, 0xb08a3a, 0.035, 0.0, -0.04), // belt
+    box(0.05, 0.08, 0.2, FRAME, 0, -0.02, 0.27), // stock
+    // Tall open sights (like the MP5): you aim over the gun.
+    box(0.008, 0.07, 0.012, STEEL, 0, 0.07, -0.36),
+    box(0.004, 0.012, 0.012, SIGHT, 0, 0.108, -0.36),
+    box(0.008, 0.07, 0.012, STEEL, -0.014, 0.07, 0.06),
+    box(0.008, 0.07, 0.012, STEEL, 0.014, 0.07, 0.06),
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.08, 0.1), // trigger hand
+    box(0.055, 0.04, 0.07, SKIN, -0.01, -0.05, -0.28), // support hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.26), // forearm
+  )
+  const muzzle = marker(0, 0, -0.61)
+  const ejectPort = marker(0.035, 0.02, 0)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.17, -0.18, -0.46),
+    ads: new THREE.Vector3(0, -0.108, -0.34),
+    kick: 0.9,
   }
 }
 
@@ -274,6 +311,7 @@ export class Viewmodel {
     [WeaponId.Shotgun]: shotgun(),
     [WeaponId.Knife]: knife(),
     [WeaponId.Smg]: mp5(),
+    [WeaponId.Lmg]: lmg(),
     // Only zombies have claws, and nobody plays one: no first-person model.
     [WeaponId.Claws]: knife(),
   }

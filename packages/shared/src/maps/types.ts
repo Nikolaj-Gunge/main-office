@@ -119,6 +119,11 @@ export interface MapDef {
   targets?: MapSpawn[]
   /** Co-op map (zombies mode): the stages the team fights through, in order. */
   coop?: CoopDef
+  /**
+   * Walkable ways between floors (ramps), bottom → top, for the zombies' nav grid: each end
+   * is a spot on a floor just off the ramp.
+   */
+  navLinks?: [Vec3, Vec3][]
 }
 
 /** An axis-aligned area (min/max corners, feet height included). */
@@ -151,6 +156,11 @@ export interface CoopStage {
   intensity: number
   /** Share of zombies that are runners (fast, fragile). */
   runners: number
+  /**
+   * Weapon (WeaponId) everyone gets when the stage starts, unless they already carry one at
+   * least as big (WEAPON_TIER): the further you get, the bigger the guns.
+   */
+  armory?: number
 }
 
 export interface CoopDef {

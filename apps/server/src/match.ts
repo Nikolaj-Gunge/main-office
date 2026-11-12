@@ -119,6 +119,11 @@ export class MatchRunner {
     return this.zombies?.botFollow(bot) ?? null
   }
 
+  /** Co-op: the gun the current stage hands out, or null. */
+  armory(): WeaponId | null {
+    return this.zombies?.armory() ?? null
+  }
+
   clawDamage(): number {
     return this.zombies?.clawDamage() ?? WEAPONS[WeaponId.Claws].damage
   }

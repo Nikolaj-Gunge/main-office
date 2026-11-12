@@ -8,7 +8,7 @@ export const SKINS = ['worker', 'robot', 'slime'] as const
 export type SkinId = (typeof SKINS)[number]
 
 /** Main weapon everyone spawns with, next to the handgun ('none' = find one on the floor). */
-export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'mp5', 'random'] as const
+export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'mp5', 'lmg', 'random'] as const
 export type SpawnWeapon = (typeof SPAWN_WEAPONS)[number]
 
 /** How well server bots aim and react. */

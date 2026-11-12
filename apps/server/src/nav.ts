@@ -29,7 +29,9 @@ const DIAGONAL = Math.SQRT2
 export class NavGrid {
   readonly nodes: Vec3[]
   private readonly cell = new Map<string, number>()
-  private readonly edges: { to: number; cost: number }[][]
+  private readonly edges: { to: number; cost: number; link?: boolean }[][]
+  /** Floor heights that have nodes. */
+  private readonly floors: number[]
   /** Gate id that blocks each node (-1 = none). */
   private readonly gateOf: Int16Array
   private readonly minX: number
@@ -49,6 +51,16 @@ export class NavGrid {
       this.edges = this.nodes.map((p) => this.link(p, physics))
     } finally {
       setGates(physics, gatesOpen)
+    }
+    this.floors = [...new Set(this.nodes.map((p) => p[1]))]
+    // Ramps between floors: the spots at both ends are joined both ways.
+    for (const [bottom, top] of map.navLinks ?? []) {
+      const a = this.nearest({ x: bottom[0], y: bottom[1], z: bottom[2] })
+      const b = this.nearest({ x: top[0], y: top[1], z: top[2] })
+      if (a < 0 || b < 0) continue
+      const cost = Math.hypot(top[0] - bottom[0], top[1] - bottom[1], top[2] - bottom[2]) / SPACING
+      this.edges[a]?.push({ to: b, cost, link: true })
+      this.edges[b]?.push({ to: a, cost, link: true })
     }
     this.gateOf = new Int16Array(this.nodes.length).fill(-1)
     for (const box of map.boxes) {
@@ -109,21 +121,32 @@ export class NavGrid {
     return out
   }
 
-  /** The node nearest to `p` on its floor (searching a few cells around), or -1. */
+  /**
+   * The node nearest to `p`: on its own floor if there's one within a few cells, otherwise
+   * (on a ramp, say) the closest on any floor within ~8 m.
+   */
   nearest(p: Point): number {
     const exact = this.at(p.x, p.y, p.z)
     if (exact !== undefined) return exact
+    const near = this.search(p, [p.y], 3)
+    if (near >= 0) return near
+    return this.search(p, this.floors ?? [], 10)
+  }
+
+  private search(p: Point, floors: number[], cells: number): number {
     let best = -1
     let bestD = Number.POSITIVE_INFINITY
-    for (let dx = -3; dx <= 3; dx++) {
-      for (let dz = -3; dz <= 3; dz++) {
-        const i = this.at(p.x + dx * SPACING, p.y, p.z + dz * SPACING)
-        if (i === undefined) continue
-        const n = this.nodes[i] as Vec3
-        const d = Math.hypot(n[0] - p.x, n[2] - p.z)
-        if (d < bestD) {
-          bestD = d
-          best = i
+    for (const y of floors) {
+      for (let dx = -cells; dx <= cells; dx++) {
+        for (let dz = -cells; dz <= cells; dz++) {
+          const i = this.at(p.x + dx * SPACING, y, p.z + dz * SPACING)
+          if (i === undefined) continue
+          const n = this.nodes[i] as Vec3
+          const d = Math.hypot(n[0] - p.x, (n[1] - p.y) * 2, n[2] - p.z)
+          if (d < bestD) {
+            bestD = d
+            best = i
+          }
         }
       }
     }
@@ -175,13 +198,17 @@ export class NavGrid {
     if (i < 0 || !Number.isFinite(field[i] ?? Number.POSITIVE_INFINITY)) return null
     for (let step = 0; step < lookahead; step++) {
       let best = i
-      for (const { to } of this.edges[i] ?? []) {
+      let viaLink = false
+      for (const { to, link } of this.edges[i] ?? []) {
         if ((field[to] ?? Number.POSITIVE_INFINITY) < (field[best] ?? Number.POSITIVE_INFINITY)) {
           best = to
+          viaLink = link ?? false
         }
       }
       if (best === i) break
       i = best
+      // Up or down a ramp: head for its far end in a straight line, no corner cutting after.
+      if (viaLink) break
     }
     const n = this.nodes[i] as Vec3
     return { x: n[0], y: n[1], z: n[2] }

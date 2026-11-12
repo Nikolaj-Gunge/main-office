@@ -192,6 +192,7 @@ const PUSH_SPEED: Record<WeaponId, number> = {
   [WeaponId.Shotgun]: 6,
   [WeaponId.Knife]: 2.5,
   [WeaponId.Smg]: 3,
+  [WeaponId.Lmg]: 4.5,
   [WeaponId.Claws]: 2,
 }
 const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()

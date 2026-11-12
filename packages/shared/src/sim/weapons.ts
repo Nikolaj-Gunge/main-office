@@ -10,6 +10,8 @@ export const WeaponId = {
   Smg: 5,
   /** Zombies' bare hands (zombies mode): they have nothing else. */
   Claws: 6,
+  /** Light machine gun: a 100-round belt, heavy. */
+  Lmg: 7,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
@@ -19,7 +21,20 @@ export const PRIMARY_WEAPONS = [
   WeaponId.Sniper,
   WeaponId.Shotgun,
   WeaponId.Smg,
+  WeaponId.Lmg,
 ] as const
+
+/** How big a gun is (co-op hands out bigger ones as you get further): 0 handgun … 3 LMG. */
+export const WEAPON_TIER: Record<WeaponId, number> = {
+  [WeaponId.Handgun]: 0,
+  [WeaponId.Knife]: 0,
+  [WeaponId.Claws]: 0,
+  [WeaponId.Smg]: 1,
+  [WeaponId.Shotgun]: 1,
+  [WeaponId.Rifle]: 2,
+  [WeaponId.Sniper]: 2,
+  [WeaponId.Lmg]: 3,
+}
 export type PrimaryWeapon = (typeof PRIMARY_WEAPONS)[number]
 
 export function isPrimary(id: number): id is PrimaryWeapon {
@@ -358,6 +373,56 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kickPitch: 0,
     kickYaw: 0,
     recoverTime: 0.2,
+  },
+  [WeaponId.Lmg]: {
+    id: WeaponId.Lmg,
+    name: 'LMG',
+    fireMode: 'auto',
+    // ~670 rounds a minute off a 100-round belt; hits like the rifle, carries further.
+    fireInterval: 0.09,
+    magSize: 100,
+    reserve: 200,
+    reloadTime: 4.2,
+    emptyReloadTime: 4.8,
+    drawTime: 0.9,
+    damage: 32,
+    falloffStart: 30,
+    falloffEnd: 60,
+    minDamage: 25,
+    range: 300,
+    hipSpread: 2.6,
+    aimSpread: 0.45,
+    moveSpread: 3.2,
+    airSpread: 8,
+    sprintToFire: 0.35,
+    adsTime: 0.32,
+    aimZoom: 1.15,
+    scoped: false,
+    scopeSway: 0,
+    // Heavy: you walk slower carrying it.
+    moveSpeedFactor: 0.86,
+    kickPitch: 0.4,
+    kickYaw: 0.3,
+    recoverTime: 0.3,
+    // A steady climb that levels off, then a slow wander (it's a belt-fed hose).
+    recoilPattern: [
+      [0.5, 0],
+      [0.55, 0.05],
+      [0.55, 0.1],
+      [0.5, 0.05],
+      [0.45, -0.05],
+      [0.4, -0.12],
+      [0.3, -0.15],
+      [0.22, -0.1],
+      [0.18, 0.05],
+      [0.15, 0.18],
+      [0.15, 0.22],
+      [0.15, 0.1],
+      [0.15, -0.1],
+      [0.15, -0.22],
+      [0.15, -0.18],
+      [0.15, 0],
+    ],
   },
 }
 

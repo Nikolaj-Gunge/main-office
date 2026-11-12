@@ -71,6 +71,7 @@ const SPAWN_WEAPON_NAMES: Record<string, string> = {
   sniper: '+ Sniper',
   shotgun: '+ Shotgun',
   mp5: '+ MP5',
+  lmg: '+ LMG',
   random: '+ Random',
 }
 

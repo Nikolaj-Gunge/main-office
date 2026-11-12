@@ -42,6 +42,7 @@ import {
   TICK_DT,
   TICK_RATE,
   USE_PICKUP_RADIUS,
+  WEAPON_TIER,
   WEAPONS,
   WeaponId,
   type WeaponRules,
@@ -791,6 +792,22 @@ export class Game {
     setGates(this.physics, (id) => (open & (1 << id)) !== 0)
   }
 
+  /**
+   * Puts `id` in a player's hands as their primary, unless what they carry is at least as big
+   * (co-op armory at each checkpoint). Their old primary is simply replaced.
+   */
+  arm(player: ServerPlayer, id: WeaponId): void {
+    const s = player.state
+    const current = primaryOf(s)
+    if (current && WEAPON_TIER[current.id] >= WEAPON_TIER[id]) return
+    const others = carried(s).filter((w) => w !== current)
+    const handgun = others.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun)
+    const knife = others.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife)
+    s.weapon = newWeapon(id)
+    s.holstered = handgun
+    s.pocket = knife
+  }
+
   /** Full health and a full reserve for every gun carried (co-op checkpoints). */
   refill(player: ServerPlayer): void {
     player.health = player.maxHealth
@@ -839,7 +856,13 @@ export class Game {
         ? createPlayerState(spawn, newWeapon(forced), null, null)
         : createPlayerState(spawn, newWeapon(forced), newWeapon(WeaponId.Knife), null)
     }
-    const primary = spawnPrimary(this.rulesValue.spawnWeapon, this.random)
+    // Co-op hands out the stage's gun (if it beats the admin's spawn weapon).
+    const ruled = spawnPrimary(this.rulesValue.spawnWeapon, this.random)
+    const armory = this.match.armory()
+    const primary =
+      armory !== null && (ruled === null || WEAPON_TIER[armory] > WEAPON_TIER[ruled])
+        ? armory
+        : ruled
     const handgun = newWeapon(WeaponId.Handgun)
     return primary === null
       ? createPlayerState(spawn, handgun, null)
@@ -983,6 +1006,7 @@ const SPAWN_PRIMARIES: Record<Exclude<SpawnWeapon, 'none' | 'random'>, WeaponId>
   sniper: WeaponId.Sniper,
   shotgun: WeaponId.Shotgun,
   mp5: WeaponId.Smg,
+  lmg: WeaponId.Lmg,
 }
 
 /** The main weapon a spawn gets under the rules ('random' picks one per spawn), or null. */

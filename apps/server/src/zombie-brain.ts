@@ -70,7 +70,11 @@ export class ZombieBrain {
     const { target } = senses
     const eye = { x: self.pos.x, y: self.pos.y + EYE, z: self.pos.z }
 
-    let goal: Point | null = senses.waypoint
+    // No way further along the grid (right under someone on a ramp, say): go straight at them.
+    const waypoint = senses.waypoint
+    const stalled =
+      waypoint !== null && Math.hypot(waypoint.x - self.pos.x, waypoint.z - self.pos.z) < 0.5
+    let goal: Point | null = stalled && target ? target : waypoint
     let flat = Number.POSITIVE_INFINITY
     let seen = false
     if (target) {
