@@ -1,4 +1,4 @@
-import type { HitPose } from '@office-fps/shared'
+import { blendShotAge, type HitPose } from '@office-fps/shared'
 
 export interface HistoryPose extends HitPose {
   alive: boolean
@@ -67,6 +67,15 @@ export class PoseHistory {
         1,
       speed: (a.speed ?? 0) + ((b.speed ?? 0) - (a.speed ?? 0)) * t,
       grounded: (t < 0.5 ? a.grounded : b.grounded) ?? true,
+      // The animation extras, blended exactly as clients blend snapshots (interpolation.ts).
+      moveDir: lerpAngle(a.moveDir ?? 0, b.moveDir ?? 0, t),
+      vy: (a.vy ?? 0) + ((b.vy ?? 0) - (a.vy ?? 0)) * t,
+      land: (a.land ?? 0) + ((b.land ?? 0) - (a.land ?? 0)) * t,
+      ads: (a.ads ?? 0) + ((b.ads ?? 0) - (a.ads ?? 0)) * t,
+      shotAge: blendShotAge(a.shotAge ?? 1, b.shotAge ?? 1, t),
+      ...(b.weapon !== undefined ? { weapon: b.weapon } : {}),
+      ...(b.gait !== undefined ? { gait: b.gait } : {}),
+      ...(b.seed !== undefined ? { seed: b.seed } : {}),
     }
   }
 }

@@ -1,5 +1,6 @@
 import {
   type BodyPart,
+  type BodyPose,
   bodyParts,
   PART_SIZES,
   type PartName,
@@ -466,23 +467,14 @@ export class Avatar {
   }
 
   /**
+   * @param pose    their full body pose (remotePose): exactly what their hitboxes are built from.
    * @param viewer  your eye position — a scoped sniper's glint is brightest when they look at you.
    */
-  update(s: RemotePlayerState, timeMs: number, viewer?: THREE.Vector3, size = 1): void {
+  update(s: RemotePlayerState, pose: BodyPose, timeMs: number, viewer?: THREE.Vector3): void {
     if (s.weapon !== this.weapon) this.setWeapon(s.weapon)
     this.root.visible = s.alive
-    const parts = bodyParts({
-      x: s.x,
-      y: s.y,
-      z: s.z,
-      yaw: s.yaw,
-      pitch: s.pitch,
-      crouch: s.crouch,
-      stride: s.stride,
-      speed: s.speed,
-      grounded: s.grounded,
-      scale: size,
-    })
+    const size = pose.scale ?? 1
+    const parts = bodyParts(pose)
     this.lastParts = parts
     for (const p of parts) {
       const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]

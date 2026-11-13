@@ -163,14 +163,18 @@ describe('animated hitboxes', () => {
     raycastPose({ x, y, z: 0 }, { x: 0, y: 0, z: -1 }, 100, pose)?.zone ?? HitZone.None
 
   test('a running leg swings: the hitbox moves with it', () => {
-    // Shoot just in front of the standing legs: nothing there while standing…
-    const low = (pose: HitPose) =>
-      raycastPose({ x: 0.11, y: 0.5, z: -10.4 }, { x: 0, y: 0, z: 1 }, 0.25, pose)?.zone ??
-      HitZone.None
-    expect(low(base)).toBe(HitZone.None)
-    // …but mid-stride, one knee is out front.
-    const striding = [0.25, 0.75].map((stride) => low({ ...base, stride, speed: 6.5 }))
-    expect(striding).toContain(HitZone.Leg)
+    // Knee height, 0.2–0.4 m in front of the legs (the target faces the shooter)…
+    const front = (pose: HitPose, x: number) =>
+      raycastPose({ x, y: 0.5, z: -9.6 }, { x: 0, y: 0, z: -1 }, 0.2, pose)?.zone ?? HitZone.None
+    // …is empty while standing…
+    expect([front(base, -0.13), front(base, 0.13)]).toEqual([HitZone.None, HitZone.None])
+    // …but mid-stride a knee drives up out there, then swings back behind and leaves it empty.
+    const cycle = (x: number) =>
+      Array.from({ length: 20 }, (_, i) => front({ ...base, stride: i / 20, speed: 6.5 }, x))
+    for (const x of [-0.13, 0.13]) {
+      expect(cycle(x)).toContain(HitZone.Leg)
+      expect(cycle(x)).toContain(HitZone.None)
+    }
   })
 
   test('aiming down tilts the head: a shot just over it misses standing, hits looking up', () => {

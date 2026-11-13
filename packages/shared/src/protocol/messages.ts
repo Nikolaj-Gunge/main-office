@@ -88,6 +88,16 @@ export interface RemotePlayerState {
   /** Walk cycle 0–1 and horizontal speed (m/s): drive the running animation and its hitboxes. */
   stride: number
   speed: number
+  /** Which way they move relative to where they face (radians, 0 = forward, +π/2 = right). */
+  moveDir: number
+  /** Vertical speed (m/s): a jump tucks the legs, a fall reaches them down. */
+  vy: number
+  /** Landing impact 0–1, fading after touchdown: the knees give. */
+  land: number
+  /** Aim-down-sights blend 0–1 (eased in and out by the server): the gun comes up to the eye. */
+  ads: number
+  /** Seconds since they last fired or swung, capped at 1: recoil, melee swings, claw swipes. */
+  shotAge: number
   /** Survival: their torch is on. */
   light?: boolean
 }
@@ -215,6 +225,7 @@ export type ServerMessage =
       poses: (HitPose & { id: number })[]
     }
 
+const TAU = Math.PI * 2
 const FLAG_CROUCHED = 1
 const FLAG_GROUNDED = 2
 const FLAG_DEAD = 4
@@ -323,6 +334,35 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
   w.u8(p.weapon)
   w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
   w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
+  writeAnimation(w, p)
+}
+
+/** The animation-only extras of a pose (5 bytes): movement direction, jump, landing, aim, shot. */
+function writeAnimation(
+  w: BinaryWriter,
+  p: { moveDir?: number; vy?: number; land?: number; ads?: number; shotAge?: number },
+): void {
+  w.u8(Math.round((((((p.moveDir ?? 0) / TAU) % 1) + 1) % 1) * 256) & 0xff)
+  w.u8(Math.round(Math.max(-25.4, Math.min(25.4, p.vy ?? 0)) * 5) + 127)
+  w.u8(Math.round(Math.max(0, Math.min(1, p.land ?? 0)) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(1, p.ads ?? 0)) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(1, p.shotAge ?? 1)) * 255))
+}
+
+function readAnimation(r: BinaryReader): {
+  moveDir: number
+  vy: number
+  land: number
+  ads: number
+  shotAge: number
+} {
+  return {
+    moveDir: (r.u8() / 256) * TAU,
+    vy: (r.u8() - 127) / 5,
+    land: r.u8() / 255,
+    ads: r.u8() / 255,
+    shotAge: r.u8() / 255,
+  }
 }
 
 function readRemote(r: BinaryReader): RemotePlayerState {
@@ -337,9 +377,11 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const weapon = r.u8() as WeaponId
   const stride = r.u8() / 255
   const speed = r.u8() / 10
+  const animation = readAnimation(r)
   return {
     stride,
     speed,
+    ...animation,
     id,
     x,
     y,
@@ -550,6 +592,11 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
         w.u8(Math.round(((((p.stride ?? 0) % 1) + 1) % 1) * 255))
         w.u8(Math.round(Math.min(25.5, p.speed ?? 0) * 10))
         w.u8(p.grounded === false ? 0 : 1)
+        writeAnimation(w, p)
+        w.u8(p.weapon ?? 255)
+        w.u8(p.gait ?? 0)
+        w.u8(Math.round(Math.max(0, Math.min(2.55, p.scale ?? 1)) * 100))
+        w.f32(p.time ?? 0)
       }
       break
   }
@@ -667,8 +714,9 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       const count = r.u8()
       const poses: (HitPose & { id: number })[] = []
       for (let i = 0; i < count; i++) {
-        poses.push({
-          id: r.u16(),
+        const id = r.u16()
+        const pose: HitPose & { id: number } = {
+          id,
           x: r.f32(),
           y: r.f32(),
           z: r.f32(),
@@ -678,7 +726,15 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
           stride: r.u8() / 255,
           speed: r.u8() / 10,
           grounded: r.u8() === 1,
-        })
+          ...readAnimation(r),
+        }
+        const weapon = r.u8()
+        if (weapon !== 255) pose.weapon = weapon as WeaponId
+        pose.gait = r.u8()
+        pose.scale = r.u8() / 100
+        pose.time = r.f32()
+        pose.seed = id
+        poses.push(pose)
       }
       return { type, origin, dir, viewTick, poses }
     }

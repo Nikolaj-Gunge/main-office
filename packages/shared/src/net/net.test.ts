@@ -117,6 +117,11 @@ describe('InterpolationBuffer', () => {
     aiming: false,
     stride: 0,
     speed: 0,
+    moveDir: 0,
+    vy: 0,
+    land: 0,
+    ads: 0,
+    shotAge: 1,
   })
 
   test('blends between snapshots', () => {
@@ -126,6 +131,26 @@ describe('InterpolationBuffer', () => {
     buf.push(14, at(4))
     expect(buf.sample(11)?.x).toBeCloseTo(1)
     expect(buf.sample(13.5)?.x).toBeCloseTo(3.5)
+  })
+
+  test('blends the animation extras: aim, landing, movement direction the short way round', () => {
+    const buf = new InterpolationBuffer()
+    buf.push(10, { ...at(0), ads: 0, land: 1, moveDir: 0.1 })
+    buf.push(12, { ...at(0), ads: 1, land: 0, moveDir: Math.PI * 2 - 0.1 })
+    const s = buf.sample(11)
+    expect(s?.ads).toBeCloseTo(0.5)
+    expect(s?.land).toBeCloseTo(0.5)
+    expect(Math.abs(Math.sin(s?.moveDir ?? 1))).toBeLessThan(1e-9)
+  })
+
+  test('a new shot between snapshots restarts the shot clock instead of blending back', () => {
+    const buf = new InterpolationBuffer()
+    buf.push(10, { ...at(0), shotAge: 0.5 })
+    buf.push(12, { ...at(0), shotAge: 0.02 })
+    expect(buf.sample(10.5)?.shotAge).toBe(0.5)
+    expect(buf.sample(11.5)?.shotAge).toBe(0.02)
+    buf.push(14, { ...at(0), shotAge: 0.06 })
+    expect(buf.sample(13)?.shotAge).toBeCloseTo(0.04)
   })
 
   test('extrapolates briefly past the newest snapshot, then holds', () => {

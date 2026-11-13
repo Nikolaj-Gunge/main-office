@@ -94,6 +94,35 @@ describe('Game', () => {
     expect(snap?.self?.pos.z).toBeLessThan(startZ - 3)
   })
 
+  test("others see a player's aim ease in and out, which way they move, and their shots", () => {
+    const game = makeGame()
+    const a = fakeClient()
+    game.join('Anna', a)
+    const id = game.join('Bo', fakeClient()) ?? 0
+    const p = game.players.get(id)
+    if (p) p.state.pos = { x: 0, y: 0, z: 45 }
+    let seq = 0
+    const run = (buttons: number, ticks: number) => {
+      for (let i = 0; i < ticks; i++) {
+        game.handleInput(id, [{ seq: ++seq, buttons, yaw: 0, pitch: 0, viewTick: 0 }])
+        game.step()
+      }
+      return a.last(ServerMsg.Snapshot)?.players.find((o) => o.id === id)
+    }
+    expect(run(Button.Aim, TICK_RATE)?.ads).toBe(1)
+    // The weapon drops its aim at once; the body others see lowers it over ~0.15 s.
+    const lowering = run(0, 4)?.ads ?? 0
+    expect(lowering).toBeGreaterThan(0.3)
+    expect(lowering).toBeLessThan(1)
+    expect(run(0, 10)?.ads).toBe(0)
+    // Strafing right, then walking forward.
+    expect(Math.sin(run(Button.Right, 20)?.moveDir ?? 0)).toBeCloseTo(1, 1)
+    expect(Math.cos(run(Button.Forward, 30)?.moveDir ?? 0)).toBeCloseTo(1, 1)
+    // A shot restarts the shot clock (recoil, swings and claw swipes play from it).
+    expect(run(0, TICK_RATE)?.shotAge).toBe(1)
+    expect(run(Button.Fire, 2)?.shotAge).toBeLessThan(0.1)
+  })
+
   test('snapshots list everyone except the recipient', () => {
     const game = makeGame()
     const a = fakeClient()

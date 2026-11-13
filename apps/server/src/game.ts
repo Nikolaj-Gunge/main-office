@@ -1,5 +1,6 @@
 import {
   AUTO_PICKUP_RADIUS,
+  aimProgress,
   Button,
   carried,
   createPlayerState,
@@ -21,6 +22,7 @@ import {
   type MapDef,
   type MapSpawn,
   type MovementConfig,
+  moveDirection,
   movementFor,
   type PhysicsWorld,
   PLAYER_COLORS,
@@ -39,6 +41,7 @@ import {
   type SurvivalAction,
   setGates,
   stepPlayer,
+  strideLength,
   type TeamId,
   TICK_DT,
   TICK_RATE,
@@ -102,6 +105,16 @@ interface ServerPlayer {
   out: boolean
   /** Walk cycle 0–1 (advances with distance walked): drives the running animation and hitboxes. */
   stride: number
+  /**
+   * Aim-down-sights blend 0–1 for the body others see: follows the weapon's aim progress up and
+   * eases back down over ADS_OUT_SECONDS (the weapon itself drops its aim instantly). Kept here,
+   * not smoothed on clients, so the replicated pose — and its hitboxes — stays the server's.
+   */
+  ads: number
+  /** Landing impact 0–1: set on touchdown by how hard they came down, fades over LAND_SECONDS. */
+  land: number
+  /** Tick of their last shot or swing (recoil, melee and claw animations). */
+  shotTick: number
   /** Shooting-range dummy: stands exactly here, never moves, turns or shoots. */
   dummy?: MapSpawn
   /** Zombies mode: one of the horde (server-run, see zombies.ts). */
@@ -113,8 +126,11 @@ interface ServerPlayer {
 /** Range dummies come back this fast after being dropped. */
 const DUMMY_RESPAWN_SECONDS = 1
 
-/** Metres walked per full walk cycle (two steps). */
-const STRIDE_LENGTH = 1.7
+/** How long the gun takes to come down from the sights, as others see it. */
+const ADS_OUT_SECONDS = 0.15
+/** How long a landing's dip lasts, and the fall speed (m/s) that makes the deepest one. */
+const LAND_SECONDS = 0.3
+const HARD_LANDING = 9
 
 export type { ServerPlayer }
 
@@ -356,6 +372,9 @@ export class Game {
       levelKills: 0,
       out: false,
       stride: 0,
+      ads: 0,
+      land: 0,
+      shotTick: -TICK_RATE,
       maxHealth: MAX_HEALTH,
       ...(dummy ? { dummy } : {}),
       ...(zombie ? { zombie } : {}),
@@ -423,6 +442,16 @@ export class Game {
     if (player) player.debugFlags = flags
   }
 
+  /** Advances the replicated animation state after one simulated command. */
+  private animate(player: ServerPlayer, walked: number): void {
+    const s = player.state
+    const speed = Math.hypot(s.vel.x, s.vel.z)
+    const length = strideLength(speed, this.sizeOf(player), player.zombie?.kind ?? 0)
+    if (walked < 1) player.stride = (player.stride + walked / length) % 1
+    player.ads = Math.max(aimProgress(s.weapon), player.ads - TICK_DT / ADS_OUT_SECONDS)
+    player.land = Math.max(0, player.land - TICK_DT / LAND_SECONDS)
+  }
+
   /** Survival: something done from the backpack, a shop or a conversation. */
   handleAction(id: number, action: SurvivalAction): void {
     const player = this.players.get(id)
@@ -447,11 +476,16 @@ export class Game {
           hasButton(command.buttons, Button.Use) && !hasButton(player.state.prevButtons, Button.Use)
         const bx = player.state.pos.x
         const bz = player.state.pos.z
+        const wasGrounded = player.state.grounded
+        const fallSpeed = -player.state.vel.y
         const events = stepPlayer(player.state, command, TICK_DT, player.body)
-        const walked = Math.hypot(player.state.pos.x - bx, player.state.pos.z - bz)
-        if (walked < 1) player.stride = (player.stride + walked / STRIDE_LENGTH) % 1
+        this.animate(player, Math.hypot(player.state.pos.x - bx, player.state.pos.z - bz))
+        if (player.state.grounded && !wasGrounded) {
+          player.land = Math.max(player.land, Math.min(1, (fallSpeed - 1) / (HARD_LANDING - 1)))
+        }
         player.ackSeq = command.seq
         if (events.shot) {
+          player.shotTick = this.tick
           this.fire(player, events.shot, command.viewTick)
           this.match.onShot(player)
         }
@@ -537,9 +571,14 @@ export class Game {
       if (target === shooter || !target.state.alive) continue
       // A zombie's claws go through the zombie crowding it (they'd always hit each other).
       if (shooter.zombie && target.zombie) continue
-      const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target)
+      const pose = this.history.poseAt(target.id, rewindTo) ?? toHistoryPose(target, this.tick)
       if (!pose.alive) continue
-      targets.push({ player: target, pose: { id: target.id, ...pose } })
+      // Idle motion runs on the server clock: the time the shooter was looking at.
+      const time = rewindTo / TICK_RATE
+      targets.push({
+        player: target,
+        pose: { id: target.id, ...pose, time, scale: this.sizeOf(target) },
+      })
     }
 
     if (weapon.fireMode === 'melee') {
@@ -560,8 +599,7 @@ export class Game {
       const wallDistance = wall ? wall.timeOfImpact : weapon.range
       let hit: { victim: ServerPlayer; distance: number; zone: HitZone } | null = null
       for (const { player, pose } of targets) {
-        const scaled = { ...pose, scale: this.sizeOf(player) }
-        const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, scaled)
+        const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, pose)
         if (result) hit = { victim: player, ...result }
       }
 
@@ -638,8 +676,7 @@ export class Game {
       )
       const reach = wall ? wall.timeOfImpact : weapon.range
       for (const { player, pose } of targets) {
-        const scaled = { ...pose, scale: this.sizeOf(player) }
-        const hit = raycastPose(origin, dir, best?.distance ?? reach, scaled)
+        const hit = raycastPose(origin, dir, best?.distance ?? reach, pose)
         if (hit) {
           best = { victim: player, pose, ...hit }
           endDir = dir
@@ -995,13 +1032,13 @@ export class Game {
 
   private currentPoses(): Map<number, HistoryPose> {
     const poses = new Map<number, HistoryPose>()
-    for (const p of this.players.values()) poses.set(p.id, toHistoryPose(p))
+    for (const p of this.players.values()) poses.set(p.id, toHistoryPose(p, this.tick))
     return poses
   }
 
   private sendSnapshots(): void {
     const everyone: RemotePlayerState[] = [...this.players.values()].map((p) =>
-      toRemote(p, this.tick < p.protectedUntil, this.match.lightOn(p)),
+      toRemote(p, this.tick < p.protectedUntil, this.match.lightOn(p), this.tick),
     )
     for (const player of this.players.values()) {
       send(player.client, {
@@ -1101,9 +1138,13 @@ function joinedMessage(p: ServerPlayer): ServerMessage {
   }
 }
 
-function toHistoryPose(p: ServerPlayer): HistoryPose {
+function toHistoryPose(p: ServerPlayer, tick: number): HistoryPose {
   const s = p.state
   return {
+    ...animationOf(p, tick),
+    weapon: s.weapon.id,
+    gait: p.zombie?.kind ?? 0,
+    seed: p.id,
     x: s.pos.x,
     y: s.pos.y,
     z: s.pos.z,
@@ -1117,9 +1158,27 @@ function toHistoryPose(p: ServerPlayer): HistoryPose {
   }
 }
 
-function toRemote(p: ServerPlayer, isProtected: boolean, light: boolean): RemotePlayerState {
+/** The animation extras of the replicated pose (the same in snapshots and lag compensation). */
+function animationOf(p: ServerPlayer, tick: number) {
   const s = p.state
   return {
+    moveDir: moveDirection(s.yaw, s.vel.x, s.vel.z),
+    vy: s.vel.y,
+    land: p.land,
+    ads: p.ads,
+    shotAge: Math.min(1, (tick - p.shotTick) / TICK_RATE),
+  }
+}
+
+function toRemote(
+  p: ServerPlayer,
+  isProtected: boolean,
+  light: boolean,
+  tick: number,
+): RemotePlayerState {
+  const s = p.state
+  return {
+    ...animationOf(p, tick),
     id: p.id,
     x: s.pos.x,
     y: s.pos.y,

@@ -3,6 +3,7 @@ import {
   InterpolationBuffer,
   PLAYER_COLORS,
   type RemotePlayerState,
+  remotePose,
   ServerClock,
   type SkinId,
   TICK_RATE,
@@ -143,7 +144,7 @@ export class RemotePlayers {
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
       const size = this.scale * zombieScale(p.kind)
-      if (p.shown) p.avatar.update(p.shown, nowMs, viewer, size)
+      if (p.shown) p.avatar.update(p.shown, this.poseOf(id, p.shown), nowMs, viewer)
       if (before && p.shown && dt > 0) {
         if (before.alive && p.shown.alive) {
           p.velocity.set(p.shown.x - before.x, p.shown.y - before.y, p.shown.z - before.z)
@@ -163,20 +164,7 @@ export class RemotePlayers {
     this.poses.clear()
     for (const [id, p] of this.players) {
       const s = p.shown
-      if (s?.alive) {
-        this.poses.set(id, {
-          x: s.x,
-          y: s.y,
-          z: s.z,
-          yaw: s.yaw,
-          pitch: s.pitch,
-          crouch: s.crouch,
-          stride: s.stride,
-          speed: s.speed,
-          grounded: s.grounded,
-          scale: this.scale * zombieScale(p.kind),
-        })
-      }
+      if (s?.alive) this.poses.set(id, this.poseOf(id, s))
     }
   }
 
@@ -198,6 +186,19 @@ export class RemotePlayers {
       p.stride -= STRIDE
       this.onFootstep?.(at(), speed > 6)
     }
+  }
+
+  /**
+   * Player `id`'s full body pose for state `s` at the moment on screen: what their avatar is drawn
+   * in and what their hitboxes are (the server rewinds to the same pose when you shoot).
+   */
+  poseOf(id: number, s: RemotePlayerState): HitPose {
+    const kind = this.kindOf(id)
+    return remotePose(s, {
+      gait: kind,
+      scale: this.scale * zombieScale(kind),
+      time: this.renderTick / TICK_RATE,
+    })
   }
 
   /**

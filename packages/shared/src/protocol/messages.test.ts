@@ -156,6 +156,11 @@ describe('server messages', () => {
           aiming: true,
           stride: 0,
           speed: 0,
+          moveDir: -Math.PI / 2,
+          vy: -7.4,
+          land: 0.4,
+          ads: 0.75,
+          shotAge: 0.12,
         },
       ],
     }
@@ -174,6 +179,12 @@ describe('server messages', () => {
     expect(p?.protected).toBe(true)
     expect(p?.weapon).toBe(WeaponId.Sniper)
     expect(p?.aiming).toBe(true)
+    // Animation extras (moving left, falling, landing, half-way to the sights, just fired).
+    expect(Math.sin(p?.moveDir ?? 0)).toBeCloseTo(-1, 3)
+    expect(p?.vy).toBeCloseTo(-7.4, 1)
+    expect(p?.land).toBeCloseTo(0.4, 2)
+    expect(p?.ads).toBeCloseTo(0.75, 2)
+    expect(p?.shotAge).toBeCloseTo(0.12, 2)
   })
 
   test('item spawns survive the wire', () => {
@@ -217,7 +228,24 @@ describe('server messages', () => {
         origin: { x: 1, y: 1.65, z: 2 },
         dir: { x: 0, y: 0, z: -1 },
         viewTick: 500.25,
-        poses: [{ id: 3, x: 4, y: 0, z: -5, yaw: 1.5, crouch: 1 }],
+        poses: [
+          { id: 3, x: 4, y: 0, z: -5, yaw: 1.5, crouch: 1 },
+          {
+            id: 4,
+            x: 0,
+            y: 0,
+            z: 0,
+            yaw: 0,
+            crouch: 0,
+            ads: 1,
+            moveDir: 1,
+            shotAge: 0.3,
+            weapon: WeaponId.Claws,
+            gait: 3,
+            scale: 1.38,
+            time: 8.25,
+          },
+        ],
       }),
     )
     if (out.type !== ServerMsg.DebugShot) throw new Error('wrong type')
@@ -225,6 +253,18 @@ describe('server messages', () => {
     expect(out.poses[0]?.id).toBe(3)
     expect(out.poses[0]?.yaw).toBeCloseTo(1.5, 3)
     expect(out.poses[0]?.crouch).toBe(1)
+    expect(out.poses[0]?.weapon).toBeUndefined()
+    expect(out.poses[0]?.scale).toBe(1)
+    // Everything the server's hit pose was built from, so the debug view matches it.
+    const p = out.poses[1]
+    expect(p?.ads).toBe(1)
+    expect(p?.moveDir).toBeCloseTo(1, 1)
+    expect(p?.shotAge).toBeCloseTo(0.3, 2)
+    expect(p?.weapon).toBe(WeaponId.Claws)
+    expect(p?.gait).toBe(3)
+    expect(p?.scale).toBeCloseTo(1.38, 2)
+    expect(p?.time).toBe(8.25)
+    expect(p?.seed).toBe(4)
   })
 })
 

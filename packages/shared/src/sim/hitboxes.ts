@@ -1,3 +1,4 @@
+import type { RemotePlayerState } from '../protocol/messages.ts'
 import { type BodyPose, bodyParts, type PartName, type Quat, rayOrientedBox } from './skeleton.ts'
 
 /** Body parts a bullet can hit. */
@@ -32,6 +33,36 @@ export interface Point3 {
  * they stand and face, aim pitch, crouch, walk cycle and speed, body size.
  */
 export type HitPose = BodyPose
+
+/**
+ * The pose of another player as clients draw and hit them: their replicated state, plus what the
+ * client knows besides — their zombie kind (gait), body size and the server time on screen. The
+ * server builds the same pose from its own state (game.ts toHistoryPose).
+ */
+export function remotePose(
+  s: RemotePlayerState,
+  extra: { gait?: number; scale?: number; time?: number } = {},
+): HitPose {
+  return {
+    x: s.x,
+    y: s.y,
+    z: s.z,
+    yaw: s.yaw,
+    pitch: s.pitch,
+    crouch: s.crouch,
+    stride: s.stride,
+    speed: s.speed,
+    grounded: s.grounded,
+    moveDir: s.moveDir,
+    vy: s.vy,
+    land: s.land,
+    ads: s.ads,
+    shotAge: s.shotAge,
+    weapon: s.weapon,
+    seed: s.id,
+    ...extra,
+  }
+}
 
 /** One hitbox: an oriented box, exactly a drawn body part. */
 export interface Hitbox {

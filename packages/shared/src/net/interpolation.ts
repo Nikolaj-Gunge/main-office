@@ -1,4 +1,5 @@
 import type { RemotePlayerState } from '../protocol/messages.ts'
+import { blendShotAge } from '../sim/skeleton.ts'
 
 interface Sample {
   tick: number
@@ -74,6 +75,11 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     // Walk cycle wraps at 1: go the short way round.
     stride: (((a.stride + (((b.stride - a.stride + 1.5) % 1) - 0.5) * t) % 1) + 1) % 1,
     speed: lerp(a.speed, b.speed),
+    moveDir: lerpAngle(a.moveDir, b.moveDir, t),
+    vy: lerp(a.vy, b.vy),
+    land: lerp(a.land, b.land),
+    ads: lerp(a.ads, b.ads),
+    shotAge: blendShotAge(a.shotAge, b.shotAge, t),
     ...(b.light ? { light: true } : {}),
   }
 }

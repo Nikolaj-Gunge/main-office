@@ -249,7 +249,7 @@ remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
   if (dir.lengthSq() < 1e-6) dir.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw)) // falls backwards
   dir.normalize().setY(0.25).normalize()
   const speed = (kill ? PUSH_SPEED[weaponLook(kill.weapon)] : 2) + (kill?.headshot ? 1 : 0)
-  const parts = bodyParts({ ...pose, scale })
+  const parts = bodyParts({ ...remotes.poseOf(id, pose), scale })
   ragdolls.spawn(skin, colorIndex, parts, scale, velocity, {
     dir,
     speed,
