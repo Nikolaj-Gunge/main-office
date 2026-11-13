@@ -8,7 +8,11 @@ import {
   countOf,
   createPlayerState,
   createWeaponState,
+  DAY_SECONDS,
+  type DayPhase,
   type Dialog,
+  daylight,
+  dayPhase,
   heightAt,
   type InputCommand,
   type Interactable,
@@ -31,6 +35,7 @@ import {
   SELL_RATE,
   ServerMsg,
   SMALL_TALK,
+  START_TIME,
   type SurvivalAction,
   type SurvivalDef,
   type SurvivalSelf,
@@ -45,12 +50,14 @@ import {
   WEAPONS,
   WeaponId,
   type WeaponState,
+  wakeTime,
   weaponItem,
   weightOf,
   ZombieKind,
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
+import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 
 /** Loot is kept (and told to clients) in square cells this wide (m): yours and the 8 around. */
@@ -59,8 +66,6 @@ const LOOT_CELL = 96
 const HUNGER_SECONDS = 45 * 60
 const THIRST_SECONDS = 30 * 60
 const BATTERY_SECONDS = 9 * 60
-/** One night, from dark through the grey hour and back (s). */
-const NIGHT_SECONDS = 24 * 60
 const RESPAWN_SECONDS = 6
 /** Seconds before the dead you killed at a place are replaced by others. */
 const KILL_MEMORY = 14 * 60
@@ -108,6 +113,14 @@ interface PlaceState {
   woken: number
 }
 
+/** What everyone is told as the light changes. */
+const DAY_NEWS: Record<DayPhase, string> = {
+  dawn: 'Dawn. Fewer of them walk by day, but now they can see you coming.',
+  day: 'Full daylight. Use it.',
+  dusk: 'The sun is going down. Find a door you can board up.',
+  night: 'Night. Keep the torch off unless you have to.',
+}
+
 const START_KIT = [
   { id: WeaponId.Handgun, ammo: 12 },
   { id: WeaponId.Knife, ammo: 0 },
@@ -147,6 +160,7 @@ export class SurvivalDirector {
   private done: string[] = []
   private found = new Set<number>()
   private gates = 0
+  private phase: DayPhase = 'night'
   /** Boarded-up gaps: spot index → battering left before the last plank gives. */
   private readonly boards = new Map<number, number>()
   private boardsDirty = false
@@ -155,10 +169,13 @@ export class SurvivalDirector {
   /** Seconds added to the night's clock by sleeping. */
   private slept = 0
   won = false
+  /** Helicopter supply drops (once the story has the radio working). */
+  private readonly drops: Drops
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
     this.random = random
+    this.drops = new Drops(this.dropHost())
   }
 
   private get now(): number {
@@ -167,13 +184,14 @@ export class SurvivalDirector {
 
   /** The night's clock, 0–1 (see SurvivalShared.time). */
   get time(): number {
-    return (((this.game.tick - this.startTick) / TICK_RATE + this.slept) / NIGHT_SECONDS + 0.05) % 1
+    return (
+      (((this.game.tick - this.startTick) / TICK_RATE + this.slept) / DAY_SECONDS + START_TIME) % 1
+    )
   }
 
-  /** 0 in the dark, 1 in the middle of the grey hour. */
-  private get grey(): number {
-    const t = this.time
-    return t < 0.8 ? 0 : Math.sin(((t - 0.8) / 0.2) * Math.PI)
+  /** 0 at night … 1 in daylight. */
+  private get light(): number {
+    return daylight(this.time)
   }
 
   // --- Life cycle --------------------------------------------------------------------------
@@ -187,6 +205,7 @@ export class SurvivalDirector {
     this.won = false
     this.startTick = this.game.tick
     this.slept = 0
+    this.phase = 'night'
     this.loot.clear()
     this.cells.clear()
     this.places = def.pois.map(() => ({ stocked: -1, kills: [], woken: 0 }))
@@ -199,6 +218,7 @@ export class SurvivalDirector {
     this.profiles.clear()
     this.survivors.clear()
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
+    this.drops.reset()
     this.begin('wake')
     for (let i = 0; i < POOL; i++) {
       const zombie = this.game.addZombie(new Zed(this.random))
@@ -405,6 +425,8 @@ export class SurvivalDirector {
       this.stockPlaces(alive)
       this.expireLoot()
       this.tickQuests(alive)
+      this.drops.step()
+      this.tickDay(people)
     }
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
@@ -421,6 +443,15 @@ export class SurvivalDirector {
       sv.dirty = false
       this.send(sv.player, { type: ServerMsg.Survival, self: sv.self })
     }
+  }
+
+  /** Dawn and dusk: everyone is told the light is changing. */
+  private tickDay(people: readonly Survivor[]): void {
+    const phase = dayPhase(this.time)
+    if (phase === this.phase) return
+    this.phase = phase
+    const text = DAY_NEWS[phase]
+    for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
   }
 
   /** Hunger, thirst, bleeding, the torch's battery — once a second. */
@@ -909,9 +940,9 @@ export class SurvivalDirector {
     player.health = player.maxHealth
     player.state.stamina = 1
     sv.dirty = true
-    // Sleeping through the dark: wake in the grey hour.
+    // Sleeping through the dark: wake at dawn.
     const t = this.time
-    if (t < 0.8) this.slept += (0.8 - t) * NIGHT_SECONDS
+    this.slept += (wakeTime(t) - t) * DAY_SECONDS
     this.send(player, {
       type: ServerMsg.Notice,
       notice: { kind: 'story', text: 'You sleep.\n\nIf you die, this is where you wake up.' },
@@ -1333,7 +1364,7 @@ export class SurvivalDirector {
       prey ??= this.prey(alive)
       if (stalker) zed.watch(z, prey, clear)
       if ((tick + z.id) % 15 >= 4 && stalker) continue
-      if (zed.sense(z, prey, this.now, this.grey, clear) === 'scream') this.scream(z)
+      if (zed.sense(z, prey, this.now, this.light, clear) === 'scream') this.scream(z)
     }
   }
 
@@ -1374,9 +1405,9 @@ export class SurvivalDirector {
     if (people.length === 0) return
     const free = () => this.pool.find((z) => !z.state.alive)
     const active = this.pool.filter((z) => z.state.alive)
-    const dark = this.grey < 0.3
-    // Fewer in the grey hour; a few more with more people about.
-    const scale = (1 - this.grey * 0.4) * (1 + 0.15 * (people.length - 1))
+    const dark = this.light < 0.3
+    // Fewer by day, more at night; a few more with more people about.
+    const scale = (dark ? 1.3 : 1.15 - this.light * 0.45) * (1 + 0.15 * (people.length - 1))
 
     this.def.pois.forEach((poi, i) => {
       if (poi.danger <= 0 || nearest(poi) > poi.r + 120) return
@@ -1412,7 +1443,7 @@ export class SurvivalDirector {
     // The woods are never quite empty.
     for (const p of people) {
       const around = active.filter((z) => dist(z.state.pos, p) < 150).length
-      const want = Math.round((dark ? 3 : 2) * scale)
+      const want = Math.round((dark ? 3.5 : 2) * scale)
       if (around >= want) continue
       const zombie = free()
       if (!zombie) return
@@ -1462,6 +1493,45 @@ export class SurvivalDirector {
     this.game.applyRules(zombie)
   }
 
+  /** What the supply drops (drops.ts) get to do here. */
+  private dropHost(): DropHost {
+    return {
+      def: () => this.def,
+      random: this.random,
+      now: () => this.now,
+      done: () => this.done,
+      people: () =>
+        [...this.survivors.values()]
+          .filter((sv) => sv.player.state.alive)
+          .map((sv) => sv.player.state.pos),
+      addLoot: (item, n, at, ammo, until) => {
+        const id = this.nextLoot
+        this.addLoot(item, n, at, -1, ammo, Math.round(until * TICK_RATE))
+        return id
+      },
+      hasLoot: (id) => this.loot.has(id),
+      alertNear: (at, radius) => {
+        for (const z of this.pool) {
+          if (!z.state.alive || dist(z.state.pos, at) > radius) continue
+          const r = () => (this.random() - 0.5) * 8
+          this.zeds.get(z.id)?.alert({ x: at.x + r(), y: at.y, z: at.z + r() }, this.now)
+        }
+      },
+      spawnZombie: (at, kind, goal) => {
+        const zombie = this.pool.find((z) => !z.state.alive)
+        if (!zombie) return false
+        this.place(zombie, kind, -1, false, at)
+        this.zeds.get(zombie.id)?.alert(goal, this.now)
+        return true
+      },
+      tell: (kind, text) => {
+        for (const sv of this.survivors.values())
+          this.notice(sv.player, kind, text(sv.player.state.pos))
+      },
+      broadcast: () => this.game.match.broadcast(),
+    }
+  }
+
   // --- Telling people ------------------------------------------------------------------------
 
   info(): SurvivalShared {
@@ -1473,6 +1543,7 @@ export class SurvivalDirector {
       found: [...this.found],
       won: this.won,
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
+      drops: this.drops.shared(),
     }
   }
 

@@ -487,7 +487,9 @@ export class ClientCombat {
       )
       if (hit) best = { id, distance: hit.distance }
     }
-    const name = best ? this.d.remotes.nameOf(best.id) : undefined
+    // People only: the dead don't wear name tags.
+    const name =
+      best && this.d.remotes.kindOf(best.id) === 0 ? this.d.remotes.nameOf(best.id) : undefined
     const color = best ? (this.d.remotes.colorOf(best.id) ?? 0) : 0
     this.d.hud.setHoverName(name ?? null, PLAYER_COLORS[color % PLAYER_COLORS.length] ?? 0xffffff)
   }

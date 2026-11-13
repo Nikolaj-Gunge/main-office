@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { ITEMS, type ItemDef, type QuestStep } from '@office-fps/shared'
-import { bearingTo, effectText, headingOf, stepLine, turnBetween } from './survival-hud.ts'
+import {
+  buildDeadwood,
+  ITEMS,
+  type ItemDef,
+  type Poi,
+  type QuestStep,
+  type SurvivalDef,
+} from '@office-fps/shared'
+import {
+  bearingTo,
+  effectText,
+  headingOf,
+  stepLine,
+  turnBetween,
+  whereText,
+} from './survival-hud.ts'
 
 describe('compass', () => {
   test('heading is degrees clockwise from north', () => {
@@ -66,5 +80,20 @@ describe('quest lines', () => {
     }
     expect(stepLine(fetch, state, [{ item: 'beans', n: 2 }])).toBe('Bring Dot beans (2/3)')
     expect(stepLine(fetch, state, [{ item: 'beans', n: 9 }])).toBe('Bring Dot beans (3/3)')
+  })
+})
+
+describe('quest directions', () => {
+  const def = buildDeadwood().survival as SurvivalDef
+  const haven = def.pois.find((p) => p.key === 'haven') as Poi
+
+  test('names the place, the direction and the distance', () => {
+    const from = { x: haven.x, z: haven.z + 640 }
+    expect(whereText(def, from, haven)).toBe('Haven · N · 640 m')
+    expect(whereText(def, { x: haven.x - 2000, z: haven.z }, haven)).toBe('Haven · E · 2.0 km')
+  })
+
+  test('says so when you are there', () => {
+    expect(whereText(def, { x: haven.x + 5, z: haven.z }, haven)).toBe('Haven · here')
   })
 })

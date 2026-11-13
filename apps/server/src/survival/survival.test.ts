@@ -3,7 +3,9 @@ import {
   Button,
   createPhysicsWorld,
   DEFAULT_RULES,
+  DROP_LAND,
   decodeServerMessage,
+  heightAt,
   ITEMS,
   initPhysics,
   LOOT_TABLES,
@@ -26,6 +28,7 @@ import {
   WeaponId,
 } from '@office-fps/shared'
 import { Game } from '../game.ts'
+import { openGround } from './drops.ts'
 import type { Zed } from './horde.ts'
 
 beforeAll(async () => {
@@ -339,5 +342,78 @@ describe('survival: barricades', () => {
     t.run(60)
     expect(boards()).toBe(0)
     expect(t.game.world.physics.barricades.has(i)).toBe(false)
+  })
+})
+
+describe('survival: supply drops', () => {
+  test('after the radio works, a helicopter drops a crate near you: loot, a flare and the dead', () => {
+    const t = setup()
+    t.run(1)
+    const director = (
+      t.game.match as unknown as {
+        survival: {
+          done: string[]
+          drops: { nextAt: number }
+          survivors: Map<number, { self: SurvivalSelf }>
+        }
+      }
+    ).survival
+    // Out in the woods, where nothing much lives.
+    t.move(-300, 0, 600)
+    t.player().state.pos.y = heightAt(t.def.terrain, -300, 600) + 0.1
+    const now = () => t.game.tick / TICK_RATE
+    // Not before the story gets there, however long you wait.
+    director.drops.nextAt = now()
+    t.run(3)
+    expect(t.match().survival?.drops ?? []).toEqual([])
+
+    director.done.push('wake', 'keep', 'deadair', 'tower')
+    director.drops.nextAt = now()
+    t.run(1.5)
+    const drops = t.match().survival?.drops ?? []
+    expect(drops.length).toBe(1)
+    const drop = drops[0]
+    if (!drop) throw new Error('no drop')
+    expect(drop.landed).toBe(false)
+    const me = t.player().state.pos
+    const d = Math.hypot(drop.x - me.x, drop.z - me.z)
+    expect(d).toBeGreaterThanOrEqual(79)
+    expect(d).toBeLessThanOrEqual(201)
+    expect(openGround(t.def, drop.x, drop.z)).toBe(true)
+    expect(Math.abs(drop.y - heightAt(t.def.terrain, drop.x, drop.z))).toBeLessThan(0.2)
+    const notices = () =>
+      t.clients[0]?.inbox.flatMap((m) => (m.type === ServerMsg.Notice ? [m.notice.text] : [])) ?? []
+    expect(notices().some((n) => n.includes('helicopter'))).toBe(true)
+
+    // It comes down, spills its loot, and the dead come for it.
+    t.run(DROP_LAND)
+    const landed = t.match().survival?.drops?.[0]
+    expect(landed?.landed).toBe(true)
+    expect(landed?.opened).toBe(false)
+    expect(notices().some((n) => n.includes('parachute'))).toBe(true)
+    const coming = t.zombies().filter((z) => {
+      const zed = z.zombie as Zed
+      const goal = zed.lastKnown
+      return goal !== null && Math.hypot(goal.x - drop.x, goal.z - drop.z) < 10
+    })
+    expect(coming.length).toBeGreaterThanOrEqual(3)
+    // Walk over (told about the loot once you're near).
+    t.move(drop.x + 3, drop.y + 0.1, drop.z)
+    t.run(0.6)
+    const loot = (
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    ).filter((l) => Math.hypot(l.x - drop.x, l.z - drop.z) < 2)
+    expect(loot.length).toBeGreaterThanOrEqual(5)
+    expect(loot.some((l) => ITEMS[l.item]?.kind === 'weapon')).toBe(true)
+
+    // E takes from it, and then it's been opened.
+    const item = loot.find((l) => ITEMS[l.item]?.kind !== 'weapon')
+    if (!item) throw new Error('nothing to take')
+    director.survivors.get(t.ids[0] ?? 0)?.self.inv.splice(0)
+    t.move(item.x + 0.9, item.y + 0.05, item.z)
+    t.useAt(item.x, item.y, item.z)
+    t.run(1.1)
+    expect(t.self().inv.some((s) => s.item === item.item)).toBe(true)
+    expect(t.match().survival?.drops?.[0]?.opened).toBe(true)
   })
 })

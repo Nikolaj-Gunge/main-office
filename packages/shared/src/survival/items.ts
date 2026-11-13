@@ -316,6 +316,8 @@ export const LOOT_TABLES = [
   'fuel',
   /** Woodpiles and sawmills: planks to board up with. */
   'lumber',
+  /** A supply crate dropped from a helicopter: the good stuff. */
+  'drop',
 ] as const
 export type LootTable = (typeof LOOT_TABLES)[number]
 
@@ -589,6 +591,31 @@ const TABLES: Record<LootTable, TableDef> = {
       ['planks', 10, 2, 5],
       ['scrap', 1],
       ['axe', 0.3],
+    ],
+  },
+  drop: {
+    empty: 0,
+    entries: [
+      ['ammo556', 10, 30, 60],
+      ['ammo762', 9, 30, 60],
+      ['ammo9', 6, 24, 48],
+      ['ammo308', 5, 8, 16],
+      ['ammo12', 5, 10, 20],
+      ['ammo50', 2, 4, 8],
+      ['medkit', 8],
+      ['bandage', 6, 2, 4],
+      ['antibiotics', 4],
+      ['adrenaline', 4],
+      ['mre', 8, 1, 3],
+      ['water', 5, 1, 2],
+      ['batteries', 4, 1, 2],
+      ['m4', 2],
+      ['ak47', 2],
+      ['svd', 1.5],
+      ['m249', 1],
+      ['saiga', 1],
+      ['barrett', 0.6],
+      ['pack_military', 2],
     ],
   },
   fuel: {

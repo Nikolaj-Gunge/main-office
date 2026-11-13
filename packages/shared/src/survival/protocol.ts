@@ -1,4 +1,5 @@
 import type { WeaponSlot } from '../sim/weapons.ts'
+import type { SupplyDrop } from './drops.ts'
 import { ITEMS, POCKETS_KG } from './items.ts'
 
 /** Some of one item in a backpack. Weapons never stack (n = 1) and remember what's loaded. */
@@ -36,10 +37,7 @@ export interface QuestState {
 
 /** The state of the world everybody shares (part of MatchInfo, once a second). */
 export interface SurvivalShared {
-  /**
-   * The night's clock, 0–1 and round again: it is darkest around 0.3, and from 0.8 to 1 comes
-   * the grey hour, when you can see a little further and fewer of the dead are about.
-   */
+  /** The day's clock, 0–1 and round again (see daytime.ts: night, dawn, day, dusk). */
   time: number
   /** Bit i set = gate i is open (story doors). */
   gates: number
@@ -52,6 +50,8 @@ export interface SurvivalShared {
   won: boolean
   /** Boarded-up gaps: spot index, battering left, … (see planksFor; only gaps with planks). */
   boards: number[]
+  /** Supply drops on their way down or lying unopened (see drops.ts). */
+  drops?: SupplyDrop[]
 }
 
 export type SurvivalAction =

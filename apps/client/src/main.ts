@@ -573,6 +573,8 @@ const gui = createSettingsGui(settings, () => {
 })
 addTuningFolders(gui, player)
 addNetworkFolder(gui, net, remotes)
+// Out of sight until F1: it covered the quest tracker.
+gui.hide()
 
 let scoreboardHeld = false
 window.addEventListener('keyup', (e) => {
@@ -619,10 +621,12 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'F1') {
     e.preventDefault()
-    if (gui._closed) gui.open()
-    else gui.close()
-    // Interacting with the panel needs a free cursor.
-    if (!gui._closed) document.exitPointerLock()
+    if (gui._hidden) {
+      gui.show()
+      gui.open()
+      // Interacting with the panel needs a free cursor.
+      document.exitPointerLock()
+    } else gui.hide()
   }
   if (e.code === 'F3') {
     e.preventDefault()

@@ -60,6 +60,8 @@ export const SOUNDS = {
   hammer: { variants: 3, recipe: hammer },
   bang: { variants: 3, recipe: woodBang },
   splinter: { variants: 2, recipe: splinter },
+  /** One second of helicopter: replayed back to back while one is about (see render/heli.ts). */
+  heli: { variants: 2, recipe: rotor },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -591,4 +593,35 @@ function pickup(rate: number, v: number): Signal {
   const rustle = envelope(bandpass(noise(0.12, rate, 1600 + v), rate, 2600, 0.8), rate, 0.01, 0.04)
   const click = envelope(tone(0.03, rate, 1300 + v * 300), rate, 0, 0.008)
   return fadeEdges(normalize(mix(rate, gain(rustle, 0.8), [gain(click, 0.5), 0.07]), 0.6), rate)
+}
+
+/**
+ * One second of a helicopter, made to be played back to back: five blade slaps (thwop) over a
+ * low rumble and a thin turbine whine.
+ */
+function rotor(rate: number, v: number): Signal {
+  const seconds = 1
+  const r = rng(1900 + v)
+  const rumble = gain(lowpass(lowpass(noise(seconds, rate, 1900 + v), rate, 220), rate, 220), 2.2)
+  const whine = gain(tone(seconds, rate, 1650 + v * 70), 0.025)
+  const parts: (Signal | [Signal, number])[] = [rumble, whine]
+  for (let k = 0; k < 5; k++) {
+    const at = k * 0.2 + 0.004
+    const slap = envelope(
+      bandpass(noise(0.16, rate, 1910 + v * 10 + k), rate, 120 + r() * 25, 0.8),
+      rate,
+      0.006,
+      0.045,
+    )
+    const thump = envelope(sweep(0.12, rate, 80, 46), rate, 0.003, 0.035)
+    const chop = envelope(
+      highpass(noise(0.05, rate, 1950 + v * 10 + k), rate, 900),
+      rate,
+      0.002,
+      0.012,
+    )
+    parts.push([gain(slap, 2.4), at], [gain(thump, 0.9), at], [gain(chop, 0.12), at])
+  }
+  const out = mix(rate, ...parts).subarray(0, Math.round(seconds * rate))
+  return fadeEdges(normalize(saturate(out, 1.3), 0.85), rate, 0.004)
 }

@@ -14,7 +14,7 @@ import type { ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 
 /** How many of the dead the server runs at once (they share MAX_PLAYERS with the living). */
-export const POOL = 22
+export const POOL = 30
 
 interface KindStats {
   health: number
@@ -22,7 +22,7 @@ interface KindStats {
   /** Share of your walking speed: shuffling about, and coming for you. */
   wander: number
   chase: number
-  /** How far it sees in the dark (m); further in the grey hour and far further at a torch. */
+  /** How far it sees in the dark (m); further by daylight and far further at a torch. */
   sight: number
   /** Battering a barricade: damage per blow (see PLANK_HP). */
   bash: number

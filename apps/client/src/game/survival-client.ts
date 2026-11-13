@@ -1,6 +1,8 @@
 import {
   BOARD_REACH,
   countOf,
+  DAY_SECONDS,
+  heightAt,
   type Interactable,
   ITEMS,
   type LootItem,
@@ -28,6 +30,7 @@ import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
+import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { Night } from '../render/night.ts'
@@ -69,6 +72,10 @@ export class SurvivalClient {
   private readonly loot: LootView
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
+  private readonly heli: HeliView
+  private readonly projected = new THREE.Vector3()
+  /** When the server last said what time it is (ms). */
+  private clockAt = 0
   private readonly npcs: { def: Npc; avatar: Avatar; state: RemotePlayerState }[] = []
   private readonly torch = torch()
   private readonly others: THREE.SpotLight[] = []
@@ -102,6 +109,7 @@ export class SurvivalClient {
     o.scene.add(this.leaves.mesh)
     this.boards = new BarricadeView(o.def.spots)
     o.scene.add(this.boards.root)
+    this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
@@ -180,8 +188,10 @@ export class SurvivalClient {
   setShared(shared: SurvivalShared | undefined): void {
     if (!shared) return
     this.shared = shared
+    this.clockAt = performance.now()
     this.hud.setShared(shared)
     this.applyBoards(shared.boards ?? [])
+    this.heli.apply(shared.drops)
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -200,8 +210,15 @@ export class SurvivalClient {
   /** Joined a (new) game: forget what the last one said. */
   reset(): void {
     this.loot.clear()
+    this.heli.clear()
     this.self = null
     this.applyBoards([])
+  }
+
+  /** The day's clock now: the server's, run on since it last said. */
+  get time(): number {
+    if (!this.shared) return 0
+    return (this.shared.time + (performance.now() - this.clockAt) / 1000 / DAY_SECONDS) % 1
   }
 
   toggleTorch(): void {
@@ -212,12 +229,6 @@ export class SurvivalClient {
     }
     this.send({ a: 'light', on: !this.self.light })
     this.audio.play('dryfire', { volume: 0.5, rate: 1.4 })
-  }
-
-  /** 0 in the dark … 1 in the middle of the grey hour. */
-  private get grey(): number {
-    const t = this.shared?.time ?? 0
-    return t < 0.8 ? 0 : Math.sin(((t - 0.8) / 0.2) * Math.PI)
   }
 
   /**
@@ -241,8 +252,9 @@ export class SurvivalClient {
       syncForest(this.physics, [state.pos])
       this.loot.prune(eye.x, eye.z)
     }
-    this.night.update(dt, eye, this.grey, built)
+    this.night.update(dt, eye, this.time, built)
     this.leaves.update(dt, eye)
+    this.heli.update(dt, eye)
 
     // Your torch, and the nearest of everyone else's.
     const on = this.self?.light === true && state.alive
@@ -292,6 +304,16 @@ export class SurvivalClient {
       pos: state.pos,
       yaw: eyeYaw,
       carried: [state.weapon, state.holstered, state.pocket].filter((w) => w !== null),
+      project: (x, y, z) => {
+        const v = this.projected.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse)
+        const behind = v.z > 0
+        v.applyMatrix4(this.camera.projectionMatrix)
+        return {
+          x: (v.x * 0.5 + 0.5) * window.innerWidth,
+          y: (0.5 - v.y * 0.5) * window.innerHeight,
+          behind,
+        }
+      },
     })
     const dirty = this.night.shadowsDirty
     this.night.shadowsDirty = false

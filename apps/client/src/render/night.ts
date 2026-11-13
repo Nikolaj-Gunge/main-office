@@ -1,4 +1,11 @@
-import type { MapDef, MapLight } from '@office-fps/shared'
+import {
+  DAWN,
+  daylight,
+  type MapDef,
+  type MapLight,
+  NIGHTFALL,
+  sunProgress,
+} from '@office-fps/shared'
 import * as THREE from 'three'
 import { flickerLevel } from './lighting.ts'
 import { hangingLightPos, wind } from './wind.ts'
@@ -16,9 +23,24 @@ const MOON = 1.8
 
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 
+/** Daylight in Deadwood: grey, overcast, the fog never quite lifting. */
+const DAY = {
+  sky: new THREE.Color(0x6f8496),
+  hemiSky: new THREE.Color(0xb8c4cc),
+  hemiGround: new THREE.Color(0x3a3a2a),
+  ambient: 1.9,
+  sun: new THREE.Color(0xfff0d8),
+  sunIntensity: 2.4,
+  fog: new THREE.Color(0x8d989c),
+  fogNear: 25,
+  fogFar: 150,
+}
+/** The low sun at dawn and dusk tints the fog and sky. */
+const EMBER = new THREE.Color(0xc8784a)
+
 /**
  * Survival's light: a faint moon whose shadows follow you through the trees, the few lamps and
- * fires near you, fog that closes in — and the grey hour, when it all eases for a while.
+ * fires near you, fog that closes in — and the grey, overcast day that comes round in between.
  */
 export class Night {
   /** True when the moon's shadow map wants redrawing this frame. */
@@ -33,11 +55,17 @@ export class Night {
   private readonly base: MapDef['lighting']
   private readonly shadowAt = new THREE.Vector3(1e9, 0, 1e9)
   private readonly darkFog: THREE.Color
-  private readonly greyFog = new THREE.Color(0x39424e)
   private readonly darkSky: THREE.Color
-  private readonly greySky = new THREE.Color(0x4a5566)
+  private readonly darkHemiSky: THREE.Color
+  private readonly darkHemiGround: THREE.Color
+  private readonly moonColor: THREE.Color
+  private readonly sunDir = new THREE.Vector3()
+  private readonly lightDir = new THREE.Vector3()
+  private readonly shadowDir = new THREE.Vector3()
   private readonly sky: { top: THREE.Color; horizon: THREE.Color } | null
   private sinceLamps = 1
+  /** Lamps count for less in daylight. */
+  private lampLevel = 1
 
   constructor(map: MapDef, scene: THREE.Scene, sky: THREE.Mesh | null) {
     this.scene = scene
@@ -49,6 +77,9 @@ export class Night {
     scene.fog = this.fog
     this.darkFog = new THREE.Color(l.fogColor)
     this.darkSky = new THREE.Color(l.skyColor)
+    this.darkHemiSky = new THREE.Color(l.skyColor)
+    this.darkHemiGround = new THREE.Color(l.groundColor)
+    this.moonColor = new THREE.Color(l.sunColor)
     this.hemi = new THREE.HemisphereLight(l.skyColor, l.groundColor, l.ambientIntensity)
     this.moon = new THREE.DirectionalLight(l.sunColor, l.sunIntensity * MOON)
     this.moonDir = new THREE.Vector3(...l.sunDirection).normalize()
@@ -77,24 +108,53 @@ export class Night {
   }
 
   /**
-   * @param grey  0 in the dark … 1 in the middle of the grey hour
+   * @param time  the day's clock (SurvivalShared.time)
    * @param moved the world around the viewer changed (new forest): redraw the shadows
    */
-  update(dt: number, viewer: THREE.Vector3, grey: number, moved: boolean): void {
-    // The grey hour: more fill light, fog further off and paler.
-    this.hemi.intensity = this.base.ambientIntensity * mix(1, 2.6, grey)
-    this.moon.intensity = this.base.sunIntensity * MOON * mix(1, 1.7, grey)
-    this.fog.near = this.base.fogNear * mix(1, 2, grey)
-    this.fog.far = this.base.fogFar * mix(1, 1.9, grey)
-    this.fog.color.copy(this.darkFog).lerp(this.greyFog, grey * 0.55)
+  update(dt: number, viewer: THREE.Vector3, time: number, moved: boolean): void {
+    const day = daylight(time)
+    this.lampLevel = 1 - day * 0.7
+    const u = ((time % 1) + 1) % 1
+    // Dawn and dusk glow: strongest halfway through each.
+    const low = u >= DAWN && u < NIGHTFALL ? Math.sin(Math.min(1, Math.max(0, day)) * Math.PI) : 0
+    this.hemi.intensity = mix(this.base.ambientIntensity, DAY.ambient, day)
+    this.hemi.color.copy(this.darkHemiSky).lerp(DAY.hemiSky, day)
+    this.hemi.groundColor.copy(this.darkHemiGround).lerp(DAY.hemiGround, day)
+    this.moon.intensity = mix(this.base.sunIntensity * MOON, DAY.sunIntensity, day)
+    this.moon.color
+      .copy(this.moonColor)
+      .lerp(DAY.sun, day)
+      .lerp(EMBER, low * 0.5)
+    this.fog.near = mix(this.base.fogNear, DAY.fogNear, day)
+    this.fog.far = mix(this.base.fogFar, DAY.fogFar, day)
+    this.fog.color
+      .copy(this.darkFog)
+      .lerp(DAY.fog, day)
+      .lerp(EMBER, low * 0.35)
     this.sky?.horizon.copy(this.fog.color)
-    this.sky?.top.copy(this.darkSky).lerp(this.greySky, grey * 0.5)
+    this.sky?.top.copy(this.darkSky).lerp(DAY.sky, day)
+
+    // The sun crosses from east to west by day; at night the moon hangs where the map put it.
+    const p = sunProgress(u)
+    if (day > 0.02 && p > 0 && p < 1) {
+      const elevation = Math.sin(p * Math.PI) * 0.95 + 0.12
+      this.sunDir.set(Math.cos(p * Math.PI), Math.sin(elevation), 0.35).normalize()
+      this.lightDir
+        .copy(this.moonDir)
+        .lerp(this.sunDir, Math.min(1, day * 2))
+        .normalize()
+    } else this.lightDir.copy(this.moonDir)
+    // A sun that has moved a degree or two wants its shadows redrawn.
+    if (this.lightDir.angleTo(this.shadowDir) > 0.03) {
+      this.shadowDir.copy(this.lightDir)
+      moved = true
+    }
 
     // Shadows: one map around the viewer, redrawn only after walking a while.
     if (moved || Math.hypot(viewer.x - this.shadowAt.x, viewer.z - this.shadowAt.z) > SHADOW_STEP) {
       this.shadowAt.copy(viewer)
       this.moon.target.position.copy(viewer)
-      this.moon.position.copy(viewer).addScaledVector(this.moonDir, 250)
+      this.moon.position.copy(viewer).addScaledVector(this.lightDir, 250)
       this.moon.target.updateMatrixWorld()
       this.shadowsDirty = true
     }
@@ -111,7 +171,8 @@ export class Night {
       const d = Math.hypot(s.pos[0] - viewer.x, s.pos[2] - viewer.z)
       const fade = Math.max(0, Math.min(1, (LAMP_RANGE - d) / 15))
       const flicker = s.flicker ? flickerLevel(t, slot.index * 7.31, s.flicker) : 1
-      slot.light.intensity = s.intensity * 2.6 * fade * flicker
+      // By day a lamp hardly shows.
+      slot.light.intensity = s.intensity * 2.6 * fade * flicker * this.lampLevel
       // Lanterns swing in the wind, and their light with them.
       if (s.hang) hangingLightPos(s, slot.index, wind.time, true, slot.light.position)
     }

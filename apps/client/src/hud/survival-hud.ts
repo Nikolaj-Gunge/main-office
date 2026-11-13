@@ -3,11 +3,13 @@ import {
   capacityOf,
   countOf,
   type Dialog,
+  dayPhase,
   ITEMS,
   type ItemDef,
   type ItemKind,
   type Notice,
   type Poi,
+  poiAt,
   QUESTS,
   type QuestState,
   type QuestStep,
@@ -51,6 +53,25 @@ export interface SurvivalHudContext {
   yaw: number
   /** Weapons in your hands and holsters, the one in hand first. */
   carried: readonly { id: WeaponId; ammo: number }[]
+  /** Where a world point lands on screen (CSS px), and whether it is behind you. */
+  project?: (x: number, y: number, z: number) => { x: number; y: number; behind: boolean }
+}
+
+const POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const
+
+/** "Pinewatch · NW · 640 m": where a target is, said the way you'd say it. */
+export function whereText(
+  def: SurvivalDef,
+  from: { x: number; z: number },
+  to: { x: number; z: number },
+): string {
+  const d = Math.hypot(to.x - from.x, to.z - from.z)
+  const i = poiAt(def, to.x, to.z, 6)
+  const place = i === null ? null : (def.pois[i]?.name ?? null)
+  if (d < 25) return place ? `${place} · here` : 'right here'
+  const dir = POINTS[Math.round(bearingTo(from, to) / 45) % 8] as string
+  const far = d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d / 10) * 10} m`
+  return [place, dir, far].filter(Boolean).join(' · ')
 }
 
 const KIND_ORDER: ItemKind[] = [
@@ -176,6 +197,18 @@ export class SurvivalHud {
   private readonly compass: HTMLDivElement
   private readonly points: { node: HTMLElement; bearing: number }[] = []
   private readonly marker: HTMLElement
+  /** Smaller marks for the side jobs' targets. */
+  private readonly sideMarkers: HTMLElement[] = []
+  /** Distance to the main quest's target, shown in its panel. */
+  private mainDistance: HTMLElement | null = null
+  private mainKey = ''
+  /** Side jobs' "where" lines, in tracker order. */
+  private sideWhere: HTMLElement[] = []
+  /** Markers over the targets themselves, out in the world: the story's first, then the jobs'. */
+  private readonly waypoints: { node: HTMLElement; text: HTMLElement }[] = []
+  /** Supply drops: a red mark on the compass and over the crate. */
+  private readonly dropMarker: HTMLElement
+  private readonly dropWay: { node: HTMLElement; text: HTMLElement }
   private readonly hour: HTMLElement
   // Talking
   private readonly talk: HTMLDivElement
@@ -227,8 +260,19 @@ export class SurvivalHud {
         bearing: i * 45,
       })
     }
+    for (let i = 0; i < 3; i++) this.sideMarkers.push(el('b', 'sv-compass-side', this.compass))
+    this.dropMarker = el('b', 'sv-compass-drop', this.compass)
+    const dropNode = el('div', 'sv-way drop', this.root)
+    el('b', '', dropNode, '✚')
+    this.dropWay = { node: dropNode, text: el('span', '', dropNode) }
+    for (let i = 0; i < 4; i++) {
+      const node = el('div', i === 0 ? 'sv-way main' : 'sv-way side', this.root)
+      el('b', '', node, i === 0 ? '◆' : '◇')
+      this.waypoints.push({ node, text: el('span', '', node) })
+      node.hidden = true
+    }
     this.marker = el('b', 'sv-compass-goal', this.compass)
-    this.hour = el('div', 'sv-hour', this.root, 'THE GREY HOUR')
+    this.hour = el('div', 'sv-hour', this.root)
 
     this.talk = el('div', 'sv-talk', this.root)
     this.talk.hidden = true
@@ -432,7 +476,12 @@ export class SurvivalHud {
     }
 
     this.drawCompass(ctx)
-    this.hour.hidden = (this.shared?.time ?? 0) < 0.8
+    // Dawn and dusk are called out under the compass.
+    const phase = dayPhase(this.shared?.time ?? 0)
+    const label = phase === 'dawn' ? 'DAWN' : phase === 'dusk' ? 'DUSK' : ''
+    this.hour.hidden = label === ''
+    if (this.hour.textContent !== label) this.hour.textContent = label
+    this.hour.classList.toggle('dusk', phase === 'dusk')
     if (this.mapOpen) {
       this.sinceMap += dt
       if (this.sinceMap > 0.2) {
@@ -471,28 +520,52 @@ export class SurvivalHud {
     if (key === this.trackerKey) return
     this.trackerKey = key
     this.tracker.replaceChildren()
+    this.mainDistance = null
+    this.sideWhere = []
     for (const [title, text, story] of lines) {
-      const q = el('div', story ? 'sv-quest story' : 'sv-quest', this.tracker)
-      el('b', '', q, title)
-      el('span', '', q, text)
+      if (story) {
+        // The story: big, gold, impossible to miss; it flashes when the objective changes.
+        const q = el('div', 'sv-quest story', this.tracker)
+        el('i', '', q, '★ MAIN QUEST')
+        el('b', '', q, title)
+        el('span', '', q, text)
+        this.mainDistance = el('em', '', q)
+        const mainKey = `${title}|${text}`
+        if (this.mainKey && mainKey !== this.mainKey) q.classList.add('fresh')
+        this.mainKey = mainKey
+      } else {
+        const q = el('div', 'sv-quest side', this.tracker)
+        el('i', '', q, 'SIDE JOB')
+        el('b', '', q, title)
+        el('span', '', q, text)
+        this.sideWhere.push(el('em', '', q))
+      }
     }
   }
 
-  /** Where the story wants you now: the nearest target of its current step. */
-  private goal(pos: { x: number; z: number }): { x: number; z: number } | null {
-    const story = this.quests().find((q) => q.story)
-    const step = story ? questById(story.state.id)?.steps[story.state.step] : undefined
-    if (!story || !step) return null
-    let best: { x: number; z: number } | null = null
+  /** The nearest target of a quest's current step, or null. */
+  private targetOf(
+    state: QuestState,
+    pos: { x: number; z: number },
+  ): { x: number; y: number; z: number } | null {
+    const step = questById(state.id)?.steps[state.step]
+    if (!step) return null
+    let best: { x: number; y: number; z: number } | null = null
     let bestD = Number.POSITIVE_INFINITY
-    for (const [x, , z] of stepTargets(this.def, step, story.state.count)) {
+    for (const [x, y, z] of stepTargets(this.def, step, state.count)) {
       const d = Math.hypot(x - pos.x, z - pos.z)
       if (d < bestD) {
         bestD = d
-        best = { x, z }
+        best = { x, y, z }
       }
     }
     return best
+  }
+
+  /** Where the story wants you now: the nearest target of its current step. */
+  private goal(pos: { x: number; z: number }): { x: number; y: number; z: number } | null {
+    const story = this.quests().find((q) => q.story)
+    return story ? this.targetOf(story.state, pos) : null
   }
 
   private drawCompass(ctx: SurvivalHudContext): void {
@@ -511,7 +584,86 @@ export class SurvivalHud {
       place(this.marker, bearingTo(ctx.pos, goal), true)
       const text = `${Math.round(Math.hypot(goal.x - ctx.pos.x, goal.z - ctx.pos.z))} m`
       if (this.marker.textContent !== text) this.marker.textContent = text
+      const where = whereText(this.def, ctx.pos, goal)
+      if (this.mainDistance && this.mainDistance.textContent !== where) {
+        this.mainDistance.textContent = where
+      }
     }
+    const sides = this.quests().filter((q) => !q.story)
+    const targets = [goal]
+    this.sideMarkers.forEach((node, i) => {
+      const side = sides[i]
+      const target = side ? this.targetOf(side.state, ctx.pos) : null
+      targets.push(target)
+      node.hidden = target === null
+      if (target) place(node, bearingTo(ctx.pos, target), true)
+      const line = this.sideWhere[i]
+      const where = target ? whereText(this.def, ctx.pos, target) : ''
+      if (line && line.textContent !== where) line.textContent = where
+    })
+    this.drawWaypoints(ctx, targets)
+
+    // The nearest supply drop nobody has opened yet.
+    let drop: { x: number; y: number; z: number; landed: boolean } | null = null
+    for (const d of this.shared?.drops ?? []) {
+      if (d.opened) continue
+      if (
+        !drop ||
+        Math.hypot(d.x - ctx.pos.x, d.z - ctx.pos.z) <
+          Math.hypot(drop.x - ctx.pos.x, drop.z - ctx.pos.z)
+      )
+        drop = d
+    }
+    this.dropMarker.hidden = drop === null
+    if (drop) place(this.dropMarker, bearingTo(ctx.pos, drop), true)
+    const way = this.dropWay
+    const p = drop && ctx.project ? ctx.project(drop.x, drop.y + 2, drop.z) : null
+    way.node.hidden = !drop || !p || this.modal
+    if (drop && p) {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const x = Math.max(40, Math.min(w - 40, p.behind ? w - p.x : p.x))
+      const y = p.behind ? h - 40 : Math.max(40, Math.min(h - 40, p.y))
+      way.node.style.transform = `translate(${x}px, ${y}px)`
+      const d = Math.round(Math.hypot(drop.x - ctx.pos.x, drop.z - ctx.pos.z))
+      const label = drop.landed ? `SUPPLY DROP ${d} m` : `INCOMING ${d} m`
+      if (way.text.textContent !== label) way.text.textContent = label
+    }
+  }
+
+  /**
+   * A marker floating over each target out in the world, with how far it is; at the edge of the
+   * screen (pointing the way) when it's off to the side or behind you.
+   */
+  private drawWaypoints(
+    ctx: SurvivalHudContext,
+    targets: readonly ({ x: number; y: number; z: number } | null)[],
+  ): void {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const margin = 40
+    this.waypoints.forEach(({ node, text }, i) => {
+      const t = targets[i] ?? null
+      const d = t ? Math.hypot(t.x - ctx.pos.x, t.y - ctx.pos.y, t.z - ctx.pos.z) : 0
+      const shown = t !== null && ctx.project !== undefined && d > 3 && !this.modal
+      node.hidden = !shown
+      if (!shown || !t || !ctx.project) return
+      const p = ctx.project(t.x, t.y + 2.2, t.z)
+      let x = p.x
+      let y = p.y
+      // Behind you: mirror it to the bottom edge on the side it's on.
+      if (p.behind) {
+        x = w - x
+        y = h - margin
+      }
+      const off = p.behind || x < margin || x > w - margin || y < margin || y > h - margin
+      x = Math.max(margin, Math.min(w - margin, x))
+      y = Math.max(margin, Math.min(h - margin, y))
+      node.style.transform = `translate(${x}px, ${y}px)`
+      node.classList.toggle('off', off)
+      const label = `${Math.round(d)} m`
+      if (text.textContent !== label) text.textContent = label
+    })
   }
 
   private setScreen(screen: 'none' | 'pack' | 'shop'): void {
@@ -778,17 +930,38 @@ export class SurvivalHud {
       if (!found.has(i)) return
       this.drawPlace(g, poi, at(poi.x), at(poi.z))
     })
-    // Where the story (ring) and the jobs (dots) want you.
+    // A dashed line from you to the story's next stop.
+    const goal = this.goal(ctx.pos)
+    if (goal) {
+      g.save()
+      g.setLineDash([6, 6])
+      g.strokeStyle = 'rgb(255 176 48 / 0.7)'
+      g.lineWidth = 2
+      g.beginPath()
+      g.moveTo(at(ctx.pos.x), at(ctx.pos.z))
+      g.lineTo(at(goal.x), at(goal.z))
+      g.stroke()
+      g.restore()
+    }
+    // Where the story (gold rings) and the jobs (teal) want you.
     for (const { state, story } of this.quests()) {
       const step = questById(state.id)?.steps[state.step]
       if (!step) continue
       for (const [x, , z] of stepTargets(this.def, step, state.count)) {
-        g.strokeStyle = story ? '#ffb030' : '#9ad06a'
+        g.strokeStyle = story ? '#ffb030' : '#6cc6d8'
         g.lineWidth = 2
         g.beginPath()
         g.arc(at(x), at(z), story ? 9 + 2 * Math.sin(this.clock * 4) : 5, 0, Math.PI * 2)
         g.stroke()
       }
+    }
+    // Supply drops nobody has opened: a red cross.
+    for (const d of this.shared?.drops ?? []) {
+      if (d.opened) continue
+      g.fillStyle = '#ff4030'
+      g.font = 'bold 18px "Pixelify Sans", monospace'
+      g.textAlign = 'center'
+      g.fillText('✚', at(d.x), at(d.z) + 6)
     }
     // You: an arrow pointing where you look.
     g.save()
