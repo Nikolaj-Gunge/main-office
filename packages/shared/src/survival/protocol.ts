@@ -50,6 +50,8 @@ export interface SurvivalShared {
   found: number[]
   /** The story is over: everyone got out. */
   won: boolean
+  /** Boarded-up gaps: spot index, battering left, … (see planksFor; only gaps with planks). */
+  boards: number[]
 }
 
 export type SurvivalAction =

@@ -8,13 +8,17 @@ import {
   initPhysics,
   LOOT_TABLES,
   loadMap,
+  MAX_PLANKS,
   type MatchInfo,
   mergeRules,
+  PLANK_HP,
+  planksFor,
   QUESTS,
   type ServerMessage,
   ServerMsg,
   type SurvivalSelf,
   seeded,
+  spotCentre,
   TICK_RATE,
   TRADER_STOCK,
   tableItems,
@@ -22,6 +26,7 @@ import {
   WeaponId,
 } from '@office-fps/shared'
 import { Game } from '../game.ts'
+import type { Zed } from './horde.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -283,5 +288,56 @@ describe('survival: the night', () => {
     const dropped =
       t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     expect(dropped.some((l) => l.item === 'beans' && l.n === 3)).toBe(true)
+  })
+})
+
+describe('survival: barricades', () => {
+  test('you can board the door up, and the dead batter it down', () => {
+    const t = setup()
+    t.run(8)
+    const start = t.def.pois[0]
+    const i = t.def.spots.findIndex((p) => p.poi === 0 && p.door)
+    const spot = t.def.spots[i]
+    if (!start || !spot) throw new Error('no door at the start cabin')
+    // Stand just inside the door, with planks.
+    const inX = Math.sign(start.x - spot.x) * (spot.alongX ? 0 : 1)
+    const inZ = Math.sign(start.z - spot.z) * (spot.alongX ? 1 : 0)
+    t.move(spot.x + inX * 1.3, spot.y + 0.05, spot.z + inZ * 1.3)
+    const director = (
+      t.game.match as unknown as {
+        survival: { survivors: Map<number, { self: SurvivalSelf }> }
+      }
+    ).survival
+    director.survivors.get(t.ids[0] ?? 0)?.self.inv.push({ item: 'planks', n: 5 })
+    const c = spotCentre(spot)
+    for (let k = 0; k < MAX_PLANKS + 1; k++) {
+      t.useAt(c.x, c.y, c.z)
+      t.run(0.5)
+    }
+    const boards = () => {
+      const b = t.match().survival?.boards ?? []
+      const at = b.findIndex((v, k) => k % 2 === 0 && v === i)
+      return at < 0 ? 0 : (b[at + 1] ?? 0)
+    }
+    expect(planksFor(boards())).toBe(MAX_PLANKS)
+    expect(boards()).toBe(MAX_PLANKS * PLANK_HP)
+    expect(t.game.world.physics.barricades.has(i)).toBe(true)
+
+    // The dead come for you through that door.
+    const zombie = t.zombies()[0]
+    if (!zombie) throw new Error('no zombie')
+    const zed = zombie.zombie as Zed
+    zombie.state.pos = { x: spot.x - inX * 1.2, y: spot.y + 0.05, z: spot.z - inZ * 1.2 }
+    zombie.state.vel = { x: 0, y: 0, z: 0 }
+    // It heard the hammering.
+    zed.alert(t.player().state.pos, t.game.tick / TICK_RATE)
+    t.run(4)
+    expect(boards()).toBeLessThan(MAX_PLANKS * PLANK_HP)
+    // It can't walk through while there are planks up.
+    const inside = (zombie.state.pos.x - spot.x) * inX + (zombie.state.pos.z - spot.z) * inZ
+    expect(inside).toBeLessThan(0)
+    t.run(60)
+    expect(boards()).toBe(0)
+    expect(t.game.world.physics.barricades.has(i)).toBe(false)
   })
 })

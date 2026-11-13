@@ -700,6 +700,7 @@ export const TRADER_STOCK: string[] = [
   'beans',
   'mre',
   'batteries',
+  'planks',
   'pack_school',
   'pack_hiking',
   'bat',

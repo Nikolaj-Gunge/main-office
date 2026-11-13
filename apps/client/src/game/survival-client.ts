@@ -1,18 +1,25 @@
 import {
+  BOARD_REACH,
+  countOf,
   type Interactable,
   ITEMS,
   type LootItem,
+  MAX_PLANKS,
   type MapDef,
   type Npc,
   type PhysicsWorld,
+  PLANK_ITEM,
   type PlayerState,
   type RemotePlayerState,
+  remotePose,
   type ServerMessage,
   ServerMsg,
   type SurvivalAction,
   type SurvivalDef,
   type SurvivalSelf,
   type SurvivalShared,
+  setBarricades,
+  spotCentre,
   syncForest,
   WeaponId,
 } from '@office-fps/shared'
@@ -20,6 +27,7 @@ import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
+import { BarricadeView } from '../render/barricades.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { Night } from '../render/night.ts'
@@ -60,6 +68,7 @@ export class SurvivalClient {
   private readonly night: Night
   private readonly loot: LootView
   private readonly leaves: Leaves
+  private readonly boards: BarricadeView
   private readonly npcs: { def: Npc; avatar: Avatar; state: RemotePlayerState }[] = []
   private readonly torch = torch()
   private readonly others: THREE.SpotLight[] = []
@@ -91,6 +100,8 @@ export class SurvivalClient {
     this.loot = new LootView(o.scene)
     this.leaves = new Leaves(o.def.terrain)
     o.scene.add(this.leaves.mesh)
+    this.boards = new BarricadeView(o.def.spots)
+    o.scene.add(this.boards.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
@@ -126,6 +137,11 @@ export class SurvivalClient {
           aiming: false,
           stride: 0,
           speed: 0,
+          moveDir: 0,
+          vy: 0,
+          land: 0,
+          ads: 0,
+          shotAge: 1,
         },
       })
     })
@@ -161,12 +177,27 @@ export class SurvivalClient {
     if (!shared) return
     this.shared = shared
     this.hud.setShared(shared)
+    this.applyBoards(shared.boards ?? [])
+  }
+
+  /** Planks up and down: what you see, what you bump into, and what you hear. */
+  private applyBoards(boards: readonly number[]): void {
+    const changes = this.boards.apply(boards)
+    if (changes.length === 0) return
+    setBarricades(this.physics, this.def.spots, (i) => this.boards.planks(i))
+    for (const { spot, what } of changes) {
+      const at = spotCentre(spot)
+      if (what === 'nailed') this.audio.play('hammer', { at, volume: 0.8 })
+      else if (what === 'hit') this.audio.play('bang', { at, volume: 1 })
+      else this.audio.play('splinter', { at, volume: 1 })
+    }
   }
 
   /** Joined a (new) game: forget what the last one said. */
   reset(): void {
     this.loot.clear()
     this.self = null
+    this.applyBoards([])
   }
 
   toggleTorch(): void {
@@ -244,7 +275,8 @@ export class SurvivalClient {
       if (turn > Math.PI) turn -= Math.PI * 2
       if (turn < -Math.PI) turn += Math.PI * 2
       npc.state.yaw += turn * Math.min(1, dt * 4)
-      npc.avatar.update(npc.state, now, eye)
+      // They breathe and shift their weight (idle motion on the local clock: nobody shoots them).
+      npc.avatar.update(npc.state, remotePose(npc.state, { time: now / 1000 }), now, eye)
     }
 
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
@@ -330,6 +362,27 @@ export class SurvivalClient {
         lootScore = score
         loot = l
       }
+    }
+    // A doorway or window to board up.
+    let spot = -1
+    let spotScore = 0.35
+    this.def.spots.forEach((p, i) => {
+      const c = spotCentre(p)
+      const score = aim(c.x, c.y, c.z, BOARD_REACH)
+      if (score > spotScore) {
+        spotScore = score
+        spot = i
+      }
+    })
+    if (spot >= 0 && (!loot || spotScore > lootScore) && (!thing || spotScore >= best)) {
+      const planks = this.boards.planks(spot)
+      if (state.crouched) return planks > 0 ? 'Pull a plank off' : null
+      if (planks >= MAX_PLANKS) return 'Boarded up (crouch + E: pull a plank)'
+      const have = countOf(this.self?.inv ?? [], PLANK_ITEM)
+      const what = this.def.spots[spot]?.door ? 'door' : 'window'
+      return have > 0
+        ? `Board up the ${what} (${planks}/${MAX_PLANKS}, ${have} plank${have > 1 ? 's' : ''})`
+        : `Board up the ${what}: needs planks`
     }
     if (loot && (!thing || lootScore >= best)) {
       const def = ITEMS[loot.item]

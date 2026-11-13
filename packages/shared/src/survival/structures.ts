@@ -190,6 +190,8 @@ export function cabin(s: Site, variant: number): void {
     })
   // Outside: a woodpile, a chopping block, maybe an outhouse.
   s.block(w / 2 + 0.9, 0, -0.5, 0.8, 0.9, 2, 'log')
+  // Planks stacked on the woodpile: enough to board a door up.
+  s.loot(w / 2 + 0.9, 0.92, -0.5, 'lumber')
   s.block(-w / 2 - 1.6, 0, 1.5, 0.5, 0.45, 0.5, 'log')
   if (variant % 3 === 0) {
     s.sub(-w / 2 - 4, -3).shell(0, 0, {
@@ -234,10 +236,12 @@ export function startCabin(s: Site): void {
     FLOOR + 0.85,
     -0.3,
     'Read the note',
-    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nDon't sleep outside the walls.\n— Hollis",
+    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nThere are planks by the door. If they come, nail them across it and keep quiet. It holds a while. Not forever.\n\nDon't sleep outside the walls.\n— Hollis",
   )
   shelf(s, -3.05, -1.2, false, ['kitchen', 'kitchen'])
   crate(s, 2.7, -1.7, 0.7, 'medical')
+  // Hollis left planks by the door: the first thing to learn is to board yourself in.
+  s.loot(0.5, FLOOR + 0.02, -1.95, 'lumber')
   s.lantern(0, 2.5, 0.5, 0.5, { color: 0xffb060, intensity: 6, distance: 8, flicker: 0.3 })
   campfire(s, 3, -6, false)
 }

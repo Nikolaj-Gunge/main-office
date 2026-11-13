@@ -146,6 +146,23 @@ export interface Room {
 }
 
 /** Everything about the survival world that isn't boxes: built once, same on client and server. */
+/**
+ * A doorway or open window in a building's outer wall that can be boarded up (see
+ * barricades.ts): the bottom middle of the gap, how wide and high it is, and which way the wall
+ * runs.
+ */
+export interface BoardSpot {
+  x: number
+  y: number
+  z: number
+  w: number
+  h: number
+  /** The wall runs along world x (so the gap is crossed along z). */
+  alongX: boolean
+  door: boolean
+  poi: number
+}
+
 export interface SurvivalDef {
   seed: number
   terrain: Terrain
@@ -158,4 +175,6 @@ export interface SurvivalDef {
   npcs: Npc[]
   interactables: Interactable[]
   rooms: Room[]
+  /** Doorways and windows people can board up. */
+  spots: BoardSpot[]
 }

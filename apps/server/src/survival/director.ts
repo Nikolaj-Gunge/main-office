@@ -2,6 +2,7 @@ import {
   AMMO_BOX,
   addStack,
   ammoItem,
+  BOARD_REACH,
   capacityOf,
   carried,
   countOf,
@@ -13,10 +14,14 @@ import {
   type Interactable,
   ITEMS,
   type LootItem,
+  MAX_PLANKS,
   type MapSpawn,
   type Notice,
   type Npc,
+  PLANK_HP,
+  PLANK_ITEM,
   type PlayerState,
+  planksFor,
   QUESTS,
   type QuestDef,
   type QuestState,
@@ -30,6 +35,9 @@ import {
   type SurvivalDef,
   type SurvivalSelf,
   type SurvivalShared,
+  setBarricades,
+  spotBlock,
+  spotCentre,
   syncForest,
   TICK_RATE,
   TRADER_STOCK,
@@ -79,6 +87,8 @@ interface Survivor {
   /** Who they're talking to, and the quest on offer. */
   talking: string | null
   warned: number
+  /** When they may nail (or pull) the next plank. */
+  boardAt: number
 }
 
 interface Loot extends LootItem {
@@ -137,6 +147,10 @@ export class SurvivalDirector {
   private done: string[] = []
   private found = new Set<number>()
   private gates = 0
+  /** Boarded-up gaps: spot index → battering left before the last plank gives. */
+  private readonly boards = new Map<number, number>()
+  private boardsDirty = false
+  private boardsSentAt = 0
   private startTick = 0
   /** Seconds added to the night's clock by sleeping. */
   private slept = 0
@@ -181,6 +195,7 @@ export class SurvivalDirector {
     this.found = new Set()
     this.gates = 0
     this.game.setGates(0)
+    this.clearBoards()
     this.profiles.clear()
     this.survivors.clear()
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
@@ -196,6 +211,12 @@ export class SurvivalDirector {
     for (const z of this.pool) this.game.leave(z.id)
     this.pool = []
     this.zeds.clear()
+    this.clearBoards()
+  }
+
+  private clearBoards(): void {
+    this.boards.clear()
+    if (this.def) setBarricades(this.game.world.physics, this.def.spots, () => 0)
   }
 
   onJoin(player: ServerPlayer): void {
@@ -211,6 +232,7 @@ export class SurvivalDirector {
       noise: 0,
       noiseUntil: 0,
       talking: null,
+      boardAt: 0,
       warned: 0,
     })
   }
@@ -287,6 +309,7 @@ export class SurvivalDirector {
       target: target?.state.alive ? target.state.pos : null,
       crowd,
       rooms: this.def.rooms,
+      boardedAt: (me, goal) => this.boardedAt(me, goal),
     })
     if (zed.speedChanged()) this.game.applyRules(zombie)
     return command
@@ -386,6 +409,12 @@ export class SurvivalDirector {
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
     this.senses(alive)
+    this.batter()
+    if (this.boardsDirty && this.now - this.boardsSentAt > 0.2) {
+      this.boardsDirty = false
+      this.boardsSentAt = this.now
+      this.game.match.broadcast()
+    }
 
     for (const sv of people) {
       if (!sv.dirty) continue
@@ -636,7 +665,21 @@ export class SurvivalDirector {
         }
       }
     }
-    if (loot && (!thing || lootScore >= best)) return void this.take(sv, loot)
+    // A doorway or window to board up (or pull a plank off).
+    let spot = -1
+    let spotScore = 0.35
+    this.def.spots.forEach((p, i) => {
+      const c = spotCentre(p)
+      const score = aimAt(c.x, c.y, c.z, BOARD_REACH)
+      if (score > spotScore) {
+        spotScore = score
+        spot = i
+      }
+    })
+    if (loot && (!thing || lootScore >= best) && (spot < 0 || lootScore >= spotScore)) {
+      return void this.take(sv, loot)
+    }
+    if (spot >= 0 && (!thing || spotScore >= best)) return void this.board(sv, spot)
     if (thing) return void this.useThing(sv, thing)
 
     // Standing in the lake: drink.
@@ -649,6 +692,103 @@ export class SurvivalDirector {
         return
       }
     }
+  }
+
+  // --- Barricades ---------------------------------------------------------------------------
+
+  /** Planks across gap i (0 = open). */
+  planksAt(i: number): number {
+    return planksFor(this.boards.get(i) ?? 0)
+  }
+
+  private setBoard(i: number, hp: number): void {
+    const before = this.planksAt(i)
+    if (hp > 0) this.boards.set(i, hp)
+    else this.boards.delete(i)
+    // Every blow is sent (the client hears it land); the colliders change only with the planks.
+    this.boardsDirty = true
+    if (this.planksAt(i) === before) return
+    setBarricades(this.game.world.physics, this.def.spots, (j) => this.planksAt(j))
+  }
+
+  /**
+   * E at a doorway or window: nail a plank across it, or (crouching) pull one off. Hammering
+   * carries: everything nearby hears it.
+   */
+  private board(sv: Survivor, i: number): void {
+    const { player, self } = sv
+    const spot = this.def.spots[i]
+    if (!spot || this.now < sv.boardAt) return
+    sv.boardAt = this.now + 0.45
+    const planks = this.planksAt(i)
+    if (player.state.crouched) {
+      if (planks === 0) return void this.notice(player, 'info', 'Nothing nailed up here.')
+      if (roomFor(self, PLANK_ITEM) < 1) {
+        return void this.notice(player, 'warn', 'No room in your pack for the plank.')
+      }
+      addStack(self.inv, PLANK_ITEM, 1)
+      sv.dirty = true
+      this.setBoard(i, (planks - 1) * PLANK_HP)
+      return
+    }
+    if (planks >= MAX_PLANKS) {
+      return void this.notice(
+        player,
+        'info',
+        'Boarded up as well as it gets. (Crouch and E to pull a plank off.)',
+      )
+    }
+    if (countOf(self.inv, PLANK_ITEM) < 1) {
+      return void this.notice(player, 'warn', 'You need planks to board this up.')
+    }
+    // Nobody standing in the gap (they'd be nailed into the wall).
+    const { center, half } = spotBlock(spot)
+    for (const p of this.game.players.values()) {
+      if (!p.state.alive) continue
+      const { x, y, z } = p.state.pos
+      if (
+        Math.abs(x - center[0]) < half[0] + 0.35 &&
+        Math.abs(z - center[2]) < half[2] + 0.35 &&
+        y < center[1] + half[1] &&
+        y + 1.8 > center[1] - half[1]
+      ) {
+        return void this.notice(player, 'warn', "Something's in the way.")
+      }
+    }
+    takeStack(self.inv, PLANK_ITEM, 1)
+    sv.dirty = true
+    sv.noise = Math.max(sv.noise, 24)
+    sv.noiseUntil = this.now + 1.5
+    this.setBoard(i, (planks + 1) * PLANK_HP)
+  }
+
+  /** The dead at a boarded door batter it, about once a second each. */
+  private batter(): void {
+    for (const zombie of this.pool) {
+      const zed = this.zeds.get(zombie.id)
+      if (!zed || !zombie.state.alive || zed.bashing < 0 || this.now < zed.nextBash) continue
+      const hp = this.boards.get(zed.bashing) ?? 0
+      if (hp <= 0) continue
+      zed.nextBash = this.now + 0.9 + this.random() * 0.4
+      this.setBoard(zed.bashing, hp - (KINDS[zed.kind]?.bash ?? 20))
+    }
+  }
+
+  /** A boarded-up gap within arm's reach of `me` with `goal` on the other side of its wall. */
+  private boardedAt(me: Point, goal: Point): { index: number; x: number; z: number } | null {
+    for (const i of this.boards.keys()) {
+      const spot = this.def.spots[i]
+      if (!spot || me.y > spot.y + spot.h || me.y + 1.8 < spot.y) continue
+      const dx = me.x - spot.x
+      const dz = me.z - spot.z
+      // Across the gap (along the wall's normal), and along it (within the opening).
+      const [across, along] = spot.alongX ? [dz, dx] : [dx, dz]
+      if (Math.abs(across) > 1.4 || Math.abs(along) > spot.w / 2 + 0.6) continue
+      const goalAcross = spot.alongX ? goal.z - spot.z : goal.x - spot.x
+      if (Math.sign(goalAcross) === Math.sign(across)) continue
+      return { index: i, x: spot.x, z: spot.z }
+    }
+    return null
   }
 
   private take(sv: Survivor, loot: Loot): void {
@@ -1331,6 +1471,7 @@ export class SurvivalDirector {
       done: this.done,
       found: [...this.found],
       won: this.won,
+      boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
     }
   }
 

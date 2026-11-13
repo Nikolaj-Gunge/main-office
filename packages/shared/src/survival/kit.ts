@@ -2,6 +2,7 @@ import type { BoxFlags } from '../maps/builder.ts'
 import type { MapBox, MapLabel, MapLight, MaterialId, Vec3 } from '../maps/types.ts'
 import type { LootTable } from './items.ts'
 import type {
+  BoardSpot,
   Interactable,
   InteractKind,
   Lake,
@@ -22,6 +23,7 @@ export interface WorldBuild {
   npcs: Npc[]
   interactables: Interactable[]
   rooms: Room[]
+  spots: BoardSpot[]
 }
 
 export function emptyBuild(): WorldBuild {
@@ -34,6 +36,7 @@ export function emptyBuild(): WorldBuild {
     npcs: [],
     interactables: [],
     rooms: [],
+    spots: [],
   }
 }
 
@@ -436,6 +439,22 @@ export class Site {
         gaps.push([at, width, g.sill, g.sill + g.height])
         const along = (alongX ? x0 : z0) + at
         const out = side === 'n' || side === 'w' ? -1 : 1
+        if (g.door || (!g.glass && !g.boards)) {
+          // Doorways and open windows can be boarded up.
+          const [sx, sy, sz] = alongX
+            ? this.world(along, FLOOR + g.sill, fixed)
+            : this.world(fixed, FLOOR + g.sill, along)
+          this.build.spots.push({
+            x: sx,
+            y: sy,
+            z: sz,
+            w: width,
+            h: g.height,
+            alongX: alongX !== (this.turn % 2 === 1),
+            door: g.door,
+            poi: this.index,
+          })
+        }
         if (g.door) {
           doorPoints.push(alongX ? [along, fixed + out * 0.9] : [fixed + out * 0.9, along])
         } else if (g.glass) {

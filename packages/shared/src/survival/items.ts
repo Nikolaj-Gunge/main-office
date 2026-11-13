@@ -219,6 +219,13 @@ junk('ducttape', 'Duct tape', 0.2, 22, 'Holds the world together.')
 junk('electronics', 'Electronics', 0.3, 35, 'Circuit boards and wire.')
 junk('cigarettes', 'Cigarettes', 0.03, 28, 'Currency with a warning label.')
 junk('lighter', 'Lighter', 0.03, 12, 'Half full.')
+junk(
+  'planks',
+  'Planks',
+  1.6,
+  6,
+  'Nail them across a door or window (E). The dead will get through, eventually.',
+)
 junk('watch', 'Wristwatch', 0.1, 70, 'Stopped at 3:17.')
 junk('ring', 'Gold ring', 0.01, 160, 'Engraved: "Forever".')
 junk('necklace', 'Silver necklace', 0.03, 110, "Still warm. No, it isn't.")
@@ -307,6 +314,8 @@ export const LOOT_TABLES = [
   'office',
   /** Pumps, sheds and generators: where a jerry can is most likely to be. */
   'fuel',
+  /** Woodpiles and sawmills: planks to board up with. */
+  'lumber',
 ] as const
 export type LootTable = (typeof LOOT_TABLES)[number]
 
@@ -358,6 +367,7 @@ const TABLES: Record<LootTable, TableDef> = {
     empty: 0.3,
     entries: [
       ['scrap', 10, 1, 3],
+      ['planks', 7, 2, 4],
       ['ducttape', 7],
       ['toolkit', 4],
       ['electronics', 5],
@@ -571,6 +581,14 @@ const TABLES: Record<LootTable, TableDef> = {
       ['watch', 1.5],
       ['energybar', 3],
       ['ducttape', 2],
+    ],
+  },
+  lumber: {
+    empty: 0.15,
+    entries: [
+      ['planks', 10, 2, 5],
+      ['scrap', 1],
+      ['axe', 0.3],
     ],
   },
   fuel: {

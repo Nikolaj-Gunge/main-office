@@ -53,6 +53,9 @@ export const SOUNDS = {
   dread: { variants: 2, recipe: dread },
   twig: { variants: 3, recipe: twigSnap },
   pickup: { variants: 2, recipe: pickup },
+  hammer: { variants: 3, recipe: hammer },
+  bang: { variants: 3, recipe: woodBang },
+  splinter: { variants: 2, recipe: splinter },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -463,6 +466,55 @@ function dread(rate: number, v: number): Signal {
     normalize(saturate(mix(rate, out, [gain(hit, 1.6), seconds - 0.12]), 2), 0.9),
     rate,
     0.01,
+  )
+}
+
+/** A nail driven home: two quick knocks on wood with a metallic ring. */
+function hammer(rate: number, v: number): Signal {
+  const r = rng(1600 + v)
+  const knock = (seed: number) =>
+    envelope(bandpass(noise(0.07, rate, seed), rate, 700 + r() * 300, 1.4), rate, 0, 0.018)
+  const ring = envelope(gain(tone(0.12, rate, 2100 + r() * 400), 0.18), rate, 0, 0.04)
+  return fadeEdges(
+    normalize(
+      mix(rate, knock(1600 + v), ring, [gain(knock(1610 + v), 0.8), 0.16 + r() * 0.05]),
+      0.8,
+    ),
+    rate,
+  )
+}
+
+/** Something heavy slamming into a boarded-up door from outside. */
+function woodBang(rate: number, v: number): Signal {
+  const r = rng(1700 + v)
+  const thump = envelope(sweep(0.25, rate, 110 + r() * 30, 45), rate, 0.001, 0.08)
+  const wood = envelope(
+    bandpass(noise(0.2, rate, 1700 + v), rate, 420 + r() * 200, 1.1),
+    rate,
+    0,
+    0.05,
+  )
+  const rattle = envelope(bandpass(noise(0.3, rate, 1710 + v), rate, 1500, 2), rate, 0.02, 0.09)
+  return fadeEdges(
+    normalize(saturate(mix(rate, gain(thump, 1.3), wood, [gain(rattle, 0.3), 0.03]), 2), 0.9),
+    rate,
+  )
+}
+
+/** A plank torn loose: a crack and splinters. */
+function splinter(rate: number, v: number): Signal {
+  const r = rng(1800 + v)
+  const snap = envelope(
+    bandpass(noise(0.08, rate, 1800 + v), rate, 1300 + r() * 600, 1.2),
+    rate,
+    0,
+    0.02,
+  )
+  const bits = envelope(highpass(noise(0.35, rate, 1810 + v), rate, 2400), rate, 0.01, 0.1)
+  const thud = envelope(sweep(0.2, rate, 160, 60), rate, 0.002, 0.06)
+  return fadeEdges(
+    normalize(mix(rate, gain(snap, 1.2), [gain(bits, 0.4), 0.02], [gain(thud, 0.7), 0.12]), 0.9),
+    rate,
   )
 }
 

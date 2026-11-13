@@ -24,14 +24,16 @@ interface KindStats {
   chase: number
   /** How far it sees in the dark (m); further in the grey hour and far further at a torch. */
   sight: number
+  /** Battering a barricade: damage per blow (see PLANK_HP). */
+  bash: number
 }
 
 export const KINDS: Record<number, KindStats> = {
-  [ZombieKind.Walker]: { health: 220, claws: 14, wander: 0.28, chase: 0.68, sight: 15 },
-  [ZombieKind.Runner]: { health: 130, claws: 10, wander: 0.36, chase: 1.4, sight: 19 },
-  [ZombieKind.Brute]: { health: 1100, claws: 34, wander: 0.26, chase: 0.8, sight: 15 },
-  [ZombieKind.Screamer]: { health: 110, claws: 8, wander: 0.3, chase: 0.62, sight: 22 },
-  [ZombieKind.Stalker]: { health: 260, claws: 28, wander: 0, chase: 1.5, sight: 60 },
+  [ZombieKind.Walker]: { health: 220, claws: 14, wander: 0.28, chase: 0.68, sight: 15, bash: 24 },
+  [ZombieKind.Runner]: { health: 130, claws: 10, wander: 0.36, chase: 1.4, sight: 19, bash: 14 },
+  [ZombieKind.Brute]: { health: 1100, claws: 34, wander: 0.26, chase: 0.8, sight: 15, bash: 95 },
+  [ZombieKind.Screamer]: { health: 110, claws: 8, wander: 0.3, chase: 0.62, sight: 22, bash: 10 },
+  [ZombieKind.Stalker]: { health: 260, claws: 28, wander: 0, chase: 1.5, sight: 60, bash: 35 },
 }
 
 const EYE = 1.6
@@ -87,6 +89,9 @@ export class Zed {
   private idleUntil = 0
   /** Stalkers: somebody is looking. */
   frozen = false
+  /** The barricade it is battering (spot index), or -1; and when it may strike next. */
+  bashing = -1
+  nextBash = 0
   private speed = 0
 
   constructor(private readonly random: () => number) {}
@@ -110,6 +115,7 @@ export class Zed {
     this.idleUntil = 0
     this.frozen = false
     this.speed = 0
+    this.bashing = -1
   }
 
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
@@ -178,6 +184,10 @@ export class Zed {
       return null
     }
     if (heard) this.alert(heard.pos, now)
+    // Battering a barricade with somebody behind it: it knows they're in there.
+    if (this.bashing >= 0 && prey.some((p) => Math.hypot(p.pos.x - me.x, p.pos.z - me.z) < 12)) {
+      this.since = now
+    }
     if (this.mood === 'chase' && now - this.since > LOSE_SIGHT) {
       this.mood = 'search'
       this.since = now
@@ -221,6 +231,8 @@ export class Zed {
       target: Point | null
       crowd: readonly Point[]
       rooms: readonly Room[]
+      /** A boarded-up gap right by `me` with `goal` on its far side, if any. */
+      boardedAt?: (me: Point, goal: Point) => { index: number; x: number; z: number } | null
     },
   ): InputCommand {
     const s = self.state
@@ -281,9 +293,19 @@ export class Zed {
     if (stalker && this.frozen) return this.command(0, world.tick)
 
     let flat = Number.POSITIVE_INFINITY
+    this.bashing = -1
     if (goal) {
       // Through the door, if one of us is indoors and the other isn't.
       const via = doorBetween(world.rooms, me, goal)
+      // A boarded-up door or window between it and what it's after: batter it down.
+      const boarded =
+        chasing || this.mood === 'search' ? (world.boardedAt?.(me, goal) ?? null) : null
+      if (boarded) {
+        this.turnTowards(Math.atan2(-(boarded.x - me.x), -(boarded.z - me.z)), 0, 6 * TICK_DT)
+        this.bashing = boarded.index
+        this.swing = !this.swing
+        return this.command(this.swing ? Button.Fire : 0, world.tick)
+      }
       const to = via ?? goal
       const dx = to.x - me.x
       const dz = to.z - me.z

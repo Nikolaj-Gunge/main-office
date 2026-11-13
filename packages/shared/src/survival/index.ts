@@ -1,3 +1,4 @@
+export * from './barricades.ts'
 export * from './items.ts'
 export * from './kit.ts'
 export * from './noise.ts'

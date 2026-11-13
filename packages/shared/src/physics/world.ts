@@ -1,7 +1,16 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import type { MapDef } from '../maps/types.ts'
+import { spotBlock } from '../survival/barricades.ts'
 import { chunkOf, chunkProps, propSolid } from '../survival/terrain.ts'
-import { CHUNK, CHUNKS, GRID, type SurvivalDef, WORLD_HALF, WORLD_SIZE } from '../survival/types.ts'
+import {
+  type BoardSpot,
+  CHUNK,
+  CHUNKS,
+  GRID,
+  type SurvivalDef,
+  WORLD_HALF,
+  WORLD_SIZE,
+} from '../survival/types.ts'
 
 export { RAPIER }
 
@@ -44,6 +53,8 @@ export interface PhysicsWorld {
   seeThrough: Set<number>
   /** Colliders of each gate (co-op maps), removed while the gate is open. */
   gates: Map<number, RAPIER.Collider[]>
+  /** Survival: boarded-up doorways and windows, by spot index (see setBarricades). */
+  barricades: Map<number, RAPIER.Collider>
   /** Survival: the forest's trees and rocks, solid only around the players (see syncForest). */
   forest?: { def: SurvivalDef; chunks: Map<number, RAPIER.Collider[]> }
 }
@@ -71,7 +82,7 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
       if (box.gate !== undefined) gates.set(box.gate, [...(gates.get(box.gate) ?? []), collider])
       return collider
     })
-  const physics: PhysicsWorld = { world, mapColliders, seeThrough, gates }
+  const physics: PhysicsWorld = { world, mapColliders, seeThrough, gates, barricades: new Map() }
   if (map.survival) {
     // The ground, and walls around the edge of the world behind the rim of hills.
     const t = map.survival.terrain
@@ -174,6 +185,41 @@ export function setGates(physics: PhysicsWorld, open: (id: number) => boolean): 
   }
   // One step refreshes the broad phase that scene queries use (there are no moving bodies).
   if (changed) physics.world.step()
+}
+
+/**
+ * Makes exactly the boarded-up gaps solid: `planks(i)` says how many planks spot i has. Server
+ * and client call this with the same counts, so prediction collides with what the server does.
+ * Returns true when anything changed.
+ */
+export function setBarricades(
+  physics: PhysicsWorld,
+  spots: readonly BoardSpot[],
+  planks: (index: number) => number,
+): boolean {
+  let changed = false
+  spots.forEach((spot, i) => {
+    const solid = planks(i) > 0
+    const collider = physics.barricades.get(i)
+    if (solid === (collider !== undefined)) return
+    if (collider) {
+      physics.world.removeCollider(collider, false)
+      physics.barricades.delete(i)
+    } else {
+      const { center, half } = spotBlock(spot)
+      physics.barricades.set(
+        i,
+        physics.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(...half)
+            .setTranslation(...center)
+            .setCollisionGroups(MAP_COLLISION_GROUPS),
+        ),
+      )
+    }
+    changed = true
+  })
+  if (changed) physics.world.step()
+  return changed
 }
 
 /** Euler XYZ (radians, Three.js default order) → quaternion. */

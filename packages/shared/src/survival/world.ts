@@ -237,6 +237,7 @@ export function buildDeadwood(): MapDef {
     npcs: build.npcs,
     interactables: build.interactables,
     rooms: build.rooms,
+    spots: build.spots,
   }
   const start = pois[0] as Poi
   cached = {
