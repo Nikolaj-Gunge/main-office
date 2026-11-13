@@ -535,6 +535,22 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       ctx.fillRect(1, 1, Math.max(1, size - 2), Math.max(1, size - 2))
     },
   },
+  lantern: {
+    meters: 0.2,
+    noise: 0,
+    kind: 'emissive',
+    glow: 3,
+    noShadow: true,
+    paint: (ctx, size) => {
+      // Sooty glass round a warm flame.
+      ctx.fillStyle = '#c86a1c'
+      ctx.fillRect(0, 0, size, size)
+      ctx.fillStyle = '#ffc060'
+      ctx.fillRect(size * 0.25, size * 0.2, size * 0.5, size * 0.65)
+      ctx.fillStyle = '#fff0b0'
+      ctx.fillRect(size * 0.4, size * 0.4, size * 0.2, size * 0.35)
+    },
+  },
 }
 
 function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {

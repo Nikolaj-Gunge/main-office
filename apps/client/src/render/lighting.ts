@@ -1,5 +1,6 @@
-import type { MapDef, MapLighting } from '@office-fps/shared'
+import type { MapDef, MapLight, MapLighting } from '@office-fps/shared'
 import * as THREE from 'three'
+import { hangingLightPos, wind } from './wind.ts'
 
 /** A map without much sun is a night map: it gets the dark treatment. */
 export const isNight = (l: MapLighting): boolean => l.sunIntensity < 1
@@ -68,7 +69,8 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
 
   // The map's own lamps (no shadows: cheap, and the sun does the shadow work).
   const flickering: { light: THREE.Light; base: number; amount: number; seed: number }[] = []
-  for (const l of map.lights ?? []) {
+  const hanging: { light: THREE.Light; source: MapLight; index: number }[] = []
+  for (const [index, l] of (map.lights ?? []).entries()) {
     const light =
       l.kind === 'spot'
         ? new THREE.SpotLight(
@@ -89,19 +91,25 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
         seed: flickering.length * 7.31,
       })
     }
+    if (l.hang) hanging.push({ light, source: l, index })
     if (light instanceof THREE.SpotLight) {
       light.target.position.set(l.pos[0], 0, l.pos[2])
       scene.add(light.target)
     }
     scene.add(light)
   }
-  if (flickering.length > 0) {
-    // Every frame, as the scene starts to render: failing lamps stutter and drop out now and then.
+  if (flickering.length > 0 || hanging.length > 0) {
+    // Every frame, as the scene starts to render: failing lamps stutter and drop out now and
+    // then, and lamps on cords carry their light as they swing (see swingLamps).
     const before = scene.onBeforeRender.bind(scene)
     scene.onBeforeRender = (...args) => {
       before(...args)
       const t = performance.now() / 1000
       for (const f of flickering) f.light.intensity = f.base * flickerLevel(t, f.seed, f.amount)
+      for (const h of hanging) {
+        hangingLightPos(h.source, h.index, wind.time, false, h.light.position)
+        h.light.updateMatrixWorld()
+      }
     }
   }
   return sun

@@ -46,6 +46,8 @@ export const MATERIALS = [
   'sandbag',
   /** A red lamp that glows by itself: beacons, emergency lights. */
   'warnlight',
+  /** A warm glowing lantern (oil or battery). */
+  'lantern',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
@@ -64,6 +66,11 @@ export interface MapBox {
    * Gates open as the team completes stages (CoopStage.opens).
    */
   gate?: number
+  /**
+   * Hangs from the light with this index (MapDef.lights) and swings with it. Visual only: it
+   * must not collide.
+   */
+  swing?: number
 }
 
 /** A light placed in the map (client only). */
@@ -78,6 +85,8 @@ export interface MapLight {
   angleDeg?: number
   /** 0–1: how badly it flickers (a failing tube, a loose wire). Absent = steady. */
   flicker?: number
+  /** Hangs on a cord this long (m) from the point straight above it, and swings. */
+  hang?: number
 }
 
 export interface MapSpawn {

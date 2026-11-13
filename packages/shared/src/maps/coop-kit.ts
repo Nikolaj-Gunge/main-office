@@ -160,7 +160,7 @@ export interface LampOptions {
   flicker?: number
 }
 
-function lampLight(m: MapBuilder, pos: Vec3, o: LampOptions) {
+function lampLight(m: MapBuilder, pos: Vec3, o: LampOptions, hang?: number) {
   m.light({
     kind: 'point',
     pos,
@@ -168,6 +168,7 @@ function lampLight(m: MapBuilder, pos: Vec3, o: LampOptions) {
     intensity: o.intensity ?? 7,
     distance: o.distance ?? 12,
     ...(o.flicker ? { flicker: o.flicker } : {}),
+    ...(hang ? { hang } : {}),
   })
 }
 
@@ -180,10 +181,12 @@ export function hangingLamp(
   o: LampOptions = {},
 ) {
   const y = ceil - (o.drop ?? 0.9)
-  m.span([x - 0.012, y + 0.14, z - 0.012], [x + 0.012, ceil - 0.005, z + 0.012], 'metal', DECO)
-  m.block(x, y, z, 0.44, 0.14, 0.44, 'metal', DECO)
-  m.block(x, y - 0.025, z, 0.26, 0.03, 0.26, 'lightpanel', DECO)
-  lampLight(m, [x, y - 0.2, z], o)
+  // Cord, shade and bulb all hang from the light about to be added, and swing with it.
+  const hung = { ...DECO, swing: m.nextLight }
+  m.span([x - 0.012, y + 0.14, z - 0.012], [x + 0.012, ceil - 0.005, z + 0.012], 'metal', hung)
+  m.block(x, y, z, 0.44, 0.14, 0.44, 'metal', hung)
+  m.block(x, y - 0.025, z, 0.26, 0.03, 0.26, 'lightpanel', hung)
+  lampLight(m, [x, y - 0.2, z], o, ceil - (y - 0.2))
 }
 
 /** A long fluorescent fixture on two wires, lengthwise along x or z, with its light. */

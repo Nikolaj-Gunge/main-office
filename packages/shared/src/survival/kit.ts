@@ -265,6 +265,23 @@ export class Site {
     return this
   }
 
+  /**
+   * A lantern on a cord from a beam or ceiling at height `ceil`, hanging `drop` metres: it
+   * swings (in the wind outdoors) and its light swings with it.
+   */
+  lantern(x: number, ceil: number, z: number, drop = 0.55, options: LampOptions = {}): this {
+    const hung: BoxFlags = { ...DECO, swing: this.build.lights.length }
+    const y = ceil - drop
+    this.block(x, y + 0.24, z, 0.02, drop - 0.24, 0.02, 'metal', hung)
+    this.block(x, y + 0.2, z, 0.2, 0.04, 0.2, 'metal', hung)
+    this.block(x, y + 0.03, z, 0.13, 0.17, 0.13, 'lantern', hung)
+    this.block(x, y, z, 0.18, 0.03, 0.18, 'metal', hung)
+    this.light(x, y + 0.1, z, options)
+    const light = this.build.lights[this.build.lights.length - 1] as MapLight
+    light.hang = drop - 0.1
+    return this
+  }
+
   /** Something to find here (lying at this height: on the floor, a table, a shelf). */
   loot(x: number, y: number, z: number, table: LootTable): this {
     this.build.loot.push({ pos: this.world(x, y, z), table, poi: this.index })

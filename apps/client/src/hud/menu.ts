@@ -10,6 +10,7 @@ const PIXEL_PRESETS: [string, number][] = [
   ['Classic', 270],
   ['Sharp', 360],
   ['Fine', 540],
+  ['Crisp', 720],
 ]
 
 type Tab = 'play' | 'settings' | 'controls'

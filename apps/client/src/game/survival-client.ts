@@ -20,6 +20,7 @@ import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
+import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { Night } from '../render/night.ts'
 import { Wilds } from '../render/wilds.ts'
@@ -58,6 +59,7 @@ export class SurvivalClient {
   private readonly wilds: Wilds
   private readonly night: Night
   private readonly loot: LootView
+  private readonly leaves: Leaves
   private readonly npcs: { def: Npc; avatar: Avatar; state: RemotePlayerState }[] = []
   private readonly torch = torch()
   private readonly others: THREE.SpotLight[] = []
@@ -87,6 +89,8 @@ export class SurvivalClient {
     o.scene.add(this.wilds.root)
     this.night = new Night(o.map, o.scene, o.sky)
     this.loot = new LootView(o.scene)
+    this.leaves = new Leaves(o.def.terrain)
+    o.scene.add(this.leaves.mesh)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
@@ -203,6 +207,7 @@ export class SurvivalClient {
       this.loot.prune(eye.x, eye.z)
     }
     this.night.update(dt, eye, this.grey, built)
+    this.leaves.update(dt, eye)
 
     // Your torch, and the nearest of everyone else's.
     const on = this.self?.light === true && state.alive

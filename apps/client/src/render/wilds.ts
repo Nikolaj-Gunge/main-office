@@ -15,6 +15,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { getSurfaceMaterial } from './textures.ts'
+import { makeSwaying } from './wind.ts'
 
 /** Ground and forest are drawn in chunks whose centre is within this of you (m). */
 const VIEW = 170
@@ -26,6 +27,15 @@ class Triangles {
   readonly position: number[] = []
   readonly normal: number[] = []
   readonly color: number[] = []
+  /** Per vertex: how much it bends in the wind, and its phase (see wind.ts). */
+  readonly sway: number[] = []
+  /** The plant being built: where its roots are, how stiff it is, its phase. */
+  private root = { y: 0, stiff: 0, phase: 0 }
+
+  /** What comes next bends in the wind from `y` up (stiff 0 = a rock, 1 = a pine). */
+  plant(y: number, stiff: number, phase: number): void {
+    this.root = { y, stiff, phase }
+  }
 
   tri(a: number[], b: number[], c: number[], color: THREE.Color): void {
     const ux = (b[0] as number) - (a[0] as number)
@@ -45,6 +55,8 @@ class Triangles {
       this.position.push(p[0] as number, p[1] as number, p[2] as number)
       this.normal.push(nx, ny, nz)
       this.color.push(color.r, color.g, color.b)
+      const up = Math.max(0, (p[1] as number) - this.root.y) / 6
+      this.sway.push(this.root.stiff * up ** 1.5, this.root.phase)
     }
   }
 
@@ -132,11 +144,26 @@ class Triangles {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3))
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.normal, 3))
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.color, 3))
+    g.setAttribute('sway', new THREE.Float32BufferAttribute(this.sway, 2))
     return g
   }
 }
 
 const col = (hex: number) => new THREE.Color(hex)
+
+/** How much each kind of plant gives in the wind (rocks and logs not at all). */
+const STIFFNESS: Partial<Record<PropKind, number>> = {
+  [PropKind.Pine]: 0.8,
+  [PropKind.Birch]: 1,
+  [PropKind.DeadTree]: 0.45,
+  [PropKind.Bush]: 1.6,
+  [PropKind.Fern]: 3,
+}
+
+const swaying = <M extends THREE.Material>(material: M): M => {
+  makeSwaying(material)
+  return material
+}
 const BARK = col(0x33261a)
 const BARK_DARK = col(0x241a12)
 const NEEDLES = [col(0x1c3520), col(0x22402a), col(0x17301c), col(0x2a4526)]
@@ -200,7 +227,7 @@ export class Wilds {
     map: makeGroundTexture(),
     vertexColors: true,
   })
-  private readonly propMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
+  private readonly propMaterial = swaying(new THREE.MeshLambertMaterial({ vertexColors: true }))
   private primed = false
 
   constructor(def: SurvivalDef) {
@@ -322,6 +349,8 @@ export class Wilds {
       const turn = p.turn * Math.PI * 2
       const s = p.scale
       const pick = Math.floor(p.turn * 4) % 4
+      // Trees bend from the roots; the wave rolls across the forest with the wind.
+      tris.plant(p.y, STIFFNESS[p.kind] ?? 0, p.x * 0.11 + p.z * 0.08 + p.turn * 6)
       switch (p.kind) {
         case PropKind.Pine: {
           tris.box(p.x, p.y - 0.3, p.z, 0.36 * s, 2.6 * s, 0.36 * s, turn, BARK, 0, 0, BARK_DARK)

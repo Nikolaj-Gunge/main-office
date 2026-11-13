@@ -42,19 +42,19 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
   fov: 90,
-  // Phase 8 look: sharper pixels, more colour steps, gentler dither and outlines, bloom.
-  pixelHeight: 360,
+  // Phase 14 look: much finer pixels (twice the lines of 360), smoother colour, light dither.
+  pixelHeight: 720,
   colorMode: 'levels',
-  colorLevels: 40,
+  colorLevels: 64,
   palette: 'resurrect64',
-  dither: 0.6,
+  dither: 0.3,
   outlines: 0.25,
   // Phase 13 look: darker shadows, vivid lights, more glow.
   bloom: 0.85,
   contrast: 0.6,
   saturation: 1.25,
   vignette: 0.4,
-  lookVersion: 3,
+  lookVersion: 4,
   exposure: 1,
   masterVolume: 0.8,
   sfxVolume: 1,

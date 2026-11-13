@@ -182,7 +182,7 @@ export function cabin(s: Site, variant: number): void {
   )
   s.loot(w / 2 - 1.2, FLOOR + 0.02, -d / 2 + 1.7, 'bedroom')
   if (variant % 5 !== 0)
-    s.light(0, 2.1, 0, {
+    s.lantern(0, 2.5, 0, 0.5, {
       color: 0xffb060,
       intensity: variant % 2 ? 5 : 0,
       distance: 7,
@@ -238,7 +238,7 @@ export function startCabin(s: Site): void {
   )
   shelf(s, -3.05, -1.2, false, ['kitchen', 'kitchen'])
   crate(s, 2.7, -1.7, 0.7, 'medical')
-  s.light(0, 2.1, 0.5, { color: 0xffb060, intensity: 6, distance: 8, flicker: 0.3 })
+  s.lantern(0, 2.5, 0.5, 0.5, { color: 0xffb060, intensity: 6, distance: 8, flicker: 0.3 })
   campfire(s, 3, -6, false)
 }
 
@@ -285,7 +285,7 @@ export function haven(s: Site): void {
   crate(stall, -1.6, 1.3, 0.8)
   crate(stall, -0.7, 1.4, 0.7)
   crate(stall, 1.5, 1.3, 0.9)
-  stall.light(0, 2.3, 0, { color: 0xffc880, intensity: 12, distance: 9 })
+  stall.lantern(0, 2.6, 0, 0.5, { color: 0xffc880, intensity: 12, distance: 9 })
   stall.npc('gus', 'Gus', 'trader', 0, 0.9, 0, 4)
   stall.label(0, 3.2, 0, 'TRADE')
 
@@ -327,7 +327,7 @@ export function haven(s: Site): void {
   bed(bunks, -0.9, 1.9, true, 'bed_haven_2')
   bed(bunks, 3.4, 1.9, true, 'bed_haven_3')
   bed(bunks, -3.7, -1.9, true, 'bed_haven_4')
-  bunks.light(0, 2.2, 0, { color: 0xffb870, intensity: 8, distance: 9 })
+  bunks.lantern(0, 2.6, 0, 0.45, { color: 0xffb870, intensity: 8, distance: 9 })
   bunks.label(2, 3.4, -3.2, 'BUNKHOUSE')
 
   // Workshop (south-east): Ray's generator and bench.
@@ -357,7 +357,7 @@ export function haven(s: Site): void {
   kitchen.block(1.9, 0, 1.2, 0.7, 1, 0.7, 'metal')
   kitchen.block(-1.9, 0, 1.3, 0.6, 0.95, 0.6, 'platform')
   kitchen.interact('haven_water', 'water', -1.9, 1.1, 1.3, 'Drink')
-  kitchen.light(0, 2.1, 0, { color: 0xffc880, intensity: 9, distance: 8 })
+  kitchen.lantern(0, 2.4, 0, 0.45, { color: 0xffc880, intensity: 9, distance: 8 })
   kitchen.npc('dot', 'Dot', 'cook', 0, -0.2, 180, 10)
 
   // Tom the hunter by the east wall, Sam the kid by the fire.

@@ -16,6 +16,7 @@ export interface BoxFlags {
   collide?: boolean
   render?: boolean
   gate?: number
+  swing?: number
 }
 
 /**
@@ -132,6 +133,11 @@ export class MapBuilder {
   light(light: MapLight) {
     this.lights.push(light)
     return this
+  }
+
+  /** The index the next light will get (to hang boxes from it, see MapBox.swing). */
+  get nextLight(): number {
+    return this.lights.length
   }
 
   /** A weapon lying here (feet of the weapon at y), back `respawn` s after it's taken. */

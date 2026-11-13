@@ -1,9 +1,10 @@
-import type { MapBox, MapDef, MaterialId } from '@office-fps/shared'
+import type { MapBox, MapDef, MapLight, MaterialId } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { buildCorn } from './corn.ts'
 import { createLabel } from './labels.ts'
 import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
+import { lampSwing } from './wind.ts'
 
 /**
  * World-space planar UVs: each face is projected on its dominant axis, so the 1 m texture grid
@@ -148,6 +149,7 @@ export function buildMapObject(map: MapDef): THREE.Group {
 
   const byMaterial = new Map<MaterialId, THREE.BufferGeometry[]>()
   const gates = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
+  const swings = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
   const matrix = new THREE.Matrix4()
   const quaternion = new THREE.Quaternion()
   const euler = new THREE.Euler()
@@ -178,6 +180,9 @@ export function buildMapObject(map: MapDef): THREE.Group {
     if (box.gate !== undefined) {
       target = gates.get(box.gate) ?? new Map()
       gates.set(box.gate, target)
+    } else if (box.swing !== undefined && map.lights?.[box.swing]?.hang) {
+      target = swings.get(box.swing) ?? new Map()
+      swings.set(box.swing, target)
     }
     const list = target.get(box.material) ?? []
     list.push(geometry)
@@ -205,6 +210,25 @@ export function buildMapObject(map: MapDef): THREE.Group {
     group.add(gate)
   }
 
+  // Hanging lamps: their own group each, pivoting where the cord is tied (see swingLamps).
+  const lamps: THREE.Group[] = []
+  for (const [index, meshes] of swings) {
+    const light = map.lights?.[index] as MapLight
+    const hang = light.hang ?? 0
+    const pivot = new THREE.Vector3(light.pos[0], light.pos[1] + hang, light.pos[2])
+    for (const list of meshes.values()) {
+      for (const g of list) g.translate(-pivot.x, -pivot.y, -pivot.z)
+    }
+    const lamp = new THREE.Group()
+    lamp.name = `swing:${index}`
+    lamp.position.copy(pivot)
+    lamp.userData.swing = { index, hang }
+    addMerged(lamp, meshes)
+    group.add(lamp)
+    lamps.push(lamp)
+  }
+  group.userData.lamps = lamps
+
   const field = buildCorn(corn)
   if (field) group.add(field)
 
@@ -215,4 +239,12 @@ export function buildMapObject(map: MapDef): THREE.Group {
   }
 
   return group
+}
+
+/** Swings the map's hanging lamps (built by buildMapObject) to the wind at time t. */
+export function swingLamps(mapObject: THREE.Object3D, t: number, outdoors: boolean): void {
+  for (const lamp of (mapObject.userData.lamps ?? []) as THREE.Group[]) {
+    const { index, hang } = lamp.userData.swing as { index: number; hang: number }
+    lampSwing(index, hang, t, outdoors, lamp.rotation)
+  }
 }

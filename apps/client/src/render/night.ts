@@ -1,6 +1,7 @@
 import type { MapDef, MapLight } from '@office-fps/shared'
 import * as THREE from 'three'
 import { flickerLevel } from './lighting.ts'
+import { hangingLightPos, wind } from './wind.ts'
 
 /** Lamps lit at once: the nearest of the map's (the world has far more than a GPU wants). */
 const LAMPS = 8
@@ -111,6 +112,8 @@ export class Night {
       const fade = Math.max(0, Math.min(1, (LAMP_RANGE - d) / 15))
       const flicker = s.flicker ? flickerLevel(t, slot.index * 7.31, s.flicker) : 1
       slot.light.intensity = s.intensity * 2.6 * fade * flicker
+      // Lanterns swing in the wind, and their light with them.
+      if (s.hang) hangingLightPos(s, slot.index, wind.time, true, slot.light.position)
     }
   }
 

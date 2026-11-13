@@ -63,11 +63,12 @@ import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
 import { createLighting, gradeLighting } from './render/lighting.ts'
-import { buildMapObject } from './render/map-mesh.ts'
+import { buildMapObject, swingLamps } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { Viewmodel } from './render/viewmodel.ts'
+import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
 import { WorldItemsView } from './render/world-items.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 import '@fontsource/pixelify-sans/400.css'
@@ -765,6 +766,10 @@ pixels.renderer.setAnimationLoop(() => {
   camera.updateMatrixWorld()
   audio.setListener(camera)
   audio.update(dt)
+  // One wind for the trees, the lamps and the leaves.
+  tickWind(now / 1000)
+  syncWindUniforms()
+  swingLamps(mapObject, wind.time, map.survival !== undefined)
   remotes.update(now, camera.position)
   updateCorn(now / 1000, [...remotes.visiblePoses().values(), camera.position], camera.position)
   if (survival?.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
