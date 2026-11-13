@@ -78,7 +78,7 @@ export class RemotePlayers {
 
   add(id: number, name: string, color: number, kind = 0): void {
     this.remove(id)
-    const avatar = new Avatar(name, color, lookOf(kind, this.skin))
+    const avatar = new Avatar(name, bodyColor(id, color, kind), lookOf(kind, this.skin))
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)
     this.players.set(id, {
@@ -155,7 +155,8 @@ export class RemotePlayers {
           if (p.velocity.length() > 20) p.velocity.set(0, 0, 0)
         }
         if (before.alive && !p.shown.alive) {
-          this.onDeath?.(id, before, p.velocity, p.color, lookOf(p.kind, this.skin), size)
+          const look = lookOf(p.kind, this.skin)
+          this.onDeath?.(id, before, p.velocity, bodyColor(id, p.color, p.kind), look, size)
         }
         this.detectSteps(p, before, p.shown, dt)
         if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
@@ -244,6 +245,14 @@ export class RemotePlayers {
   colorOf(id: number): number | undefined {
     return this.players.get(id)?.color
   }
+}
+
+/**
+ * The colour index a body is built with. The dead also carry their id in it (the colour itself
+ * is taken modulo the palette), so each zombie keeps its own variant, alive and as a ragdoll.
+ */
+function bodyColor(id: number, color: number, kind: number): number {
+  return kind === 0 ? color : color + PLAYER_COLORS.length * (id % 1024)
 }
 
 function lookOf(kind: number, skin: SkinId): BodyLook {

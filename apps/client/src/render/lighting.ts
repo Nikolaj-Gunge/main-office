@@ -1,4 +1,4 @@
-import type { MapDef, MapLight, MapLighting } from '@office-fps/shared'
+import type { MapDef, MapLighting } from '@office-fps/shared'
 import * as THREE from 'three'
 import { hangingLightPos, wind } from './wind.ts'
 

@@ -11,6 +11,15 @@ import {
   WeaponId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import {
+  ARM_LENGTH,
+  attachBaked,
+  glossyVertexColored,
+  type Slot,
+  vertexColored,
+} from './body-kit.ts'
+import { gearBodies, showsUnder } from './gear-looks.ts'
+import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zombie-bodies.ts'
 
 /**
  * Player models. Every skin is built on the shared animated skeleton (skeleton.ts): each body
@@ -19,8 +28,8 @@ import * as THREE from 'three'
 
 /** What a body looks like: the admin's skin, or one of the zombies (zombies mode). */
 export type BodyLook = SkinId | ZombieLook
-/** The dead: walkers, runners, and survival's brutes, screamers and stalkers. */
-export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker'
+export type { ZombieLook }
+
 const ZOMBIE_LOOKS: readonly string[] = ['zombie', 'runner', 'brute', 'screamer', 'stalker']
 const isZombie = (skin: BodyLook): skin is ZombieLook => ZOMBIE_LOOKS.includes(skin)
 
@@ -45,30 +54,7 @@ const metalMaterial = lambert(0x8e96a3)
 const darkMetalMaterial = lambert(0x3c424c)
 const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
 const gunMaterial = lambert(0x2b2d33)
-// Zombies: rotting skin, blood, glowing eyes (walkers red, runners yellow).
-const zombieSkin = lambert(0x7d9a63)
-const runnerSkin = lambert(0xa3ab7e)
-const bloodMaterial = lambert(0x5e1212)
-const raggedMaterial = lambert(0x3a3a36)
-// Far brighter than white (they bloom) and untouched by fog: in the dark you see the eyes first.
-const zombieEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(7, 0.35, 0.2), fog: false })
-const runnerEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 3.6, 0.3), fog: false })
-const bruteEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 1.2, 0.1), fog: false })
-const paleEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 6, 7), fog: false })
 const deadEyes = lambert(0x2a0d0d)
-/** Skin, eyes and what's left of their clothes (null = the shirt colour they were given). */
-const ZOMBIE_STYLE: Record<
-  ZombieLook,
-  { flesh: THREE.Material; eyes: THREE.Material; clothes: THREE.Material | null; jaw: number }
-> = {
-  zombie: { flesh: zombieSkin, eyes: zombieEyes, clothes: null, jaw: 0.05 },
-  runner: { flesh: runnerSkin, eyes: runnerEyes, clothes: null, jaw: 0.05 },
-  brute: { flesh: lambert(0x6e4038), eyes: bruteEyes, clothes: lambert(0x2a2622), jaw: 0.07 },
-  // Mouth hanging open, far too wide.
-  screamer: { flesh: lambert(0xb4b6a6), eyes: paleEyes, clothes: lambert(0x6a6458), jaw: 0.14 },
-  // A shape of the dark itself; only the eyes show.
-  stalker: { flesh: lambert(0x101014), eyes: paleEyes, clothes: lambert(0x0c0c10), jaw: 0.03 },
-}
 const pick = <T>(list: T[], i: number): T =>
   list[((i % list.length) + list.length) % list.length] as T
 
@@ -132,9 +118,6 @@ const gunGeometry = Object.fromEntries(
     return [id, box(width, height, length)]
   }),
 ) as Record<string, THREE.BoxGeometry>
-
-/** Arm meshes are built for this length; the arm group stretches to the real shoulder–hand span. */
-const ARM_LENGTH = PART_SIZES.armR.y * 2
 
 /** A mesh in part space (origin = part centre; limbs run along their local +Y). */
 function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0) {
@@ -211,8 +194,8 @@ export function buildBody(
     )
     body.chest.add(
       part(box(...W(s.chest)), material),
-      part(box(0.09, 0.3, 0.03), tie, 0, -0.02, -s.chest.z - 0.01),
-      part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z),
+      under(part(box(0.09, 0.3, 0.03), tie, 0, -0.02, -s.chest.z - 0.01)),
+      under(part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z)),
     )
     body.stomach.add(part(box(...W(s.stomach)), material))
     for (const arm of [body.armL, body.armR]) arm.add(part(box(0.12, ARM_LENGTH, 0.14), material))
@@ -223,55 +206,13 @@ export function buildBody(
   }
 
   if (isZombie(skin)) {
-    // A dead office worker: torn shirt (in the player's color), blood, no shoes, glowing eyes.
-    const style = ZOMBIE_STYLE[skin]
-    const flesh = style.flesh
-    const eyes = dead ? deadEyes : style.eyes
-    if (style.clothes) material = style.clothes as THREE.MeshLambertMaterial
-    body.head.add(
-      part(box(...W(s.head)), flesh),
-      part(box(0.2, 0.05, 0.22), hair, -0.04, s.head.y + 0.01, 0.03), // patchy hair
-      part(box(0.06, 0.04, 0.02), eyes, -0.07, 0.02, -s.head.z - 0.006),
-      part(box(0.06, 0.04, 0.02), eyes, 0.07, 0.02, -s.head.z - 0.006),
-      part(
-        box(0.14, style.jaw, 0.02),
-        skin === 'screamer' ? eyeMaterial : bloodMaterial,
-        0,
-        -0.06 - style.jaw / 2,
-        -s.head.z - 0.006,
-      ), // jaw
+    // Each kind its own silhouette (zombie-bodies.ts); colorIndex also carries the zombie's id,
+    // which picks its variant (clothes, hair, which arm is flayed...).
+    const eyes = dead ? deadEyes : ZOMBIE_EYES[skin]
+    const skinMaterial = skin === 'stalker' ? glossyVertexColored : vertexColored
+    attachBaked(zombieBody(skin, colorIndex), body, (slot: Slot) =>
+      slot === 'vc' ? skinMaterial : slot === 'eyes' ? eyes : slot === 'own' ? material : slot,
     )
-    body.chest.add(
-      part(box(...W(s.chest)), material),
-      part(box(0.16, 0.12, 0.02), bloodMaterial, 0.05, -0.02, -s.chest.z - 0.006),
-      part(box(0.1, 0.08, 0.02), flesh, -0.1, 0.05, -s.chest.z - 0.007), // torn open
-    )
-    body.stomach.add(
-      part(box(...W(s.stomach)), material),
-      part(box(0.12, 0.1, 0.02), bloodMaterial, -0.06, 0.03, -s.stomach.z - 0.006),
-      part(
-        box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
-        beltMaterial,
-        0,
-        -s.stomach.y + 0.03,
-        0,
-      ),
-    )
-    for (const arm of [body.armL, body.armR]) {
-      arm.add(
-        part(box(0.12, ARM_LENGTH * 0.55, 0.14), material, 0, -ARM_LENGTH * 0.22, 0), // sleeve
-        part(box(0.1, ARM_LENGTH * 0.5, 0.11), flesh, 0, ARM_LENGTH * 0.24, 0), // bare forearm
-      )
-    }
-    for (const thigh of [body.thighL, body.thighR])
-      thigh.add(part(box(...W(s.thighL)), raggedMaterial))
-    for (const shin of [body.shinL, body.shinR]) {
-      shin.add(
-        part(box(s.shinL.x * 2, s.shinL.y, s.shinL.z * 2), raggedMaterial, 0, s.shinL.y / 2, 0),
-        part(box(0.14, s.shinL.y, 0.15), flesh, 0, -s.shinL.y / 2, 0), // bare, torn trousers
-        part(box(0.16, 0.06, 0.24), flesh, 0, -s.shinL.y + 0.02, -0.04), // feet
-      )
-    }
     return body
   }
 
@@ -285,13 +226,13 @@ export function buildBody(
   )
   body.chest.add(
     part(box(...W(s.chest)), material),
-    part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z),
-    part(box(0.11, 0.07, 0.04), tie, 0, s.chest.y - 0.08, -s.chest.z - 0.01),
-    part(box(0.09, 0.24, 0.03), tie, 0, -0.04, -s.chest.z - 0.01),
+    under(part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z)),
+    under(part(box(0.11, 0.07, 0.04), tie, 0, s.chest.y - 0.08, -s.chest.z - 0.01)),
+    under(part(box(0.09, 0.24, 0.03), tie, 0, -0.04, -s.chest.z - 0.01)),
   )
   body.stomach.add(
     part(box(...W(s.stomach)), material),
-    part(box(0.09, 0.2, 0.03), tie, 0, 0.05, -s.stomach.z - 0.01),
+    under(part(box(0.09, 0.2, 0.03), tie, 0, 0.05, -s.stomach.z - 0.01)),
     part(
       box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
       beltMaterial,
@@ -317,9 +258,16 @@ export function buildBody(
   return body
 }
 
+/** Marks what a closed coat or vest hides (tie, collar). */
+function under<T extends THREE.Object3D>(o: T): T {
+  o.name = 'under'
+  return o
+}
+
 /** A fedora or a bowler on top of a head of half-height `top`. */
 function makeHat(colorIndex: number, top: number): THREE.Group {
   const g = new THREE.Group()
+  g.name = 'hat' // hidden under worn head gear
   const material = pick(hatMaterials, colorIndex)
   const brim = part(new THREE.CylinderGeometry(0.26, 0.26, 0.03, 12), material, 0, top + 0.01, 0)
   if (colorIndex % 2 === 0) {
@@ -397,13 +345,9 @@ const eyeGlow = (color: THREE.Color) =>
     fog: false,
     transparent: true,
   })
-const EYE_GLOW: Record<ZombieLook, THREE.SpriteMaterial> = {
-  zombie: eyeGlow(new THREE.Color(2.4, 0.08, 0.04)),
-  runner: eyeGlow(new THREE.Color(2, 1.1, 0.06)),
-  brute: eyeGlow(new THREE.Color(3, 0.4, 0.03)),
-  screamer: eyeGlow(new THREE.Color(1.2, 1.5, 1.8)),
-  stalker: eyeGlow(new THREE.Color(1.6, 1.8, 2.2)),
-}
+const EYE_GLOW = Object.fromEntries(
+  Object.entries(EYE_HALO).map(([look, color]) => [look, eyeGlow(color)]),
+) as Record<ZombieLook, THREE.SpriteMaterial>
 
 /** Places a part group at a skeleton part (arms also stretch to their shoulder–hand span). */
 export function placePart(group: THREE.Object3D, p: BodyPart, size: number): void {
@@ -429,6 +373,11 @@ export class Avatar {
   private readonly glint: THREE.Sprite
   private weapon: WeaponId = WeaponId.Rifle
   private readonly eyeGlows: THREE.Sprite[] = []
+  private readonly glowSize: number = 0.2
+  /** People (not the dead) can wear survival gear; the value now shown and its meshes. */
+  private readonly wearsGear: boolean
+  private gear = 0
+  private gearMeshes: THREE.Mesh[] = []
   /** The pose last drawn (for the ragdoll when they die). */
   lastParts: BodyPart[] = []
 
@@ -437,11 +386,14 @@ export class Avatar {
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.parts = buildBody(skin, colorIndex, this.material)
     for (const group of Object.values(this.parts)) this.root.add(group)
+    this.wearsGear = !isZombie(skin)
     if (isZombie(skin)) {
-      for (const x of [-0.07, 0.07]) {
+      const eyes = EYES[skin]
+      this.glowSize = eyes.glow
+      for (const x of [-eyes.x, eyes.x]) {
         const glow = new THREE.Sprite(EYE_GLOW[skin])
-        glow.position.set(x, 0.02, -PART_SIZES.head.z - 0.03)
-        glow.scale.setScalar(0.26)
+        glow.position.set(x, eyes.y, -PART_SIZES.head.z - 0.03)
+        glow.scale.setScalar(eyes.glow)
         this.eyeGlows.push(glow)
         this.parts.head.add(glow)
       }
@@ -466,12 +418,31 @@ export class Avatar {
     this.glint.position.set(0, 0.07, -0.05)
   }
 
+  /** Swaps the worn head and body pieces (only when the replicated value changes). */
+  private setGear(gear: number): void {
+    this.gear = gear
+    for (const mesh of this.gearMeshes) mesh.removeFromParent()
+    this.gearMeshes = []
+    const { head, body } = gearBodies(gear)
+    const resolve = (slot: Slot) =>
+      slot === 'vc' ? vertexColored : slot === 'own' || slot === 'eyes' ? this.material : slot
+    if (head) this.gearMeshes.push(...attachBaked(head, this.parts, resolve))
+    if (body) this.gearMeshes.push(...attachBaked(body, this.parts, resolve))
+    const hat = this.parts.head.getObjectByName('hat')
+    if (hat) hat.visible = head === null
+    const under = showsUnder(gear)
+    for (const group of [this.parts.chest, this.parts.stomach]) {
+      for (const child of group.children) if (child.name === 'under') child.visible = under
+    }
+  }
+
   /**
    * @param pose    their full body pose (remotePose): exactly what their hitboxes are built from.
    * @param viewer  your eye position — a scoped sniper's glint is brightest when they look at you.
    */
   update(s: RemotePlayerState, pose: BodyPose, timeMs: number, viewer?: THREE.Vector3): void {
     if (s.weapon !== this.weapon) this.setWeapon(s.weapon)
+    if (this.wearsGear && (s.gear ?? 0) !== this.gear) this.setGear(s.gear ?? 0)
     this.root.visible = s.alive
     const size = pose.scale ?? 1
     const parts = bodyParts(pose)
@@ -482,7 +453,7 @@ export class Avatar {
     }
     // Zombie eyes smoulder: the halo breathes, each zombie in its own time.
     if (this.eyeGlows.length > 0) {
-      const breath = 0.2 + 0.04 * Math.sin(timeMs / 420 + this.root.id)
+      const breath = this.glowSize * (1 + 0.2 * Math.sin(timeMs / 420 + this.root.id))
       // Only from the front: no halo round the back of the head.
       const facing = viewer
         ? -Math.sin(s.yaw) * (viewer.x - s.x) - Math.cos(s.yaw) * (viewer.z - s.z) > 0
@@ -493,7 +464,9 @@ export class Avatar {
       }
     }
     // Spawn protection: blink so attackers know shots won't count yet.
-    this.material.opacity = s.protected && Math.floor(timeMs / 150) % 2 === 0 ? 0.35 : 1
+    const blink = s.protected && Math.floor(timeMs / 150) % 2 === 0
+    this.material.opacity = blink ? 0.35 : 1
+    for (const mesh of this.gearMeshes) mesh.visible = !blink
 
     // Scope glint: a scoped sniper flashes towards whoever they're pointing at.
     const scoped = s.alive && s.aiming && WEAPONS[s.weapon]?.scoped === true
