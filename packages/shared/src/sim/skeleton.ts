@@ -431,21 +431,57 @@ interface SwingKey {
   turn: number
 }
 
-const MELEE_KEYS: Record<'melee' | 'melee2', [rest: SwingKey, windup: SwingKey, strike: SwingKey]> =
-  {
-    // One hand: blade forward at the hip; a quick backhand cocked over the shoulder, slashed across.
-    melee: [
-      { at: v(0.2, -0.28, -0.25), rot: rx(0.5), turn: 0 },
-      { at: v(0.3, 0.12, 0.02), rot: qMul(ry(-0.4), rx(1.9)), turn: -0.35 },
-      { at: v(-0.12, -0.2, -0.5), rot: qMul(ry(0.7), rx(-0.4)), turn: 0.4 },
-    ],
-    // Both hands: held up across the chest; raised back over the shoulder, brought down hard.
-    melee2: [
-      { at: v(0.12, -0.3, -0.25), rot: qMul(ry(0.35), rx(1.05)), turn: 0 },
-      { at: v(0.22, 0.1, 0.05), rot: qMul(ry(-0.5), rx(2.4)), turn: -0.45 },
-      { at: v(-0.05, -0.25, -0.48), rot: qMul(ry(0.5), rx(-0.3)), turn: 0.5 },
-    ],
-  }
+type SwingStyle = 'stab' | 'hack' | 'swing' | 'overhead' | 'slash'
+
+/** How each melee weapon is swung, as others see it (the first-person view matches). */
+const SWING_STYLE: Partial<Record<number, SwingStyle>> = {
+  [WeaponId.Knife]: 'stab',
+  [WeaponId.Machete]: 'hack',
+  [WeaponId.Crowbar]: 'hack',
+  [WeaponId.Bat]: 'swing',
+  [WeaponId.Axe]: 'overhead',
+  [WeaponId.Sledge]: 'overhead',
+  [WeaponId.Katana]: 'slash',
+}
+
+const MELEE_KEYS: Record<SwingStyle, [rest: SwingKey, windup: SwingKey, strike: SwingKey]> = {
+  // Knife: drawn back by the hip, thrust straight forward.
+  stab: [
+    { at: v(0.2, -0.28, -0.25), rot: rx(0.5), turn: 0 },
+    { at: v(0.24, -0.2, 0.02), rot: rx(0.3), turn: -0.25 },
+    { at: v(0.06, -0.12, -0.58), rot: rx(0.05), turn: 0.3 },
+  ],
+  // One hand: a quick backhand cocked over the shoulder, hacked down across.
+  hack: [
+    { at: v(0.2, -0.28, -0.25), rot: rx(0.5), turn: 0 },
+    { at: v(0.3, 0.12, 0.02), rot: qMul(ry(-0.4), rx(1.9)), turn: -0.35 },
+    { at: v(-0.12, -0.2, -0.5), rot: qMul(ry(0.7), rx(-0.4)), turn: 0.4 },
+  ],
+  // Bat: cocked behind the right shoulder, swung flat round to the left at chest height.
+  swing: [
+    { at: v(0.12, -0.3, -0.25), rot: qMul(ry(0.35), rx(1.05)), turn: 0 },
+    { at: v(0.28, 0.05, 0.08), rot: qMul(ry(-1.1), rx(1.5)), turn: -0.6 },
+    { at: v(-0.22, -0.12, -0.42), rot: qMul(ry(1.1), rx(0.15)), turn: 0.7 },
+  ],
+  // Axe and sledge: raised high over the head, brought straight down in front.
+  overhead: [
+    { at: v(0.12, -0.3, -0.25), rot: qMul(ry(0.35), rx(1.05)), turn: 0 },
+    { at: v(0.08, 0.22, 0.1), rot: rx(2.6), turn: -0.2 },
+    { at: v(0.02, -0.34, -0.46), rot: rx(-0.55), turn: 0.25 },
+  ],
+  // Katana: both hands, raised over the shoulder and cut down on the diagonal.
+  slash: [
+    { at: v(0.12, -0.3, -0.25), rot: qMul(ry(0.35), rx(1.05)), turn: 0 },
+    { at: v(0.22, 0.1, 0.05), rot: qMul(ry(-0.5), rx(2.4)), turn: -0.45 },
+    { at: v(-0.05, -0.25, -0.48), rot: qMul(ry(0.5), rx(-0.3)), turn: 0.5 },
+  ],
+}
+
+/** The swing a melee weapon makes (one-handed hack, two-handed slash by default). */
+function styleOf(weapon: WeaponId | undefined, hold: Hold): SwingStyle {
+  const style = weapon === undefined ? undefined : SWING_STYLE[weapon]
+  return style ?? (hold === 'melee2' ? 'slash' : 'hack')
+}
 
 /** Where a swing is `u` (0–1) of the way through: snap up, strike, slow recovery. */
 function swingAt(keys: [SwingKey, SwingKey, SwingKey], u: number): SwingKey {
@@ -646,12 +682,13 @@ function upright(pose: BodyPose): ModelPart[] {
 
   // --- Melee swings and claw swipes (from the replicated time since the last swing) ----------
   const def = WEAPONS[pose.weapon ?? WeaponId.Rifle]
-  const swingTime = Math.min(0.5, (def?.fireInterval ?? 0.5) * 0.8)
+  // Heavy weapons take longer about it (a sledge swing reads slow and heavy).
+  const swingTime = Math.min(0.85, (def?.fireInterval ?? 0.5) * 0.8)
   const swingU = hold === 'hands' ? shotAge / 0.55 : shotAge / swingTime
   const swinging = hold !== 'rifle' && hold !== 'pistol' && swingU < 1
   const swing =
     hold === 'melee' || hold === 'melee2'
-      ? swingAt(MELEE_KEYS[hold], swingU)
+      ? swingAt(MELEE_KEYS[styleOf(pose.weapon, hold)], swingU)
       : { at: v(0, 0, 0), rot: IDENTITY, turn: 0 }
   // Claws: how far into the strike (0 → 1 → 0), for the lunge.
   const strike =

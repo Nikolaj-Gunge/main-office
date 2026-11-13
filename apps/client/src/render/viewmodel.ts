@@ -1,5 +1,6 @@
 import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
+import { ALTERNATES, type MeleeOffset, meleePose, meleeReady, SWING_OF } from './melee-anim.ts'
 import { survivalGuns } from './survival-guns.ts'
 
 const STEEL = 0x2b2d33
@@ -494,6 +495,9 @@ export class Viewmodel {
   private readonly flash: THREE.Mesh
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 1.5)
   private flashTime = 0
+  /** Melee: swings so far (to alternate cut directions) and last frame's cooldown. */
+  private swings = 0
+  private lastCooldown = 0
   /** Eased: hands busy climbing (gun lowered out of view). */
   private climb = 0
   private aim = 0
@@ -661,11 +665,19 @@ export class Viewmodel {
         ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)
         : 0
 
-    // Knife: a quick slash right-to-left across the view after each swing.
-    const swing =
-      this.active.melee && weapon.cooldown > 0
-        ? Math.sin(Math.min(1, (1 - weapon.cooldown / def.fireInterval) * 2.2) * Math.PI)
-        : 0
+    // Melee: each weapon its own swing (melee-anim.ts), from its ready pose and back to it.
+    const kind = this.active.melee ? SWING_OF[weapon.id] : undefined
+    let swing: MeleeOffset | null = null
+    if (kind) {
+      // A new swing starts when the cooldown jumps back up; every other cut may come back.
+      if (weapon.cooldown > this.lastCooldown + 1e-6) this.swings++
+      const t = weapon.cooldown > 0 ? 1 - weapon.cooldown / def.fireInterval : 1
+      swing =
+        weapon.cooldown > 0
+          ? meleePose(kind, t, ALTERNATES.has(kind) && this.swings % 2 === 1)
+          : meleeReady(kind)
+    }
+    this.lastCooldown = weapon.cooldown
 
     // Pump: rack back and forward in the middle of the cooldown (ka-chunk).
     if (this.active.pump) {
@@ -710,21 +722,21 @@ export class Viewmodel {
             reload.tilt * 0.075 -
             drawT * 0.18 -
             boltT * 0.03 +
-            swing * 0.05,
-          this.kickBack.value + reload.tilt * 0.02,
+            (swing?.y ?? 0),
+          this.kickBack.value + reload.tilt * 0.02 + (swing?.z ?? 0),
         ),
       )
     const tilt = m.tilt ?? { roll: -0.55, pitch: 0.05 }
     m.group.rotation.set(
-      this.kickUp.value + reload.tilt * tilt.pitch - drawT * 0.8,
-      this.swayX.value * 0.03 + this.kickSide.value + reload.tilt * 0.12,
+      this.kickUp.value + reload.tilt * tilt.pitch - drawT * 0.8 + (swing?.rx ?? 0),
+      this.swayX.value * 0.03 + this.kickSide.value + reload.tilt * 0.12 + (swing?.ry ?? 0),
       reload.tilt * tilt.roll +
         boltT * 0.35 +
-        swing * 1.1 -
+        (swing?.rz ?? 0) -
         this.kickRoll.value +
         busy.slide * 0.25 * (1 - this.aim),
     )
-    if (swing > 0) m.group.position.x -= swing * 0.14
+    if (swing) m.group.position.x += swing.x
 
     this.flashTime -= dt
     const flashing = this.flashTime > 0

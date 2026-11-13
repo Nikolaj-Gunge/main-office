@@ -12,7 +12,7 @@ import {
   qRotate,
   strideLength,
 } from './skeleton.ts'
-import { WeaponId } from './weapons.ts'
+import { WEAPONS, WeaponId } from './weapons.ts'
 
 const base: BodyPose = { x: 0, y: 0, z: 0, yaw: 0, crouch: 0 }
 const part = (pose: BodyPose, name: PartName): BodyPart => {
@@ -150,12 +150,32 @@ describe('locomotion', () => {
 })
 
 describe('melee and zombies', () => {
-  test('a melee swing cocks the weapon back, then strikes across', () => {
-    const knife = { ...base, weapon: WeaponId.Knife }
-    const at = (shotAge: number) => part({ ...knife, shotAge }, 'gun').center
-    expect(at(0.04).y).toBeGreaterThan(at(1).y + 0.15) // raised
-    expect(at(0.12).x).toBeLessThan(at(1).x - 0.1) // swept across
-    expect(at(1)).toEqual(part(knife, 'gun').center) // back at rest
+  test('each melee weapon swings its own way, and comes back to rest', () => {
+    const at = (weapon: WeaponId, shotAge: number) =>
+      part({ ...base, weapon, shotAge }, 'gun').center
+    // Swing time is 0.8 × the weapon's interval (at most 0.85 s): windup at 12 %, strike at 35 %.
+    const times = (weapon: WeaponId) => {
+      const t = Math.min(0.85, WEAPONS[weapon].fireInterval * 0.8)
+      return { windup: t * 0.12, strike: t * 0.35 }
+    }
+    // Knife: thrust straight forward (model forward is −z).
+    const k = times(WeaponId.Knife)
+    expect(at(WeaponId.Knife, k.strike).z).toBeLessThan(at(WeaponId.Knife, 1).z - 0.2)
+    // Bat: cocked out to the right, swung round to the left.
+    const b = times(WeaponId.Bat)
+    expect(at(WeaponId.Bat, b.windup).x).toBeGreaterThan(at(WeaponId.Bat, 1).x + 0.1)
+    expect(at(WeaponId.Bat, b.strike).x).toBeLessThan(at(WeaponId.Bat, 1).x - 0.2)
+    // Sledge: raised high overhead, brought down low in front.
+    const s = times(WeaponId.Sledge)
+    expect(at(WeaponId.Sledge, s.windup).y).toBeGreaterThan(at(WeaponId.Sledge, 1).y + 0.3)
+    expect(at(WeaponId.Sledge, s.strike).y).toBeLessThan(at(WeaponId.Sledge, s.windup).y - 0.4)
+    // Machete: up over the shoulder, hacked across.
+    const m = times(WeaponId.Machete)
+    expect(at(WeaponId.Machete, m.windup).y).toBeGreaterThan(at(WeaponId.Machete, 1).y + 0.15)
+    expect(at(WeaponId.Machete, m.strike).x).toBeLessThan(at(WeaponId.Machete, 1).x - 0.1)
+    for (const w of [WeaponId.Knife, WeaponId.Bat, WeaponId.Sledge, WeaponId.Machete]) {
+      expect(at(w, 1)).toEqual(part({ ...base, weapon: w }, 'gun').center) // back at rest
+    }
   })
 
   test('every kind of zombie moves its own way', () => {

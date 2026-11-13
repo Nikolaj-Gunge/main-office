@@ -57,16 +57,20 @@ interface Feel {
   hinged?: boolean
   /** Its action is worked sooner and quicker than the sniper's bolt (a lever). */
   cycle?: { delay: number; rate: number }
+  /** Melee: a club, not a blade (thuds instead of cutting). */
+  blunt?: boolean
 }
 
 const FEEL: Partial<Record<WeaponId, Feel>> = {
   // Melee: the heavier it is, the lower it whooshes.
-  [WeaponId.Bat]: { rate: 0.8, volume: 1.1 },
-  [WeaponId.Crowbar]: { rate: 0.86, volume: 1.1 },
-  [WeaponId.Machete]: { rate: 1.06, volume: 1 },
-  [WeaponId.Axe]: { rate: 0.68, volume: 1.2 },
-  [WeaponId.Sledge]: { rate: 0.52, volume: 1.3 },
-  [WeaponId.Katana]: { rate: 1.3, volume: 0.9 },
+  // `shake` is how hard a blow that lands jolts your view; blunt ones thud instead of cut.
+  [WeaponId.Knife]: { rate: 1, volume: 1, shake: 0.08 },
+  [WeaponId.Bat]: { rate: 0.8, volume: 1.1, shake: 0.35, blunt: true },
+  [WeaponId.Crowbar]: { rate: 0.86, volume: 1.1, shake: 0.3, blunt: true },
+  [WeaponId.Machete]: { rate: 1.06, volume: 1, shake: 0.18 },
+  [WeaponId.Axe]: { rate: 0.68, volume: 1.2, shake: 0.5 },
+  [WeaponId.Sledge]: { rate: 0.52, volume: 1.3, shake: 0.8, blunt: true },
+  [WeaponId.Katana]: { rate: 1.3, volume: 0.9, shake: 0.12 },
   // Pistols: the .45 and the magnum deeper, the suppressed .22 hardly there.
   [WeaponId.M1911]: { rate: 0.9, volume: 1.08 },
   [WeaponId.Revolver]: { rate: 0.74, volume: 1.3, shake: 0.5, noCasing: true, hinged: true },
@@ -234,7 +238,13 @@ export class ClientCombat {
       new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z),
       best.distance,
     )
-    this.d.audio.play('stab', swung(id, 0.8))
+    const feel = FEEL[id]
+    // Blades cut; bats, bars and hammers land with a thud. Either way you feel it.
+    if (feel?.blunt) {
+      this.d.audio.play('impact.flesh', swung(id, 1))
+      this.d.audio.play('claw', swung(id, 0.5))
+    } else this.d.audio.play('stab', swung(id, 0.8))
+    this.d.shake.add(feel?.shake ?? 0.1)
     this.d.effects.bleed(at, new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z), false)
   }
 
