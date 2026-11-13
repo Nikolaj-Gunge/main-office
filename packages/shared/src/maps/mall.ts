@@ -1,17 +1,27 @@
 import { MapBuilder } from './builder.ts'
 import {
+  blood,
+  boards,
+  cable,
   car,
   DECO,
+  emergencyLight,
   gateAcross,
   gateDoor,
+  hangingLamp,
   LMG,
+  loosePanel,
   MP5,
+  papers,
   RIFLE,
+  rubble,
   runFor,
   SHOTGUN,
   SNIPER,
+  scatter,
   spot,
   starts,
+  tubeLight,
   WALL,
   wallAlong,
   zone,
@@ -295,31 +305,103 @@ export function buildMall(): MapDef {
   }
   m.block(-24, R, -118, 3, 3, 3, 'metal')
 
-  // ─── Lights ─────────────────────────────────────────────────────────────────────────────
+  // ─── Lights and set dressing ────────────────────────────────────────────────────────────
   const lamp = (x: number, y: number, z: number, color = 0xffe2b8, intensity = 7, d = 13) =>
     m.light({ kind: 'point', pos: [x, y, z], color, intensity, distance: d })
-  for (const x of [-15, 15]) lamp(x, 6, -20, 0xffc890, 10, 18)
-  lamp(0, 3, -4, 0xffc890, 5, 10)
-  lamp(0, 3, -36, 0xffc890, 5, 10)
-  for (const z of [-50, -70, -90]) {
-    lamp(-12, UF - 0.4, z, 0xdfe8ff)
-    lamp(12, UF - 0.4, z, 0xdfe8ff)
-    lamp(-25, UF - 0.4, z, 0xfff0d0, 6, 10)
-    lamp(25, UF - 0.4, z, 0xfff0d0, 6, 10)
+  const rnd = scatter(3)
+  // Car park: lamp posts with arms, a burnt-out car, junk.
+  for (const x of [-15, 15]) {
+    m.block(x, 6, -20 + (x < 0 ? 0.6 : -0.6), 0.12, 0.12, 1.4, 'metal', DECO)
+    m.block(x, 5.88, -20 + (x < 0 ? 1.2 : -1.2), 0.4, 0.12, 0.3, 'lightpanel', DECO)
+    lamp(x, 5.6, -20 + (x < 0 ? 1.2 : -1.2), 0xffc890, 10, 18)
   }
-  for (const x of [-15, 0, 15]) lamp(x, UF - 0.4, -120, 0xffd9a0, 7, 14)
+  lamp(0, 3, -4, 0xffc890, 5, 10)
+  emergencyLight(m, 0, 3.3, -39.5, 0.5) // over the front doors
+  blood(m, -8, G, -20, rnd, 1.2)
+  blood(m, 18, G, -33, rnd)
+  rubble(m, 3, G, -38.5, rnd, 8, 2)
+  papers(m, -24, G, -24, rnd, 5)
+  // Main hall: tube lights down the hall, a lamp per shop, and a big lamp over the atrium.
+  for (const z of [-50, -70, -90]) {
+    tubeLight(m, -12, UF, z, 'z', { flicker: z === -70 ? 0.7 : 0 })
+    tubeLight(m, 12, UF, z, 'z')
+    hangingLamp(m, -25, UF, z - 4, { color: 0xfff0d0, intensity: 6, distance: 10, drop: 0.8 })
+    hangingLamp(m, 25, UF, z - 4, {
+      color: 0xfff0d0,
+      intensity: 6,
+      distance: 10,
+      drop: 0.8,
+      flicker: z === -90 ? 0.6 : 0,
+    })
+  }
+  for (const [x, z] of [
+    [-6, -62],
+    [10, -80],
+    [-15, -92],
+  ] as const) {
+    loosePanel(m, x, UF, z)
+  }
+  boards(m, -20.3, G, -50, 3, 'z') // somebody tried to board the sports shop up
+  blood(m, 4, G, -58, rnd, 1.4)
+  blood(m, -24, G, -76, rnd)
+  papers(m, 0, G, -86, rnd, 8, 2.5)
+  rubble(m, -10, G, -98, rnd)
+  cable(m, [-20, UF - 0.1, -75], [-8, UF - 0.1, -78], 0.7)
+  // Food court: lamps over the tables, a flickering one by the generator, trays everywhere.
+  for (const x of [-15, 0, 15]) {
+    hangingLamp(m, x, UF, -120, {
+      drop: 1.3,
+      intensity: 7,
+      distance: 14,
+      flicker: x === 15 ? 0.5 : 0,
+    })
+  }
   lamp(GEN.x, 3, GEN.z, 0xff9a40, 8, 9)
-  for (const z of [-48, -70, -95]) lamp(0, RF - 0.4, z, 0xdfe8ff, 6, 14)
-  lamp(-12, RF - 0.4, -95, 0xdfe8ff, 6, 12)
-  lamp(25, RF - 0.4, -48, 0x9fd0ff, 7, 10)
-  for (const z of [-66, -90]) lamp(-25, RF - 0.4, z, 0xfff0d0, 5, 10)
-  for (const z of [-70, -90]) lamp(25, RF - 0.4, z, 0xfff0d0, 5, 10)
+  emergencyLight(m, 0, UF - 0.2, -100.4)
+  blood(m, -7, G, -114, rnd, 1.3)
+  blood(m, 10, G, -129, rnd)
+  papers(m, -3, G, -122, rnd, 10, 4)
+  rubble(m, -25, G, -110, rnd, 7)
+  // Upper floor: a chandelier hanging through the atrium, lamps in the shops.
+  hangingLamp(m, 0, RF, -70, { drop: 3.2, intensity: 9, distance: 16, color: 0xfff0d0 })
+  tubeLight(m, 0, RF, -48, 'x')
+  tubeLight(m, 0, RF, -95, 'x', { flicker: 0.6 })
+  tubeLight(m, -12, RF, -95, 'x')
+  hangingLamp(m, 25, RF, -48, { color: 0x9fd0ff, intensity: 7, distance: 10, drop: 0.6 })
+  for (const z of [-66, -90])
+    hangingLamp(m, -25, RF, z, { color: 0xfff0d0, intensity: 5, distance: 10 })
+  for (const z of [-70, -90])
+    hangingLamp(m, 25, RF, z, { color: 0xfff0d0, intensity: 5, distance: 10 })
+  loosePanel(m, -14, RF, -50)
+  loosePanel(m, 12, RF, -100, -0.7)
+  papers(m, 25, U, -50, rnd, 9, 2.5) // the security office was ransacked
+  blood(m, 22, U, -42, rnd)
+  blood(m, -10, U, -100, rnd, 1.3)
+  rubble(m, 14, U, -45, rnd)
+  emergencyLight(m, 0, RF - 0.2, -104.6, 0.6)
+  // Cinema: dim, the screen glowing, an exit light over the roof ramp.
   lamp(0, RF - 0.5, -135, 0x8fb0ff, 8, 16) // screen glow
   lamp(-15, RF - 0.5, -112, 0x806040, 4, 12)
-  lamp(26, RF - 0.5, -118, 0xffd9a0, 5, 10)
+  hangingLamp(m, 26, RF, -118, { drop: 0.5, intensity: 5, distance: 10, flicker: 0.4 })
+  m.block(26, U + 3.1, -111.75, 1.2, 0.3, 0.06, 'lightpanel', DECO)
+  m.label(26, U + 3.25, -111.7, 'EXIT')
+  blood(m, -2, U, -118, rnd, 1.5)
+  papers(m, 6, U, -133, rnd, 6, 3)
+  // Roof: helipad floodlight, the radio, flares.
   lamp(0, R + 6, -100, 0xffe0b0, 12, 24)
   lamp(RADIO.x, R + 3, RADIO.z, 0x9fe0ff, 6, 9)
-  for (const [x, z] of FLARES) lamp(x, R + 1.5, z, 0xff5040, 6, 8)
+  for (const [x, z] of FLARES)
+    m.light({
+      kind: 'point',
+      pos: [x, R + 1.5, z],
+      color: 0xff5040,
+      intensity: 6,
+      distance: 8,
+      flicker: 0.9,
+    })
+  cable(m, [RADIO.x, R + 4.5, RADIO.z], [-24, R + 1.2, -60], 1)
+  rubble(m, 4, R, -120, rnd, 8, 2)
+  blood(m, 18, R, -60, rnd)
 
   // ─── Weapons (back 20 s after they're taken) ────────────────────────────────────────────
   m.pickup(0, 0, -5, SHOTGUN, 20)

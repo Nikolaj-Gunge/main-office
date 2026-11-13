@@ -1,17 +1,28 @@
 import { MapBuilder } from './builder.ts'
 import {
+  blood,
+  boards,
+  cable,
   car,
   DECO,
+  emergencyLight,
   gateAcross,
   gateDoor,
+  hangingLamp,
   LMG,
+  loosePanel,
   MP5,
+  papers,
   RIFLE,
+  rubble,
+  run,
   runFor,
   SHOTGUN,
   SNIPER,
+  scatter,
   spot,
   starts,
+  tubeLight,
   WALL,
   zone,
 } from './coop-kit.ts'
@@ -281,31 +292,125 @@ export function buildMetro(): MapDef {
   ]
   for (const [x, y, z] of FUEL) m.block(x, y, z, 0.4, 0.6, 0.3, 'accent', DECO)
 
-  // ─── Lights ─────────────────────────────────────────────────────────────────────────────
+  // ─── Lights and set dressing ────────────────────────────────────────────────────────────
   const lamp = (x: number, y: number, z: number, color = 0xffe2b8, intensity = 7, d = 13) =>
     m.light({ kind: 'point', pos: [x, y, z], color, intensity, distance: d })
+  const rnd = scatter(11)
+  // Street: lamp posts on the pavements, one of them failing; debris and blood.
   for (const [x, z] of [
-    [-11, -8],
-    [11, -20],
-    [-11, -34],
-    [11, -46],
+    [-13.5, -8],
+    [13.5, -20],
+    [-13.5, -34],
+    [13.5, -46],
   ] as const) {
-    lamp(x, S + 5, z, 0xffb070, 9, 16)
+    const side = x < 0 ? 1 : -1
+    m.block(x, S, z, 0.18, 5.2, 0.18, 'metal')
+    m.block(x + side * 0.9, S + 5.1, z, 1.8, 0.1, 0.1, 'metal', DECO)
+    m.block(x + side * 1.7, S + 4.98, z, 0.45, 0.12, 0.3, 'lightpanel', DECO)
+    m.light({
+      kind: 'point',
+      pos: [x + side * 1.7, S + 4.7, z],
+      color: 0xffb070,
+      intensity: 9,
+      distance: 16,
+      ...(z === -34 ? { flicker: 0.8 } : {}),
+    })
   }
+  blood(m, -2, S, -14, rnd, 1.4)
+  blood(m, 9, S, -27, rnd)
+  rubble(m, 12.5, S, -12, rnd, 8, 1.5)
+  rubble(m, -12.5, S, -44, rnd, 6)
+  papers(m, 0, S, -38, rnd, 8, 3)
+  boards(m, -15.9, S, -22, 7, 'z')
+  boards(m, 15.9, S, -8, 7, 'z')
+  emergencyLight(m, 0, S + 5.6, -49.75, 0.5)
   lamp(0, S + 1, -56, 0xdfe8ff, 5, 10)
-  for (const z of [-68, -86, -102]) for (const x of [-10, 10]) lamp(x, CEIL - 0.4, z, 0xdfe8ff)
-  for (const z of [-122, -140, -158])
-    for (const x of [-8, 6]) lamp(x, CEIL - 0.4, z, 0xe0ffe8, 7, 14)
+  // Concourse: tube lights in rows, one dying; tickets and blood everywhere.
+  for (const z of [-68, -86, -102]) {
+    for (const x of [-10, 10]) {
+      tubeLight(m, x, CEIL, z, 'z', { drop: 0.7, flicker: x === 10 && z === -86 ? 0.8 : 0 })
+    }
+  }
+  for (const [x, z] of [
+    [-4, -74],
+    [6, -92],
+    [-15, -104],
+  ] as const) {
+    loosePanel(m, x, CEIL, z)
+  }
+  papers(m, -8, C, -76, rnd, 10, 3)
+  papers(m, 6, C, -98, rnd, 8, 3)
+  blood(m, 2, C, -70, rnd, 1.3)
+  blood(m, -12, C, -88, rnd)
+  rubble(m, 16, C, -106, rnd)
+  cable(m, [-20, CEIL - 0.1, -94], [-6, CEIL - 0.1, -96], 0.8)
+  emergencyLight(m, -10, C + 3.4, CZ1 + 0.3)
+  emergencyLight(m, 10, C + 3.4, CZ1 + 0.3)
+  // Platform: tubes over the platform edge, the signal box's red lamp, cables along the wall.
+  for (const z of [-122, -140, -158]) {
+    for (const x of [-8, 6]) {
+      tubeLight(m, x, CEIL, z, 'z', {
+        drop: 1,
+        color: 0xe0ffe8,
+        intensity: 7,
+        distance: 14,
+        flicker: x === -8 && z === -158 ? 0.6 : 0,
+      })
+    }
+  }
   lamp(SIGNAL.x, 4, SIGNAL.z, 0xff6040, 6, 9)
-  for (let z = -182; z > -292; z -= 16) lamp(-16, 4.5, z, 0xffd080, 5, 11)
-  lamp(-4, 4.5, -228, 0x9fe0ff, 6, 12)
-  lamp(-4, 4.5, -240, 0x9fe0ff, 6, 12)
+  for (const y of [3.2, 3.5]) run(m, [-19.9, y, -112], [-19.9, y, -170], 0.05, 'screen')
+  blood(m, -3, P, -145, rnd, 1.5)
+  blood(m, 9, P, -168, rnd)
+  papers(m, 2, P, -132, rnd, 7, 2.5)
+  rubble(m, -6, P, -170, rnd)
+  // Tunnel: caged work lamps on the wall, some failing; cables and a pipe the whole way.
+  for (let z = -182; z > -292; z -= 16) {
+    m.block(-19.75, 3.6, z, 0.2, 0.25, 0.25, 'metal', DECO)
+    m.light({
+      kind: 'point',
+      pos: [-19.3, 3.6, z],
+      color: 0xffd080,
+      intensity: 5,
+      distance: 11,
+      ...((z + 182) % 48 === 0 ? { flicker: 0.7 } : {}),
+    })
+  }
+  for (const y of [4.1, 4.3]) run(m, [-12.3, y, -173], [-12.3, y, -290], 0.05, 'screen')
+  run(m, [-19.6, 4.6, -173], [-19.6, 4.6, -290], 0.22, 'metal')
+  for (const z of [-196, -224, -268]) blood(m, -15.5, P, z, rnd)
+  rubble(m, -16, P, -248, rnd, 7)
+  rubble(m, -17, P, -210, rnd, 5)
+  // Pump room.
+  hangingLamp(m, -4, 5, -228, { drop: 0.6, color: 0x9fe0ff, intensity: 6, distance: 12 })
+  hangingLamp(m, -4, 5, -240, {
+    drop: 0.6,
+    color: 0x9fe0ff,
+    intensity: 6,
+    distance: 12,
+    flicker: 0.5,
+  })
+  run(m, [-11.4, 4.2, -223], [3.6, 4.2, -223], 0.25, 'metal')
+  run(m, [3.6, 4.2, -223], [3.6, 4.2, -245], 0.25, 'metal')
+  emergencyLight(m, -12.2, 4.4, -234, 0.6)
+  // Depot: big industrial lamps hanging from the roof, the gantry lit from under.
   for (const z of [-302, -322, -342]) {
-    lamp(-14, DH - 0.5, z, 0xffe2b8, 8, 16)
-    lamp(4, DH - 0.5, z, 0xffe2b8, 8, 16)
+    hangingLamp(m, -14, DH, z, { drop: 2.5, intensity: 8, distance: 16, color: 0xffe2b8 })
+    hangingLamp(m, 4, DH, z, {
+      drop: 2.5,
+      intensity: 8,
+      distance: 16,
+      color: 0xffe2b8,
+      flicker: z === -322 ? 0.5 : 0,
+    })
   }
   lamp(20, DH - 0.5, -330, 0x9fd0ff, 7, 12)
   lamp(20, C - 0.6, -330, 0xffd080, 5, 9)
+  blood(m, -6, P, -315, rnd, 1.5)
+  blood(m, 10, P, -340, rnd)
+  rubble(m, -20, P, -330, rnd, 8, 2)
+  papers(m, 20, C, -337, rnd, 6, 2)
+  emergencyLight(m, -16, 5.6, TZ1 - 0.3, 0.6)
 
   // ─── Weapons (back 20 s after they're taken) ────────────────────────────────────────────
   m.pickup(0, S, -7, SHOTGUN, 20)

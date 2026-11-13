@@ -32,6 +32,7 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
   scene.add(sun, sun.target)
 
   // The map's own lamps (no shadows: cheap, and the sun does the shadow work).
+  const flickering: { light: THREE.Light; base: number; amount: number; seed: number }[] = []
   for (const l of map.lights ?? []) {
     const light =
       l.kind === 'spot'
@@ -45,11 +46,37 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
           )
         : new THREE.PointLight(l.color, l.intensity, l.distance, 2)
     light.position.set(...l.pos)
+    if (l.flicker) {
+      flickering.push({ light, base: l.intensity, amount: l.flicker, seed: flickering.length * 7.31 })
+    }
     if (light instanceof THREE.SpotLight) {
       light.target.position.set(l.pos[0], 0, l.pos[2])
       scene.add(light.target)
     }
     scene.add(light)
   }
+  if (flickering.length > 0) {
+    // Every frame, as the scene starts to render: failing lamps stutter and drop out now and then.
+    const before = scene.onBeforeRender.bind(scene)
+    scene.onBeforeRender = (...args) => {
+      before(...args)
+      const t = performance.now() / 1000
+      for (const f of flickering) f.light.intensity = f.base * flickerLevel(t, f.seed, f.amount)
+    }
+  }
   return sun
+}
+
+/** Brightness (0–1) of a flickering lamp at time `t`: mostly on, with stutters and dropouts. */
+export function flickerLevel(t: number, seed: number, amount: number): number {
+  const hash = (n: number) => {
+    const x = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453
+    return x - Math.floor(x)
+  }
+  // A burst of trouble every few seconds…
+  const slot = Math.floor(t / 2.5 + seed)
+  if (hash(slot) > amount) return 0.95 + 0.05 * hash(Math.floor(t * 20))
+  // …in which it stutters on and off in quick steps.
+  const step = hash(Math.floor(t * 14) + slot * 0.37)
+  return step < 0.45 ? 0.05 + step * 0.3 : 1
 }

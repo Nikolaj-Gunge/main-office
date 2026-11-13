@@ -64,6 +64,8 @@ export interface MapLight {
   distance: number
   /** Spot lights point straight down from `pos`. */
   angleDeg?: number
+  /** 0–1: how badly it flickers (a failing tube, a loose wire). Absent = steady. */
+  flicker?: number
 }
 
 export interface MapSpawn {

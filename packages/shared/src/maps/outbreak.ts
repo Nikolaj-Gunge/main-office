@@ -1,4 +1,16 @@
 import { MapBuilder } from './builder.ts'
+import {
+  blood,
+  boards,
+  cable,
+  hangingLamp,
+  loosePanel,
+  papers,
+  rubble,
+  run,
+  scatter,
+  tubeLight,
+} from './coop-kit.ts'
 import type { CoopZone, MapDef, Vec3 } from './types.ts'
 
 /**
@@ -256,27 +268,84 @@ export function buildOutbreak(): MapDef {
   m.block(-12, R, -165, 2, 1.4, 2, 'metal')
   m.block(8, R, -168, 2, 1.4, 2, 'metal')
 
-  // ─── Lights ─────────────────────────────────────────────────────────────────────────────
+  // ─── Lights and set dressing ────────────────────────────────────────────────────────────
+  const rnd = scatter(5)
+  // Lobby and offices: tube lights, a few on their way out.
   for (let z = -4; z > -80; z -= 9) {
     for (const x of [-6, 6]) {
-      m.light({ kind: 'point', pos: [x, H - 0.4, z], color: 0xd9e4ff, intensity: 7, distance: 11 })
+      tubeLight(m, x, H, z, 'z', {
+        drop: 0.35,
+        color: 0xd9e4ff,
+        intensity: 7,
+        distance: 11,
+        flicker: (x === 6 && z === -31) || (x === -6 && z === -49) ? 0.7 : 0,
+      })
     }
   }
   m.light({ kind: 'point', pos: [0, H - 0.4, -76], color: 0x6fd0ff, intensity: 9, distance: 10 })
+  boards(m, 0, 0, -0.15, 6, 'x') // the front doors, boarded up from inside
+  blood(m, 2, 0, -14, rnd, 1.3)
+  blood(m, -8, 0, -19, rnd)
+  papers(m, 1, 0, -8, rnd, 6, 2)
+  papers(m, -4, 0, -37, rnd, 10, 3)
+  papers(m, 6, 0, -44, rnd, 8, 3)
+  blood(m, 8, 0, -38, rnd, 1.4)
+  blood(m, -2, 0, -52, rnd)
+  rubble(m, -9, 0, -27, rnd, 6)
+  for (const [x, z] of [
+    [-3, -30],
+    [9, -47],
+    [-8, -64],
+    [3, -71],
+  ] as const) {
+    loosePanel(m, x, H, z)
+  }
+  cable(m, [-12, H - 0.05, -68], [-4, H - 0.05, -66], 0.6)
+  cable(m, [12, H - 0.05, -61], [5, H - 0.05, -64], 0.5)
+  papers(m, 2, 0, -78, rnd, 6, 1.5)
+  // Garage: lamps hanging from the slab, oil and blood on the floor.
   for (let z = -88; z > -130; z -= 12) {
     for (const x of [-10, 10]) {
-      m.light({ kind: 'point', pos: [x, H - 0.4, z], color: 0xffd9a0, intensity: 7, distance: 12 })
+      hangingLamp(m, x, H, z, {
+        drop: 0.5,
+        color: 0xffd9a0,
+        intensity: 7,
+        distance: 12,
+        flicker: x === -10 && z === -112 ? 0.7 : 0,
+      })
     }
   }
   m.light({ kind: 'point', pos: [16, H - 0.4, -124], color: 0xffa040, intensity: 9, distance: 9 })
+  blood(m, -6, 0, -96, rnd, 1.5)
+  blood(m, 7, 0, -118, rnd)
+  rubble(m, 0, 0, -100, rnd, 8, 2)
+  rubble(m, -14, 0, -127, rnd, 6)
+  run(m, [-19.8, 3, -84], [-19.8, 3, -128], 0.2, 'metal') // pipe along the wall
+  run(m, [19.8, 3, -84], [19.8, 3, -120], 0.2, 'metal')
+  // Tower: a lamp hanging over each bay, floor by floor.
   for (const y of [3.8, 8.3, 12.8]) {
     for (const z of [-136, -150, -164]) {
       for (const x of [-8, 6]) {
-        m.light({ kind: 'point', pos: [x, y, z], color: 0xffd9a0, intensity: 6, distance: 11 })
+        hangingLamp(m, x, y + 0.4, z, {
+          drop: 0.6,
+          intensity: 6,
+          distance: 11,
+          flicker:
+            (y === 8.3 && z === -150 && x === 6) || (y === 12.8 && z === -164 && x === -8)
+              ? 0.7
+              : 0,
+        })
       }
     }
   }
   m.light({ kind: 'point', pos: [0, 16, -155], color: 0xffe0b0, intensity: 14, distance: 22 })
+  blood(m, -6, 0, -146, rnd, 1.4)
+  rubble(m, 8, 0, -140, rnd, 7)
+  papers(m, -2, 4.5, -150, rnd, 9, 3)
+  blood(m, 10, 4.5, -142, rnd)
+  rubble(m, -4, 9, -164, rnd, 8, 2)
+  blood(m, 2, 9, -138, rnd, 1.3)
+  blood(m, -10, 13.5, -150, rnd)
 
   // ─── Weapons (back 20 s after they're taken) ────────────────────────────────────────────
   const RIFLE = 1
