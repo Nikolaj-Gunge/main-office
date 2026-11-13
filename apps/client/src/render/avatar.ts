@@ -6,6 +6,7 @@ import {
   PLAYER_COLORS,
   type RemotePlayerState,
   type SkinId,
+  WEAPONS,
   WeaponId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
@@ -503,7 +504,7 @@ export class Avatar {
     this.material.opacity = s.protected && Math.floor(timeMs / 150) % 2 === 0 ? 0.35 : 1
 
     // Scope glint: a scoped sniper flashes towards whoever they're pointing at.
-    const scoped = s.alive && s.aiming && s.weapon === WeaponId.Sniper
+    const scoped = s.alive && s.aiming && WEAPONS[s.weapon]?.scoped === true
     this.glint.visible = scoped && viewer !== undefined
     if (this.glint.visible && viewer) {
       const look = new THREE.Vector3(

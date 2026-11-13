@@ -666,7 +666,9 @@ function updatePickups() {
     hud.setPickupPrompt(survival.prompt && joined ? `[${key}] ${survival.prompt}` : null)
     return
   }
-  const primary = s.weapon.id !== WeaponId.Handgun ? s.weapon.id : (s.holstered?.id ?? null)
+  const primaryOf = (w: { id: WeaponId } | null) =>
+    w && WEAPONS[w.id].slot === 'primary' ? w.id : null
+  const primary = primaryOf(s.weapon) ?? primaryOf(s.holstered) ?? primaryOf(s.pocket)
   if (s.alive && primary !== null && primary !== lastPrimary && joined) {
     audio.play('reload.slide', { volume: 0.7 })
   }

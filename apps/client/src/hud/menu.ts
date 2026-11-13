@@ -49,6 +49,9 @@ const MODE_TIPS: Record<ModeId, string> = {
 
 export class Menu {
   private readonly modeTip: HTMLLIElement
+  /** The tips for the arena modes, and the ones that replace them in survival. */
+  private readonly arenaTips: HTMLLIElement[]
+  private readonly survivalTips: HTMLLIElement[]
   private readonly root: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly playButton: HTMLButtonElement
@@ -85,23 +88,31 @@ export class Menu {
 
     this.status = h('p', { class: 'menu-status' })
     this.modeTip = h('li', {}, MODE_TIPS.ffa)
+    this.arenaTips = [
+      h(
+        'li',
+        {},
+        'You spawn with a handgun. Rifles and snipers lie around the office — walk over one to grab it, E to swap.',
+      ),
+      h('li', {}, 'Headshots kill instantly with every weapon.'),
+      h('li', {}, 'Hold Tab for scores · Esc for this menu · M mutes'),
+    ]
+    this.survivalTips = [
+      h(
+        'li',
+        {},
+        'You start with a Glock, 12 rounds and a knife. Ammo is scarce: find it, buy it, or run.',
+      ),
+      h('li', {}, 'The dead are few and hard to kill. Noise and light draw them. Crouch to sneak.'),
+      h('li', {}, 'Haven, the survivor camp, is safe: sleep, trade, take jobs · N mutes'),
+    ]
+    for (const tip of this.survivalTips) tip.hidden = true
     const play = h(
       'section',
       { class: 'menu-panel' },
       form,
       this.status,
-      h(
-        'ul',
-        { class: 'menu-tips' },
-        this.modeTip,
-        h(
-          'li',
-          {},
-          'You spawn with a handgun. Rifles and snipers lie around the office — walk over one to grab it, E to swap.',
-        ),
-        h('li', {}, 'Headshots kill instantly with every weapon.'),
-        h('li', {}, 'Hold Tab for scores · Esc for this menu · M mutes'),
-      ),
+      h('ul', { class: 'menu-tips' }, this.modeTip, ...this.arenaTips, ...this.survivalTips),
     )
 
     // --- Settings tab ---
@@ -209,6 +220,8 @@ export class Menu {
   /** The first tip explains the game mode the server runs. */
   setMode(mode: ModeId): void {
     this.modeTip.textContent = MODE_TIPS[mode]
+    for (const tip of this.arenaTips) tip.hidden = mode === 'survival'
+    for (const tip of this.survivalTips) tip.hidden = mode !== 'survival'
   }
 
   setStatus(text: string): void {

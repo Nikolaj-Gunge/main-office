@@ -161,7 +161,8 @@ function motelRoom(b: Site, i: number): void {
   b.deco(1.2, F, -2.7, 1.4, 0.55, 0.7, 'whiteboard')
   bed(b, 1.1, 0.3, false, i === 2 ? 'bed_motel' : undefined)
   cabinet(b, -1.7, 0.2, 0.6, 0.75, 1.2, 'wood', 'bedroom')
-  b.deco(-1.7, F + 0.75, 0.2, 0.4, 0.4, 0.6, 'screen')
+  // The telly at one end of the cabinet, so what lies on top isn't inside it.
+  b.deco(-1.7, F + 0.75, -0.2, 0.4, 0.4, 0.5, 'screen')
   b.loot(-1.2, F + 0.02, -2.6, i % 2 === 0 ? 'medical' : 'bedroom')
   if (i === 4) {
     // Room 5: the door was kicked in from outside.
