@@ -1,6 +1,7 @@
 export * from './barricades.ts'
 export * from './daytime.ts'
 export * from './drops.ts'
+export * from './gear.ts'
 export * from './items.ts'
 export * from './kit.ts'
 export * from './noise.ts'

@@ -85,6 +85,7 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     mantle: blendProgress(a.mantle, b.mantle, t, 1),
     ledge: a.mantle === 0 ? b.ledge : b.mantle === 0 ? a.ledge : lerp(a.ledge, b.ledge),
     ...(b.light ? { light: true } : {}),
+    ...(b.gear ? { gear: b.gear } : {}),
   }
 }
 

@@ -106,6 +106,8 @@ export interface RemotePlayerState {
   ledge: number
   /** Survival: their torch is on. */
   light?: boolean
+  /** Survival: what they wear that shows (see gear.ts: head look | body look << 4). */
+  gear?: number
 }
 
 /** What a shot hit, for drawing tracers and impacts on other clients. */
@@ -240,6 +242,8 @@ const FLAG_AIMING = 16
 const FLAG_LIGHT = 32
 const FLAG_WINDED = 64
 const FLAG_PRONE = 128
+/** Others' state only: a gear byte follows the animation bytes (own state uses bit 0 for crouch). */
+const FLAG_GEAR = 1
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -364,12 +368,14 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
       (p.alive ? 0 : FLAG_DEAD) |
       (p.protected ? FLAG_PROTECTED : 0) |
       (p.aiming ? FLAG_AIMING : 0) |
-      (p.light ? FLAG_LIGHT : 0),
+      (p.light ? FLAG_LIGHT : 0) |
+      (p.gear ? FLAG_GEAR : 0),
   )
   w.u8(p.weapon)
   w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
   w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
   writeAnimation(w, p)
+  if (p.gear) w.u8(p.gear & 0xff)
 }
 
 /**
@@ -438,6 +444,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const stride = r.u8() / 255
   const speed = r.u8() / 10
   const animation = readAnimation(r)
+  const gear = flags & FLAG_GEAR ? r.u8() : 0
   return {
     stride,
     speed,
@@ -455,6 +462,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
     aiming: (flags & FLAG_AIMING) !== 0,
     weapon,
     ...(flags & FLAG_LIGHT ? { light: true } : {}),
+    ...(gear ? { gear } : {}),
   }
 }
 

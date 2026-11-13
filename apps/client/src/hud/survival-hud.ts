@@ -4,6 +4,7 @@ import {
   countOf,
   type Dialog,
   dayPhase,
+  GEAR,
   ITEMS,
   type ItemDef,
   type ItemKind,
@@ -81,6 +82,7 @@ const KIND_ORDER: ItemKind[] = [
   'drink',
   'med',
   'pack',
+  'wear',
   'tool',
   'junk',
   'quest',
@@ -93,7 +95,8 @@ const KIND_TITLE: Record<ItemKind, string> = {
   drink: 'Drink',
   med: 'Medical',
   pack: 'Backpacks',
-  tool: 'Gear',
+  wear: 'Clothes & gear',
+  tool: 'Tools',
   junk: 'Valuables',
   quest: 'Quest',
   money: 'Cash',
@@ -125,6 +128,15 @@ export function effectText(def: ItemDef): string {
   if (def.stamina) parts.push('restores breath')
   if (def.stopsBleeding) parts.push('stops bleeding')
   if (def.capacity) parts.push(`carries ${def.capacity} kg`)
+  const gear = GEAR[def.id]
+  if (gear) {
+    parts.push(`worn on the ${gear.slot}`)
+    if (gear.armour) parts.push(`stops ${Math.round(gear.armour * 100)}% damage`)
+    if (gear.pockets) parts.push(`+${gear.pockets} kg pockets`)
+    if (gear.stealth) parts.push(`${Math.round(gear.stealth * 100)}% harder to see`)
+    if (gear.quiet && gear.quiet > 0) parts.push(`${Math.round(gear.quiet * 100)}% quieter`)
+    if (gear.quiet && gear.quiet < 0) parts.push('a bit noisy')
+  }
   if (def.battery) parts.push('recharges the torch')
   if (def.weapon !== undefined) {
     const w = WEAPONS[def.weapon]
@@ -705,6 +717,7 @@ export class SurvivalHud {
       def.kind === 'drink' ||
       def.kind === 'med' ||
       def.kind === 'pack' ||
+      def.kind === 'wear' ||
       def.battery
     ) {
       this.send({ a: 'use', item: def.id })
@@ -806,6 +819,19 @@ export class SurvivalHud {
       const fill = el('i', weight > cap * 0.9 ? 'low' : '', bar)
       fill.style.width = `${Math.min(100, (weight / cap) * 100)}%`
       el('div', 'sv-weight-text', left, `${kg(weight)} / ${kg(cap)} kg`)
+      el('div', 'sv-group', left, 'Wearing')
+      for (const slot of ['head', 'body', 'feet'] as const) {
+        const id = self.wear?.[slot]
+        const row = el('div', 'sv-worn', left)
+        el('span', 'sv-worn-slot', row, slot.toUpperCase())
+        el(
+          'span',
+          id ? 'sv-worn-name' : 'sv-worn-name empty',
+          row,
+          id ? (ITEMS[id]?.name ?? id) : '—',
+        )
+        if (id) this.button(row, 'Take off', () => this.send({ a: 'unwear', slot }))
+      }
       el('div', 'sv-help', left, 'W/S select · E use or equip · G drop (Shift: all) · Tab close')
     }
 
@@ -840,7 +866,7 @@ export class SurvivalHud {
         const verb =
           def.kind === 'weapon'
             ? 'Equip'
-            : def.kind === 'pack'
+            : def.kind === 'pack' || def.kind === 'wear'
               ? 'Wear'
               : def.kind === 'food'
                 ? 'Eat'

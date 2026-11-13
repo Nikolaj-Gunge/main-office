@@ -13,6 +13,8 @@ import {
   type Dialog,
   daylight,
   dayPhase,
+  GEAR,
+  gearLooks,
   heightAt,
   type InputCommand,
   type Interactable,
@@ -53,6 +55,7 @@ import {
   wakeTime,
   weaponItem,
   weightOf,
+  wornStats,
   ZombieKind,
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
@@ -129,6 +132,7 @@ const START_KIT = [
 const freshSelf = (): SurvivalSelf => ({
   inv: [{ item: 'water', n: 1 }],
   pack: null,
+  wear: {},
   money: 0,
   hunger: 70,
   thirst: 70,
@@ -622,17 +626,21 @@ export class SurvivalDirector {
       for (const l of this.loot.values()) if (l.spot >= 0) taken.add(l.spot)
       this.def.loot.forEach((spot, s) => {
         if (spot.poi !== i || taken.has(s)) return
-        if (!first && this.random() < 0.5) return
-        const roll = rollLoot(spot.table, this.random)
-        if (!roll) return
+        if (!first && this.random() < 0.35) return
         const [x, y, z] = spot.pos
-        const weapon = ITEMS[roll.item]?.weapon
-        // Guns are found with a few rounds in them, if any.
-        const ammo =
-          weapon === undefined
-            ? undefined
-            : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
-        this.addLoot(roll.item, roll.n, { x, y, z }, s, ammo)
+        // Often a second thing lies beside the first.
+        const count = this.random() < 0.35 ? 2 : 1
+        for (let k = 0; k < count; k++) {
+          const roll = rollLoot(spot.table, this.random)
+          if (!roll) continue
+          const weapon = ITEMS[roll.item]?.weapon
+          // Guns are found with a few rounds in them, if any.
+          const ammo =
+            weapon === undefined
+              ? undefined
+              : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
+          this.addLoot(roll.item, roll.n, { x: x + k * 0.28, y, z: z + k * 0.12 }, s, ammo)
+        }
       })
     })
   }
@@ -981,6 +989,26 @@ export class SurvivalDirector {
           this.notice(player, 'info', `You put on the ${def.name}.`)
           return void this.touch(sv)
         }
+        if (def.kind === 'wear') {
+          const slot = GEAR[def.id]?.slot
+          if (!slot) return
+          // Swap: what you had on goes in the pack, if everything still fits.
+          const old = self.wear[slot]
+          takeStack(self.inv, def.id, 1)
+          if (old) addStack(self.inv, old, 1)
+          self.wear[slot] = def.id
+          if (weightOf(self.inv) > capacityOf(self) + 1e-6) {
+            if (old) {
+              takeStack(self.inv, old, 1)
+              self.wear[slot] = old
+            } else delete self.wear[slot]
+            addStack(self.inv, def.id, 1)
+            this.notice(player, 'warn', 'No room in your pack for what you take off.')
+            return
+          }
+          this.notice(player, 'info', `You put on the ${def.name}.`)
+          return void this.touch(sv)
+        }
         if (def.battery) self.battery = Math.min(100, self.battery + def.battery)
         else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med') {
           if (def.health)
@@ -1027,6 +1055,20 @@ export class SurvivalDirector {
         } else if (s.weapon === old) s.weapon = w
         else if (s.holstered === old) s.holstered = w
         else s.pocket = w
+        return void this.touch(sv)
+      }
+      case 'unwear': {
+        const slot = action.slot
+        const id =
+          slot === 'head' || slot === 'body' || slot === 'feet' ? self.wear[slot] : undefined
+        if (!id) return
+        delete self.wear[slot]
+        // Its pockets go with it: if that leaves too much in the pack, it can't come off.
+        if (weightOf(self.inv) + (ITEMS[id]?.weight ?? 0) > capacityOf(self) + 1e-6) {
+          self.wear[slot] = id
+          return void this.notice(player, 'warn', 'Too much in your pack to take that off.')
+        }
+        addStack(self.inv, id, 1)
         return void this.touch(sv)
       }
       case 'stow': {
@@ -1335,6 +1377,7 @@ export class SurvivalDirector {
       if (this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 4)) continue
       const speed = Math.hypot(s.vel.x, s.vel.z)
       const steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
+      const worn = wornStats(sv.self)
       out.push({
         id: sv.player.id,
         pos: s.pos,
@@ -1342,8 +1385,9 @@ export class SurvivalDirector {
         pitch: s.pitch,
         crouched: s.crouched,
         prone: s.prone,
-        noise: Math.max(steps, this.now < sv.noiseUntil ? sv.noise : 0),
+        noise: Math.max(steps * (1 - worn.quiet), this.now < sv.noiseUntil ? sv.noise : 0),
         light: sv.self.light,
+        hidden: worn.stealth,
       })
     }
     return out
@@ -1545,6 +1589,21 @@ export class SurvivalDirector {
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
       drops: this.drops.shared(),
     }
+  }
+
+  /** What someone wears that shows (gear.ts looks, packed for the wire). */
+  gearOf(player: ServerPlayer): number {
+    const sv = this.survivors.get(player.id)
+    return sv ? gearLooks(Object.values(sv.self.wear)) : 0
+  }
+
+  /** Damage after what someone wears: helmets take head hits, vests and jackets the rest. */
+  armour(victim: ServerPlayer, head: boolean, amount: number): number {
+    const sv = this.survivors.get(victim.id)
+    if (!sv) return amount
+    const worn = wornStats(sv.self)
+    const stops = Math.min(0.8, head ? worn.headArmour : worn.bodyArmour)
+    return Math.max(1, Math.round(amount * (1 - stops)))
   }
 
   /** Is this player's torch on (others see it, and so do the dead)? */

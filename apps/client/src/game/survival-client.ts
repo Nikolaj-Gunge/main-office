@@ -2,6 +2,7 @@ import {
   BOARD_REACH,
   countOf,
   DAY_SECONDS,
+  gearLooks,
   heightAt,
   type Interactable,
   ITEMS,
@@ -40,6 +41,18 @@ import type { RemotePlayers } from './remote-players.ts'
 /** How far you reach for things, and how close you stand to talk (m): the server's numbers. */
 const REACH = 2.4
 const TALK_REACH = 3
+/** What the people of Haven wear, by what they do. */
+const NPC_GEAR: Partial<Record<Npc['role'], string[]>> = {
+  guard: ['helmet', 'militaryvest'],
+  leader: ['jacket'],
+  trader: ['cowboyhat', 'flannel'],
+  medic: ['raincoat'],
+  mechanic: ['cap', 'flannel'],
+  cook: ['bandana'],
+  hunter: ['beanie', 'camojacket'],
+  kid: ['hoodie'],
+}
+
 /** Other people's torches lit at once. */
 const TORCHES = 2
 
@@ -154,6 +167,7 @@ export class SurvivalClient {
           slide: 0,
           mantle: 0,
           ledge: 0,
+          gear: gearLooks(NPC_GEAR[npc.role] ?? []),
         },
       })
     })

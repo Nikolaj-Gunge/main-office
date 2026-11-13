@@ -147,6 +147,16 @@ export class MatchRunner {
     return this.survival?.lightOn(player) ?? false
   }
 
+  /** Survival: what this player wears that others see (0 = nothing). */
+  gearOf(player: ServerPlayer): number {
+    return this.survival?.gearOf(player) ?? 0
+  }
+
+  /** Damage after armour (survival gear); unchanged elsewhere. */
+  armour(victim: ServerPlayer, head: boolean, amount: number): number {
+    return this.survival ? this.survival.armour(victim, head, amount) : amount
+  }
+
   /** The weapon the mode puts in your hand, or null for the normal loadout. */
   loadout(player: ServerPlayer): WeaponId | null {
     if (this.rules.mode === 'gungame') {

@@ -1451,6 +1451,29 @@ body {
   background: #d83a2e;
 }
 
+.sv-worn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.sv-worn-slot {
+  width: 40px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #8a8270;
+}
+
+.sv-worn-name {
+  flex: 1;
+}
+
+.sv-worn-name.empty {
+  opacity: 0.4;
+}
+
 .sv-weight-text {
   font-size: 12px;
   opacity: 0.7;

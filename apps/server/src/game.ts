@@ -765,7 +765,7 @@ export class Game {
   ) {
     if (this.tick < victim.protectedUntil) return
     if (!this.match.canHurt(attacker, victim)) return
-    const dealt = Math.min(victim.health, amount)
+    const dealt = Math.min(victim.health, this.match.armour(victim, zone === HitZone.Head, amount))
     victim.health -= dealt
     const killed = victim.health === 0
 
@@ -1040,7 +1040,13 @@ export class Game {
 
   private sendSnapshots(): void {
     const everyone: RemotePlayerState[] = [...this.players.values()].map((p) =>
-      toRemote(p, this.tick < p.protectedUntil, this.match.lightOn(p), this.tick),
+      toRemote(
+        p,
+        this.tick < p.protectedUntil,
+        this.match.lightOn(p),
+        this.tick,
+        this.match.gearOf(p),
+      ),
     )
     for (const player of this.players.values()) {
       send(player.client, {
@@ -1182,6 +1188,7 @@ function toRemote(
   isProtected: boolean,
   light: boolean,
   tick: number,
+  gear = 0,
 ): RemotePlayerState {
   const s = p.state
   return {
@@ -1201,6 +1208,7 @@ function toRemote(
     stride: p.stride,
     speed: Math.hypot(s.vel.x, s.vel.z),
     ...(light && s.alive ? { light: true } : {}),
+    ...(gear ? { gear } : {}),
   }
 }
 

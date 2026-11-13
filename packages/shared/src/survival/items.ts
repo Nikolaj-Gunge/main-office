@@ -12,6 +12,7 @@ export type ItemKind =
   | 'drink'
   | 'med'
   | 'pack'
+  | 'wear'
   | 'tool'
   | 'junk'
   | 'quest'
@@ -200,6 +201,38 @@ pack('pack_school', 'School backpack', 18, 0.4, 120, 'Has a name written inside.
 pack('pack_hiking', 'Hiking backpack', 30, 0.9, 380, 'Frame and hip belt. Carries 30 kg.')
 pack('pack_military', 'Military rucksack', 45, 1.6, 900, 'Built to carry a war. Carries 45 kg.')
 
+// ── Clothes and gear (what they do: gear.ts) ──
+const wear = (id: string, name: string, weight: number, value: number, desc: string) =>
+  add({ id, name, kind: 'wear', weight, value, desc })
+wear('cap', 'Baseball cap', 0.1, 15, 'Keeps the rain out of your eyes. Says "GO HAWKS".')
+wear('beanie', 'Black beanie', 0.1, 20, 'Dark wool. A little harder to see in the dark.')
+wear('bandana', 'Bandana', 0.05, 15, 'Over the mouth: you breathe quieter.')
+wear('cowboyhat', 'Cowboy hat', 0.2, 40, 'Does nothing. Looks great.')
+wear('hardhat', 'Hard hat', 0.4, 60, 'Takes the edge off a blow to the head.')
+wear('helmet', 'Combat helmet', 1.4, 380, 'Kevlar. Turns a lot of what hits your head.')
+wear('gasmask', 'Gas mask', 0.6, 90, 'Hides your face and the sound of your breathing.')
+wear('hoodie', 'Hoodie', 0.5, 30, 'A front pocket for the little things.')
+wear('flannel', 'Flannel shirt', 0.4, 25, 'Red check. Two chest pockets.')
+wear('raincoat', 'Yellow raincoat', 0.6, 35, 'Big pockets. Rustles when you move.')
+wear(
+  'jacket',
+  'Leather jacket',
+  1.6,
+  160,
+  'Heavy leather, deep pockets. Claws slide off it, a little.',
+)
+wear('camojacket', 'Camo jacket', 1.1, 220, 'Hunting camo. The dead lose you in the trees.')
+wear('policevest', 'Police vest', 2.2, 300, 'Soft armour. Stops a quarter of what hits your body.')
+wear(
+  'militaryvest',
+  'Plate carrier',
+  4.5,
+  700,
+  'Ceramic plates and pouches. Stops a lot, carries a lot.',
+)
+wear('sneakers', 'Sneakers', 0.6, 40, 'Soft soles: quieter steps.')
+wear('boots', 'Hiking boots', 1.2, 90, 'Good boots. You barely hear yourself walk.')
+
 // ── Tools ──
 add({
   id: 'batteries',
@@ -332,8 +365,10 @@ interface TableDef {
 
 const TABLES: Record<LootTable, TableDef> = {
   kitchen: {
-    empty: 0.3,
+    empty: 0.18,
     entries: [
+      ['revolver', 0.25],
+      ['ammo357', 0.8, 2, 6],
       ['beans', 10],
       ['soup', 9],
       ['tuna', 8],
@@ -354,7 +389,7 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   medical: {
-    empty: 0.25,
+    empty: 0.15,
     entries: [
       ['bandage', 12, 1, 2],
       ['rags', 8, 1, 3],
@@ -366,8 +401,14 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   garage: {
-    empty: 0.3,
+    empty: 0.18,
     entries: [
+      ['hardhat', 3],
+      ['boots', 2],
+      ['flannel', 1.5],
+      ['bandana', 1.5],
+      ['doublebarrel', 0.6],
+      ['ammo12', 2, 2, 6],
       ['scrap', 10, 1, 3],
       ['planks', 7, 2, 4],
       ['ducttape', 7],
@@ -383,8 +424,20 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   bedroom: {
-    empty: 0.4,
+    empty: 0.24,
     entries: [
+      ['cap', 2],
+      ['beanie', 2],
+      ['hoodie', 3],
+      ['flannel', 2.5],
+      ['raincoat', 1],
+      ['sneakers', 2],
+      ['boots', 1],
+      ['cowboyhat', 0.5],
+      ['glock', 0.8],
+      ['revolver', 0.5],
+      ['m1911', 0.4],
+      ['ammo9', 2, 4, 10],
       ['cash', 9, 5, 40],
       ['watch', 3],
       ['ring', 1.5],
@@ -402,8 +455,14 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   store: {
-    empty: 0.3,
+    empty: 0.18,
     entries: [
+      ['cap', 3],
+      ['beanie', 2],
+      ['hoodie', 2],
+      ['sneakers', 2],
+      ['raincoat', 2],
+      ['bandana', 2],
       ['chips', 9],
       ['chocolate', 8],
       ['energybar', 8],
@@ -421,8 +480,12 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   gun: {
-    empty: 0.25,
+    empty: 0.15,
     entries: [
+      ['policevest', 0.5],
+      ['glock', 1],
+      ['hunting', 0.6],
+      ['sks', 0.4],
       ['ammo9', 10, 6, 18],
       ['ammo45', 7, 5, 12],
       ['ammo12', 7, 3, 8],
@@ -444,8 +507,13 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   police: {
-    empty: 0.2,
+    empty: 0.12,
     entries: [
+      ['policevest', 3],
+      ['helmet', 0.6],
+      ['boots', 1.5],
+      ['gasmask', 0.5],
+      ['ump', 0.8],
       ['ammo9', 10, 10, 24],
       ['ammo45', 5, 6, 14],
       ['ammo12', 7, 4, 10],
@@ -461,8 +529,14 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   military: {
-    empty: 0.2,
+    empty: 0.12,
     entries: [
+      ['militaryvest', 1.5],
+      ['helmet', 2.5],
+      ['gasmask', 1.5],
+      ['boots', 2],
+      ['camojacket', 1],
+      ['sks', 0.6],
       ['ammo556', 10, 12, 30],
       ['ammo762', 6, 10, 25],
       ['ammo9', 5, 10, 20],
@@ -487,8 +561,13 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   hunting: {
-    empty: 0.25,
+    empty: 0.15,
     entries: [
+      ['camojacket', 3],
+      ['beanie', 2],
+      ['boots', 2.5],
+      ['cap', 1.5],
+      ['sks', 0.5],
       ['ammo308', 8, 3, 8],
       ['ammo357', 5, 4, 8],
       ['ammo12', 6, 3, 8],
@@ -507,8 +586,15 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   camp: {
-    empty: 0.35,
+    empty: 0.21,
     entries: [
+      ['beanie', 2],
+      ['raincoat', 2],
+      ['hoodie', 1.5],
+      ['boots', 1],
+      ['sneakers', 1],
+      ['ruger', 0.5],
+      ['carbine22', 0.4],
       ['beans', 7],
       ['jerky', 5],
       ['water', 7],
@@ -528,8 +614,12 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   cache: {
-    empty: 0,
+    empty: 0.0,
     entries: [
+      ['militaryvest', 1],
+      ['helmet', 1],
+      ['camojacket', 1.5],
+      ['uzi', 0.5],
       ['medkit', 5],
       ['ammo556', 5, 20, 40],
       ['ammo762', 5, 20, 40],
@@ -552,15 +642,17 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   pack: {
-    empty: 0.35,
+    empty: 0.21,
     entries: [
+      ['hoodie', 1],
+      ['raincoat', 1],
       ['pack_school', 6],
       ['pack_hiking', 3],
       ['pack_military', 0.7],
     ],
   },
   melee: {
-    empty: 0.3,
+    empty: 0.18,
     entries: [
       ['bat', 6],
       ['crowbar', 6],
@@ -572,8 +664,12 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   office: {
-    empty: 0.45,
+    empty: 0.27,
     entries: [
+      ['cap', 0.5],
+      ['hoodie', 1],
+      ['m9', 0.5],
+      ['ammo9', 1, 4, 10],
       ['cash', 6, 2, 30],
       ['electronics', 5],
       ['batteries', 5],
@@ -586,7 +682,7 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   lumber: {
-    empty: 0.15,
+    empty: 0.09,
     entries: [
       ['planks', 10, 2, 5],
       ['scrap', 1],
@@ -594,8 +690,11 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   drop: {
-    empty: 0,
+    empty: 0.0,
     entries: [
+      ['militaryvest', 2],
+      ['helmet', 2],
+      ['gasmask', 1],
       ['ammo556', 10, 30, 60],
       ['ammo762', 9, 30, 60],
       ['ammo9', 6, 24, 48],
@@ -619,7 +718,7 @@ const TABLES: Record<LootTable, TableDef> = {
     ],
   },
   fuel: {
-    empty: 0.25,
+    empty: 0.15,
     entries: [
       ['gasoline', 10],
       ['scrap', 3, 1, 2],

@@ -10,6 +10,8 @@ const LOOK: Record<ItemKind, { size: [number, number, number]; color: number }> 
   drink: { size: [0.09, 0.24, 0.09], color: 0x4f9fd8 },
   med: { size: [0.22, 0.1, 0.16], color: 0xe8e8e8 },
   pack: { size: [0.38, 0.46, 0.24], color: 0x5f7a3a },
+  // Folded clothes, a helmet, a vest: a flat bundle.
+  wear: { size: [0.34, 0.1, 0.28], color: 0x6a5a8a },
   tool: { size: [0.12, 0.07, 0.08], color: 0xd8c24a },
   junk: { size: [0.18, 0.1, 0.14], color: 0x8a8378 },
   quest: { size: [0.2, 0.12, 0.16], color: 0xf0c040 },

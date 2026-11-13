@@ -1,5 +1,6 @@
 import type { WeaponSlot } from '../sim/weapons.ts'
 import type { SupplyDrop } from './drops.ts'
+import { GEAR, type WearSlot } from './gear.ts'
 import { ITEMS, POCKETS_KG } from './items.ts'
 
 /** Some of one item in a backpack. Weapons never stack (n = 1) and remember what's loaded. */
@@ -15,6 +16,8 @@ export interface SurvivalSelf {
   inv: Stack[]
   /** The backpack worn (an item id), or null: pockets only. */
   pack: string | null
+  /** Clothes and gear worn, by slot (item ids, see gear.ts). */
+  wear: Partial<Record<WearSlot, string>>
   money: number
   /** 0 (starving / parched) – 100. */
   hunger: number
@@ -55,13 +58,15 @@ export interface SurvivalShared {
 }
 
 export type SurvivalAction =
-  /** Eat, drink, bandage, put on a backpack, load batteries. */
+  /** Eat, drink, bandage, put on a backpack or clothes, load batteries. */
   | { a: 'use'; item: string }
   | { a: 'drop'; item: string; n: number }
   /** Take the weapon at this backpack index in hand (what was in that slot goes in the pack). */
   | { a: 'equip'; index: number }
   /** Put the weapon in this slot into the backpack. */
   | { a: 'stow'; slot: WeaponSlot }
+  /** Take off what you wear in this slot (it goes in the backpack). */
+  | { a: 'unwear'; slot: WearSlot }
   | { a: 'buy'; item: string; n: number }
   | { a: 'sell'; item: string; n: number }
   | { a: 'light'; on: boolean }
@@ -98,8 +103,29 @@ export interface LootItem {
 
 // --- Inventory arithmetic (shared so the client can show what will fit) -----------------------
 
-export function capacityOf(self: Pick<SurvivalSelf, 'pack'>): number {
-  return (self.pack ? ITEMS[self.pack]?.capacity : undefined) ?? POCKETS_KG
+export function capacityOf(self: Pick<SurvivalSelf, 'pack' | 'wear'>): number {
+  let kg = (self.pack ? ITEMS[self.pack]?.capacity : undefined) ?? POCKETS_KG
+  for (const id of Object.values(self.wear ?? {})) kg += (id ? GEAR[id]?.pockets : 0) ?? 0
+  return kg
+}
+
+/** What everything worn adds up to (armour by where it covers, how hidden and how quiet). */
+export function wornStats(self: Pick<SurvivalSelf, 'wear'>): {
+  headArmour: number
+  bodyArmour: number
+  stealth: number
+  quiet: number
+} {
+  const out = { headArmour: 0, bodyArmour: 0, stealth: 0, quiet: 0 }
+  for (const id of Object.values(self.wear ?? {})) {
+    const g = id ? GEAR[id] : undefined
+    if (!g) continue
+    if (g.slot === 'head') out.headArmour += g.armour ?? 0
+    else out.bodyArmour += g.armour ?? 0
+    out.stealth += g.stealth ?? 0
+    out.quiet += g.quiet ?? 0
+  }
+  return out
 }
 
 export function weightOf(stacks: readonly Stack[]): number {
@@ -115,7 +141,7 @@ export function countOf(stacks: readonly Stack[], item: string): number {
 }
 
 /** How many of `item` still fit in the backpack (weightless things always do). */
-export function roomFor(self: Pick<SurvivalSelf, 'pack' | 'inv'>, item: string): number {
+export function roomFor(self: Pick<SurvivalSelf, 'pack' | 'inv' | 'wear'>, item: string): number {
   const weight = ITEMS[item]?.weight ?? 0
   if (weight <= 0) return Number.POSITIVE_INFINITY
   return Math.max(0, Math.floor((capacityOf(self) - weightOf(self.inv) + 1e-6) / weight))

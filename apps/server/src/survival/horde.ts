@@ -64,6 +64,8 @@ export interface Prey {
   /** How far their noise carries right now (m). */
   noise: number
   light: boolean
+  /** Worn camouflage: seen this much less far (0–1). */
+  hidden?: number
 }
 
 /** One of the dead: where it belongs, what it's doing and what it's after. */
@@ -163,7 +165,11 @@ export class Zed {
       if (d < p.noise && (!heard || d < Math.hypot(heard.pos.x - me.x, heard.pos.z - me.z)))
         heard = p
       let sight =
-        k.sight * (1 + grey * 0.7) * (p.light ? 2.1 : 1) * (p.prone ? 0.35 : p.crouched ? 0.6 : 1)
+        k.sight *
+        (1 + grey * 0.7) *
+        (p.light ? 2.1 : 1) *
+        (p.prone ? 0.35 : p.crouched ? 0.6 : 1) *
+        (1 - Math.min(0.6, p.hidden ?? 0))
       // What it's already chasing is harder to lose than to find.
       if (p.id === this.targetId && this.mood === 'chase') sight *= 1.5
       if (d > sight || d >= seenD) continue

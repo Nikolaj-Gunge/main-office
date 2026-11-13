@@ -1,10 +1,13 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import {
   Button,
+  capacityOf,
+  countOf,
   createPhysicsWorld,
   DEFAULT_RULES,
   DROP_LAND,
   decodeServerMessage,
+  gearLooks,
   heightAt,
   ITEMS,
   initPhysics,
@@ -14,6 +17,7 @@ import {
   type MatchInfo,
   mergeRules,
   PLANK_HP,
+  POCKETS_KG,
   planksFor,
   QUESTS,
   type ServerMessage,
@@ -415,5 +419,43 @@ describe('survival: supply drops', () => {
     t.run(1.1)
     expect(t.self().inv.some((s) => s.item === item.item)).toBe(true)
     expect(t.match().survival?.drops?.[0]?.opened).toBe(true)
+  })
+})
+
+describe('survival: clothes and gear', () => {
+  test('wearing a vest adds pockets and armour, shows on you, and comes off again', () => {
+    const t = setup(2)
+    t.run(1)
+    const director = (
+      t.game.match as unknown as {
+        survival: { survivors: Map<number, { self: SurvivalSelf }> }
+      }
+    ).survival
+    const me = director.survivors.get(t.ids[0] ?? 0)?.self
+    if (!me) throw new Error('no survivor')
+    me.inv.push({ item: 'militaryvest', n: 1 }, { item: 'helmet', n: 1 })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'militaryvest' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'helmet' })
+    expect(me.wear.body).toBe('militaryvest')
+    expect(me.wear.head).toBe('helmet')
+    expect(capacityOf(me)).toBe(POCKETS_KG + 6)
+    // Armour: a helmet takes 45 % off a head hit, the vest 40 % off a body hit.
+    expect(t.game.match.armour(t.player(), true, 100)).toBe(55)
+    expect(t.game.match.armour(t.player(), false, 100)).toBe(60)
+    // The other player sees the helmet and the vest.
+    t.run(0.5)
+    const snap = t.last(ServerMsg.Snapshot, 1)
+    const seen = snap?.players.find((p) => p.id === t.ids[0])
+    expect(seen?.gear).toBe(gearLooks(['helmet', 'militaryvest']))
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'unwear', slot: 'head' })
+    expect(me.wear.head).toBeUndefined()
+    expect(countOf(me.inv, 'helmet')).toBe(1)
+  })
+
+  test('the loot tables hand out clothes, and there are more guns about', () => {
+    for (const table of ['bedroom', 'store', 'police', 'military', 'hunting'] as const) {
+      expect(tableItems(table).some((id) => ITEMS[id]?.kind === 'wear')).toBe(true)
+    }
+    expect(tableItems('bedroom').some((id) => ITEMS[id]?.kind === 'weapon')).toBe(true)
   })
 })
