@@ -10,6 +10,7 @@ import { buildRange } from './range.ts'
 import { buildRooftop } from './rooftop.ts'
 import type { MapDef } from './types.ts'
 import { buildWarehouse } from './warehouse.ts'
+import { buildDeadwood } from '../survival/world.ts'
 
 export * from './builder.ts'
 export * from './range.ts'
@@ -31,12 +32,17 @@ export const MAPS: Record<string, () => MapDef> = {
   mall: buildMall,
   metro: buildMetro,
   cornfield: buildCornfield,
+  // Survival: one open world
+  deadwood: buildDeadwood,
 }
 
 export const DEFAULT_MAP_ID = 'office'
 
 /** Maps built for co-op (zombies mode needs one; they stay out of the map rotation). */
 export const COOP_MAPS = ['outbreak', 'mall', 'metro', 'cornfield'] as const
+
+/** The survival mode's map (the two always go together). */
+export const SURVIVAL_MAP = 'deadwood'
 
 export function loadMap(id: string): MapDef {
   const build = MAPS[id]

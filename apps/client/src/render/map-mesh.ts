@@ -55,6 +55,34 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
         k === axis ||
         Math.min(a.max[k] ?? 0, b.max[k] ?? 0) - Math.max(a.min[k] ?? 0, b.min[k] ?? 0) > 1e-3,
     )
+  // Only boxes that are close can share a plane: look them up in a coarse x/z grid instead of
+  // comparing every box with every other (the survival world has thousands).
+  const GRID = 24
+  const grid = new Map<number, number[]>()
+  const everywhere: number[] = []
+  const cells = (b: Bounds): number[] | null => {
+    const x0 = Math.floor((b.min[0] - 0.1) / GRID)
+    const x1 = Math.floor((b.max[0] + 0.1) / GRID)
+    const z0 = Math.floor((b.min[2] - 0.1) / GRID)
+    const z1 = Math.floor((b.max[2] + 0.1) / GRID)
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > 64) return null
+    const keys: number[] = []
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) keys.push(x * 100003 + z)
+    return keys
+  }
+  /** Indices of placed boxes that may touch `b`. */
+  const near = (b: Bounds): number[] => {
+    const keys = cells(b)
+    if (!keys) return out.flatMap((o, j) => (o ? [j] : []))
+    const found = new Set<number>(everywhere)
+    for (const key of keys) for (const j of grid.get(key) ?? []) found.add(j)
+    return [...found]
+  }
+  const place = (i: number, b: Bounds) => {
+    const keys = cells(b)
+    if (!keys) everywhere.push(i)
+    else for (const key of keys) grid.set(key, [...(grid.get(key) ?? []), i])
+  }
   for (let i = 0; i < raw.length; i++) {
     const a = raw[i]
     if (!a) {
@@ -63,14 +91,15 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
     }
     const o: Bounds = { min: [...a.min], max: [...a.max] }
     const material = map.boxes[i]?.material
+    const candidates = near(o).filter((j) => map.boxes[j]?.material !== material)
     // Two passes: pushing one axis out can create an overlap across another.
-    for (let pass = 0; pass < 6; pass++) {
+    for (let pass = 0; pass < 6 && candidates.length > 0; pass++) {
       const axis = pass % 3
       // Earlier, already-placed boxes this one overlaps across this axis's faces.
       const others: Bounds[] = []
-      for (let j = 0; j < i; j++) {
+      for (const j of candidates) {
         const b = out[j]
-        if (b && map.boxes[j]?.material !== material && overlaps(o, b, axis)) others.push(b)
+        if (b && overlaps(o, b, axis)) others.push(b)
       }
       // Step each face outwards until no earlier face shares its plane.
       for (const side of ['max', 'min'] as const) {
@@ -83,6 +112,7 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
       }
     }
     out.push(o)
+    place(i, o)
   }
 
   // Glass is drawn from both sides, so a pane resting on a frame (its bottom touching the
@@ -91,8 +121,9 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
     const o = out[i]
     const material = map.boxes[i]?.material
     if (!o || !material || !isTransparent(material)) continue
+    const candidates = near(o)
     for (let axis = 0; axis < 3; axis++) {
-      for (let j = 0; j < out.length; j++) {
+      for (const j of candidates) {
         const b = out[j]
         if (j === i || !b || !overlaps(o, b, axis)) continue
         if (Math.abs((o.min[axis] ?? 0) - (b.max[axis] ?? 0)) < 1e-3) {

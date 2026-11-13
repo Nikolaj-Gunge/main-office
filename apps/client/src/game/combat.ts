@@ -19,6 +19,7 @@ import {
   type WeaponEvents,
   WeaponId,
   type WeaponState,
+  weaponLook,
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
@@ -37,6 +38,76 @@ const HOVER_RANGE = 80
 /** Kills closer together than this count as a streak (double kill, triple kill). */
 const STREAK_MS = 4000
 const NEAR_MISS_DISTANCE = 1.6
+
+/**
+ * How a survival weapon differs, to the ear and in the hands, from the original it is modelled on
+ * (its `look`, whose sounds it uses). The originals have no entry: they are the baseline.
+ */
+interface Feel {
+  /** Pitch and loudness of its shot or swing next to the original's (1 = the same). */
+  rate: number
+  volume: number
+  /** Screen shake per shot, where the original's would be wrong for it. */
+  shake?: number
+  /** Nothing is thrown out as it fires (a revolver, a break-action, a crossbow). */
+  noCasing?: boolean
+  /** No flash or smoke at the muzzle (a suppressor, a crossbow). */
+  noFlash?: boolean
+  /** Breaks or swings open to reload and snaps shut: nothing to rack afterwards. */
+  hinged?: boolean
+  /** Its action is worked sooner and quicker than the sniper's bolt (a lever). */
+  cycle?: { delay: number; rate: number }
+}
+
+const FEEL: Partial<Record<WeaponId, Feel>> = {
+  // Melee: the heavier it is, the lower it whooshes.
+  [WeaponId.Bat]: { rate: 0.8, volume: 1.1 },
+  [WeaponId.Crowbar]: { rate: 0.86, volume: 1.1 },
+  [WeaponId.Machete]: { rate: 1.06, volume: 1 },
+  [WeaponId.Axe]: { rate: 0.68, volume: 1.2 },
+  [WeaponId.Sledge]: { rate: 0.52, volume: 1.3 },
+  [WeaponId.Katana]: { rate: 1.3, volume: 0.9 },
+  // Pistols: the .45 and the magnum deeper, the suppressed .22 hardly there.
+  [WeaponId.M1911]: { rate: 0.9, volume: 1.08 },
+  [WeaponId.Revolver]: { rate: 0.74, volume: 1.3, shake: 0.5, noCasing: true, hinged: true },
+  [WeaponId.M9]: { rate: 1.06, volume: 0.95 },
+  [WeaponId.Ruger]: { rate: 1.7, volume: 0.22, shake: 0.1, noFlash: true },
+  [WeaponId.SawedOff]: { rate: 1.12, volume: 1.05, noCasing: true, hinged: true },
+  [WeaponId.Uzi]: { rate: 0.95, volume: 1.05 },
+  [WeaponId.Ump]: { rate: 0.8, volume: 1.15 },
+  [WeaponId.Mac10]: { rate: 0.88, volume: 1.1 },
+  [WeaponId.Ak47]: { rate: 0.84, volume: 1.15 },
+  [WeaponId.Sks]: { rate: 0.88, volume: 1.12 },
+  [WeaponId.HuntingRifle]: { rate: 0.66, volume: 1.45, shake: 0.5 },
+  [WeaponId.Carbine22]: { rate: 1.45, volume: 0.32, shake: 0.12 },
+  [WeaponId.LeverAction]: {
+    rate: 0.74,
+    volume: 1.3,
+    shake: 0.42,
+    cycle: { delay: 0.12, rate: 1.6 },
+  },
+  [WeaponId.DoubleBarrel]: { rate: 0.94, volume: 1.08, noCasing: true, hinged: true },
+  [WeaponId.AutoShotgun]: { rate: 1.1, volume: 0.95, shake: 0.45 },
+  [WeaponId.Svd]: { rate: 1.1, volume: 0.95 },
+  [WeaponId.Barrett]: { rate: 0.72, volume: 1.3, shake: 0.9 },
+  // Not a gunshot at all: it twangs (see shotSound).
+  [WeaponId.Crossbow]: { rate: 1, volume: 1, shake: 0.08, noCasing: true, noFlash: true },
+}
+
+/** Snipers and shotguns (and what handles like them): a fat tracer, a lot of smoke. */
+function isHeavy(id: WeaponId): boolean {
+  const look = weaponLook(id)
+  return (look === WeaponId.Sniper || look === WeaponId.Shotgun) && id !== WeaponId.Crossbow
+}
+
+/** Volume and pitch for one of a melee weapon's sounds: the knife's, tuned to the weapon. */
+function swung(id: WeaponId, volume: number): { volume: number; rate: number } {
+  const feel = FEEL[id]
+  return {
+    volume: volume * (feel?.volume ?? 1),
+    rate: (feel?.rate ?? 1) * (0.96 + Math.random() * 0.08),
+  }
+}
 
 interface CombatDeps {
   camera: THREE.PerspectiveCamera
@@ -62,6 +133,8 @@ export class ClientCombat {
   private lastDeath: { killer: string | null; weapon: string; headshot: boolean } | null = null
   /** Kill jingle set from the game rules ('off' = just the ding). */
   jingles: JingleId = 'arcade'
+  /** Your health as the server last said. */
+  health = 100
   /** Your recent kill times (ms), for double / triple kill jingles. */
   private streak: number[] = []
   private wasAlive = true
@@ -90,41 +163,64 @@ export class ClientCombat {
   onLocalShot(shot: ShotEvent, weaponId: WeaponId, aiming: boolean): void {
     const weapon = WEAPONS[weaponId]
     if (weapon.fireMode === 'melee') {
-      this.localSwing(shot, weapon.range)
+      this.localSwing(shot, weaponId, weapon.range)
       return
     }
+    const feel = FEEL[weaponId]
     // Scoped, the gun is hidden: the tracer starts just below the eye instead of the muzzle.
     const { origin } = shot
     const muzzle = this.d.viewmodel.scoped
       ? new THREE.Vector3(origin.x, origin.y - 0.08, origin.z)
       : this.d.camera.localToWorld(this.d.viewmodel.muzzleView.clone())
-    const heavy = weapon.id === WeaponId.Sniper || weapon.id === WeaponId.Shotgun
+    const heavy = isHeavy(weaponId)
     // Every pellet gets its tracer and impact; the shot itself (smoke, sound, kick) once.
     shot.pellets.forEach((dir, i) => {
-      const { end, kind } = this.localTracer(origin, dir, weapon.range, muzzle, heavy, i === 0)
+      const smoke = i === 0 && !feel?.noFlash
+      const { end, kind } = this.localTracer(origin, dir, weapon.range, muzzle, heavy, smoke)
       if (i < 3) this.impactSound(end, kind) // a few impact sounds are plenty
     })
     this.d.viewmodel.onShot()
     this.d.recoil.kick(weapon, aiming)
     this.d.shake.add(
-      weapon.id === WeaponId.Shotgun
-        ? 0.55
-        : heavy
-          ? 0.5
-          : weapon.fireMode === 'auto'
-            ? 0.13
-            : 0.32,
+      feel?.shake ??
+        (weaponLook(weaponId) === WeaponId.Shotgun
+          ? 0.55
+          : heavy
+            ? 0.5
+            : weapon.fireMode === 'auto'
+              ? 0.13
+              : 0.32),
     )
-    this.d.audio.gunshot(undefined, weapon.id)
-    if (weapon.fireMode === 'bolt') this.d.audio.play('bolt', { volume: 0.6, delay: 0.35 })
+    this.shotSound(weaponId)
+    if (weapon.fireMode === 'bolt') {
+      const cycle = feel?.cycle
+      this.d.audio.play('bolt', {
+        volume: 0.6,
+        delay: cycle?.delay ?? 0.35,
+        ...(cycle ? { rate: cycle.rate } : {}),
+      })
+    }
     if (weapon.fireMode === 'pump') this.d.audio.play('pump', { volume: 0.7, delay: 0.3 })
-    this.ejectCasing()
+    if (!feel?.noCasing) this.ejectCasing()
   }
 
-  /** A knife swing: swish, and a predicted stab + blood if it touches someone we see. */
-  private localSwing(shot: ShotEvent, range: number): void {
+  /**
+   * The bang of one shot, yours (no `from`) or someone else's: the gunshot of the original the
+   * weapon is modelled on, at this weapon's pitch and loudness. The crossbow only twangs.
+   */
+  private shotSound(id: WeaponId, from?: THREE.Vector3): void {
+    if (id === WeaponId.Crossbow) {
+      if (from) this.d.audio.playNear('twang', from, 0.8, 25)
+      else this.d.audio.play('twang', { volume: 0.7 })
+      return
+    }
+    this.d.audio.gunshot(from, weaponLook(id), FEEL[id])
+  }
+
+  /** A melee swing: swish, and a predicted stab + blood if it touches someone we see. */
+  private localSwing(shot: ShotEvent, id: WeaponId, range: number): void {
     this.d.viewmodel.onShot()
-    this.d.audio.play('swish', { volume: 0.7 })
+    this.d.audio.play('swish', swung(id, 0.7))
     let best: { distance: number; dir: { x: number; y: number; z: number } } | null = null
     for (const dir of shot.pellets) {
       for (const pose of this.d.remotes.visiblePoses().values()) {
@@ -138,7 +234,7 @@ export class ClientCombat {
       new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z),
       best.distance,
     )
-    this.d.audio.play('stab', { volume: 0.8 })
+    this.d.audio.play('stab', swung(id, 0.8))
     this.d.effects.bleed(at, new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z), false)
   }
 
@@ -187,9 +283,22 @@ export class ClientCombat {
     if (events.reloadStarted) {
       const total = weapon.reload
       const empty = weapon.ammo === 0
-      audio.play('reload.out', { volume: 0.7, delay: 0.12 })
-      audio.play('reload.in', { volume: 0.75, delay: Math.max(0.3, total - (empty ? 0.7 : 0.45)) })
-      if (empty) audio.play('reload.slide', { volume: 0.75, delay: Math.max(0.5, total - 0.28) })
+      if (weapon.id === WeaponId.Crossbow) {
+        // The string creaks back and latches (0.75 s in), then the new bolt clicks on to the rail.
+        audio.play('reload.slide', { volume: 0.5, delay: 0.58, rate: 0.7 })
+        audio.play('reload.in', { volume: 0.5, delay: Math.max(0.3, total - 0.7) })
+      } else if (FEEL[weapon.id]?.hinged) {
+        // Opened, loaded by hand, snapped shut.
+        audio.play('reload.out', { volume: 0.7, delay: 0.12 })
+        audio.play('reload.in', { volume: 0.75, delay: Math.max(0.3, total - 0.28) })
+      } else {
+        audio.play('reload.out', { volume: 0.7, delay: 0.12 })
+        audio.play('reload.in', {
+          volume: 0.75,
+          delay: Math.max(0.3, total - (empty ? 0.7 : 0.45)),
+        })
+        if (empty) audio.play('reload.slide', { volume: 0.75, delay: Math.max(0.5, total - 0.28) })
+      }
     }
   }
 
@@ -245,7 +354,8 @@ export class ClientCombat {
       case ServerMsg.ShotFired: {
         const from = this.d.remotes.muzzleOf(msg.shooterId)
         if (!from) break
-        if (msg.weapon === WeaponId.Claws) {
+        const look = weaponLook(msg.weapon)
+        if (look === WeaponId.Claws) {
           // A zombie lashing out: a swipe, and a slash if it got someone.
           this.d.audio.playNear('swish', from, 0.5, 12)
           if (msg.result === ShotResult.Player) {
@@ -255,12 +365,14 @@ export class ClientCombat {
           }
           break
         }
-        if (msg.weapon === WeaponId.Knife) {
-          // Someone else's knife: the swing, and the stab if it connected. No tracer.
-          this.d.audio.playNear('swish', from, 0.7, 15)
+        const feel = FEEL[msg.weapon]
+        if (look === WeaponId.Knife) {
+          // Someone else's knife (or bat, or axe): the swing, and the stab if it connected. No
+          // tracer.
+          this.d.audio.playNear('swish', from, 0.7 * (feel?.volume ?? 1), 15, 3, feel?.rate)
           if (msg.result === ShotResult.Player) {
             const at = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
-            this.d.audio.playNear('stab', at, 0.8, 20)
+            this.d.audio.playNear('stab', at, 0.8 * (feel?.volume ?? 1), 20, 3, feel?.rate)
             this.d.effects.bleed(at, at.clone().sub(from).normalize(), false)
           }
           break
@@ -272,7 +384,7 @@ export class ClientCombat {
               ? 'world'
               : 'nothing'
         const end = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
-        const heavy = msg.weapon === WeaponId.Sniper || msg.weapon === WeaponId.Shotgun
+        const heavy = isHeavy(msg.weapon)
         const first = !msg.pellet
         this.d.effects.shot(
           from,
@@ -281,13 +393,14 @@ export class ClientCombat {
           kind,
           heavy,
           false,
-          first,
+          first && !feel?.noFlash,
         )
         // An extra shotgun pellet: tracer and impact only, the shot was already heard.
         if (first) {
-          this.d.audio.gunshot(from, msg.weapon)
-          if (msg.weapon === WeaponId.Sniper) this.d.audio.playNear('bolt', from, 0.6, 25)
-          if (msg.weapon === WeaponId.Shotgun) this.d.audio.playNear('pump', from, 0.6, 25)
+          this.shotSound(msg.weapon, from)
+          const mode = WEAPONS[msg.weapon].fireMode
+          if (mode === 'bolt') this.d.audio.playNear('bolt', from, 0.6, 25, 3, feel?.cycle?.rate)
+          if (mode === 'pump') this.d.audio.playNear('pump', from, 0.6, 25)
           this.impactSound(end, kind)
           this.nearMiss(from, end)
         }
@@ -336,6 +449,7 @@ export class ClientCombat {
       case ServerMsg.Snapshot:
         this.d.audio.setHealth(msg.health, msg.self?.alive ?? true)
         this.d.hud.setHealth(msg.health)
+        this.health = msg.health
         this.d.hud.setDeathTimer(msg.respawnIn)
         this.isProtected = msg.protected
         break

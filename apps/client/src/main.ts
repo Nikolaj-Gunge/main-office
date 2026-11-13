@@ -1,4 +1,5 @@
 import {
+  type BaseWeaponId,
   Button,
   bodyParts,
   ClientMsg,
@@ -21,10 +22,12 @@ import {
   RAPIER,
   ServerMsg,
   setGates,
+  syncForest,
   TEAMS,
   TICK_DT,
   WEAPONS,
   WeaponId,
+  weaponLook,
   weaponSway,
   ZombieKind,
 } from '@office-fps/shared'
@@ -41,6 +44,7 @@ import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { Spectator } from './game/spectator.ts'
+import { SurvivalClient } from './game/survival-client.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
@@ -94,7 +98,9 @@ const requestedMap = params.get('map') ?? ''
 const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
 const map = loadMap(mapId)
 const physics = createPhysicsWorld(map)
-const minimap = new Minimap(hudRoot, map)
+// Survival's world is far too big for the minimap: it has a compass and a real map instead.
+const minimap = map.survival ? null : new Minimap(hudRoot, map)
+if (map.survival) syncForest(physics, [{ x: map.spawns[0]?.pos[0] ?? 0, z: map.spawns[0]?.pos[2] ?? 0 }])
 
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
@@ -107,7 +113,8 @@ scene.add(mapObject)
 // Zombies mode: the current goal area in the world, and a waypoint to it on the HUD.
 const coopZone = new CoopZoneMarker()
 scene.add(coopZone.root)
-createLighting(map, scene)
+// Survival lights itself (see SurvivalClient): a moon that follows you, lamps only nearby.
+if (!map.survival) createLighting(map, scene)
 // The map never moves: draw the sun's (big) shadow map once instead of every frame — the
 // single most expensive thing a laptop GPU was doing each frame.
 pixels.renderer.shadowMap.autoUpdate = false
@@ -172,6 +179,36 @@ const effects = new Effects(scene, (origin, dir, maxDistance) => {
     : null
 })
 effects.onCasingHit = (at) => audio.playNear('casing', at, 0.45, 15)
+const survival = map.survival
+  ? new SurvivalClient({
+      map,
+      def: map.survival,
+      scene,
+      camera,
+      physics,
+      sky,
+      hudRoot,
+      audio,
+      send: (action) => net.send({ type: ClientMsg.Action, action }),
+    })
+  : null
+/** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
+let uiOpen = false
+if (survival) {
+  survival.hud.onModalChange = (open) => {
+    uiOpen = open
+    if (open) document.exitPointerLock()
+    else closeMenu()
+  }
+  survival.hud.onSound = (cue) => {
+    if (cue === 'open' || cue === 'close') audio.play('reload.in', { bus: 'ui', volume: 0.3, rate: cue === 'open' ? 1.3 : 1 })
+    else if (cue === 'use') audio.play('pickup', { bus: 'ui', volume: 0.5 })
+    else if (cue === 'deny') audio.play('dryfire', { bus: 'ui', volume: 0.5 })
+    else if (cue === 'coin') audio.play('casing', { bus: 'ui', volume: 0.6 })
+    else if (cue === 'quest') audio.play('hit.head', { bus: 'ui', volume: 0.5, rate: 0.8 })
+    else if (cue === 'story') audio.play('dread', { bus: 'ui', volume: 0.35, rate: 1.2 })
+  }
+}
 const debugHitboxes = new DebugHitboxes(scene)
 const worldItems = new WorldItemsView(scene)
 /** Ignore item sounds for the batch the server sends right after joining. */
@@ -190,7 +227,7 @@ remotes.onGroan = (at) => audio.playNear('groan', at, 0.9, 28)
 // Ragdolls: players who die fall over instead of vanishing. The Kill message (which arrives
 // ~100 ms before we draw the death) says who shot them, so the body flies the right way.
 const ragdolls = new Ragdolls(scene, map)
-const PUSH_SPEED: Record<WeaponId, number> = {
+const PUSH_SPEED: Record<BaseWeaponId, number> = {
   [WeaponId.Handgun]: 3,
   [WeaponId.Rifle]: 3.5,
   [WeaponId.Sniper]: 7,
@@ -208,7 +245,7 @@ remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
   const dir = kill ? at.clone().sub(kill.from).setY(0) : new THREE.Vector3()
   if (dir.lengthSq() < 1e-6) dir.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw)) // falls backwards
   dir.normalize().setY(0.25).normalize()
-  const speed = (kill ? PUSH_SPEED[kill.weapon] : 2) + (kill?.headshot ? 1 : 0)
+  const speed = (kill ? PUSH_SPEED[weaponLook(kill.weapon)] : 2) + (kill?.headshot ? 1 : 0)
   const parts = bodyParts({ ...pose, scale })
   ragdolls.spawn(skin, colorIndex, parts, scale, velocity, {
     dir,
@@ -247,6 +284,7 @@ const net = new Connection({
       roster.clear()
       worldItems.clear()
       menu.setJoined(false)
+      survival?.hud.setVisible(false)
       const fatal = reason?.includes('Protocol') ?? false
       const text = reason
         ? fatal
@@ -260,6 +298,7 @@ const net = new Connection({
   },
   onMessage: (msg) => {
     combat.onMessage(msg)
+    if (survival?.onMessage(msg)) return
     switch (msg.type) {
       case ServerMsg.Welcome:
         if (msg.mapId !== map.id && msg.mapId in MAPS) {
@@ -277,6 +316,7 @@ const net = new Connection({
         menu.setJoined(true)
         menu.setStatus('')
         worldItems.clear()
+        survival?.reset()
         itemSoundsFrom = performance.now() + 500
         overlay.setBanner(null)
         everJoined = true
@@ -285,7 +325,7 @@ const net = new Connection({
       case ServerMsg.PlayerJoined: {
         // Zombies (zombies mode) are drawn and named as such, and stay off the scoreboard.
         const kind = msg.kind ?? 0
-        const name = kind === ZombieKind.Runner ? 'Runner' : kind !== 0 ? 'Zombie' : msg.name
+        const name = kind === 0 ? msg.name : (ZOMBIE_NAMES[kind] ?? 'Zombie')
         combat.setName(msg.id, name)
         if (kind === 0) roster.set(msg.id, { name: msg.name, color: msg.color })
         else roster.delete(msg.id)
@@ -335,12 +375,19 @@ const net = new Connection({
       case ServerMsg.ShotFired: {
         // Shooting gives your position away on the minimap.
         const at = remotes.muzzleOf(msg.shooterId)
-        if (at) minimap.ping(at.x, at.z)
+        if (at) minimap?.ping(at.x, at.z)
         break
       }
     }
   },
 })
+
+const ZOMBIE_NAMES: Record<number, string> = {
+  [ZombieKind.Runner]: 'Runner',
+  [ZombieKind.Brute]: 'Brute',
+  [ZombieKind.Screamer]: 'Screamer',
+  [ZombieKind.Stalker]: '???',
+}
 
 /** Server game rules (admin page): movement, shooting, looks and kill jingles. */
 let lastRules: GameRules | null = null
@@ -403,6 +450,9 @@ function onMatch(next: MatchInfo) {
   const wasTeam = myTeam()
   match = next
   syncCoop(next)
+  survival?.setShared(next.survival)
+  survival?.hud.setVisible(joined && next.mode === 'survival')
+  document.body.classList.toggle('survival', next.mode === 'survival')
   menu.setMode(next.mode)
   matchHud.update(next, net.playerId, (id) => roster.get(id)?.name ?? `Player ${id}`)
   const teams = TEAMS[next.mode]
@@ -418,7 +468,7 @@ function onMatch(next: MatchInfo) {
 let gatesShown = -1
 function syncCoop(next: MatchInfo) {
   const coop = next.mode === 'zombies' ? next.coop : undefined
-  const open = coop ? coop.gates : 0xffff
+  const open = coop ? coop.gates : (next.survival?.gates ?? 0xffff)
   if (open !== gatesShown) {
     gatesShown = open
     const isOpen = (id: number) => (open & (1 << id)) !== 0
@@ -472,7 +522,7 @@ menu.onPlay((name) => {
 })
 // Esc releases the mouse: show the menu. Clicking Resume locks it again.
 look.onLockChange = (locked) => {
-  menu.setVisible(!locked && !resumeByClick)
+  menu.setVisible(!locked && !resumeByClick && !uiOpen)
   if (locked) {
     resumeByClick = false
     overlay.setBanner(null)
@@ -527,9 +577,27 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('keydown', (e) => {
   if (menu.isCapturing) return // rebinding a key in the menu
   const action = actionFor(settings.keybinds, e.code)
+  const surviving = survival !== null && joined && match?.mode === 'survival'
+  if (surviving && survival && !menu.visible) {
+    // The backpack, the shop, the map and conversations get first go at every key.
+    if (e.code === 'Escape' ? survival.hud.close() : survival.hud.key(e.code)) {
+      e.preventDefault()
+      if (!e.repeat && (action === 'scoreboard' || action === 'inventory')) survival.hud.toggleBackpack()
+      return
+    }
+    if (!e.repeat) {
+      if (action === 'scoreboard' || action === 'inventory') {
+        e.preventDefault()
+        survival.hud.toggleBackpack()
+        return
+      }
+      if (action === 'map') return survival.hud.toggleMap()
+      if (action === 'light') return survival.toggleTorch()
+    }
+  }
   if (action === 'scoreboard') {
     e.preventDefault() // Tab would move focus
-    scoreboardHeld = true
+    scoreboardHeld = !surviving
   }
   if (e.repeat) return
   if (e.code === 'Escape' && menu.visible && menu.isJoined && !look.locked) {
@@ -558,7 +626,7 @@ window.addEventListener('keydown', (e) => {
     menu.refresh()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
   }
-  if (action === 'mute') {
+  if (action === 'mute' || action === 'map') {
     audio.muted = !audio.muted
     overlay.flash(audio.muted ? 'Sound off (M)' : 'Sound on (M)')
   }
@@ -590,6 +658,11 @@ let lastPrimary: number | null = null
 /** Swap prompt when standing at a weapon with a full slot; pickup sound when it changes. */
 function updatePickups() {
   const s = player.state
+  if (survival && match?.mode === 'survival') {
+    const key = keyLabel(settings.keybinds.use[0] ?? 'KeyE')
+    hud.setPickupPrompt(survival.prompt && joined ? `[${key}] ${survival.prompt}` : null)
+    return
+  }
   const primary = s.weapon.id !== WeaponId.Handgun ? s.weapon.id : (s.holstered?.id ?? null)
   if (s.alive && primary !== null && primary !== lastPrimary && joined) {
     audio.play('reload.slide', { volume: 0.7 })
@@ -623,9 +696,11 @@ pixels.renderer.setAnimationLoop(() => {
   accumulator += dt
   let ticks = 0
   while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
-    const input = noclip
-      ? { buttons: 0, yaw: look.yaw, pitch: look.pitch }
-      : samplePlayerInput(keys, look, settings.keybinds, aim)
+    const sampled = samplePlayerInput(keys, look, settings.keybinds, aim)
+    // A survival screen is open: stand still. Talking: the digits answer, they don't draw guns.
+    if (uiOpen) sampled.buttons = 0
+    else if (survival?.hud.inDialog) sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
+    const input = noclip ? { buttons: 0, yaw: look.yaw, pitch: look.pitch } : sampled
     const { command, events } = player.tick(input, remotes.renderTick)
     const aiming = (input.buttons & Button.Aim) !== 0
     if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
@@ -686,6 +761,9 @@ pixels.renderer.setAnimationLoop(() => {
   audio.update(dt)
   remotes.update(now, camera.position)
   updateCorn(now / 1000, [...remotes.visiblePoses().values(), camera.position], camera.position)
+  if (survival && survival.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
+    pixels.renderer.shadowMap.needsUpdate = true
+  }
   ragdolls.update(dt)
   damageNumbers.update(dt)
   coopZone.update(dt)
@@ -699,10 +777,10 @@ pixels.renderer.setAnimationLoop(() => {
     stage ? waypointText(stage.goal) : '',
   )
   worldItems.update(dt)
-  minimap.setItems(worldItems.positions())
+  minimap?.setItems(worldItems.positions())
   updatePickups()
-  minimap.update(dt, player.state.pos, look.yaw)
-  minimap.setVisible(joined && !noclip)
+  minimap?.update(dt, player.state.pos, look.yaw)
+  minimap?.setVisible(joined && !noclip)
   scoreboard.show(scoreboardHeld && joined, roster, net.playerId)
   combat.update(
     dt,
@@ -764,6 +842,7 @@ if (import.meta.env.DEV) {
       worldItems,
       ragdolls,
       damageNumbers,
+      survival,
     },
   })
 }

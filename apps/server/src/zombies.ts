@@ -58,12 +58,12 @@ const DIFFICULTY = {
   hard: { count: 1.35, health: 1.3, claws: 38 },
 } as const
 
-const KIND_HEALTH: Record<ZombieKind, number> = {
+const KIND_HEALTH: Partial<Record<ZombieKind, number>> = {
   [ZombieKind.Walker]: 100,
   [ZombieKind.Runner]: 60,
 }
 /** Walkers shamble, runners sprint (a little slower than you do). */
-const KIND_SPEED: Record<ZombieKind, number> = {
+const KIND_SPEED: Partial<Record<ZombieKind, number>> = {
   [ZombieKind.Walker]: 0.62,
   [ZombieKind.Runner]: 0.92,
 }
@@ -365,7 +365,7 @@ export class ZombieDirector {
     const nearest = team[0]?.state.pos
     const yaw = nearest ? Math.atan2(-(nearest.x - choice[0]), -(nearest.z - choice[2])) : 0
     const spot: MapSpawn = { pos: [choice[0] + jitter(), choice[1], choice[2] + jitter()], yaw }
-    this.game.placeZombie(zombie, spot, Math.round(KIND_HEALTH[kind] * this.difficulty.health))
+    this.game.placeZombie(zombie, spot, Math.round((KIND_HEALTH[kind] ?? 100) * this.difficulty.health))
     return true
   }
 
@@ -405,7 +405,7 @@ export class ZombieDirector {
   // --- What the game asks -----------------------------------------------------------------------
 
   thinkZombie(zombie: ServerPlayer): InputCommand | null {
-    const brain = zombie.zombie
+    const brain = zombie.zombie instanceof ZombieBrain ? zombie.zombie : undefined
     if (!brain) return null
     const pos = zombie.state.pos
     let target: Point | null = null
@@ -529,7 +529,7 @@ export class ZombieDirector {
   }
 
   speedFactor(player: ServerPlayer): number {
-    return player.zombie ? KIND_SPEED[player.zombie.kind] : 1
+    return player.zombie ? (KIND_SPEED[player.zombie.kind as ZombieKind] ?? 0.62) : 1
   }
 
   /** Everyone down? (Nobody on the team at all doesn't count.) */

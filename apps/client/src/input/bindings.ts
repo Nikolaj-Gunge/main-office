@@ -26,9 +26,13 @@ export const ACTIONS = [
   { id: 'secondary', label: 'Handgun', button: Button.Slot2, defaults: ['Digit2'] },
   { id: 'knife', label: 'Knife', button: Button.Slot3, defaults: ['Digit3'] },
   { id: 'swap', label: 'Switch weapon', button: Button.SwapWeapon, defaults: ['KeyQ', 'Wheel'] },
-  { id: 'use', label: 'Swap for weapon on floor', button: Button.Use, defaults: ['KeyE'] },
+  { id: 'use', label: 'Use / take / talk', button: Button.Use, defaults: ['KeyE'] },
   { id: 'scoreboard', label: 'Scoreboard (hold)', button: 0, defaults: ['Tab'] },
-  { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyM'] },
+  // Survival mode (the map key mutes in the other modes, where there is no map).
+  { id: 'inventory', label: 'Backpack (survival)', button: 0, defaults: ['KeyI'] },
+  { id: 'map', label: 'Map (survival)', button: 0, defaults: ['KeyM'] },
+  { id: 'light', label: 'Torch (survival)', button: 0, defaults: ['KeyF'] },
+  { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyN'] },
 ] as const
 
 export type ActionId = (typeof ACTIONS)[number]['id']

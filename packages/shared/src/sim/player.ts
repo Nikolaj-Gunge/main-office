@@ -55,6 +55,10 @@ export interface PlayerState {
   holstered: WeaponState | null
   /** The third item you carry (usually the knife), or null. */
   pocket: WeaponState | null
+  /** Breath for sprinting, 0–1 (only runs down when the config limits sprinting). */
+  stamina: number
+  /** Out of breath: no sprinting until some of it is back. */
+  winded: boolean
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -77,6 +81,9 @@ export interface StepEvents {
   /** Switched weapons this tick. */
   switched: boolean
 }
+
+/** Winded until this much breath is back. */
+const WIND_BACK = 0.3
 
 /** Gap Rapier keeps between the capsule and the world. Feet sit this far above the floor. */
 const SKIN = 0.02
@@ -103,6 +110,8 @@ export function createPlayerState(
     weapon,
     holstered,
     pocket,
+    stamina: 1,
+    winded: false,
   }
 }
 
@@ -476,7 +485,17 @@ export function stepPlayer(
     forward > 0 &&
     !state.crouched &&
     !aiming &&
-    !hasButton(buttons, Button.Fire)
+    !hasButton(buttons, Button.Fire) &&
+    !state.winded
+  if (c.sprintSeconds > 0) {
+    if (sprinting && wishLen > 0) {
+      state.stamina = Math.max(0, state.stamina - dt / c.sprintSeconds)
+      if (state.stamina === 0) state.winded = true
+    } else {
+      state.stamina = Math.min(1, state.stamina + dt / c.breathSeconds)
+      if (state.stamina >= WIND_BACK) state.winded = false
+    }
+  }
   const handling = WEAPONS[state.weapon.id].moveSpeedFactor * (aiming ? 0.6 : 1)
   const maxSpeed =
     (state.crouched ? c.crouchSpeed : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)) * handling
@@ -569,11 +588,11 @@ export function stepPlayer(
   // 1 = main gun, 2 = handgun, 3 = knife, Q / wheel = the last one you had.
   const items = carried(state)
   const target = hasButton(pressed, Button.Slot1)
-    ? items.find((w) => w.id !== WeaponId.Handgun && w.id !== WeaponId.Knife)
+    ? items.find((w) => WEAPONS[w.id].slot === 'primary')
     : hasButton(pressed, Button.Slot2)
-      ? items.find((w) => w.id === WeaponId.Handgun)
+      ? items.find((w) => WEAPONS[w.id].slot === 'sidearm')
       : hasButton(pressed, Button.Slot3)
-        ? items.find((w) => w.id === WeaponId.Knife)
+        ? items.find((w) => WEAPONS[w.id].slot === 'melee')
         : hasButton(pressed, Button.SwapWeapon)
           ? (state.holstered ?? undefined)
           : undefined

@@ -1,5 +1,6 @@
 import { WeaponId } from '@office-fps/shared'
 import * as THREE from 'three'
+import { survivalWorldModel } from './survival-guns.ts'
 
 const STEEL = 0x2b2d33
 const FRAME = 0x3a3d45
@@ -86,6 +87,14 @@ export function buildGunModel(id: WeaponId): THREE.Group {
         box(0.02, 0.05, 0.14, FRAME, 0, 0.08, 0.18), // collapsed stock
       )
       break
+    case WeaponId.Knife:
+    case WeaponId.Claws:
+      break // never lie around
+    default: {
+      // Survival weapons: their first-person model without the hands (survival-guns.ts).
+      const model = survivalWorldModel(id)
+      if (model) g.add(model)
+    }
   }
   return g
 }

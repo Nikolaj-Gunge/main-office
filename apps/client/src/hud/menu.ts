@@ -43,6 +43,8 @@ const MODE_TIPS: Record<ModeId, string> = {
   infection: 'Infection: the infected run faster with knives. Whoever they kill joins them.',
   zombies:
     'Zombies (co-op): fight through the building together. Follow the green marker. If everyone goes down, you retry the stage.',
+  survival:
+    'Survival: Deadwood at night. Scavenge, eat, drink, stay quiet. E takes and talks, Tab opens your backpack, F is your torch, M the map. Follow the story to get out alive.',
 }
 
 export class Menu {

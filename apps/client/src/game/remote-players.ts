@@ -6,6 +6,8 @@ import {
   ServerClock,
   type SkinId,
   TICK_RATE,
+  ZombieKind,
+  zombieScale,
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { Avatar, type BodyLook } from '../render/avatar.ts'
@@ -140,7 +142,8 @@ export class RemotePlayers {
       const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
       p.avatar.root.visible = p.shown?.alive ?? false
-      if (p.shown) p.avatar.update(p.shown, nowMs, viewer, this.scale)
+      const size = this.scale * zombieScale(p.kind)
+      if (p.shown) p.avatar.update(p.shown, nowMs, viewer, size)
       if (before && p.shown && dt > 0) {
         if (before.alive && p.shown.alive) {
           p.velocity.set(p.shown.x - before.x, p.shown.y - before.y, p.shown.z - before.z)
@@ -149,7 +152,7 @@ export class RemotePlayers {
           if (p.velocity.length() > 20) p.velocity.set(0, 0, 0)
         }
         if (before.alive && !p.shown.alive) {
-          this.onDeath?.(id, before, p.velocity, p.color, lookOf(p.kind, this.skin), this.scale)
+          this.onDeath?.(id, before, p.velocity, p.color, lookOf(p.kind, this.skin), size)
         }
         this.detectSteps(p, before, p.shown, dt)
         if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
@@ -171,7 +174,7 @@ export class RemotePlayers {
           stride: s.stride,
           speed: s.speed,
           grounded: s.grounded,
-          scale: this.scale,
+          scale: this.scale * zombieScale(p.kind),
         })
       }
     }
@@ -216,6 +219,16 @@ export class RemotePlayers {
     return this.players.get(id)?.kind ?? 0
   }
 
+  /** People (not zombies) whose torch is on, as drawn: where they stand and where they look. */
+  torches(): { x: number; y: number; z: number; yaw: number; pitch: number }[] {
+    const out: { x: number; y: number; z: number; yaw: number; pitch: number }[] = []
+    for (const p of this.players.values()) {
+      const s = p.shown
+      if (s?.alive && s.light) out.push({ x: s.x, y: s.y + 1.5, z: s.z, yaw: s.yaw, pitch: s.pitch })
+    }
+    return out
+  }
+
   nameOf(id: number): string | undefined {
     return this.players.get(id)?.name
   }
@@ -226,5 +239,10 @@ export class RemotePlayers {
 }
 
 function lookOf(kind: number, skin: SkinId): BodyLook {
-  return kind === 0 ? skin : kind === 2 ? 'runner' : 'zombie'
+  if (kind === 0) return skin
+  if (kind === ZombieKind.Runner) return 'runner'
+  if (kind === ZombieKind.Brute) return 'brute'
+  if (kind === ZombieKind.Screamer) return 'screamer'
+  if (kind === ZombieKind.Stalker) return 'stalker'
+  return 'zombie'
 }

@@ -5,6 +5,14 @@ import type { PlayerInput } from '../sim/input.ts'
 import type { PlayerState } from '../sim/player.ts'
 import type { WeaponState } from '../sim/weapon-sim.ts'
 import type { WeaponId } from '../sim/weapons.ts'
+import { ITEM_LIST, itemIndex } from '../survival/items.ts'
+import type {
+  Dialog,
+  LootItem,
+  Notice,
+  SurvivalAction,
+  SurvivalSelf,
+} from '../survival/protocol.ts'
 import { BinaryReader, BinaryWriter } from './binary.ts'
 import { decodePitch, decodeYaw, encodePitch, encodeYaw } from './quantize.ts'
 
@@ -14,6 +22,8 @@ export const ClientMsg = {
   Input: 0x02,
   Ping: 0x03,
   SetDebug: 0x04,
+  /** Survival: something done from the inventory, a shop or a conversation. */
+  Action: 0x05,
 } as const
 export type ClientMsg = (typeof ClientMsg)[keyof typeof ClientMsg]
 
@@ -34,6 +44,11 @@ export const ServerMsg = {
   ItemRemove: 0x8d,
   Rules: 0x8e,
   Match: 0x8f,
+  // Survival mode:
+  Survival: 0x90,
+  Loot: 0x91,
+  Notice: 0x92,
+  Dialog: 0x93,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -73,6 +88,8 @@ export interface RemotePlayerState {
   /** Walk cycle 0–1 and horizontal speed (m/s): drive the running animation and its hitboxes. */
   stride: number
   speed: number
+  /** Survival: their torch is on. */
+  light?: boolean
 }
 
 /** What a shot hit, for drawing tracers and impacts on other clients. */
@@ -89,6 +106,7 @@ export type ClientMessage =
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
   | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
+  | { type: typeof ClientMsg.Action; action: SurvivalAction }
 
 export interface ScoreEntry {
   id: number
@@ -181,6 +199,13 @@ export type ServerMessage =
       yaw: number
     }
   | { type: typeof ServerMsg.ItemRemove; id: number }
+  /** Survival: your backpack, hunger and so on (whenever they change). */
+  | { type: typeof ServerMsg.Survival; self: SurvivalSelf }
+  /** Survival: things lying around near you that appeared (`add`) or went (`remove`: ids). */
+  | { type: typeof ServerMsg.Loot; add: LootItem[]; remove: number[] }
+  | { type: typeof ServerMsg.Notice; notice: Notice }
+  /** Survival: somebody talks to you (null closes the conversation). */
+  | { type: typeof ServerMsg.Dialog; dialog: Dialog | null }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -195,6 +220,8 @@ const FLAG_GROUNDED = 2
 const FLAG_DEAD = 4
 const FLAG_PROTECTED = 8
 const FLAG_AIMING = 16
+const FLAG_LIGHT = 32
+const FLAG_WINDED = 64
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -204,9 +231,12 @@ function writePlayerState(w: BinaryWriter, s: PlayerState): void {
   w.f64(s.yaw).f64(s.pitch)
   w.f64(s.crouchAmount).f64(s.airTime).f64(s.jumpBuffer)
   w.u8(
-    (s.crouched ? FLAG_CROUCHED : 0) | (s.grounded ? FLAG_GROUNDED : 0) | (s.alive ? 0 : FLAG_DEAD),
+    (s.crouched ? FLAG_CROUCHED : 0) |
+      (s.grounded ? FLAG_GROUNDED : 0) |
+      (s.alive ? 0 : FLAG_DEAD) |
+      (s.winded ? FLAG_WINDED : 0),
   )
-  w.u16(s.prevButtons)
+  w.u16(s.prevButtons).f64(s.stamina)
   writeWeapon(w, s.weapon)
   w.u8(s.holstered ? 1 : 0)
   if (s.holstered) writeWeapon(w, s.holstered)
@@ -253,6 +283,7 @@ function readPlayerState(r: BinaryReader): PlayerState {
   const jumpBuffer = r.f64()
   const flags = r.u8()
   const prevButtons = r.u16()
+  const stamina = r.f64()
   const weapon = readWeapon(r)
   const holstered = r.u8() ? readWeapon(r) : null
   const pocket = r.u8() ? readWeapon(r) : null
@@ -271,6 +302,8 @@ function readPlayerState(r: BinaryReader): PlayerState {
     weapon,
     holstered,
     pocket,
+    stamina,
+    winded: (flags & FLAG_WINDED) !== 0,
   }
 }
 
@@ -284,7 +317,8 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
     (p.grounded ? FLAG_GROUNDED : 0) |
       (p.alive ? 0 : FLAG_DEAD) |
       (p.protected ? FLAG_PROTECTED : 0) |
-      (p.aiming ? FLAG_AIMING : 0),
+      (p.aiming ? FLAG_AIMING : 0) |
+      (p.light ? FLAG_LIGHT : 0),
   )
   w.u8(p.weapon)
   w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
@@ -318,6 +352,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
     protected: (flags & FLAG_PROTECTED) !== 0,
     aiming: (flags & FLAG_AIMING) !== 0,
     weapon,
+    ...(flags & FLAG_LIGHT ? { light: true } : {}),
   }
 }
 
@@ -371,6 +406,9 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
     case ClientMsg.Ping:
       w.f64(msg.clientTime).u16(Math.max(0, Math.min(65535, Math.round(msg.rtt))))
       break
+    case ClientMsg.Action:
+      w.str16(JSON.stringify(msg.action))
+      break
   }
   return w.finish()
 }
@@ -399,6 +437,8 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
       return { type, flags: r.u8() }
     case ClientMsg.Ping:
       return { type, clientTime: r.f64(), rtt: r.u16() }
+    case ClientMsg.Action:
+      return { type, action: JSON.parse(r.str16()) as SurvivalAction }
     default:
       throw new Error(`Unknown client message type 0x${type.toString(16)}`)
   }
@@ -470,6 +510,24 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       break
     case ServerMsg.Match:
       w.str16(JSON.stringify(msg.match))
+      break
+    case ServerMsg.Survival:
+      w.str16(JSON.stringify(msg.self))
+      break
+    case ServerMsg.Notice:
+      w.str16(JSON.stringify(msg.notice))
+      break
+    case ServerMsg.Dialog:
+      w.str16(JSON.stringify(msg.dialog))
+      break
+    case ServerMsg.Loot:
+      w.u16(msg.add.length)
+      for (const l of msg.add) {
+        w.u32(l.id).u8(itemIndex(l.item)).u16(Math.min(65535, l.n))
+        w.f32(l.x).f32(l.y).f32(l.z)
+      }
+      w.u16(msg.remove.length)
+      for (const id of msg.remove) w.u32(id)
       break
     case ServerMsg.Scoreboard:
       w.u8(msg.entries.length)
@@ -577,6 +635,23 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       return { type, rules: mergeRules(DEFAULT_RULES, JSON.parse(r.str16())) }
     case ServerMsg.Match:
       return { type, match: JSON.parse(r.str16()) as MatchInfo }
+    case ServerMsg.Survival:
+      return { type, self: JSON.parse(r.str16()) as SurvivalSelf }
+    case ServerMsg.Notice:
+      return { type, notice: JSON.parse(r.str16()) as Notice }
+    case ServerMsg.Dialog:
+      return { type, dialog: JSON.parse(r.str16()) as Dialog | null }
+    case ServerMsg.Loot: {
+      const add: LootItem[] = []
+      for (let i = r.u16(); i > 0; i--) {
+        const id = r.u32()
+        const item = ITEM_LIST[r.u8()]?.id ?? 'scrap'
+        add.push({ id, item, n: r.u16(), x: r.f32(), y: r.f32(), z: r.f32() })
+      }
+      const remove: number[] = []
+      for (let i = r.u16(); i > 0; i--) remove.push(r.u32())
+      return { type, add, remove }
+    }
     case ServerMsg.Scoreboard: {
       const count = r.u8()
       const entries: ScoreEntry[] = []

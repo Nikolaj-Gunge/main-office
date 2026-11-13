@@ -1,4 +1,4 @@
-import { HitZone, MAX_PLAYERS, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
+import { HitZone, MAX_PLAYERS, WEAPONS, type WeaponState } from '@office-fps/shared'
 
 const KILLFEED_SECONDS = 6
 const KILLFEED_MAX = 5
@@ -113,20 +113,18 @@ export class CombatHud {
     const w = carried[0]
     if (!w) return
     const def = WEAPONS[w.id]
-    // "1 RIFLE · 2 HANDGUN · 3 KNIFE" with the one in hand highlighted; "1 —" when empty.
-    const primary = carried.find((x) => x.id !== WeaponId.Handgun && x.id !== WeaponId.Knife)
-    const slotKey = `${primary?.id ?? '-'}${w.id}`
+    // "1 RIFLE · 2 HANDGUN · 3 KNIFE" with the one in hand highlighted; "1 —" for an empty slot.
+    const slots = (['primary', 'sidearm', 'melee'] as const).map((slot) =>
+      carried.find((x) => WEAPONS[x.id].slot === slot),
+    )
+    const slotKey = `${slots.map((x) => x?.id ?? '-').join()}:${w.id}`
     if (this.slots.dataset.text !== slotKey) {
       this.slots.dataset.text = slotKey
       this.slots.innerHTML = ''
-      const rows: [string, string, boolean][] = [
-        ['1', primary ? WEAPONS[primary.id].name.toUpperCase() : '—', primary === w],
-        ['2', 'HANDGUN', w.id === WeaponId.Handgun],
-        ['3', 'KNIFE', w.id === WeaponId.Knife],
-      ]
-      for (const [slot, name, active] of rows) {
-        el('span', active ? 'slot active' : 'slot', this.slots).textContent = `${slot} ${name}`
-      }
+      slots.forEach((item, i) => {
+        const name = item ? WEAPONS[item.id].name.toUpperCase() : '—'
+        el('span', item === w ? 'slot active' : 'slot', this.slots).textContent = `${i + 1} ${name}`
+      })
     }
     const melee = def.fireMode === 'melee'
     setText(this.ammoCount, melee ? '—' : String(w.ammo))

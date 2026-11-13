@@ -1,3 +1,5 @@
+import type { SurvivalDef } from '../survival/types.ts'
+
 export type Vec3 = readonly [number, number, number]
 
 /** Surface materials. The client maps each to a texture; later the server maps them to impact/penetration rules. */
@@ -34,6 +36,14 @@ export const MATERIALS = [
   'corn',
   'hay',
   'barn',
+  // Survival (Deadwood)
+  'asphalt',
+  'log',
+  'shingle',
+  'brick',
+  'rust',
+  'canvas',
+  'sandbag',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
@@ -105,6 +115,8 @@ export interface MapPickup {
 }
 
 export interface MapDef {
+  /** Survival mode: the open world this map's boxes stand in (terrain, forest, places). */
+  survival?: SurvivalDef
   id: string
   name: string
   boxes: MapBox[]

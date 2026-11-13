@@ -33,6 +33,7 @@ import {
   type ServerMessage,
   ServerMsg,
   type ShotEvent,
+  type SurvivalAction,
   ShotResult,
   SNAPSHOT_RATE,
   type SpawnWeapon,
@@ -49,13 +50,20 @@ import {
   type WeaponState,
   weaponRulesFor,
   ZONE_MULTIPLIER,
+  zombieScale,
 } from '@office-fps/shared'
 import { BOT_NAMES, BotBrain } from './bots.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
 import { SpawnPicker } from './spawning.ts'
-import type { ZombieBrain } from './zombie-brain.ts'
+
+
+/** What runs a zombie (zombies mode's brain, or one of survival's dead). */
+export interface ZombieMind {
+  kind: number
+  face(yaw: number): void
+}
 
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
 export interface GameClient {
@@ -98,7 +106,7 @@ interface ServerPlayer {
   /** Shooting-range dummy: stands exactly here, never moves, turns or shoots. */
   dummy?: MapSpawn
   /** Zombies mode: one of the horde (server-run, see zombies.ts). */
-  zombie?: ZombieBrain
+  zombie?: ZombieMind
   /** Health on (re)spawn. */
   maxHealth: number
 }
@@ -128,6 +136,8 @@ const MAX_COMMANDS_PER_MESSAGE = 16
 const TICKS_PER_SNAPSHOT = Math.max(1, Math.round(TICK_RATE / SNAPSHOT_RATE))
 
 export const MAX_HEALTH = 100
+/** Where a headshot doesn't kill outright (survival's dead), it does this many times the damage. */
+const HEAD_MULTIPLIER = 4
 export const SPAWN_PROTECTION_SECONDS = 2
 /**
  * How far back a shot may be checked (s). Covers ~300 ms RTT + 100 ms interpolation; beyond
@@ -274,10 +284,15 @@ export class Game {
   /** Movement and weapon rules for one player (the infected run faster). */
   applyRules(player: ServerPlayer): void {
     const speedUp = this.match.speedFactor(player)
+    const size = zombieScale(player.zombie?.kind ?? 0)
     player.body.configure(
-      speedUp === 1
+      speedUp === 1 && size === 1
         ? this.movement
-        : movementFor({ ...this.rulesValue, speed: this.rulesValue.speed * speedUp }),
+        : movementFor({
+            ...this.rulesValue,
+            speed: this.rulesValue.speed * speedUp,
+            playerScale: this.rulesValue.playerScale * size,
+          }),
     )
     player.body.weaponRules = this.weaponRules
   }
@@ -303,7 +318,7 @@ export class Game {
   }
 
   /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
-  join(rawName: string, client: GameClient, dummy?: MapSpawn, zombie?: ZombieBrain): number | null {
+  join(rawName: string, client: GameClient, dummy?: MapSpawn, zombie?: ZombieMind): number | null {
     if (this.players.size >= MAX_PLAYERS) {
       // A person always gets in: a zombie or a bot gives up its place.
       const bot =
@@ -377,6 +392,7 @@ export class Game {
   leave(id: number): void {
     const player = this.players.get(id)
     if (!player) return
+    this.match.onLeave(player)
     player.body.free()
     this.players.delete(id)
     this.zombieLooks.delete(id)
@@ -408,6 +424,17 @@ export class Game {
     if (player) player.debugFlags = flags
   }
 
+  /** Survival: something done from the backpack, a shop or a conversation. */
+  handleAction(id: number, action: SurvivalAction): void {
+    const player = this.players.get(id)
+    if (player) this.match.onAction(player, action)
+  }
+
+  /** One client. */
+  sendTo(player: ServerPlayer, msg: ServerMessage): void {
+    send(player.client, msg)
+  }
+
   /** Advances the world one fixed tick. */
   step(): void {
     this.tick++
@@ -425,8 +452,13 @@ export class Game {
         const walked = Math.hypot(player.state.pos.x - bx, player.state.pos.z - bz)
         if (walked < 1) player.stride = (player.stride + walked / STRIDE_LENGTH) % 1
         player.ackSeq = command.seq
-        if (events.shot) this.fire(player, events.shot, command.viewTick)
-        this.handlePickups(player, usePressed)
+        if (events.shot) {
+          this.fire(player, events.shot, command.viewTick)
+          this.match.onShot(player)
+        }
+        if (this.match.ownsUse) {
+          if (usePressed) this.match.onUse(player)
+        } else this.handlePickups(player, usePressed)
       }
     }
     this.items.step(this.tick)
@@ -529,7 +561,7 @@ export class Game {
       const wallDistance = wall ? wall.timeOfImpact : weapon.range
       let hit: { victim: ServerPlayer; distance: number; zone: HitZone } | null = null
       for (const { player, pose } of targets) {
-        const scaled = { ...pose, scale: this.rulesValue.playerScale }
+        const scaled = { ...pose, scale: this.sizeOf(player) }
         const result = raycastPose(origin, dir, hit?.distance ?? wallDistance, scaled)
         if (result) hit = { victim: player, ...result }
       }
@@ -558,7 +590,7 @@ export class Game {
       for (const p of this.players.values()) if (p !== shooter) p.client.send(shotMsg)
 
       if (!hit) return
-      const amount = this.hitDamage(weapon, hit.zone, hit.distance, hit.victim.health)
+      const amount = this.hitDamage(weapon, hit.zone, hit.distance, hit.victim)
       if (amount <= 0) return
       const total = hits.get(hit.victim) ?? { amount: 0, headshot: false, zone: hit.zone }
       total.amount += amount
@@ -607,7 +639,7 @@ export class Game {
       )
       const reach = wall ? wall.timeOfImpact : weapon.range
       for (const { player, pose } of targets) {
-        const scaled = { ...pose, scale: this.rulesValue.playerScale }
+        const scaled = { ...pose, scale: this.sizeOf(player) }
         const hit = raycastPose(origin, dir, best?.distance ?? reach, scaled)
         if (hit) {
           best = { victim: player, pose, ...hit }
@@ -637,19 +669,25 @@ export class Game {
     const ax = shooter.state.pos.x - best.pose.x
     const az = shooter.state.pos.z - best.pose.z
     const backstab =
-      weapon.id === WeaponId.Knife && (fx * ax + fz * az) / (Math.hypot(ax, az) || 1) < -0.3
+      (weapon.id === WeaponId.Knife || (weapon.slot === 'melee' && !shooter.zombie)) &&
+      (fx * ax + fz * az) / (Math.hypot(ax, az) || 1) < -0.3 &&
+      this.match.backstabKills(best.victim)
     const rules = this.rulesValue
     const headshot = best.zone === HitZone.Head
     if (shooter.zombie) {
       // Zombie claws: their damage comes from the mode (difficulty), not the game rules.
-      this.damage(best.victim, shooter, best.zone, this.match.clawDamage(), false)
+      this.damage(best.victim, shooter, best.zone, this.match.clawDamage(shooter), false)
       return
     }
     if (rules.headshotsOnly && !headshot && !backstab) return
     const amount =
       backstab || rules.oneShot
         ? best.victim.health
-        : Math.round(damageAtDistance(weapon, best.distance) * rules.damage)
+        : Math.round(
+            damageAtDistance(weapon, best.distance) *
+              rules.damage *
+              (headshot && !this.match.headshotKills(best.victim) ? HEAD_MULTIPLIER : 1),
+          )
     this.damage(best.victim, shooter, best.zone, amount, headshot)
   }
 
@@ -661,14 +699,19 @@ export class Game {
     weapon: (typeof WEAPONS)[WeaponId],
     zone: HitZone,
     distance: number,
-    health: number,
+    victim: ServerPlayer,
   ): number {
     const rules = this.rulesValue
     const headshot = zone === HitZone.Head
     if (rules.headshotsOnly && !headshot) return 0
     const multiPellet = (weapon.pellets ?? 1) > 1
-    if (rules.oneShot || (headshot && !multiPellet)) return health
-    const zoneMultiplier = headshot ? (weapon.pelletHeadMultiplier ?? 1) : ZONE_MULTIPLIER[zone]
+    const lethal = this.match.headshotKills(victim)
+    if (rules.oneShot || (headshot && !multiPellet && lethal)) return victim.health
+    const zoneMultiplier = headshot
+      ? multiPellet
+        ? (weapon.pelletHeadMultiplier ?? 1)
+        : HEAD_MULTIPLIER
+      : ZONE_MULTIPLIER[zone]
     return Math.max(
       1,
       Math.round(damageAtDistance(weapon, distance) * zoneMultiplier * rules.damage),
@@ -703,17 +746,25 @@ export class Game {
       health: victim.health,
       from: { x: s.x, y: s.y, z: s.z },
     })
+    this.match.onDamage(victim, attacker, dealt)
     if (killed) this.kill(victim, attacker, headshot)
+  }
+
+  /** How big someone is: the rules' body size, times a zombie kind's own. */
+  private sizeOf(player: ServerPlayer): number {
+    return this.rulesValue.playerScale * zombieScale(player.zombie?.kind ?? 0)
   }
 
   private kill(victim: ServerPlayer, killer: ServerPlayer, headshot: boolean): void {
     // Your rifle/sniper drops where you died (full ammo, like every weapon on the floor).
-    const primary = primaryOf(victim.state)
+    const primary = this.match.ownsUse ? null : primaryOf(victim.state)
     if (primary)
       this.items.drop(primary.id, this.floorBelow(victim.state.pos), victim.state.yaw, this.tick)
     victim.state.alive = false
     victim.state.vel = { x: 0, y: 0, z: 0 }
-    const respawnSeconds = victim.dummy ? DUMMY_RESPAWN_SECONDS : this.rulesValue.respawnSeconds
+    const respawnSeconds = victim.dummy
+      ? DUMMY_RESPAWN_SECONDS
+      : (this.match.respawnSeconds() ?? this.rulesValue.respawnSeconds)
     victim.respawnAt = this.tick + Math.round(respawnSeconds * TICK_RATE)
     if (!victim.dummy) victim.deaths++
     if (killer !== victim && !victim.dummy) {
@@ -757,7 +808,7 @@ export class Game {
   // --- Zombies mode (zombies.ts runs the horde through these) ---------------------------------
 
   /** Adds a zombie to the pool (dead until `placeZombie`). Null if the server is full. */
-  addZombie(brain: ZombieBrain): ServerPlayer | null {
+  addZombie(brain: ZombieMind): ServerPlayer | null {
     const id = this.join('Zombie', NO_CLIENT, undefined, brain)
     const zombie = id === null ? undefined : this.players.get(id)
     if (!zombie) return null
@@ -850,6 +901,9 @@ export class Game {
    */
   private freshState(player: ServerPlayer, at?: MapSpawn): PlayerState {
     const spawn = at ?? player.dummy ?? this.match.spawnFor(player) ?? this.pickSpawn(player)
+    // Survival: you come back with what you carried.
+    const own = this.match.freshState(player, spawn)
+    if (own) return own
     // Gun game and the infected: the mode decides what you carry.
     const forced = this.match.loadout(player)
     if (forced) {
@@ -948,7 +1002,7 @@ export class Game {
 
   private sendSnapshots(): void {
     const everyone: RemotePlayerState[] = [...this.players.values()].map((p) =>
-      toRemote(p, this.tick < p.protectedUntil),
+      toRemote(p, this.tick < p.protectedUntil, this.match.lightOn(p)),
     )
     for (const player of this.players.values()) {
       send(player.client, {
@@ -1064,7 +1118,7 @@ function toHistoryPose(p: ServerPlayer): HistoryPose {
   }
 }
 
-function toRemote(p: ServerPlayer, isProtected: boolean): RemotePlayerState {
+function toRemote(p: ServerPlayer, isProtected: boolean, light: boolean): RemotePlayerState {
   const s = p.state
   return {
     id: p.id,
@@ -1081,6 +1135,7 @@ function toRemote(p: ServerPlayer, isProtected: boolean): RemotePlayerState {
     aiming: s.alive && hasButton(s.prevButtons, Button.Aim) && s.weapon.aimTime > 0,
     stride: p.stride,
     speed: Math.hypot(s.vel.x, s.vel.z),
+    ...(light && s.alive ? { light: true } : {}),
   }
 }
 

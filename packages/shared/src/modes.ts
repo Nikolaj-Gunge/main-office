@@ -1,7 +1,8 @@
 import { WeaponId } from './sim/weapons.ts'
+import type { SurvivalShared } from './survival/protocol.ts'
 
 /** Game modes the admin can pick. */
-export const MODES = ['ffa', 'tdm', 'lms', 'gungame', 'infection', 'zombies'] as const
+export const MODES = ['ffa', 'tdm', 'lms', 'gungame', 'infection', 'zombies', 'survival'] as const
 export type ModeId = (typeof MODES)[number]
 
 export const MODE_NAMES: Record<ModeId, string> = {
@@ -11,6 +12,7 @@ export const MODE_NAMES: Record<ModeId, string> = {
   gungame: 'Gun game',
   infection: 'Infection',
   zombies: 'Zombies (co-op)',
+  survival: 'Survival (Deadwood)',
 }
 
 /** Teams: 0 = none (free for all), 1 and 2 = the two sides of a team mode. */
@@ -21,6 +23,7 @@ export const TEAMS: Partial<Record<ModeId, [null, TeamStyle, TeamStyle]>> = {
   tdm: [null, { name: 'Marketing', color: 0xd9483b }, { name: 'IT', color: 0x3b7bd9 }],
   infection: [null, { name: 'Survivors', color: 0x3b7bd9 }, { name: 'Infected', color: 0x5fbf3a }],
   zombies: [null, { name: 'Survivors', color: 0x3b7bd9 }, { name: 'Zombies', color: 0x6f9a3a }],
+  survival: [null, { name: 'Survivors', color: 0x3b7bd9 }, { name: 'The dead', color: 0x6f9a3a }],
 }
 
 export interface TeamStyle {
@@ -79,6 +82,8 @@ export interface MatchInfo {
   result: RoundResult | null
   /** Zombies mode: where the team is on the co-op map. */
   coop?: CoopInfo
+  /** Survival mode: the night, the story and what has been found. */
+  survival?: SurvivalShared
 }
 
 /** Co-op progress (zombies mode). */
@@ -101,8 +106,28 @@ export interface CoopInfo {
 }
 
 /** Zombie kinds (PlayerJoined.kind): 0 is a person (or a normal bot). */
-export const ZombieKind = { Walker: 1, Runner: 2 } as const
+export const ZombieKind = {
+  Walker: 1,
+  Runner: 2,
+  // Survival only:
+  /** Huge and slow; takes a magazine or three. */
+  Brute: 3,
+  /** Screams when it sees you, and everything nearby comes running. */
+  Screamer: 4,
+  /** Only moves while nobody is looking at it. */
+  Stalker: 5,
+} as const
 export type ZombieKind = (typeof ZombieKind)[keyof typeof ZombieKind]
+
+/** How big each kind of zombie is next to a person (bodies, hitboxes and reach scale with it). */
+export const ZOMBIE_SCALE: Record<number, number> = {
+  [ZombieKind.Brute]: 1.38,
+  [ZombieKind.Screamer]: 0.92,
+  [ZombieKind.Stalker]: 1.12,
+}
+export function zombieScale(kind: number): number {
+  return ZOMBIE_SCALE[kind] ?? 1
+}
 
 /** Is gate `id` open in this bitmask? */
 export function gateOpen(gates: number, id: number): boolean {

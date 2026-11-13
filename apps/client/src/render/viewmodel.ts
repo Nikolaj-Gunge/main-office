@@ -1,5 +1,6 @@
 import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
+import { survivalGuns } from './survival-guns.ts'
 
 const STEEL = 0x2b2d33
 const FRAME = 0x3a3d45
@@ -31,7 +32,7 @@ function dot(size: number, x: number, y: number, z: number) {
 }
 
 /** One first-person weapon: its meshes plus where it sits and where things come out of it. */
-interface GunModel {
+export interface GunModel {
   group: THREE.Group
   muzzle: THREE.Object3D
   ejectPort: THREE.Object3D
@@ -44,10 +45,14 @@ interface GunModel {
   action?: Action
   /** Sniper: the bolt handle, worked back and forward between shots. */
   bolt?: THREE.Object3D
+  /** Lever-action: the lever (and the hand in it), swung down and back between shots. */
+  lever?: THREE.Object3D
   /** Shotgun: the pump grip, racked back and forward after each shot. */
   pump?: THREE.Object3D
   /** Knife: swings instead of kicking, no muzzle flash. */
   melee?: boolean
+  /** No muzzle flash (a suppressor, a crossbow). */
+  noFlash?: boolean
   /** Reload: the magazine (it drops out and a new one goes in). */
   mag?: THREE.Object3D
   /** Reload: the support hand on the gun, which lets go to fetch the new magazine. */
@@ -58,6 +63,15 @@ interface GunModel {
   handle?: THREE.Vector3
   /** Shotgun: shells go in here, one by one. */
   port?: THREE.Vector3
+  /** What the hand feeds into `port`, when it isn't a shotgun shell (a cartridge, a bolt). */
+  round?: THREE.Object3D
+  /** Swings open for the reload and shut after it: break-action barrels, a revolver's cylinder. */
+  hinge?: { part: THREE.Object3D; axis: 'x' | 'z'; open: number }
+  /**
+   * Crossbow: `set` poses the string (0 loosed … 1 cocked, `travel` m further back) and shows or
+   * hides the bolt lying on the rail at `rest`.
+   */
+  bow?: { travel: number; rest: THREE.Vector3; set: (drawn: number, loaded: boolean) => void }
   /** How the gun turns while reloading (radians): roll to show the magazine well, pitch up. */
   tilt?: { roll: number; pitch: number }
 }
@@ -66,7 +80,7 @@ interface GunModel {
  * One shot's kick, as the peak of each motion. Springs carry it, so automatic fire stacks the
  * kicks into a shake and a slow `recover` makes a heavy gun feel heavy.
  */
-interface Recoil {
+export interface Recoil {
   /** Shove towards the eye (m). */
   back: number
   /** Muzzle flip (radians). */
@@ -79,7 +93,7 @@ interface Recoil {
   recover: number
 }
 
-interface Action {
+export interface Action {
   part: THREE.Object3D
   /** How far it travels back (m) and how long until it's home again (s). */
   travel: number
@@ -474,6 +488,7 @@ export class Viewmodel {
     [WeaponId.Lmg]: lmg(),
     // Only zombies have claws, and nobody plays one: no first-person model.
     [WeaponId.Claws]: knife(),
+    ...survivalGuns(),
   }
   private active: GunModel
   private readonly flash: THREE.Mesh
@@ -514,6 +529,7 @@ export class Viewmodel {
           rot: model.mag.rotation.clone(),
         }
       }
+      if (model.bolt) model.bolt.userData.rest = model.bolt.position.z
     }
     this.active = this.models[WeaponId.Handgun]
 
@@ -567,7 +583,7 @@ export class Viewmodel {
       copy.position.set(0, 0, 0)
       copy.rotation.set(0, 0, 0)
       this.carried.add(copy)
-    } else if (model.port) this.carried.add(this.shell)
+    } else if (model.port) this.carried.add(model.round ?? this.shell)
     this.hand.visible = false
     this.carried.visible = false
     this.reloadTotal = 0
@@ -595,7 +611,7 @@ export class Viewmodel {
     kick(this.kickRoll, r.roll * vary() * aimed * (Math.random() < 0.75 ? 1 : -1))
     kick(this.kickSide, r.side * (Math.random() * 2 - 1) * aimed)
     this.sinceShot = 0
-    if (this.active.melee) return // a swing: no muzzle flash
+    if (this.active.melee || this.active.noFlash) return // a swing, a suppressor: no muzzle flash
     this.flashTime = 0.065
     this.flash.rotation.z = Math.random() * Math.PI
   }
@@ -660,7 +676,19 @@ export class Viewmodel {
       act.part.position.z = act.rest + back * act.travel
     }
     // Sniper bolt: worked back and forward in step with the rock of the gun.
-    if (this.active.bolt) this.active.bolt.position.z = 0.04 + boltT * 0.07 + reload.bolt * 0.07
+    if (this.active.bolt) {
+      const rest = this.active.bolt.userData.rest as number
+      this.active.bolt.position.z = rest + boltT * 0.07 + reload.bolt * 0.07
+    }
+    // Lever: swung down and forward and back up again, the same way.
+    if (this.active.lever) this.active.lever.rotation.x = Math.max(boltT, reload.bolt) * 0.5
+    // Break-action barrels drop and a revolver's cylinder swings out as the gun tilts to reload.
+    const hinge = this.active.hinge
+    if (hinge) hinge.part.rotation[hinge.axis] = reload.tilt * hinge.open
+    // Crossbow: cocked with a bolt on the rail while it is loaded (the reload poses it itself).
+    if (this.active.bow && weapon.reload <= 0) {
+      this.active.bow.set(weapon.ammo > 0 ? 1 : 0, weapon.ammo > 0)
+    }
 
     const bobX = Math.cos(bob.phase) * 0.008 * bob.weight * hipWeight
     const bobY = -Math.abs(Math.sin(bob.phase)) * 0.01 * bob.weight * hipWeight
@@ -751,7 +779,26 @@ export class Viewmodel {
     let handOut = e > 0.03 && e < T - 0.04
     this.carried.visible = false
 
-    if (m.port) {
+    if (m.bow && m.port && m.handle) {
+      // Crossbow: haul the string back until it latches, then lay a new bolt on the rail.
+      const cockAt = 0.75
+      const loosed = m.handle.clone().add(new THREE.Vector3(0, 0, -m.bow.travel))
+      keys.push(
+        [0, handRest],
+        [0.2, loosed],
+        [cockAt, m.handle],
+        [cockAt + 0.3, low],
+        [Math.max(cockAt + 0.35, inAt - 0.3), low],
+        [inAt, m.port],
+        [Math.min(T - 0.04, inAt + 0.28), handRest],
+      )
+      along(keys, e, this.handAt)
+      m.bow.set(ease((e - 0.2) / (cockAt - 0.2)), e >= inAt)
+      this.carried.visible = e > cockAt + 0.3 && e < inAt
+      this.carried.rotation.set(0, 0, 0)
+      this.carried.position.copy(this.handAt).add(m.bow.rest).sub(m.port)
+      if (crossed(cockAt)) this.bump(0.008, 0.03)
+    } else if (m.port) {
       // Shotgun: shell after shell into the loading port.
       const port = m.port
       const below = port.clone().add(new THREE.Vector3(-0.02, -0.11, 0.07))
@@ -776,6 +823,7 @@ export class Viewmodel {
       if (empty) {
         handOut = e > 0.03 && e < slideAt - 0.15
         pose.pump = pull
+        pose.bolt = pull
       }
     } else {
       // Magazine guns: out it drops, a new one comes up from below and is pushed home.
@@ -833,7 +881,7 @@ export class Viewmodel {
     this.hand.visible = handOut
     if (m.support) m.support.visible = !handOut
     if (crossed(inAt)) this.bump(0.01, 0.04)
-    if (empty && crossed(slideAt)) this.bump(0.012, 0.05)
+    if (empty && !m.bow && crossed(slideAt)) this.bump(0.012, 0.05)
     this.reloadLast = e
     return pose
   }

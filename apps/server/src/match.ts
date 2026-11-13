@@ -9,6 +9,9 @@ import {
   MAPS,
   type MapSpawn,
   type MatchInfo,
+  type PlayerState,
+  type SurvivalAction,
+  SURVIVAL_MAP,
   MODE_NAMES,
   ROUND_END_SECONDS,
   type RoundResult,
@@ -22,6 +25,7 @@ import {
 import type { BotLead } from './bots.ts'
 import type { Game, ServerPlayer } from './game.ts'
 import type { Point } from './items.ts'
+import { SurvivalDirector } from './survival/director.ts'
 import { ZombieDirector } from './zombies.ts'
 
 /** A finished round: winner, winning team, headline. */
@@ -31,7 +35,9 @@ type Verdict = [ServerPlayer | null, TeamId, string]
 const LATE_JOIN_INFECTED_SECONDS = 30
 /** Maps the rotation cycles through (the gym is a test range, not a play map). */
 const ROTATION = () =>
-  Object.keys(MAPS).filter((id) => id !== 'gym' && id !== 'range' && !isCoopMap(id))
+  Object.keys(MAPS).filter(
+    (id) => id !== 'gym' && id !== 'range' && id !== SURVIVAL_MAP && !isCoopMap(id),
+  )
 
 /**
  * Rounds and scoring for every game mode. The Game asks it what a player may do (hurt,
@@ -56,6 +62,8 @@ export class MatchRunner {
   private result: RoundResult | null = null
   /** Zombies mode: runs the horde and the stages. */
   private zombies: ZombieDirector | null = null
+  /** Survival mode: runs the night (loot, the dead, the story). */
+  private survival: SurvivalDirector | null = null
 
   constructor(game: Game) {
     this.game = game
@@ -87,7 +95,56 @@ export class MatchRunner {
 
   /** Gun game and the infected can't pick weapons up (their weapon is the mode's). */
   canPickUp(player: ServerPlayer): boolean {
-    return this.loadout(player) === null
+    return this.loadout(player) === null && !this.survival
+  }
+
+  /** Survival: E and what you carry are the mode's business, not the weapons-on-the-floor code. */
+  get ownsUse(): boolean {
+    return this.survival !== null
+  }
+
+  onUse(player: ServerPlayer): void {
+    this.survival?.onUse(player)
+  }
+
+  onAction(player: ServerPlayer, action: SurvivalAction): void {
+    this.survival?.onAction(player, action)
+  }
+
+  onShot(player: ServerPlayer): void {
+    this.survival?.onShot(player)
+  }
+
+  onDamage(victim: ServerPlayer, attacker: ServerPlayer, amount: number): void {
+    this.survival?.onDamage(victim, attacker, amount)
+  }
+
+  onLeave(player: ServerPlayer): void {
+    this.survival?.onLeave(player)
+  }
+
+  /** The mode's own state for a (re)spawning player, or null for the normal loadout. */
+  freshState(player: ServerPlayer, spawn: MapSpawn): PlayerState | null {
+    return this.survival?.freshState(player, spawn) ?? null
+  }
+
+  /** Seconds dead before coming back, if the mode has its own idea. */
+  respawnSeconds(): number | null {
+    return this.survival ? this.survival.respawnSeconds() : null
+  }
+
+  /** Does a headshot kill this victim outright? (Not survival's dead: they take four times.) */
+  headshotKills(victim: ServerPlayer): boolean {
+    return !(this.survival && victim.zombie)
+  }
+
+  /** Does a blade in the back kill this victim outright? */
+  backstabKills(victim: ServerPlayer): boolean {
+    return this.survival && victim.zombie ? this.survival.unaware(victim) : true
+  }
+
+  lightOn(player: ServerPlayer): boolean {
+    return this.survival?.lightOn(player) ?? false
   }
 
   /** The weapon the mode puts in your hand, or null for the normal loadout. */
@@ -101,17 +158,18 @@ export class MatchRunner {
   }
 
   speedFactor(player: ServerPlayer): number {
+    if (this.survival) return this.survival.speedFactor(player)
     if (this.zombies) return this.zombies.speedFactor(player)
     return this.rules.mode === 'infection' && player.team === 2 ? INFECTED_SPEED : 1
   }
 
   /** Where the mode wants this player to (re)spawn, or null for anywhere safe. */
   spawnFor(player: ServerPlayer): MapSpawn | null {
-    return this.zombies?.spawnFor(player) ?? null
+    return this.survival?.spawnFor(player) ?? this.zombies?.spawnFor(player) ?? null
   }
 
   thinkZombie(zombie: ServerPlayer): InputCommand | null {
-    return this.zombies?.thinkZombie(zombie) ?? null
+    return this.survival?.thinkZombie(zombie) ?? this.zombies?.thinkZombie(zombie) ?? null
   }
 
   /** Co-op: where a survivor bot should head when it has nobody to shoot. */
@@ -124,7 +182,8 @@ export class MatchRunner {
     return this.zombies?.armory() ?? null
   }
 
-  clawDamage(): number {
+  clawDamage(zombie: ServerPlayer): number {
+    if (this.survival) return this.survival.clawDamage(zombie)
     return this.zombies?.clawDamage() ?? WEAPONS[WeaponId.Claws].damage
   }
 
@@ -138,6 +197,7 @@ export class MatchRunner {
     }
     const mode = this.rules.mode
     if (mode === 'zombies') player.team = 1
+    this.survival?.onJoin(player)
     if (mode === 'tdm') player.team = this.smallerTeam()
     if (mode === 'infection') {
       const late = this.game.tick - this.roundStart > LATE_JOIN_INFECTED_SECONDS * TICK_RATE
@@ -153,6 +213,7 @@ export class MatchRunner {
       if (victim.zombie) this.zombies.onZombieKilled(victim)
       else this.zombies.onSurvivorKilled(victim)
     }
+    this.survival?.onKill(victim, killer)
     if (this.phase === 'ended') return
     const mode = this.rules.mode
     if (mode === 'tdm' && killer !== victim && killer.team !== victim.team) {
@@ -173,7 +234,14 @@ export class MatchRunner {
 
   /** A new map is in: zombies start the run over on it; other modes open every gate. */
   onMapChanged(): void {
-    if (this.zombies && this.rules.mode === 'zombies') this.zombies.startRun(0)
+    if (this.survival) {
+      if (this.game.world.map.survival) this.survival.start()
+      else {
+        this.survival.dispose()
+        this.survival = null
+        this.game.setGates(0xffff)
+      }
+    } else if (this.zombies && this.rules.mode === 'zombies') this.zombies.startRun(0)
     else this.game.setGates(0xffff)
   }
 
@@ -192,6 +260,10 @@ export class MatchRunner {
     if (this.zombies) {
       this.zombies.step()
       if (this.zombies.escaped || this.zombies.wiped || this.zombies.failed) this.check()
+    }
+    if (this.survival) {
+      this.survival.step()
+      if (this.survival.won) this.check()
     }
     if (tick % TICK_RATE === 0) this.check()
   }
@@ -217,6 +289,9 @@ export class MatchRunner {
     const timeUp = this.game.tick >= this.roundEnds
     const name = (p: ServerPlayer) => p.name
 
+    if (mode === 'survival') {
+      return this.survival?.won ? win(null, 1, 'You made it out of Deadwood') : undefined
+    }
     if (mode === 'zombies') {
       const z = this.zombies
       if (!z) return
@@ -316,7 +391,14 @@ export class MatchRunner {
     } else if (this.zombies) {
       this.zombies.dispose()
       this.zombies = null
-    } else this.game.setGates(0xffff)
+    } else if (mode !== 'survival') this.game.setGates(0xffff)
+    if (mode === 'survival' && this.game.world.map.survival) {
+      this.survival ??= new SurvivalDirector(this.game)
+      this.survival.start()
+    } else if (this.survival) {
+      this.survival.dispose()
+      this.survival = null
+    }
     for (const p of players) {
       this.game.applyRules(p)
       this.game.respawnNow(p)
@@ -412,6 +494,7 @@ export class MatchRunner {
       })),
       result: this.result,
       ...(this.zombies ? { coop: this.zombies.info() } : {}),
+      ...(this.survival ? { survival: this.survival.info() } : {}),
     }
   }
 

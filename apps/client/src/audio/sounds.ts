@@ -34,6 +34,7 @@ export const SOUNDS = {
   pump: { variants: 1, recipe: pumpAction },
   swish: { variants: 3, recipe: knifeSwish },
   stab: { variants: 2, recipe: knifeStab },
+  twang: { variants: 2, recipe: twang },
   dryfire: { variants: 1, recipe: dryFire },
   hit: { variants: 1, recipe: hitTick },
   'hit.head': { variants: 1, recipe: headTink },
@@ -46,6 +47,12 @@ export const SOUNDS = {
   heartbeat: { variants: 1, recipe: heartbeat },
   groan: { variants: 4, recipe: zombieGroan },
   claw: { variants: 2, recipe: clawHit },
+  // Survival: the forest at night.
+  scream: { variants: 2, recipe: scream },
+  wind: { variants: 3, recipe: windGust },
+  dread: { variants: 2, recipe: dread },
+  twig: { variants: 3, recipe: twigSnap },
+  pickup: { variants: 2, recipe: pickup },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -174,6 +181,14 @@ function knifeStab(rate: number, v: number): Signal {
   const thud = envelope(sweep(0.1, rate, 160, 70), rate, 0.002, 0.03)
   const flesh = envelope(lowpass(noise(0.12, rate, 270 + v), rate, 1800), rate, 0.001, 0.035)
   return fadeEdges(normalize(saturate(mix(rate, thud, gain(flesh, 0.9)), 2), 0.8), rate)
+}
+
+/** A crossbow loosing: the thrum of the string and the slap of the limbs. */
+function twang(rate: number, v: number): Signal {
+  const string = mix(rate, tone(0.3, rate, 150 + v * 14), gain(tone(0.3, rate, 304 + v * 26), 0.5))
+  const thrum = envelope(string, rate, 0.001, 0.07)
+  const slap = envelope(bandpass(noise(0.05, rate, 280 + v), rate, 1800, 1.5), rate, 0, 0.012)
+  return fadeEdges(normalize(mix(rate, thrum, gain(slap, 0.8)), 0.6), rate)
 }
 
 function dryFire(rate: number): Signal {
@@ -387,4 +402,74 @@ function heartbeat(rate: number): Signal {
   const padded = new Float32Array(Math.round(0.85 * rate))
   padded.set(loop.subarray(0, Math.min(loop.length, padded.length)))
   return normalize(padded, 0.9)
+}
+
+/** A screamer's shriek: a torn, rising voice with a rasp on top. */
+function scream(rate: number, v: number): Signal {
+  const seconds = 1.35 + v * 0.2
+  const out = new Float32Array(Math.round(seconds * rate))
+  let phase = 0
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate
+    const rise = 520 + 380 * Math.min(1, t * 3) + 60 * Math.sin(t * 31 + v) - 160 * (t / seconds) ** 3
+    phase += (2 * Math.PI * rise) / rate
+    let s = 0
+    for (let h = 1; h <= 9; h++) s += Math.sin(phase * h * (1 + 0.004 * h)) / h
+    out[i] = s * (1 + 0.5 * Math.sin(t * 73))
+  }
+  const voice = mix(
+    rate,
+    gain(bandpass(out.slice(), rate, 1500, 2), 1),
+    gain(bandpass(out.slice(), rate, 2900, 3), 0.8),
+    gain(bandpass(out, rate, 800, 2), 0.5),
+  )
+  const rasp = bandpass(noise(seconds, rate, 1300 + v), rate, 2400, 0.7)
+  const body = saturate(mix(rate, voice, gain(rasp, 0.5)), 4)
+  for (let i = 0; i < body.length; i++) {
+    const t = i / body.length
+    body[i] = (body[i] ?? 0) * Math.min(1, t * 14) * Math.min(1, (1 - t) * 3)
+  }
+  return fadeEdges(normalize(reflections(body, rate, 70 + v, 5, 0.3), 0.9), rate, 0.01)
+}
+
+/** Wind through the pines: a long, slow swell of dark noise. */
+function windGust(rate: number, v: number): Signal {
+  const seconds = 5 + v
+  const hiss = lowpass(highpass(noise(seconds, rate, 1400 + v), rate, 180), rate, 520 + v * 120)
+  for (let i = 0; i < hiss.length; i++) {
+    const t = i / hiss.length
+    const swell = Math.sin(Math.PI * t) ** 2 * (0.7 + 0.3 * Math.sin(t * 9 + v))
+    hiss[i] = (hiss[i] ?? 0) * swell
+  }
+  return fadeEdges(normalize(hiss, 0.6), rate, 0.05)
+}
+
+/** Something has seen you: a low swell that ends in a thud. */
+function dread(rate: number, v: number): Signal {
+  const seconds = 1.6
+  const out = new Float32Array(Math.round(seconds * rate))
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate
+    const f = 46 + v * 9
+    out[i] =
+      (Math.sin(2 * Math.PI * f * t) + 0.6 * Math.sin(2 * Math.PI * f * 1.498 * t) + 0.4 * Math.sin(2 * Math.PI * f * 2.02 * t)) *
+      (t / seconds) ** 2
+  }
+  const hit = envelope(sweep(0.5, rate, 90, 30), rate, 0.002, 0.16)
+  return fadeEdges(normalize(saturate(mix(rate, out, [gain(hit, 1.6), seconds - 0.12]), 2), 0.9), rate, 0.01)
+}
+
+/** A twig snapping somewhere out in the dark. */
+function twigSnap(rate: number, v: number): Signal {
+  const r = rng(1500 + v)
+  const snap = envelope(bandpass(noise(0.05, rate, 1500 + v), rate, 1800 + r() * 1400, 1.5), rate, 0, 0.006)
+  const second = envelope(bandpass(noise(0.05, rate, 1510 + v), rate, 1200 + r() * 900, 1.2), rate, 0, 0.01)
+  return fadeEdges(normalize(mix(rate, snap, [gain(second, 0.6), 0.04 + r() * 0.08]), 0.8), rate)
+}
+
+/** Taking something: a soft cloth rustle and a click. */
+function pickup(rate: number, v: number): Signal {
+  const rustle = envelope(bandpass(noise(0.12, rate, 1600 + v), rate, 2600, 0.8), rate, 0.01, 0.04)
+  const click = envelope(tone(0.03, rate, 1300 + v * 300), rate, 0, 0.008)
+  return fadeEdges(normalize(mix(rate, gain(rustle, 0.8), [gain(click, 0.5), 0.07]), 0.6), rate)
 }

@@ -1,4 +1,4 @@
-import { COOP_MAPS, DEFAULT_MAP_ID, MAPS } from './maps/index.ts'
+import { COOP_MAPS, DEFAULT_MAP_ID, MAPS, SURVIVAL_MAP } from './maps/index.ts'
 import { MODES, type ModeId } from './modes.ts'
 import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
@@ -156,6 +156,14 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
     if (typeof u.map === 'string' && isCoopMap(u.map)) next.mode = 'zombies'
     else next.map = DEFAULT_MAP_ID
   }
+  // Survival and its world go together the same way.
+  if (next.mode === 'survival' && next.map !== SURVIVAL_MAP) {
+    if (u.mode === 'survival') next.map = SURVIVAL_MAP
+    else next.mode = 'ffa'
+  } else if (next.mode !== 'survival' && next.map === SURVIVAL_MAP) {
+    if (u.map === SURVIVAL_MAP) next.mode = 'survival'
+    else next.map = DEFAULT_MAP_ID
+  }
   return next
 }
 
@@ -184,6 +192,8 @@ export function movementFor(
     crouchSpeed: base.crouchSpeed * rules.speed,
     gravity: base.gravity * rules.gravity,
     jumpVelocity: base.jumpVelocity * rules.jump,
+    // Survival: you can't run for ever.
+    sprintSeconds: rules.mode === 'survival' ? 9 : 0,
   }
 }
 

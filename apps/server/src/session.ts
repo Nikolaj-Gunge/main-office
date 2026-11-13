@@ -71,6 +71,9 @@ export function createSession(
         case ClientMsg.SetDebug:
           if (playerId) game.setDebug(playerId, msg.flags)
           break
+        case ClientMsg.Action:
+          if (playerId) game.handleAction(playerId, msg.action)
+          break
         case ClientMsg.Ping:
           if (playerId) game.reportPing(playerId, msg.rtt)
           socket.send(

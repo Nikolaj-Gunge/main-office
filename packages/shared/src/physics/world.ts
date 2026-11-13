@@ -1,5 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import type { MapDef } from '../maps/types.ts'
+import { chunkOf, chunkProps, propSolid } from '../survival/terrain.ts'
+import { CHUNK, CHUNKS, GRID, type SurvivalDef, WORLD_HALF, WORLD_SIZE } from '../survival/types.ts'
 
 export { RAPIER }
 
@@ -42,6 +44,8 @@ export interface PhysicsWorld {
   seeThrough: Set<number>
   /** Colliders of each gate (co-op maps), removed while the gate is open. */
   gates: Map<number, RAPIER.Collider[]>
+  /** Survival: the forest's trees and rocks, solid only around the players (see syncForest). */
+  forest?: { def: SurvivalDef; chunks: Map<number, RAPIER.Collider[]> }
 }
 
 /**
@@ -67,9 +71,91 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
       if (box.gate !== undefined) gates.set(box.gate, [...(gates.get(box.gate) ?? []), collider])
       return collider
     })
+  const physics: PhysicsWorld = { world, mapColliders, seeThrough, gates }
+  if (map.survival) {
+    // The ground, and walls around the edge of the world behind the rim of hills.
+    const t = map.survival.terrain
+    world.createCollider(
+      RAPIER.ColliderDesc.heightfield(GRID, GRID, t.heights, {
+        x: WORLD_SIZE,
+        y: 1,
+        z: WORLD_SIZE,
+      }).setCollisionGroups(MAP_COLLISION_GROUPS),
+    )
+    const edge = WORLD_HALF - 24
+    for (const [x, z, hx, hz] of [
+      [edge, 0, 1, WORLD_HALF],
+      [-edge, 0, 1, WORLD_HALF],
+      [0, edge, WORLD_HALF, 1],
+      [0, -edge, WORLD_HALF, 1],
+    ] as const) {
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(hx, 200, hz)
+          .setTranslation(x, 100, z)
+          .setCollisionGroups(MAP_COLLISION_GROUPS),
+      )
+    }
+    physics.forest = { def: map.survival, chunks: new Map() }
+  }
   // One step builds the broad phase so scene queries see the colliders.
   world.step()
-  return { world, mapColliders, seeThrough, gates }
+  return physics
+}
+
+/** Trees are solid in chunks whose centre is within this of someone (m)… */
+export const FOREST_RADIUS = 110
+/** …and stay solid until that far away. */
+const FOREST_KEEP = FOREST_RADIUS + CHUNK
+
+/**
+ * Survival: makes the forest solid around `centres` (the players) and lets go of chunks nobody
+ * is near any more. Client and server call it with their own players; a chunk's trees are the
+ * same everywhere. Returns true if anything changed.
+ */
+export function syncForest(
+  physics: PhysicsWorld,
+  centres: readonly { x: number; z: number }[],
+): boolean {
+  const forest = physics.forest
+  if (!forest) return false
+  const near = (cx: number, cz: number, radius: number) => {
+    const x = (cx + 0.5) * CHUNK - WORLD_HALF
+    const z = (cz + 0.5) * CHUNK - WORLD_HALF
+    return centres.some((c) => Math.hypot(c.x - x, c.z - z) <= radius)
+  }
+  let changed = false
+  for (const [key, colliders] of forest.chunks) {
+    if (near(Math.floor(key / CHUNKS), key % CHUNKS, FOREST_KEEP)) continue
+    for (const collider of colliders) physics.world.removeCollider(collider, false)
+    forest.chunks.delete(key)
+    changed = true
+  }
+  const reach = Math.ceil(FOREST_RADIUS / CHUNK)
+  for (const c of centres) {
+    const [ccx, ccz] = chunkOf(c.x, c.z)
+    for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
+      for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
+        const key = cx * CHUNKS + cz
+        if (forest.chunks.has(key) || !near(cx, cz, FOREST_RADIUS)) continue
+        const colliders: RAPIER.Collider[] = []
+        for (const prop of chunkProps(forest.def.terrain, forest.def.seed, cx, cz)) {
+          const solid = propSolid(prop)
+          if (!solid) continue
+          colliders.push(
+            physics.world.createCollider(
+              RAPIER.ColliderDesc.cylinder(solid.height / 2 + 0.3, solid.radius)
+                .setTranslation(prop.x, prop.y + solid.height / 2 - 0.3, prop.z)
+                .setCollisionGroups(MAP_COLLISION_GROUPS),
+            ),
+          )
+        }
+        forest.chunks.set(key, colliders)
+        changed = true
+      }
+    }
+  }
+  if (changed) physics.world.step()
+  return changed
 }
 
 /**
