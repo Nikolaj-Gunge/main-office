@@ -100,7 +100,8 @@ const map = loadMap(mapId)
 const physics = createPhysicsWorld(map)
 // Survival's world is far too big for the minimap: it has a compass and a real map instead.
 const minimap = map.survival ? null : new Minimap(hudRoot, map)
-if (map.survival) syncForest(physics, [{ x: map.spawns[0]?.pos[0] ?? 0, z: map.spawns[0]?.pos[2] ?? 0 }])
+if (map.survival)
+  syncForest(physics, [{ x: map.spawns[0]?.pos[0] ?? 0, z: map.spawns[0]?.pos[2] ?? 0 }])
 
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
@@ -201,7 +202,8 @@ if (survival) {
     else closeMenu()
   }
   survival.hud.onSound = (cue) => {
-    if (cue === 'open' || cue === 'close') audio.play('reload.in', { bus: 'ui', volume: 0.3, rate: cue === 'open' ? 1.3 : 1 })
+    if (cue === 'open' || cue === 'close')
+      audio.play('reload.in', { bus: 'ui', volume: 0.3, rate: cue === 'open' ? 1.3 : 1 })
     else if (cue === 'use') audio.play('pickup', { bus: 'ui', volume: 0.5 })
     else if (cue === 'deny') audio.play('dryfire', { bus: 'ui', volume: 0.5 })
     else if (cue === 'coin') audio.play('casing', { bus: 'ui', volume: 0.6 })
@@ -582,7 +584,8 @@ window.addEventListener('keydown', (e) => {
     // The backpack, the shop, the map and conversations get first go at every key.
     if (e.code === 'Escape' ? survival.hud.close() : survival.hud.key(e.code)) {
       e.preventDefault()
-      if (!e.repeat && (action === 'scoreboard' || action === 'inventory')) survival.hud.toggleBackpack()
+      if (!e.repeat && (action === 'scoreboard' || action === 'inventory'))
+        survival.hud.toggleBackpack()
       return
     }
     if (!e.repeat) {
@@ -699,7 +702,8 @@ pixels.renderer.setAnimationLoop(() => {
     const sampled = samplePlayerInput(keys, look, settings.keybinds, aim)
     // A survival screen is open: stand still. Talking: the digits answer, they don't draw guns.
     if (uiOpen) sampled.buttons = 0
-    else if (survival?.hud.inDialog) sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
+    else if (survival?.hud.inDialog)
+      sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
     const input = noclip ? { buttons: 0, yaw: look.yaw, pitch: look.pitch } : sampled
     const { command, events } = player.tick(input, remotes.renderTick)
     const aiming = (input.buttons & Button.Aim) !== 0
@@ -761,7 +765,7 @@ pixels.renderer.setAnimationLoop(() => {
   audio.update(dt)
   remotes.update(now, camera.position)
   updateCorn(now / 1000, [...remotes.visiblePoses().values(), camera.position], camera.position)
-  if (survival && survival.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
+  if (survival?.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
     pixels.renderer.shadowMap.needsUpdate = true
   }
   ragdolls.update(dt)

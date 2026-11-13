@@ -1,3 +1,4 @@
+import { buildDeadwood } from '../survival/world.ts'
 import { buildCampus } from './campus.ts'
 import { buildCornfield } from './cornfield.ts'
 import { buildGym } from './gym.ts'
@@ -10,7 +11,6 @@ import { buildRange } from './range.ts'
 import { buildRooftop } from './rooftop.ts'
 import type { MapDef } from './types.ts'
 import { buildWarehouse } from './warehouse.ts'
-import { buildDeadwood } from '../survival/world.ts'
 
 export * from './builder.ts'
 export * from './range.ts'

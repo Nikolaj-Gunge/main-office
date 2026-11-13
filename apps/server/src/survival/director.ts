@@ -350,7 +350,13 @@ export class SurvivalDirector {
     sv.talking = null
     sv.dirty = true
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
-    this.notice(victim, 'story', sv.self.bed ? 'You died.\nYour backpack lies where you fell.' : 'You died.\nSleep in a bed and you wake up there instead.')
+    this.notice(
+      victim,
+      'story',
+      sv.self.bed
+        ? 'You died.\nYour backpack lies where you fell.'
+        : 'You died.\nSleep in a bed and you wake up there instead.',
+    )
   }
 
   // --- Every tick ----------------------------------------------------------------------------
@@ -365,7 +371,10 @@ export class SurvivalDirector {
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
-      syncForest(this.game.world.physics, alive.map((sv) => sv.player.state.pos))
+      syncForest(
+        this.game.world.physics,
+        alive.map((sv) => sv.player.state.pos),
+      )
     }
     if (tick % TICK_RATE === 0) {
       for (const sv of people) this.tickSurvivor(sv)
@@ -464,9 +473,26 @@ export class SurvivalDirector {
     return Math.floor((x + 4096) / LOOT_CELL) * 256 + Math.floor((z + 4096) / LOOT_CELL)
   }
 
-  private addLoot(item: string, n: number, pos: Point, spot: number, ammo?: number, until = 0): void {
+  private addLoot(
+    item: string,
+    n: number,
+    pos: Point,
+    spot: number,
+    ammo?: number,
+    until = 0,
+  ): void {
     const id = this.nextLoot++
-    const loot: Loot = { id, item, n, x: pos.x, y: pos.y, z: pos.z, spot, until, ...(ammo !== undefined ? { ammo } : {}) }
+    const loot: Loot = {
+      id,
+      item,
+      n,
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      spot,
+      until,
+      ...(ammo !== undefined ? { ammo } : {}),
+    }
     this.loot.set(id, loot)
     const cell = this.cellOf(pos.x, pos.z)
     const set = this.cells.get(cell) ?? new Set()
@@ -516,7 +542,8 @@ export class SurvivalDirector {
       for (const id of this.cells.get(cell) ?? []) remove.push(id)
     }
     sv.cells = want
-    if (add.length > 0 || remove.length > 0) this.send(sv.player, { type: ServerMsg.Loot, add, remove })
+    if (add.length > 0 || remove.length > 0)
+      this.send(sv.player, { type: ServerMsg.Loot, add, remove })
   }
 
   /** Puts out a place's loot when someone first comes near, and again long after it was emptied. */
@@ -541,14 +568,18 @@ export class SurvivalDirector {
         const [x, y, z] = spot.pos
         const weapon = ITEMS[roll.item]?.weapon
         // Guns are found with a few rounds in them, if any.
-        const ammo = weapon === undefined ? undefined : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
+        const ammo =
+          weapon === undefined
+            ? undefined
+            : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
         this.addLoot(roll.item, roll.n, { x, y, z }, s, ammo)
       })
     })
   }
 
   private expireLoot(): void {
-    for (const l of this.loot.values()) if (l.until > 0 && this.game.tick >= l.until) this.removeLoot(l)
+    for (const l of this.loot.values())
+      if (l.until > 0 && this.game.tick >= l.until) this.removeLoot(l)
   }
 
   // --- E: take, talk, use ------------------------------------------------------------------
@@ -581,7 +612,7 @@ export class SurvivalDirector {
         npc = n
       }
     }
-    if (npc) return this.talk(sv, npc)
+    if (npc) return void this.talk(sv, npc)
 
     let thing: Interactable | null = null
     best = 0.2
@@ -605,8 +636,8 @@ export class SurvivalDirector {
         }
       }
     }
-    if (loot && (!thing || lootScore >= best)) return this.take(sv, loot)
-    if (thing) return this.useThing(sv, thing)
+    if (loot && (!thing || lootScore >= best)) return void this.take(sv, loot)
+    if (thing) return void this.useThing(sv, thing)
 
     // Standing in the lake: drink.
     for (const lake of this.def.lakes) {
@@ -669,7 +700,7 @@ export class SurvivalDirector {
 
   private useThing(sv: Survivor, thing: Interactable): void {
     const player = sv.player
-    if (thing.kind === 'bed') return this.sleep(sv, thing)
+    if (thing.kind === 'bed') return void this.sleep(sv, thing)
     if (thing.kind === 'water') {
       sv.self.thirst = 100
       sv.dirty = true
@@ -683,7 +714,11 @@ export class SurvivalDirector {
       if (step.kind === 'use' && step.target === thing.key) {
         const missing = (step.needs ?? []).find(([item, n]) => countOf(sv.self.inv, item) < n)
         if (missing) {
-          this.notice(player, 'warn', `You need ${ITEMS[missing[0]]?.name ?? missing[0]}${missing[1] > 1 ? ` ×${missing[1]}` : ''}.`)
+          this.notice(
+            player,
+            'warn',
+            `You need ${ITEMS[missing[0]]?.name ?? missing[0]}${missing[1] > 1 ? ` ×${missing[1]}` : ''}.`,
+          )
           return
         }
         if (!step.keeps) for (const [item, n] of step.needs ?? []) takeStack(sv.self.inv, item, n)
@@ -704,19 +739,25 @@ export class SurvivalDirector {
         q.count |= 1 << i
         for (const [item, n] of step.gives) addStack(sv.self.inv, item, n)
         this.touch(sv)
-        this.notice(player, 'loot', `+ ${step.gives.map(([item]) => ITEMS[item]?.name ?? item).join(', ')}`)
+        this.notice(
+          player,
+          'loot',
+          `+ ${step.gives.map(([item]) => ITEMS[item]?.name ?? item).join(', ')}`,
+        )
         if (q.count === (1 << step.targets.length) - 1) this.advance(q, sv)
         else this.game.match.broadcast()
         return
       }
     }
-    if (thing.kind === 'note' && thing.text) return this.notice(player, 'story', thing.text)
+    if (thing.kind === 'note' && thing.text) return void this.notice(player, 'story', thing.text)
     this.notice(player, 'info', 'Nothing here you need right now.')
   }
 
   private sleep(sv: Survivor, bed: Interactable): void {
     const player = sv.player
-    const close = this.pool.some((z) => z.state.alive && dist(z.state.pos, { x: bed.pos[0], z: bed.pos[2] }) < 35)
+    const close = this.pool.some(
+      (z) => z.state.alive && dist(z.state.pos, { x: bed.pos[0], z: bed.pos[2] }) < 35,
+    )
     if (close) {
       this.notice(player, 'warn', "You can't sleep. Something is moving out there.")
       return
@@ -731,7 +772,10 @@ export class SurvivalDirector {
     // Sleeping through the dark: wake in the grey hour.
     const t = this.time
     if (t < 0.8) this.slept += (0.8 - t) * NIGHT_SECONDS
-    this.send(player, { type: ServerMsg.Notice, notice: { kind: 'story', text: 'You sleep.\n\nIf you die, this is where you wake up.' } })
+    this.send(player, {
+      type: ServerMsg.Notice,
+      notice: { kind: 'story', text: 'You sleep.\n\nIf you die, this is where you wake up.' },
+    })
     this.game.match.broadcast()
   }
 
@@ -764,11 +808,12 @@ export class SurvivalDirector {
             return
           }
           this.notice(player, 'info', `You put on the ${def.name}.`)
-          return this.touch(sv)
+          return void this.touch(sv)
         }
         if (def.battery) self.battery = Math.min(100, self.battery + def.battery)
         else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med') {
-          if (def.health) player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
+          if (def.health)
+            player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
           if (def.hunger) self.hunger = Math.max(0, Math.min(100, self.hunger + def.hunger))
           if (def.thirst) self.thirst = Math.max(0, Math.min(100, self.thirst + def.thirst))
           if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
@@ -776,7 +821,7 @@ export class SurvivalDirector {
           if (def.stopsBleeding) self.bleeding = false
         } else return
         takeStack(self.inv, def.id, 1)
-        return this.touch(sv)
+        return void this.touch(sv)
       }
       case 'drop': {
         const def = ITEMS[action.item]
@@ -786,7 +831,7 @@ export class SurvivalDirector {
         if (!stack) return
         const got = takeStack(self.inv, def.id, def.kind === 'weapon' ? 1 : n)
         if (got > 0) this.dropAt(def.id, got, s.pos, stack.ammo)
-        return this.touch(sv)
+        return void this.touch(sv)
       }
       case 'equip': {
         const stack = self.inv[Math.floor(Number(action.index))]
@@ -811,14 +856,15 @@ export class SurvivalDirector {
         } else if (s.weapon === old) s.weapon = w
         else if (s.holstered === old) s.holstered = w
         else s.pocket = w
-        return this.touch(sv)
+        return void this.touch(sv)
       }
       case 'stow': {
         const all = carried(s)
         const w = all.find((c) => WEAPONS[c.id].slot === action.slot)
         if (!w || all.length < 2) return
         const item = weaponItem(w.id)
-        if (roomFor(self, item) < 1) return this.notice(player, 'warn', 'No room in your pack.')
+        if (roomFor(self, item) < 1)
+          return void this.notice(player, 'warn', 'No room in your pack.')
         addStack(self.inv, item, 1, w.ammo)
         const rest = all.filter((c) => c !== w)
         const hand = s.weapon === w ? (rest[0] as WeaponState) : s.weapon
@@ -827,7 +873,7 @@ export class SurvivalDirector {
         s.weapon = hand
         s.holstered = others[0] ?? null
         s.pocket = others[1] ?? null
-        return this.touch(sv)
+        return void this.touch(sv)
       }
       case 'buy':
       case 'sell': {
@@ -839,10 +885,16 @@ export class SurvivalDirector {
           if (!TRADER_STOCK.includes(def.id)) return
           const each = def.kind === 'ammo' ? AMMO_BOX : 1
           const price = Math.ceil(def.value * each) * n
-          if (self.money < price) return this.notice(player, 'warn', "You can't afford that.")
-          if (roomFor(self, def.id) < each * n) return this.notice(player, 'warn', 'No room in your pack.')
+          if (self.money < price) return void this.notice(player, 'warn', "You can't afford that.")
+          if (roomFor(self, def.id) < each * n)
+            return void this.notice(player, 'warn', 'No room in your pack.')
           self.money -= price
-          addStack(self.inv, def.id, each * n, def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined)
+          addStack(
+            self.inv,
+            def.id,
+            each * n,
+            def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined,
+          )
         } else {
           if (def.kind === 'quest' || def.kind === 'money') return
           const stack = [...self.inv].reverse().find((st) => st.item === def.id)
@@ -850,10 +902,10 @@ export class SurvivalDirector {
           const got = takeStack(self.inv, def.id, def.kind === 'weapon' ? 1 : n)
           self.money += Math.floor(def.value * SELL_RATE * got)
         }
-        return this.touch(sv)
+        return void this.touch(sv)
       }
       case 'choose':
-        return this.choose(sv, String(action.npc), String(action.option))
+        return void this.choose(sv, String(action.npc), String(action.option))
     }
   }
 
@@ -902,10 +954,16 @@ export class SurvivalDirector {
       }
       this.touch(to)
     }
-    if (reward?.reveals) this.def.pois.forEach((p, i) => p.hidden && this.found.add(i))
+    if (reward?.reveals) {
+      this.def.pois.forEach((p, i) => {
+        if (p.hidden) this.found.add(i)
+      })
+    }
     const got = [
       ...(reward?.money ? [`$${reward.money}`] : []),
-      ...(reward?.items ?? []).map(([item, n]) => `${ITEMS[item]?.name ?? item}${n > 1 ? ` ×${n}` : ''}`),
+      ...(reward?.items ?? []).map(
+        ([item, n]) => `${ITEMS[item]?.name ?? item}${n > 1 ? ` ×${n}` : ''}`,
+      ),
     ]
     this.noticeAll('story', `${def.done}${got.length > 0 ? `\n\n+ ${got.join(', ')}` : ''}`)
     this.noticeAll('quest', `Done: ${def.title}`)
@@ -926,7 +984,12 @@ export class SurvivalDirector {
         const have = countOf(sv.self.inv, step.item)
         if (have < step.n) {
           const name = ITEMS[step.item]?.name ?? step.item
-          this.say(sv, npc, `I still need ${name}${step.n > 1 ? ` — ${step.n} of them. You have ${have}.` : '.'}`, this.options(sv, npc))
+          this.say(
+            sv,
+            npc,
+            `I still need ${name}${step.n > 1 ? ` — ${step.n} of them. You have ${have}.` : '.'}`,
+            this.options(sv, npc),
+          )
           return
         }
         takeStack(sv.self.inv, step.item, step.n)
@@ -954,7 +1017,13 @@ export class SurvivalDirector {
     return out
   }
 
-  private say(sv: Survivor, npc: Npc, text: string, options: Dialog['options'], shop?: Dialog['shop']): void {
+  private say(
+    sv: Survivor,
+    npc: Npc,
+    text: string,
+    options: Dialog['options'],
+    shop?: Dialog['shop'],
+  ): void {
     this.send(sv.player, {
       type: ServerMsg.Dialog,
       dialog: { npc: npc.key, name: npc.name, text, options, ...(shop ? { shop } : {}) },
@@ -976,16 +1045,33 @@ export class SurvivalDirector {
         const def = ITEMS[id]
         return [id, Math.ceil((def?.value ?? 0) * (def?.kind === 'ammo' ? AMMO_BOX : 1))]
       })
-      this.say(sv, npc, 'Cash only. No refunds. No haunted merchandise, probably.', [{ id: 'bye', label: 'Goodbye.' }], stock)
+      this.say(
+        sv,
+        npc,
+        'Cash only. No refunds. No haunted merchandise, probably.',
+        [{ id: 'bye', label: 'Goodbye.' }],
+        stock,
+      )
       return
     }
     if (option === 'heal' && npc.role === 'medic') {
-      if (sv.self.money < 40) return this.say(sv, npc, "I can't work for nothing. Not any more.", this.options(sv, npc))
+      if (sv.self.money < 40)
+        return void this.say(
+          sv,
+          npc,
+          "I can't work for nothing. Not any more.",
+          this.options(sv, npc),
+        )
       sv.self.money -= 40
       sv.self.bleeding = false
       sv.player.health = sv.player.maxHealth
       sv.dirty = true
-      return this.say(sv, npc, "Hold still… There. Try to keep the rest of your blood inside.", this.options(sv, npc))
+      return void this.say(
+        sv,
+        npc,
+        'Hold still… There. Try to keep the rest of your blood inside.',
+        this.options(sv, npc),
+      )
     }
     if (option.startsWith('ask:')) {
       const def = questById(option.slice(4))
@@ -1026,7 +1112,9 @@ export class SurvivalDirector {
       if (step.kind !== 'reach' && step.kind !== 'hold') continue
       const poi = this.def.pois.find((p) => p.key === step.poi)
       if (!poi) continue
-      const there = alive.filter((sv) => dist(sv.player.state.pos, poi) < poi.r + (step.kind === 'hold' ? 14 : 4))
+      const there = alive.filter(
+        (sv) => dist(sv.player.state.pos, poi) < poi.r + (step.kind === 'hold' ? 14 : 4),
+      )
       if (there.length === 0) continue
       if (step.kind === 'reach') {
         this.advance(q, there[0] ?? null)
@@ -1046,7 +1134,7 @@ export class SurvivalDirector {
   private countKill(zed: Zed, at: Point, killer: ServerPlayer): void {
     for (const q of [...this.quests]) {
       const step = questById(q.id)?.steps[q.step]
-      if (!step || step.kind !== 'kill') continue
+      if (step?.kind !== 'kill') continue
       if (step.zombie !== undefined && step.zombie !== zed.kind) continue
       const poi = this.def.pois.find((p) => p.key === step.poi)
       if (poi && dist(at, poi) > poi.r + 45) continue
@@ -1132,7 +1220,8 @@ export class SurvivalDirector {
   private populate(alive: readonly Survivor[]): void {
     const tick = this.game.tick
     const people = alive.map((sv) => sv.player.state.pos)
-    const nearest = (p: { x: number; z: number }) => Math.min(...people.map((q) => dist(q, p)), Number.POSITIVE_INFINITY)
+    const nearest = (p: { x: number; z: number }) =>
+      Math.min(...people.map((q) => dist(q, p)), Number.POSITIVE_INFINITY)
 
     for (const z of this.pool) {
       if (!z.state.alive) continue
@@ -1194,7 +1283,11 @@ export class SurvivalDirector {
   }
 
   /** A spot on the ground about `radius` from `centre`: not near anybody, not in a place. */
-  private ringSpot(centre: { x: number; z: number }, radius: number, people: readonly Point[]): Point | null {
+  private ringSpot(
+    centre: { x: number; z: number },
+    radius: number,
+    people: readonly Point[],
+  ): Point | null {
     for (let n = 0; n < 6; n++) {
       const a = this.random() * Math.PI * 2
       const x = centre.x + Math.cos(a) * radius
@@ -1208,7 +1301,13 @@ export class SurvivalDirector {
     return null
   }
 
-  private place(zombie: ServerPlayer, kind: ZombieKind, home: number, hunter: boolean, pos: Point): void {
+  private place(
+    zombie: ServerPlayer,
+    kind: ZombieKind,
+    home: number,
+    hunter: boolean,
+    pos: Point,
+  ): void {
     const zed = this.zeds.get(zombie.id)
     if (!zed) return
     zed.reset(kind, home, hunter)

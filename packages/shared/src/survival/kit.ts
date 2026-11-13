@@ -1,7 +1,16 @@
 import type { BoxFlags } from '../maps/builder.ts'
 import type { MapBox, MapLabel, MapLight, MaterialId, Vec3 } from '../maps/types.ts'
 import type { LootTable } from './items.ts'
-import type { InteractKind, Interactable, LootSpot, Npc, NpcRole, Poi, Room } from './types.ts'
+import type {
+  Interactable,
+  InteractKind,
+  Lake,
+  LootSpot,
+  Npc,
+  NpcRole,
+  Poi,
+  Room,
+} from './types.ts'
 
 /** Everything the places of the world add up to. */
 export interface WorldBuild {
@@ -26,6 +35,13 @@ export function emptyBuild(): WorldBuild {
     interactables: [],
     rooms: [],
   }
+}
+
+/** What a place may ask about the world around it while it is built. */
+export interface PlaceWorld {
+  /** Ground height at a world point. */
+  groundAt(x: number, z: number): number
+  lakes: readonly Lake[]
 }
 
 export const DECO: BoxFlags = { collide: false }
@@ -170,12 +186,30 @@ export class Site {
   }
 
   /** Decoration: drawn, but you walk and shoot through it. */
-  deco(x: number, y: number, z: number, w: number, h: number, d: number, material: MaterialId): this {
+  deco(
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+    d: number,
+    material: MaterialId,
+  ): this {
     return this.block(x, y, z, w, h, d, material, DECO)
   }
 
   /** A box turned about the vertical (degrees) — decoration only, since it isn't axis-aligned. */
-  turned(x: number, y: number, z: number, w: number, h: number, d: number, deg: number, material: MaterialId, tilt = 0): this {
+  turned(
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+    d: number,
+    deg: number,
+    material: MaterialId,
+    tilt = 0,
+  ): this {
     this.build.boxes.push({
       center: this.world(x, y + h / 2, z),
       size: [w, h, d],
@@ -184,6 +218,39 @@ export class Site {
       collide: false,
     })
     return this
+  }
+
+  /**
+   * A walkable slope (stairs, gangways, ramps) along local z: its top surface starts at height
+   * `y` at z = `zStart` and climbs `run` metres towards −z (or +z with `toward` = 1) at
+   * `angleDeg`. Returns the height gained.
+   */
+  ramp(
+    x: number,
+    y: number,
+    zStart: number,
+    width: number,
+    run: number,
+    angleDeg: number,
+    material: MaterialId = 'wood',
+    toward: -1 | 1 = -1,
+  ): number {
+    const a = (angleDeg * Math.PI) / 180
+    const thick = 0.25
+    const rise = run * Math.tan(a)
+    const length = run / Math.cos(a)
+    // Which way it climbs in the world.
+    const [dx, dz] = this.rotate(0, toward)
+    const top = this.world(x, y + rise / 2, zStart + (toward * run) / 2)
+    const push = (Math.sin(a) * thick) / 2
+    const alongX = Math.abs(dx) > 0.5
+    this.build.boxes.push({
+      center: [top[0] + dx * push, top[1] - (Math.cos(a) * thick) / 2, top[2] + dz * push],
+      size: alongX ? [length, thick, width] : [width, thick, length],
+      rotation: alongX ? [0, 0, dx * a] : [-dz * a, 0, 0],
+      material,
+    })
+    return rise
   }
 
   light(x: number, y: number, z: number, options: LampOptions = {}): this {
@@ -210,12 +277,36 @@ export class Site {
     return this
   }
 
-  npc(key: string, name: string, role: NpcRole, x: number, z: number, yawDeg: number, color = 0, y = 0): this {
-    this.build.npcs.push({ key, name, role, pos: this.world(x, y, z), yaw: this.yaw(yawDeg), color })
+  npc(
+    key: string,
+    name: string,
+    role: NpcRole,
+    x: number,
+    z: number,
+    yawDeg: number,
+    color = 0,
+    y = 0,
+  ): this {
+    this.build.npcs.push({
+      key,
+      name,
+      role,
+      pos: this.world(x, y, z),
+      yaw: this.yaw(yawDeg),
+      color,
+    })
     return this
   }
 
-  interact(key: string, kind: InteractKind, x: number, y: number, z: number, label: string, text?: string): this {
+  interact(
+    key: string,
+    kind: InteractKind,
+    x: number,
+    y: number,
+    z: number,
+    label: string,
+    text?: string,
+  ): this {
     this.build.interactables.push({
       key,
       kind,
@@ -296,14 +387,31 @@ export class Site {
     const FLOOR = 0.12
     this.block(x, -0.4, z, w, 0.4 + FLOOR, d, o.floor ?? 'wood')
     const openings = [
-      ...(o.doors ?? []).map((door) => ({ ...door, sill: 0, height: door.height ?? DOOR_H, door: true })),
-      ...(o.windows ?? []).map((win) => ({ ...win, sill: win.sill ?? 1, height: win.height ?? 1.1, door: false })),
+      ...(o.doors ?? []).map((door) => ({
+        ...door,
+        sill: 0,
+        height: door.height ?? DOOR_H,
+        door: true,
+      })),
+      ...(o.windows ?? []).map((win) => ({
+        ...win,
+        sill: win.sill ?? 1,
+        height: win.height ?? 1.1,
+        door: false,
+      })),
     ]
     const doorPoints: [number, number][] = []
     for (const side of ['n', 's', 'e', 'w'] as const) {
       const alongX = side === 'n' || side === 's'
       const length = alongX ? w : d
-      const fixed = side === 'n' ? z0 + WALL / 2 : side === 's' ? z1 - WALL / 2 : side === 'w' ? x0 + WALL / 2 : x1 - WALL / 2
+      const fixed =
+        side === 'n'
+          ? z0 + WALL / 2
+          : side === 's'
+            ? z1 - WALL / 2
+            : side === 'w'
+              ? x0 + WALL / 2
+              : x1 - WALL / 2
       const gaps: [number, number, number, number][] = []
       for (const g of openings.filter((g) => g.side === side)) {
         const width = g.width ?? (g.door ? DOOR_W : 1.2)
@@ -326,7 +434,17 @@ export class Site {
         }
       }
       if (alongX) this.wall(x0, fixed, x1, fixed, FLOOR, h, o.wall, gaps)
-      else this.wall(fixed, z0 + WALL, fixed, z1 - WALL, FLOOR, h, o.wall, gaps.map(([at, ...rest]) => [at - WALL, ...rest]))
+      else
+        this.wall(
+          fixed,
+          z0 + WALL,
+          fixed,
+          z1 - WALL,
+          FLOOR,
+          h,
+          o.wall,
+          gaps.map(([at, ...rest]) => [at - WALL, ...rest]),
+        )
     }
     if (o.roof) {
       this.block(x, FLOOR + h, z, w + 0.5, 0.18, d + 0.5, o.roof)

@@ -4,8 +4,8 @@ import {
   createPhysicsWorld,
   DEFAULT_RULES,
   decodeServerMessage,
-  initPhysics,
   ITEMS,
+  initPhysics,
   LOOT_TABLES,
   loadMap,
   type MatchInfo,
@@ -44,7 +44,9 @@ function setup(n = 1) {
     return p
   }
   const last = <T extends ServerMessage['type']>(type: T, i = 0) =>
-    clients[i]?.inbox.filter((m): m is Extract<ServerMessage, { type: T }> => m.type === type).at(-1)
+    clients[i]?.inbox
+      .filter((m): m is Extract<ServerMessage, { type: T }> => m.type === type)
+      .at(-1)
   const self = (i = 0): SurvivalSelf => {
     const m = last(ServerMsg.Survival, i)
     if (!m) throw new Error('no survival state')
@@ -90,14 +92,16 @@ function setup(n = 1) {
 
 describe('survival: the catalogue', () => {
   test('every loot table, quest and shop item exists', () => {
-    for (const table of LOOT_TABLES) for (const id of tableItems(table)) expect(ITEMS[id]?.id).toBe(id)
+    for (const table of LOOT_TABLES)
+      for (const id of tableItems(table)) expect(ITEMS[id]?.id).toBe(id)
     for (const id of TRADER_STOCK) expect(ITEMS[id]?.id).toBe(id)
     for (const q of QUESTS) {
       for (const [item] of q.reward?.items ?? []) expect(ITEMS[item]?.id).toBe(item)
       for (const step of q.steps) {
         if (step.kind === 'fetch') expect(ITEMS[step.item]?.id).toBe(step.item)
         if (step.kind === 'use') {
-          for (const [item] of [...(step.needs ?? []), ...(step.gives ?? [])]) expect(ITEMS[item]?.id).toBe(item)
+          for (const [item] of [...(step.needs ?? []), ...(step.gives ?? [])])
+            expect(ITEMS[item]?.id).toBe(item)
         }
       }
     }
@@ -117,9 +121,12 @@ describe('survival: the catalogue', () => {
     expect(story[0]?.after).toBeUndefined()
     for (let i = 1; i < story.length; i++) expect(story[i]?.after).toBe(story[i - 1]?.id ?? '')
     const missing: string[] = []
-    const poi = (key?: string) => key && !def.pois.some((p) => p.key === key) && missing.push(`poi ${key}`)
-    const npc = (key?: string) => key && !def.npcs.some((p) => p.key === key) && missing.push(`npc ${key}`)
-    const thing = (key: string) => !def.interactables.some((p) => p.key === key) && missing.push(`thing ${key}`)
+    const poi = (key?: string) =>
+      key && !def.pois.some((p) => p.key === key) && missing.push(`poi ${key}`)
+    const npc = (key?: string) =>
+      key && !def.npcs.some((p) => p.key === key) && missing.push(`npc ${key}`)
+    const thing = (key: string) =>
+      !def.interactables.some((p) => p.key === key) && missing.push(`thing ${key}`)
     for (const q of QUESTS) {
       npc(q.giver)
       for (const step of q.steps) {
@@ -156,16 +163,21 @@ describe('survival: the night', () => {
   test('loot is put out near you, told to you, and E takes it', () => {
     const t = setup()
     t.run(2)
-    const loot = t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    const loot =
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     expect(loot.length).toBeGreaterThan(0)
-    const item = loot.find((l) => ITEMS[l.item]?.kind !== 'weapon' && ITEMS[l.item]?.kind !== 'money')
+    const item = loot.find(
+      (l) => ITEMS[l.item]?.kind !== 'weapon' && ITEMS[l.item]?.kind !== 'money',
+    )
     if (!item) throw new Error('nothing to take')
     const start = t.def.pois[0]
     t.move(item.x + 0.9, (start?.y ?? 0) + 0.14, item.z)
     t.useAt(item.x, item.y, item.z)
     t.run(0.1)
     expect(t.self().inv.some((s) => s.item === item.item)).toBe(true)
-    const removed = t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.remove)
+    const removed = t.clients[0]?.inbox
+      .filter((m) => m.type === ServerMsg.Loot)
+      .flatMap((m) => m.remove)
     expect(removed).toContain(item.id)
   })
 
@@ -195,10 +207,16 @@ describe('survival: the night', () => {
   test('eating, bandaging and wearing a pack work from the backpack', () => {
     const t = setup()
     t.run(1)
-    const d = (t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }).survival
+    const d = (
+      t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }
+    ).survival
     const sv = d.survivors.get(t.ids[0] ?? 0)
     if (!sv) throw new Error('no survivor')
-    sv.self.inv.push({ item: 'beans', n: 2 }, { item: 'pack_hiking', n: 1 }, { item: 'ammo9', n: 30 })
+    sv.self.inv.push(
+      { item: 'beans', n: 2 },
+      { item: 'pack_hiking', n: 1 },
+      { item: 'ammo9', n: 30 },
+    )
     sv.self.hunger = 40
     t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'beans' })
     t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'pack_hiking' })
@@ -227,7 +245,10 @@ describe('survival: the night', () => {
     expect(n).toBeGreaterThan(0)
     expect(n).toBeLessThan(8)
     for (const z of t.zombies()) {
-      const d = Math.hypot(z.state.pos.x - t.player().state.pos.x, z.state.pos.z - t.player().state.pos.z)
+      const d = Math.hypot(
+        z.state.pos.x - t.player().state.pos.x,
+        z.state.pos.z - t.player().state.pos.z,
+      )
       expect(d).toBeGreaterThan(30)
       expect(z.maxHealth).toBeGreaterThan(100)
     }
@@ -249,7 +270,9 @@ describe('survival: the night', () => {
   test('dying drops the backpack where you fell and wakes you up at the start', () => {
     const t = setup()
     t.run(1)
-    const d = (t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }).survival
+    const d = (
+      t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }
+    ).survival
     d.survivors.get(t.ids[0] ?? 0)?.self.inv.push({ item: 'beans', n: 3 })
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
@@ -257,7 +280,8 @@ describe('survival: the night', () => {
     t.run(7)
     expect(t.player().state.alive).toBe(true)
     expect(t.player().state.weapon.id).toBe(WeaponId.Handgun)
-    const dropped = t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    const dropped =
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     expect(dropped.some((l) => l.item === 'beans' && l.n === 3)).toBe(true)
   })
 })

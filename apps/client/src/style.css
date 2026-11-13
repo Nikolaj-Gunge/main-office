@@ -1059,7 +1059,12 @@ body {
   right: 0;
   bottom: 17%;
   padding: 18px 0;
-  background: linear-gradient(transparent, rgb(0 0 0 / 0.78) 18%, rgb(0 0 0 / 0.78) 82%, transparent);
+  background: linear-gradient(
+    transparent,
+    rgb(0 0 0 / 0.78) 18%,
+    rgb(0 0 0 / 0.78) 82%,
+    transparent
+  );
 }
 
 .sv-story div {

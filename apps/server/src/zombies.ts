@@ -365,7 +365,11 @@ export class ZombieDirector {
     const nearest = team[0]?.state.pos
     const yaw = nearest ? Math.atan2(-(nearest.x - choice[0]), -(nearest.z - choice[2])) : 0
     const spot: MapSpawn = { pos: [choice[0] + jitter(), choice[1], choice[2] + jitter()], yaw }
-    this.game.placeZombie(zombie, spot, Math.round((KIND_HEALTH[kind] ?? 100) * this.difficulty.health))
+    this.game.placeZombie(
+      zombie,
+      spot,
+      Math.round((KIND_HEALTH[kind] ?? 100) * this.difficulty.health),
+    )
     return true
   }
 

@@ -112,8 +112,15 @@ for (const [ammo, id, name, weight, value] of AMMO_ITEMS) {
 }
 
 // ── Food ──
-const food = (id: string, name: string, hunger: number, weight: number, value: number, desc: string, extra: Partial<ItemDef> = {}) =>
-  add({ id, name, kind: 'food', hunger, weight, value, desc, ...extra })
+const food = (
+  id: string,
+  name: string,
+  hunger: number,
+  weight: number,
+  value: number,
+  desc: string,
+  extra: Partial<ItemDef> = {},
+) => add({ id, name, kind: 'food', hunger, weight, value, desc, ...extra })
 food('beans', 'Canned beans', 30, 0.45, 18, 'Cold beans. Best meal this week.')
 food('soup', 'Canned soup', 26, 0.45, 16, 'Chicken noodle, allegedly.', { thirst: 8 })
 food('tuna', 'Canned tuna', 22, 0.2, 14, 'Dolphin friendly. Zombie neutral.')
@@ -121,7 +128,9 @@ food('peaches', 'Canned peaches', 20, 0.45, 20, 'In syrup. Worth dying for.', { 
 food('chips', 'Bag of chips', 12, 0.1, 8, 'Loud to open. Louder to eat.')
 food('chocolate', 'Chocolate bar', 14, 0.08, 12, 'A little hope in a wrapper.', { stamina: 30 })
 food('jerky', 'Beef jerky', 24, 0.12, 22, 'Chewy. Keeps forever.', { thirst: -6 })
-food('energybar', 'Energy bar', 18, 0.07, 14, 'Tastes like cardboard that believes in you.', { stamina: 40 })
+food('energybar', 'Energy bar', 18, 0.07, 14, 'Tastes like cardboard that believes in you.', {
+  stamina: 40,
+})
 food('mre', 'MRE', 60, 0.7, 60, 'Meal, Ready-to-Eat. Three lies in one name.', { thirst: 5 })
 food('apple', 'Apple', 10, 0.18, 6, 'Slightly bruised.', { thirst: 6 })
 food('dogfood', 'Dog food', 22, 0.4, 5, "Don't think about it.")
@@ -129,35 +138,78 @@ food('cereal', 'Box of cereal', 20, 0.35, 12, 'Stale. Still part of a complete b
 food('berries', 'Wild berries', 6, 0.05, 3, 'Probably the safe kind.', { thirst: 4 })
 
 // ── Drinks ──
-const drink = (id: string, name: string, thirst: number, weight: number, value: number, desc: string, extra: Partial<ItemDef> = {}) =>
-  add({ id, name, kind: 'drink', thirst, weight, value, desc, ...extra })
+const drink = (
+  id: string,
+  name: string,
+  thirst: number,
+  weight: number,
+  value: number,
+  desc: string,
+  extra: Partial<ItemDef> = {},
+) => add({ id, name, kind: 'drink', thirst, weight, value, desc, ...extra })
 drink('water', 'Water bottle', 40, 0.55, 15, 'Clean water. More precious than bullets.')
 drink('soda', 'Soda can', 22, 0.36, 10, 'Flat and warm.', { hunger: 4 })
-drink('energydrink', 'Energy drink', 18, 0.28, 18, 'Your heart will be the loudest thing in the forest.', { stamina: 100 })
+drink(
+  'energydrink',
+  'Energy drink',
+  18,
+  0.28,
+  18,
+  'Your heart will be the loudest thing in the forest.',
+  { stamina: 100 },
+)
 drink('juice', 'Juice box', 20, 0.22, 8, 'Apple. Comes with a tiny straw.', { hunger: 3 })
 drink('coffee', 'Thermos of coffee', 24, 0.5, 25, 'Still warm, somehow.', { stamina: 60 })
 drink('beer', 'Bottle of beer', 14, 0.5, 12, 'For courage.', { health: 3 })
-drink('dirtywater', 'Dirty water', 28, 0.55, 2, "It'll do. It'll also do something to you.", { health: -8 })
+drink('dirtywater', 'Dirty water', 28, 0.55, 2, "It'll do. It'll also do something to you.", {
+  health: -8,
+})
 
 // ── Medical ──
-const med = (id: string, name: string, weight: number, value: number, desc: string, extra: Partial<ItemDef>) =>
-  add({ id, name, kind: 'med', weight, value, desc, ...extra })
+const med = (
+  id: string,
+  name: string,
+  weight: number,
+  value: number,
+  desc: string,
+  extra: Partial<ItemDef>,
+) => add({ id, name, kind: 'med', weight, value, desc, ...extra })
 med('rags', 'Clean rags', 0.05, 6, 'Better than bleeding.', { stopsBleeding: true })
-med('bandage', 'Bandage', 0.06, 25, 'Stops bleeding and patches you up a little.', { stopsBleeding: true, health: 12 })
-med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', { stopsBleeding: true, health: 70 })
+med('bandage', 'Bandage', 0.06, 25, 'Stops bleeding and patches you up a little.', {
+  stopsBleeding: true,
+  health: 12,
+})
+med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', {
+  stopsBleeding: true,
+  health: 70,
+})
 med('painkillers', 'Painkillers', 0.05, 40, "You'll feel it tomorrow instead.", { health: 22 })
 med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', { health: 35 })
 med('adrenaline', 'Adrenaline shot', 0.05, 110, 'Run now, pay later.', { health: 15, stamina: 100 })
 
 // ── Backpacks ──
-const pack = (id: string, name: string, capacity: number, weight: number, value: number, desc: string) =>
-  add({ id, name, kind: 'pack', capacity, weight, value, desc })
+const pack = (
+  id: string,
+  name: string,
+  capacity: number,
+  weight: number,
+  value: number,
+  desc: string,
+) => add({ id, name, kind: 'pack', capacity, weight, value, desc })
 pack('pack_school', 'School backpack', 18, 0.4, 120, 'Has a name written inside. Carries 18 kg.')
 pack('pack_hiking', 'Hiking backpack', 30, 0.9, 380, 'Frame and hip belt. Carries 30 kg.')
 pack('pack_military', 'Military rucksack', 45, 1.6, 900, 'Built to carry a war. Carries 45 kg.')
 
 // ── Tools ──
-add({ id: 'batteries', name: 'Batteries', kind: 'tool', weight: 0.1, value: 30, battery: 100, desc: 'Fresh light for your torch.' })
+add({
+  id: 'batteries',
+  name: 'Batteries',
+  kind: 'tool',
+  weight: 0.1,
+  value: 30,
+  battery: 100,
+  desc: 'Fresh light for your torch.',
+})
 
 // ── Junk: only good for selling ──
 const junk = (id: string, name: string, weight: number, value: number, desc: string) =>
@@ -169,11 +221,19 @@ junk('cigarettes', 'Cigarettes', 0.03, 28, 'Currency with a warning label.')
 junk('lighter', 'Lighter', 0.03, 12, 'Half full.')
 junk('watch', 'Wristwatch', 0.1, 70, 'Stopped at 3:17.')
 junk('ring', 'Gold ring', 0.01, 160, 'Engraved: "Forever".')
-junk('necklace', 'Silver necklace', 0.03, 110, 'Still warm. No, it isn\'t.')
+junk('necklace', 'Silver necklace', 0.03, 110, "Still warm. No, it isn't.")
 junk('whiskey', 'Bottle of whiskey', 0.9, 85, 'The trader pays well for this.')
 junk('toolkit', 'Small toolkit', 1.4, 90, 'Screwdrivers, pliers, a wrench.')
 junk('gasoline', 'Jerry can', 4.5, 120, 'Sloshes. Smells like the old world.')
-add({ id: 'cash', name: 'Cash', kind: 'money', weight: 0, value: 1, cash: 1, desc: 'Still worth something at Haven.' })
+add({
+  id: 'cash',
+  name: 'Cash',
+  kind: 'money',
+  weight: 0,
+  value: 1,
+  cash: 1,
+  desc: 'Still worth something at Haven.',
+})
 
 // ── Quest items ──
 const quest = (id: string, name: string, weight: number, desc: string) =>
@@ -183,7 +243,12 @@ quest('radio_board', 'Transmitter board', 0.4, 'Pulled from a police radio.')
 quest('fuse', 'Heavy fuse', 0.3, 'Industrial. Rated for a generator.')
 quest('keycard_blue', 'Blue keycard', 0.01, 'SITE 7 — LEVEL 1. There is blood on the lanyard.')
 quest('keycard_red', 'Red keycard', 0.01, 'SITE 7 — LEVEL 2. Dr. E. Voss.')
-quest('research', "Voss's research notes", 0.6, 'Pages of formulas and one line underlined three times.')
+quest(
+  'research',
+  "Voss's research notes",
+  0.6,
+  'Pages of formulas and one line underlined three times.',
+)
 quest('sample', 'Serum sample', 0.2, 'A steel case, cold to the touch.')
 quest('flare', 'Signal flare', 0.3, 'Red. Seen for miles.')
 quest('teddy', 'Teddy bear', 0.3, 'One eye missing. Somebody misses it.')
@@ -191,7 +256,7 @@ quest('photo', 'Family photo', 0.01, 'Four people on a porch, smiling.')
 quest('dogtags', 'Dog tags', 0.02, 'Somebody should know what happened to them.')
 quest('insulin', 'Insulin', 0.1, 'Keep cold. Keep hidden.')
 quest('seeds', 'Seed packets', 0.1, 'Tomatoes, beans, squash. A future.')
-quest('toolbox', 'Mechanic\'s toolbox', 5, 'Heavy. Everything a generator needs.')
+quest('toolbox', "Mechanic's toolbox", 5, 'Heavy. Everything a generator needs.')
 quest('map_piece', 'Ranger map', 0.05, 'Marked with circles in red pen.')
 
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
@@ -240,6 +305,8 @@ export const LOOT_TABLES = [
   'pack',
   'melee',
   'office',
+  /** Pumps, sheds and generators: where a jerry can is most likely to be. */
+  'fuel',
 ] as const
 export type LootTable = (typeof LOOT_TABLES)[number]
 
@@ -256,116 +323,267 @@ const TABLES: Record<LootTable, TableDef> = {
   kitchen: {
     empty: 0.3,
     entries: [
-      ['beans', 10], ['soup', 9], ['tuna', 8], ['peaches', 5], ['chips', 7], ['cereal', 6],
-      ['apple', 4], ['dogfood', 4], ['water', 9], ['soda', 7], ['juice', 4], ['beer', 4],
-      ['coffee', 2], ['dirtywater', 4], ['knife', 3], ['lighter', 2], ['whiskey', 1],
+      ['beans', 10],
+      ['soup', 9],
+      ['tuna', 8],
+      ['peaches', 5],
+      ['chips', 7],
+      ['cereal', 6],
+      ['apple', 4],
+      ['dogfood', 4],
+      ['water', 9],
+      ['soda', 7],
+      ['juice', 4],
+      ['beer', 4],
+      ['coffee', 2],
+      ['dirtywater', 4],
+      ['knife', 3],
+      ['lighter', 2],
+      ['whiskey', 1],
     ],
   },
   medical: {
     empty: 0.25,
     entries: [
-      ['bandage', 12, 1, 2], ['rags', 8, 1, 3], ['painkillers', 8], ['medkit', 3],
-      ['antibiotics', 2], ['adrenaline', 1.5], ['water', 2],
+      ['bandage', 12, 1, 2],
+      ['rags', 8, 1, 3],
+      ['painkillers', 8],
+      ['medkit', 3],
+      ['antibiotics', 2],
+      ['adrenaline', 1.5],
+      ['water', 2],
     ],
   },
   garage: {
     empty: 0.3,
     entries: [
-      ['scrap', 10, 1, 3], ['ducttape', 7], ['toolkit', 4], ['electronics', 5], ['batteries', 6],
-      ['gasoline', 2], ['crowbar', 3], ['bat', 2], ['axe', 1.5], ['sledge', 1], ['lighter', 2],
+      ['scrap', 10, 1, 3],
+      ['ducttape', 7],
+      ['toolkit', 4],
+      ['electronics', 5],
+      ['batteries', 6],
+      ['gasoline', 2],
+      ['crowbar', 3],
+      ['bat', 2],
+      ['axe', 1.5],
+      ['sledge', 1],
+      ['lighter', 2],
     ],
   },
   bedroom: {
     empty: 0.4,
     entries: [
-      ['cash', 9, 5, 40], ['watch', 3], ['ring', 1.5], ['necklace', 1.5], ['cigarettes', 5],
-      ['batteries', 4], ['painkillers', 3], ['chocolate', 4], ['ammo9', 3, 4, 10],
-      ['ammo22', 3, 8, 20], ['pack_school', 1.5], ['bat', 1.5], ['glock', 0.6], ['revolver', 0.4],
+      ['cash', 9, 5, 40],
+      ['watch', 3],
+      ['ring', 1.5],
+      ['necklace', 1.5],
+      ['cigarettes', 5],
+      ['batteries', 4],
+      ['painkillers', 3],
+      ['chocolate', 4],
+      ['ammo9', 3, 4, 10],
+      ['ammo22', 3, 8, 20],
+      ['pack_school', 1.5],
+      ['bat', 1.5],
+      ['glock', 0.6],
+      ['revolver', 0.4],
     ],
   },
   store: {
     empty: 0.3,
     entries: [
-      ['chips', 9], ['chocolate', 8], ['energybar', 8], ['jerky', 6], ['soda', 9], ['water', 8],
-      ['energydrink', 5], ['juice', 4], ['cigarettes', 6], ['lighter', 4], ['batteries', 7],
-      ['beer', 5], ['cash', 4, 3, 25], ['ducttape', 2],
+      ['chips', 9],
+      ['chocolate', 8],
+      ['energybar', 8],
+      ['jerky', 6],
+      ['soda', 9],
+      ['water', 8],
+      ['energydrink', 5],
+      ['juice', 4],
+      ['cigarettes', 6],
+      ['lighter', 4],
+      ['batteries', 7],
+      ['beer', 5],
+      ['cash', 4, 3, 25],
+      ['ducttape', 2],
     ],
   },
   gun: {
     empty: 0.25,
     entries: [
-      ['ammo9', 10, 6, 18], ['ammo45', 7, 5, 12], ['ammo12', 7, 3, 8], ['ammo22', 7, 10, 30],
-      ['ammo357', 4, 4, 8], ['ammo308', 3, 3, 6], ['ammo762', 3, 6, 15], ['m9', 1.5],
-      ['m1911', 1.5], ['ruger', 1], ['carbine22', 1.2], ['doublebarrel', 1.2], ['lever', 0.8],
-      ['pump', 0.8], ['sawedoff', 0.7], ['revolver', 0.8],
+      ['ammo9', 10, 6, 18],
+      ['ammo45', 7, 5, 12],
+      ['ammo12', 7, 3, 8],
+      ['ammo22', 7, 10, 30],
+      ['ammo357', 4, 4, 8],
+      ['ammo308', 3, 3, 6],
+      ['ammo762', 3, 6, 15],
+      ['m9', 1.5],
+      ['m1911', 1.5],
+      ['ruger', 1],
+      ['carbine22', 1.2],
+      ['doublebarrel', 1.2],
+      ['lever', 0.8],
+      ['pump', 0.8],
+      ['sawedoff', 0.7],
+      ['revolver', 0.8],
     ],
   },
   police: {
     empty: 0.2,
     entries: [
-      ['ammo9', 10, 10, 24], ['ammo45', 5, 6, 14], ['ammo12', 7, 4, 10], ['ammo556', 3, 10, 20],
-      ['m9', 3], ['glock', 3], ['pump', 2], ['mp5', 1], ['m4', 0.5], ['bandage', 3],
-      ['medkit', 1], ['batteries', 3],
+      ['ammo9', 10, 10, 24],
+      ['ammo45', 5, 6, 14],
+      ['ammo12', 7, 4, 10],
+      ['ammo556', 3, 10, 20],
+      ['m9', 3],
+      ['glock', 3],
+      ['pump', 2],
+      ['mp5', 1],
+      ['m4', 0.5],
+      ['bandage', 3],
+      ['medkit', 1],
+      ['batteries', 3],
     ],
   },
   military: {
     empty: 0.2,
     entries: [
-      ['ammo556', 10, 12, 30], ['ammo762', 6, 10, 25], ['ammo9', 5, 10, 20], ['ammo308', 3, 4, 8],
-      ['ammo50', 0.7, 2, 4], ['mre', 6], ['medkit', 3], ['bandage', 4, 1, 2], ['adrenaline', 1.5],
-      ['m4', 1.2], ['ak47', 1], ['ump', 0.9], ['mp5', 0.9], ['saiga', 0.4], ['svd', 0.3],
-      ['m249', 0.25], ['pack_military', 0.5], ['machete', 1], ['batteries', 3],
+      ['ammo556', 10, 12, 30],
+      ['ammo762', 6, 10, 25],
+      ['ammo9', 5, 10, 20],
+      ['ammo308', 3, 4, 8],
+      ['ammo50', 0.7, 2, 4],
+      ['mre', 6],
+      ['medkit', 3],
+      ['bandage', 4, 1, 2],
+      ['adrenaline', 1.5],
+      ['m4', 1.2],
+      ['ak47', 1],
+      ['ump', 0.9],
+      ['mp5', 0.9],
+      ['saiga', 0.4],
+      ['svd', 0.3],
+      ['m249', 0.25],
+      ['pack_military', 0.5],
+      ['machete', 1],
+      ['batteries', 3],
     ],
   },
   hunting: {
     empty: 0.25,
     entries: [
-      ['ammo308', 8, 3, 8], ['ammo357', 5, 4, 8], ['ammo12', 6, 3, 8], ['ammo22', 6, 10, 24],
-      ['bolts', 5, 2, 5], ['hunting', 1.5], ['lever', 1.2], ['crossbow', 1.2], ['carbine22', 1.2],
-      ['doublebarrel', 1.2], ['jerky', 5], ['machete', 1.5], ['axe', 1.5], ['pack_hiking', 0.7],
+      ['ammo308', 8, 3, 8],
+      ['ammo357', 5, 4, 8],
+      ['ammo12', 6, 3, 8],
+      ['ammo22', 6, 10, 24],
+      ['bolts', 5, 2, 5],
+      ['hunting', 1.5],
+      ['lever', 1.2],
+      ['crossbow', 1.2],
+      ['carbine22', 1.2],
+      ['doublebarrel', 1.2],
+      ['jerky', 5],
+      ['machete', 1.5],
+      ['axe', 1.5],
+      ['pack_hiking', 0.7],
       ['coffee', 2],
     ],
   },
   camp: {
     empty: 0.35,
     entries: [
-      ['beans', 7], ['jerky', 5], ['water', 7], ['energybar', 5], ['bandage', 4], ['lighter', 4],
-      ['batteries', 4], ['berries', 4], ['coffee', 3], ['machete', 1], ['axe', 1.5],
-      ['pack_hiking', 0.8], ['pack_school', 1], ['bolts', 2, 1, 3], ['ammo22', 3, 6, 16],
+      ['beans', 7],
+      ['jerky', 5],
+      ['water', 7],
+      ['energybar', 5],
+      ['bandage', 4],
+      ['lighter', 4],
+      ['batteries', 4],
+      ['berries', 4],
+      ['coffee', 3],
+      ['machete', 1],
+      ['axe', 1.5],
+      ['pack_hiking', 0.8],
+      ['pack_school', 1],
+      ['bolts', 2, 1, 3],
+      ['ammo22', 3, 6, 16],
       ['dirtywater', 3],
     ],
   },
   cache: {
     empty: 0,
     entries: [
-      ['medkit', 5], ['ammo556', 5, 20, 40], ['ammo762', 5, 20, 40], ['ammo308', 4, 6, 12],
-      ['ammo12', 4, 8, 16], ['ammo50', 1, 3, 5], ['cash', 5, 60, 200], ['mre', 4, 1, 2],
-      ['ak47', 1.5], ['sks', 1.5], ['sniper', 0.7], ['saiga', 0.6], ['katana', 0.4],
-      ['pack_military', 0.8], ['adrenaline', 2], ['whiskey', 2], ['ring', 2],
+      ['medkit', 5],
+      ['ammo556', 5, 20, 40],
+      ['ammo762', 5, 20, 40],
+      ['ammo308', 4, 6, 12],
+      ['ammo12', 4, 8, 16],
+      ['ammo50', 1, 3, 5],
+      ['cash', 5, 60, 200],
+      ['mre', 4, 1, 2],
+      ['ak47', 1.5],
+      ['sks', 1.5],
+      ['sniper', 0.7],
+      ['saiga', 0.6],
+      ['katana', 0.4],
+      ['pack_military', 0.8],
+      ['adrenaline', 2],
+      ['whiskey', 2],
+      ['ring', 2],
     ],
   },
   pack: {
     empty: 0.35,
-    entries: [['pack_school', 6], ['pack_hiking', 3], ['pack_military', 0.7]],
+    entries: [
+      ['pack_school', 6],
+      ['pack_hiking', 3],
+      ['pack_military', 0.7],
+    ],
   },
   melee: {
     empty: 0.3,
     entries: [
-      ['bat', 6], ['crowbar', 6], ['machete', 3], ['axe', 3], ['sledge', 2], ['knife', 4],
+      ['bat', 6],
+      ['crowbar', 6],
+      ['machete', 3],
+      ['axe', 3],
+      ['sledge', 2],
+      ['knife', 4],
       ['katana', 0.2],
     ],
   },
   office: {
     empty: 0.45,
     entries: [
-      ['cash', 6, 2, 30], ['electronics', 5], ['batteries', 5], ['cigarettes', 3], ['coffee', 3],
-      ['painkillers', 2], ['watch', 1.5], ['energybar', 3], ['ducttape', 2],
+      ['cash', 6, 2, 30],
+      ['electronics', 5],
+      ['batteries', 5],
+      ['cigarettes', 3],
+      ['coffee', 3],
+      ['painkillers', 2],
+      ['watch', 1.5],
+      ['energybar', 3],
+      ['ducttape', 2],
+    ],
+  },
+  fuel: {
+    empty: 0.25,
+    entries: [
+      ['gasoline', 10],
+      ['scrap', 3, 1, 2],
+      ['lighter', 2],
+      ['ducttape', 1.5],
+      ['batteries', 1.5],
     ],
   },
 }
 
 /** Rolls what lies at a spot of this kind: an item and how many, or null for nothing. */
-export function rollLoot(table: LootTable, random: () => number): { item: string; n: number } | null {
+export function rollLoot(
+  table: LootTable,
+  random: () => number,
+): { item: string; n: number } | null {
   const def = TABLES[table]
   if (random() < def.empty) return null
   const total = def.entries.reduce((sum, e) => sum + e[1], 0)

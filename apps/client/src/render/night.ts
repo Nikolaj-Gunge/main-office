@@ -68,7 +68,10 @@ export class Night {
     }
     const uniforms = (sky?.material as THREE.ShaderMaterial | undefined)?.uniforms
     this.sky = uniforms
-      ? { top: uniforms.topColor?.value as THREE.Color, horizon: uniforms.horizonColor?.value as THREE.Color }
+      ? {
+          top: uniforms.topColor?.value as THREE.Color,
+          horizon: uniforms.horizonColor?.value as THREE.Color,
+        }
       : null
   }
 

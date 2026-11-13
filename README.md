@@ -56,6 +56,23 @@ it, or press E to swap (your old one is thrown down). Dying drops your rifle/sni
 The default map is the office; open the game with `?map=gym` (and start the server with
 `MAP=gym`) for the metrics gym.
 
+## Survival mode (Deadwood)
+
+Pick the **survival** mode in the lobby (it always uses the `deadwood` map). You wake in a cabin with
+a Glock, 12 rounds and a knife, in a dark forest roughly 3 km across. Scavenge cabins, gas stations,
+motels, farms, towns, bunkers and crash sites for food, water, medicine, ammo, weapons and bigger
+backpacks. The dead are few but tough, and more of them crowd the towns. Haven, the survivor camp,
+has a bed, traders and quest givers. Follow the story quests (shown in the HUD) to the end to win;
+side quests pay out in gear.
+
+| Key   | Action (survival)                                      |
+| ----- | ------------------------------------------------------ |
+| E     | Loot, talk, use (beds, notes, radios, doors)           |
+| I     | Backpack: W/S select, E use/equip, G drop              |
+| M     | Map                                                    |
+| F     | Torch                                                  |
+| 1–9   | Pick a dialogue option                                 |
+
 Audio starts when you click Play (browsers block sound before a click). Volume is in F1 → Audio.
 
 To run a second, isolated dev instance next to your normal one:

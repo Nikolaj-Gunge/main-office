@@ -33,10 +33,10 @@ import {
   type ServerMessage,
   ServerMsg,
   type ShotEvent,
-  type SurvivalAction,
   ShotResult,
   SNAPSHOT_RATE,
   type SpawnWeapon,
+  type SurvivalAction,
   setGates,
   stepPlayer,
   type TeamId,
@@ -57,7 +57,6 @@ import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
 import { SpawnPicker } from './spawning.ts'
-
 
 /** What runs a zombie (zombies mode's brain, or one of survival's dead). */
 export interface ZombieMind {

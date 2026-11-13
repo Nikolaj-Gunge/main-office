@@ -88,7 +88,17 @@ export interface LootSpot {
   poi: number
 }
 
-export type NpcRole = 'leader' | 'trader' | 'medic' | 'mechanic' | 'hunter' | 'cook' | 'kid' | 'guard' | 'radio' | 'priest'
+export type NpcRole =
+  | 'leader'
+  | 'trader'
+  | 'medic'
+  | 'mechanic'
+  | 'hunter'
+  | 'cook'
+  | 'kid'
+  | 'guard'
+  | 'radio'
+  | 'priest'
 
 /** Someone to talk to (they never move, and nothing hurts them). */
 export interface Npc {

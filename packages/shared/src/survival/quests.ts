@@ -60,7 +60,11 @@ export const QUESTS: QuestDef[] = [
     story: true,
     steps: [
       { kind: 'use', target: 'start_note', text: 'Read the note on the table' },
-      { kind: 'reach', poi: 'haven', text: 'Follow the track north-east to the road, and the road to Haven' },
+      {
+        kind: 'reach',
+        poi: 'haven',
+        text: 'Follow the track north-east to the road, and the road to Haven',
+      },
     ],
     done: "Haven. Walls, a fire, and people with guns who aren't pointing them at you. Yet.",
   },
@@ -137,7 +141,12 @@ export const QUESTS: QuestDef[] = [
         say: "…Beautiful. Give me a minute with a soldering iron. Here — you'll need more than that Glock where you're going next.",
       },
     ],
-    reward: { items: [['m9', 1], ['ammo9', 30]] },
+    reward: {
+      items: [
+        ['m9', 1],
+        ['ammo9', 30],
+      ],
+    },
     done: 'Ray has what he needs to fix the transmitter.',
   },
   {
@@ -163,7 +172,10 @@ export const QUESTS: QuestDef[] = [
         kind: 'use',
         target: 'tower_generator',
         text: 'Start the generator at the radio tower (north-west): needs the fuse and a jerry can',
-        needs: [['fuse', 1], ['gasoline', 1]],
+        needs: [
+          ['fuse', 1],
+          ['gasoline', 1],
+        ],
         wakes: 'radio',
         say: 'The generator coughs, catches, and roars. The red light on the mast starts to blink. Down in the trees, something answers.',
       },
@@ -173,7 +185,13 @@ export const QUESTS: QuestDef[] = [
         text: 'Use the transmitter',
         say: '"…any station, any station, this is Haven. We are forty souls. Is anybody out there?"\n\nStatic. Keep it running.',
       },
-      { kind: 'hold', poi: 'radio', seconds: 90, horde: 9, text: 'Hold the tower while the message goes out' },
+      {
+        kind: 'hold',
+        poi: 'radio',
+        seconds: 90,
+        horde: 9,
+        text: 'Hold the tower while the message goes out',
+      },
     ],
     reward: { money: 150 },
     done: '"Haven, this is RAVEN ACTUAL. We read you. Listen carefully.\n\nDr. Elias Voss. Site Seven. His serum works. Get it to Ashford and light a flare: one bird, one pass, no second try.\n\nRaven out."',
@@ -259,7 +277,10 @@ export const QUESTS: QuestDef[] = [
         kind: 'use',
         target: 'site7_safe',
         text: 'Open the specimen safe',
-        gives: [['sample', 1], ['research', 1]],
+        gives: [
+          ['sample', 1],
+          ['research', 1],
+        ],
         say: 'A steel case, cold as a grave, and a bundle of notes. The last page:\n\n"It works. God forgive me — it works only on the living."',
       },
     ],
@@ -307,12 +328,21 @@ export const QUESTS: QuestDef[] = [
         kind: 'use',
         target: 'evac_flare',
         text: 'Light the flare on the square',
-        needs: [['flare', 1], ['sample', 1]],
+        needs: [
+          ['flare', 1],
+          ['sample', 1],
+        ],
         keeps: true,
         wakes: 'ashford',
         say: 'Red light floods the square.\n\nEvery dead thing in Ashford turns towards it.',
       },
-      { kind: 'hold', poi: 'ashford', seconds: 150, horde: 14, text: 'Stay alive until the helicopter comes' },
+      {
+        kind: 'hold',
+        poi: 'ashford',
+        seconds: 150,
+        horde: 14,
+        text: 'Stay alive until the helicopter comes',
+      },
     ],
     done: 'Rotors. A searchlight. A hand pulling you up out of the red smoke.\n\nBelow you, Deadwood goes dark.\n\nYou made it.',
   },
@@ -323,9 +353,17 @@ export const QUESTS: QuestDef[] = [
     title: 'Liquid assets',
     giver: 'gus',
     after: 'wake',
-    offer: "Business proposition. Two bottles of whiskey — real ones, sealed — and I'll make it very worth your while. Houses, the motel, the diner in Mill Creek. People hid the good stuff.",
+    offer:
+      "Business proposition. Two bottles of whiskey — real ones, sealed — and I'll make it very worth your while. Houses, the motel, the diner in Mill Creek. People hid the good stuff.",
     steps: [
-      { kind: 'fetch', npc: 'gus', item: 'whiskey', n: 2, text: 'Bring Gus 2 bottles of whiskey', say: "Oh, that's the stuff. Pleasure doing business." },
+      {
+        kind: 'fetch',
+        npc: 'gus',
+        item: 'whiskey',
+        n: 2,
+        text: 'Bring Gus 2 bottles of whiskey',
+        say: "Oh, that's the stuff. Pleasure doing business.",
+      },
     ],
     reward: { money: 300 },
     done: 'Gus is a happy man.',
@@ -335,12 +373,31 @@ export const QUESTS: QuestDef[] = [
     title: 'Cold chain',
     giver: 'lena',
     after: 'keep',
-    offer: "Old Peter is diabetic. I have four days of insulin left. The clinic in Pinewatch had a fridge on a battery backup — if there's any left in this county, it's there.",
+    offer:
+      "Old Peter is diabetic. I have four days of insulin left. The clinic in Pinewatch had a fridge on a battery backup — if there's any left in this county, it's there.",
     steps: [
-      { kind: 'use', target: 'clinic_fridge', text: 'Search the fridge in the Pinewatch clinic', gives: [['insulin', 1]], say: 'The fridge is warm. But one sealed box at the back is still cool to the touch.' },
-      { kind: 'fetch', npc: 'lena', item: 'insulin', n: 1, text: 'Bring the insulin to Lena', say: "You have no idea what this means. Take these. I'd rather you had them than need them." },
+      {
+        kind: 'use',
+        target: 'clinic_fridge',
+        text: 'Search the fridge in the Pinewatch clinic',
+        gives: [['insulin', 1]],
+        say: 'The fridge is warm. But one sealed box at the back is still cool to the touch.',
+      },
+      {
+        kind: 'fetch',
+        npc: 'lena',
+        item: 'insulin',
+        n: 1,
+        text: 'Bring the insulin to Lena',
+        say: "You have no idea what this means. Take these. I'd rather you had them than need them.",
+      },
     ],
-    reward: { items: [['medkit', 2], ['antibiotics', 1]] },
+    reward: {
+      items: [
+        ['medkit', 2],
+        ['antibiotics', 1],
+      ],
+    },
     done: 'Peter has a few more months.',
   },
   {
@@ -348,10 +405,24 @@ export const QUESTS: QuestDef[] = [
     title: 'Tools of the trade',
     giver: 'ray',
     after: 'keep',
-    offer: "I'm fixing a camp with a butter knife and bad language. The Abernathy farm, west of here — old man Abernathy had a proper toolbox on his workbench in the barn. Heavy thing. Bring it and my good rucksack is yours.",
+    offer:
+      "I'm fixing a camp with a butter knife and bad language. The Abernathy farm, west of here — old man Abernathy had a proper toolbox on his workbench in the barn. Heavy thing. Bring it and my good rucksack is yours.",
     steps: [
-      { kind: 'use', target: 'farm_workbench', text: 'Take the toolbox from the barn at the Abernathy farm', gives: [['toolbox', 1]], say: 'Five kilos of honest steel.' },
-      { kind: 'fetch', npc: 'ray', item: 'toolbox', n: 1, text: 'Bring the toolbox to Ray', say: 'Now THAT is a socket set. A deal is a deal.' },
+      {
+        kind: 'use',
+        target: 'farm_workbench',
+        text: 'Take the toolbox from the barn at the Abernathy farm',
+        gives: [['toolbox', 1]],
+        say: 'Five kilos of honest steel.',
+      },
+      {
+        kind: 'fetch',
+        npc: 'ray',
+        item: 'toolbox',
+        n: 1,
+        text: 'Bring the toolbox to Ray',
+        say: 'Now THAT is a socket set. A deal is a deal.',
+      },
     ],
     reward: { items: [['pack_hiking', 1]] },
     done: 'Ray can finally fix things properly.',
@@ -361,9 +432,15 @@ export const QUESTS: QuestDef[] = [
     title: 'Thin the herd',
     giver: 'tom',
     after: 'keep',
-    offer: "The sawmill past Mill Creek. I count more of them there every night, and they're starting to wander this way. Put ten of them down. Use something quiet, or you'll be putting down thirty.",
+    offer:
+      "The sawmill past Mill Creek. I count more of them there every night, and they're starting to wander this way. Put ten of them down. Use something quiet, or you'll be putting down thirty.",
     steps: [{ kind: 'kill', n: 10, poi: 'sawmill', text: 'Kill 10 of the dead at the sawmill' }],
-    reward: { items: [['hunting', 1], ['ammo308', 12]] },
+    reward: {
+      items: [
+        ['hunting', 1],
+        ['ammo308', 12],
+      ],
+    },
     done: "Tom nods. From Tom, that's a speech.",
   },
   {
@@ -371,8 +448,17 @@ export const QUESTS: QuestDef[] = [
     title: 'The big one',
     giver: 'tom',
     after: 'herd',
-    offer: "There's one in the quarry. Big as a door. I put four rounds in it from the rim and it looked at me. It LOOKED at me.\n\nI want it dead before it finds its way here.",
-    steps: [{ kind: 'kill', n: 1, zombie: ZombieKind.Brute, poi: 'quarry', text: 'Kill the brute in the quarry, in the east' }],
+    offer:
+      "There's one in the quarry. Big as a door. I put four rounds in it from the rim and it looked at me. It LOOKED at me.\n\nI want it dead before it finds its way here.",
+    steps: [
+      {
+        kind: 'kill',
+        n: 1,
+        zombie: ZombieKind.Brute,
+        poi: 'quarry',
+        text: 'Kill the brute in the quarry, in the east',
+      },
+    ],
     reward: { money: 300, items: [['pack_military', 1]] },
     done: 'It took a lot of killing.',
   },
@@ -381,12 +467,32 @@ export const QUESTS: QuestDef[] = [
     title: 'Stone soup',
     giver: 'dot',
     after: 'wake',
-    offer: "Forty mouths and a pot of hot water. Three cans of beans and two bottles of clean water, dear, and I'll see you never go hungry in this camp.",
+    offer:
+      "Forty mouths and a pot of hot water. Three cans of beans and two bottles of clean water, dear, and I'll see you never go hungry in this camp.",
     steps: [
-      { kind: 'fetch', npc: 'dot', item: 'beans', n: 3, text: 'Bring Dot 3 cans of beans', say: "Lovely. Now the water, there's a dear." },
-      { kind: 'fetch', npc: 'dot', item: 'water', n: 2, text: 'Bring Dot 2 bottles of water', say: 'Sit. Eat. You look like a ghost.' },
+      {
+        kind: 'fetch',
+        npc: 'dot',
+        item: 'beans',
+        n: 3,
+        text: 'Bring Dot 3 cans of beans',
+        say: "Lovely. Now the water, there's a dear.",
+      },
+      {
+        kind: 'fetch',
+        npc: 'dot',
+        item: 'water',
+        n: 2,
+        text: 'Bring Dot 2 bottles of water',
+        say: 'Sit. Eat. You look like a ghost.',
+      },
     ],
-    reward: { items: [['mre', 3], ['coffee', 1]] },
+    reward: {
+      items: [
+        ['mre', 3],
+        ['coffee', 1],
+      ],
+    },
     done: 'Hot soup for forty.',
   },
   {
@@ -394,12 +500,31 @@ export const QUESTS: QuestDef[] = [
     title: 'Mr. Buttons',
     giver: 'sam',
     after: 'wake',
-    offer: "I left Mr. Buttons under my bed. At Shady Acres. Mum said we'd go back for him.\n\n…Mum's not coming back, is she.",
+    offer:
+      "I left Mr. Buttons under my bed. At Shady Acres. Mum said we'd go back for him.\n\n…Mum's not coming back, is she.",
     steps: [
-      { kind: 'use', target: 'trailer_bed', text: "Look under Sam's bed at the Shady Acres trailer park, in the south-west", gives: [['teddy', 1]], say: 'A bear with one eye, and a drawing: four stick people and a dog, holding hands.' },
-      { kind: 'fetch', npc: 'sam', item: 'teddy', n: 1, text: 'Bring Mr. Buttons to Sam', say: "You found him! …He says thank you. He says you can have Mum's necklace. For luck." },
+      {
+        kind: 'use',
+        target: 'trailer_bed',
+        text: "Look under Sam's bed at the Shady Acres trailer park, in the south-west",
+        gives: [['teddy', 1]],
+        say: 'A bear with one eye, and a drawing: four stick people and a dog, holding hands.',
+      },
+      {
+        kind: 'fetch',
+        npc: 'sam',
+        item: 'teddy',
+        n: 1,
+        text: 'Bring Mr. Buttons to Sam',
+        say: "You found him! …He says thank you. He says you can have Mum's necklace. For luck.",
+      },
     ],
-    reward: { items: [['necklace', 1], ['chocolate', 3]] },
+    reward: {
+      items: [
+        ['necklace', 1],
+        ['chocolate', 3],
+      ],
+    },
     done: 'Sam sleeps a little better.',
   },
   {
@@ -407,22 +532,54 @@ export const QUESTS: QuestDef[] = [
     title: 'Bring them home',
     giver: 'ortiz',
     after: 'keep',
-    offer: "I was 3rd Battalion. My squad held the checkpoints when it started — the Ashford road, the south road — and Reyes flew the bird that went down in the south-west.\n\nI can't leave the gate. Bring me their tags. Somebody should say their names.",
+    offer:
+      "I was 3rd Battalion. My squad held the checkpoints when it started — the Ashford road, the south road — and Reyes flew the bird that went down in the south-west.\n\nI can't leave the gate. Bring me their tags. Somebody should say their names.",
     steps: [
-      { kind: 'collect', targets: ['tags_1', 'tags_2', 'tags_3'], gives: [['dogtags', 1]], text: 'Take the dog tags: the two checkpoints and the crash site' },
-      { kind: 'fetch', npc: 'ortiz', item: 'dogtags', n: 3, text: 'Bring the 3 dog tags to Ortiz', say: "Kowalski. Brandt. Reyes.\n\n…Thank you. This was mine. It should be with someone who's still fighting." },
+      {
+        kind: 'collect',
+        targets: ['tags_1', 'tags_2', 'tags_3'],
+        gives: [['dogtags', 1]],
+        text: 'Take the dog tags: the two checkpoints and the crash site',
+      },
+      {
+        kind: 'fetch',
+        npc: 'ortiz',
+        item: 'dogtags',
+        n: 3,
+        text: 'Bring the 3 dog tags to Ortiz',
+        say: "Kowalski. Brandt. Reyes.\n\n…Thank you. This was mine. It should be with someone who's still fighting.",
+      },
     ],
-    reward: { items: [['ak47', 1], ['ammo762', 60]] },
+    reward: {
+      items: [
+        ['ak47', 1],
+        ['ammo762', 60],
+      ],
+    },
     done: 'Three names, remembered.',
   },
   {
     id: 'seeds',
     title: 'Seeds of tomorrow',
     giver: 'abel',
-    offer: "You are alive! Bless you, bless you. I have kept the lamps lit. I have buried so many.\n\nThe Abernathys kept seed in their pantry. When this night ends, someone must plant. Bring them, and I will give you what the bishop left under the altar. He was… an unusual man.",
+    offer:
+      'You are alive! Bless you, bless you. I have kept the lamps lit. I have buried so many.\n\nThe Abernathys kept seed in their pantry. When this night ends, someone must plant. Bring them, and I will give you what the bishop left under the altar. He was… an unusual man.',
     steps: [
-      { kind: 'use', target: 'farm_pantry', text: 'Search the pantry at the Abernathy farm', gives: [['seeds', 1]], say: 'Tomatoes, beans, squash. Dated last spring.' },
-      { kind: 'fetch', npc: 'abel', item: 'seeds', n: 1, text: 'Bring the seeds to Father Abel at the church', say: 'A future, in paper envelopes. Here. Go with God — and with this.' },
+      {
+        kind: 'use',
+        target: 'farm_pantry',
+        text: 'Search the pantry at the Abernathy farm',
+        gives: [['seeds', 1]],
+        say: 'Tomatoes, beans, squash. Dated last spring.',
+      },
+      {
+        kind: 'fetch',
+        npc: 'abel',
+        item: 'seeds',
+        n: 1,
+        text: 'Bring the seeds to Father Abel at the church',
+        say: 'A future, in paper envelopes. Here. Go with God — and with this.',
+      },
     ],
     reward: { items: [['katana', 1]] },
     done: 'Something will grow again.',
@@ -432,9 +589,15 @@ export const QUESTS: QuestDef[] = [
     title: "Ranger's secrets",
     giver: 'mara',
     after: 'keep',
-    offer: "One more thing. The forest rangers buried supply caches all over these woods, back when the worst thing out here was a snowstorm. Their maps would be at the three ranger stations. Find them and we'll know where to dig.",
+    offer:
+      "One more thing. The forest rangers buried supply caches all over these woods, back when the worst thing out here was a snowstorm. Their maps would be at the three ranger stations. Find them and we'll know where to dig.",
     steps: [
-      { kind: 'collect', targets: ['ranger_map_1', 'ranger_map_2', 'ranger_map_3'], gives: [['map_piece', 1]], text: 'Take the maps from the three ranger stations' },
+      {
+        kind: 'collect',
+        targets: ['ranger_map_1', 'ranger_map_2', 'ranger_map_3'],
+        gives: [['map_piece', 1]],
+        text: 'Take the maps from the three ranger stations',
+      },
     ],
     reward: { money: 100, reveals: true },
     done: 'Six stashes, marked on your map.',
@@ -501,18 +664,54 @@ export const SMALL_TALK: Record<string, string[]> = {
     'A gunshot carries a long way at night. Every one is a dinner bell.',
     "If you hear screaming in the woods, it isn't a person. It's calling the others.",
   ],
-  dot: ["There's always something in the pot, dear. Don't ask what.", 'You look thin. Everyone looks thin.'],
-  sam: ['Tom says the red eyes are the slow ones and the yellow eyes are the fast ones. I saw white ones once. Tom says I didn\'t.', 'Are you going outside? …Okay.'],
-  ortiz: ['Gate stays shut after you. Nothing personal.', "They don't come near the fires. Not yet."],
-  abel: ['I ring the bell for them at midnight. They gather. They listen. Then I stop, and they forget.', 'She is not in her grave, you know. None of them are, for long.'],
+  dot: [
+    "There's always something in the pot, dear. Don't ask what.",
+    'You look thin. Everyone looks thin.',
+  ],
+  sam: [
+    "Tom says the red eyes are the slow ones and the yellow eyes are the fast ones. I saw white ones once. Tom says I didn't.",
+    'Are you going outside? …Okay.',
+  ],
+  ortiz: [
+    'Gate stays shut after you. Nothing personal.',
+    "They don't come near the fires. Not yet.",
+  ],
+  abel: [
+    'I ring the bell for them at midnight. They gather. They listen. Then I stop, and they forget.',
+    'She is not in her grave, you know. None of them are, for long.',
+  ],
 }
 
 /** What Gus always has (he sells at an item's value, and buys at SELL_RATE of it). */
 export const TRADER_STOCK: string[] = [
-  'ammo9', 'ammo45', 'ammo22', 'ammo12', 'ammo556', 'ammo762', 'ammo308', 'ammo357', 'bolts',
-  'bandage', 'medkit', 'painkillers', 'water', 'beans', 'mre', 'batteries',
-  'pack_school', 'pack_hiking', 'bat', 'machete', 'axe',
-  'm1911', 'revolver', 'carbine22', 'doublebarrel', 'sks', 'crossbow', 'mp5',
+  'ammo9',
+  'ammo45',
+  'ammo22',
+  'ammo12',
+  'ammo556',
+  'ammo762',
+  'ammo308',
+  'ammo357',
+  'bolts',
+  'bandage',
+  'medkit',
+  'painkillers',
+  'water',
+  'beans',
+  'mre',
+  'batteries',
+  'pack_school',
+  'pack_hiking',
+  'bat',
+  'machete',
+  'axe',
+  'm1911',
+  'revolver',
+  'carbine22',
+  'doublebarrel',
+  'sks',
+  'crossbow',
+  'mp5',
 ]
 /** Ammunition is sold in boxes of this many. */
 export const AMMO_BOX = 10

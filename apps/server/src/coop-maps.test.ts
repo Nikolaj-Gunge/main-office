@@ -120,7 +120,7 @@ for (const id of COOP_MAPS) {
         me.state.pos = at(bottom)
         me.state.vel = { x: 0, y: 0, z: 0 }
         const yaw = Math.atan2(-(top[0] - bottom[0]), -(top[2] - bottom[2]))
-        let seq = (me.lastQueuedSeq) + 1
+        let seq = me.lastQueuedSeq + 1
         for (let t = 0; t < 12 * TICK_RATE; t++) {
           game.handleInput(me.id, [
             { seq: seq++, buttons: Button.Forward, yaw, pitch: 0, viewTick: game.tick },

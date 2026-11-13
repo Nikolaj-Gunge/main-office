@@ -2,7 +2,7 @@ import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
 import { PLACES } from './places.ts'
 import { cabin, haven, startCabin } from './structures.ts'
-import { buildTerrain, type RoadPlan } from './terrain.ts'
+import { buildTerrain, heightAt, type RoadPlan } from './terrain.ts'
 import type { Poi, PoiKind, SurvivalDef } from './types.ts'
 
 export const DEADWOOD_ID = 'deadwood'
@@ -93,16 +93,16 @@ const PLANS: Plan[] = [
   place('millcreek', 'town', 'Mill Creek', 960, 240, 90, 12),
   place('ashford', 'town', 'Ashford', 340, -1010, 110, 16),
   place('gas_north', 'gas', 'Gas-N-Go', 10, -640, 30, 4),
-  place('gas_south', 'gas', 'Last Stop Fuel', 310, 960, 30, 4, { turn: 2 }),
+  place('gas_south', 'gas', 'Last Stop Fuel', 310, 960, 30, 4),
   place('site7', 'bunker', 'Site 7', 1150, -1130, 36, 9, { lift: 20, skirt: 75 }),
-  place('bunker_west', 'bunker', 'Bunker 12', -1210, 440, 26, 4, { lift: 15, skirt: 60, turn: 1 }),
+  place('bunker_west', 'bunker', 'Bunker 12', -1210, 440, 26, 4, { lift: 15, skirt: 60, turn: 2 }),
   place('bunker_south', 'bunker', 'Bunker 4', 90, 1270, 26, 4, { lift: 13, skirt: 55, turn: 3 }),
   place('radio', 'radio', 'Radio tower', -960, -1140, 28, 5, { lift: 24, skirt: 85 }),
   place('ranger_nw', 'ranger', 'Ranger station', -1160, -640, 22, 2),
   place('ranger_se', 'ranger', 'Ranger station', 1240, 1190, 22, 2, { turn: 2 }),
   place('ranger_e', 'ranger', 'Ranger station', 1320, -430, 22, 2, { lift: 8, skirt: 40, turn: 1 }),
   place('checkpoint_east', 'checkpoint', 'Army checkpoint', 780, -740, 34, 9),
-  place('checkpoint_south', 'checkpoint', 'Roadblock', 1000, 890, 30, 6, { turn: 1 }),
+  place('checkpoint_south', 'checkpoint', 'Roadblock', 1000, 890, 30, 6),
   place('crash', 'crash', 'Crash site', -1010, 1090, 30, 6),
   place('farm', 'farm', 'Abernathy farm', -450, 160, 60, 6),
   place('sawmill', 'sawmill', 'Mill Creek sawmill', 1250, 560, 50, 8),
@@ -118,7 +118,10 @@ const PLANS: Plan[] = [
     place(`cabin_${i + 1}`, 'cabin', 'Cabin', x, z, 13, 1 + (i % 2), { wooded: true, turn: i % 4 }),
   ),
   ...CAMPSITES.map(([x, z], i) =>
-    place(`campsite_${i + 1}`, 'campsite', 'Campsite', x, z, 11, i % 3, { wooded: true, turn: i % 4 }),
+    place(`campsite_${i + 1}`, 'campsite', 'Campsite', x, z, 11, i % 3, {
+      wooded: true,
+      turn: i % 4,
+    }),
   ),
   ...CACHES.map(([x, z], i) =>
     place(`cache_${i + 1}`, 'cache', 'Stash', x, z, 7, 0, { wooded: true, hidden: true }),
@@ -130,9 +133,31 @@ const dirt = (...points: [number, number][]): RoadPlan => ({ kind: 'dirt', width
 
 const ROADS: RoadPlan[] = [
   // The highway, north to south, passing east of Haven.
-  asphalt([340, -1010], [200, -830], [10, -640], [150, -420], [170, -150], [200, 100], [120, 300], [90, 390], [130, 600], [310, 960], [330, 1250], [330, 1500]),
+  asphalt(
+    [340, -1010],
+    [200, -830],
+    [10, -640],
+    [150, -420],
+    [170, -150],
+    [200, 100],
+    [120, 300],
+    [90, 390],
+    [130, 600],
+    [310, 960],
+    [330, 1250],
+    [330, 1500],
+  ),
   // West to east: Pinewatch – the church – Mill Creek.
-  asphalt([-820, -260], [-500, -300], [-150, -380], [150, -420], [250, -350], [520, -200], [760, 0], [960, 240]),
+  asphalt(
+    [-820, -260],
+    [-500, -300],
+    [-150, -380],
+    [150, -420],
+    [250, -350],
+    [520, -200],
+    [760, 0],
+    [960, 240],
+  ),
   // Haven's gate, and the road east past the motel.
   asphalt([90, 390], [0, 425], [0, 448]),
   asphalt([90, 390], [350, 520], [600, 660], [820, 480], [960, 240]),
@@ -189,6 +214,7 @@ export function buildDeadwood(): MapDef {
   }))
 
   const build = emptyBuild()
+  const world = { groundAt: (x: number, z: number) => heightAt(terrain, x, z), lakes }
   const counts = new Map<PoiKind, number>()
   pois.forEach((poi, i) => {
     const variant = counts.get(poi.kind) ?? 0
@@ -197,7 +223,7 @@ export function buildDeadwood(): MapDef {
     if (poi.kind === 'start') startCabin(site)
     else if (poi.kind === 'cabin') cabin(site, variant)
     else if (poi.kind === 'camp') haven(site)
-    else PLACES[poi.kind](site, poi, variant)
+    else PLACES[poi.kind](site, poi, variant, world)
   })
 
   const survival: SurvivalDef = {

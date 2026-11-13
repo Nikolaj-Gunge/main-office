@@ -427,7 +427,12 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
         ctx.fillRect(0, (r + 1) * h - 1, size, 1)
         for (let i = 0; i < 10; i++) {
           ctx.fillStyle = 'rgba(30,20,10,0.35)'
-          ctx.fillRect(Math.floor(rand() * size), r * h + 2 + Math.floor(rand() * (h - 4)), 3 + Math.floor(rand() * 6), 1)
+          ctx.fillRect(
+            Math.floor(rand() * size),
+            r * h + 2 + Math.floor(rand() * (h - 4)),
+            3 + Math.floor(rand() * 6),
+            1,
+          )
         }
       }
     },
@@ -470,7 +475,10 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
         ctx.fillRect(x, 0, 1, size)
       }
       for (let i = 0; i < 26; i++) {
-        ctx.fillStyle = ['rgba(138,70,30,0.7)', 'rgba(110,52,22,0.7)', 'rgba(160,92,40,0.5)'][Math.floor(rand() * 3)] ?? ''
+        ctx.fillStyle =
+          ['rgba(138,70,30,0.7)', 'rgba(110,52,22,0.7)', 'rgba(160,92,40,0.5)'][
+            Math.floor(rand() * 3)
+          ] ?? ''
         const x = Math.floor(rand() * size)
         const y = Math.floor(rand() * size)
         ctx.fillRect(x, y, 2 + Math.floor(rand() * 5), 3 + Math.floor(rand() * 9))
@@ -489,7 +497,12 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       }
       for (let i = 0; i < 8; i++) {
         ctx.fillStyle = 'rgba(30,32,22,0.4)'
-        ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 3 + Math.floor(rand() * 5), 2)
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          3 + Math.floor(rand() * 5),
+          2,
+        )
       }
     },
   },
@@ -507,6 +520,19 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
           ctx.fillRect(x + 2, y + 1, 12, 1)
         }
       }
+    },
+  },
+  warnlight: {
+    meters: 0.4,
+    noise: 0,
+    kind: 'emissive',
+    glow: 4,
+    noShadow: true,
+    paint: (ctx, size) => {
+      ctx.fillStyle = '#ff2a1a'
+      ctx.fillRect(0, 0, size, size)
+      ctx.fillStyle = '#ff8a70'
+      ctx.fillRect(1, 1, Math.max(1, size - 2), Math.max(1, size - 2))
     },
   },
 }

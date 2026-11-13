@@ -457,7 +457,9 @@ function diner(b: Site): void {
   partition(b, true, -1.4, -6.8, 6.8, 2.9, 'plaster', [4.6])
   // The bar and its stools.
   cabinet(b, -1.6, -1, 8, 1.05, 0.6, 'desk')
-  b.loot(-4, F + 1.1, -1, 'kitchen').loot(-0.4, F + 1.1, -1, 'kitchen').loot(1.9, F + 1.1, -1, 'store')
+  b.loot(-4, F + 1.1, -1, 'kitchen')
+    .loot(-0.4, F + 1.1, -1, 'kitchen')
+    .loot(1.9, F + 1.1, -1, 'store')
   for (const x of [-4.6, -2.6, -0.6, 1.4]) b.deco(x, F, -0.25, 0.35, 0.62, 0.35, 'accent')
   // Booths.
   for (const e of [-1, 1]) {

@@ -5,7 +5,11 @@
 
 /** 32-bit hash of two integers and a seed → [0, 1). */
 export function hash2(x: number, z: number, seed: number): number {
-  let h = (Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(z | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1)) >>> 0
+  let h =
+    (Math.imul(x | 0, 0x27d4eb2d) ^
+      Math.imul(z | 0, 0x165667b1) ^
+      Math.imul(seed | 0, 0x9e3779b1)) >>>
+    0
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b)
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35)
   h ^= h >>> 16

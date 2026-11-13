@@ -44,6 +44,8 @@ export const MATERIALS = [
   'rust',
   'canvas',
   'sandbag',
+  /** A red lamp that glows by itself: beacons, emergency lights. */
+  'warnlight',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 

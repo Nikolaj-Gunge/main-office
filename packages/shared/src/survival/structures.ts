@@ -26,24 +26,54 @@ export function table(s: Site, x: number, z: number, w = 1.4, d = 0.8, loot?: Lo
 }
 
 /** A bed (or a sleeping bag on the floor): `key` makes it one you can sleep in. */
-export function bed(s: Site, x: number, z: number, alongX: boolean, key?: string, bag = false): void {
+export function bed(
+  s: Site,
+  x: number,
+  z: number,
+  alongX: boolean,
+  key?: string,
+  bag = false,
+): void {
   const [w, d] = alongX ? [2, 0.95] : [0.95, 2]
   if (bag) s.deco(x, FLOOR, z, w, 0.1, d * 0.75, 'fabric')
   else {
     s.block(x, FLOOR, z, w, 0.35, d, 'wood')
     s.deco(x, FLOOR + 0.35, z, w - 0.06, 0.14, d - 0.06, 'fabricAlt')
-    s.deco(alongX ? x - w / 2 + 0.25 : x, FLOOR + 0.49, alongX ? z : z - d / 2 + 0.25, alongX ? 0.4 : 0.7, 0.1, alongX ? 0.7 : 0.4, 'plaster')
+    s.deco(
+      alongX ? x - w / 2 + 0.25 : x,
+      FLOOR + 0.49,
+      alongX ? z : z - d / 2 + 0.25,
+      alongX ? 0.4 : 0.7,
+      0.1,
+      alongX ? 0.7 : 0.4,
+      'plaster',
+    )
   }
   if (key) s.interact(key, 'bed', x, FLOOR + 0.5, z, 'Sleep')
 }
 
 /** Shelves against a wall: `side` is the wall they stand at, so loot faces into the room. */
-export function shelf(s: Site, x: number, z: number, alongX: boolean, loot: LootTable[] = [], material: MaterialId = 'wood'): void {
+export function shelf(
+  s: Site,
+  x: number,
+  z: number,
+  alongX: boolean,
+  loot: LootTable[] = [],
+  material: MaterialId = 'wood',
+): void {
   const [w, d] = alongX ? [1.6, 0.4] : [0.4, 1.6]
   s.block(x, FLOOR, z, w, 1.8, d, material, { render: false })
   for (const y of [0.05, 0.6, 1.15, 1.7]) s.deco(x, FLOOR + y, z, w, 0.05, d, material)
   for (const e of [-1, 1]) {
-    s.deco(alongX ? x + e * (w / 2 - 0.03) : x, FLOOR, alongX ? z : z + e * (d / 2 - 0.03), alongX ? 0.05 : d, 1.8, alongX ? d : 0.05, material)
+    s.deco(
+      alongX ? x + e * (w / 2 - 0.03) : x,
+      FLOOR,
+      alongX ? z : z + e * (d / 2 - 0.03),
+      alongX ? 0.05 : d,
+      1.8,
+      alongX ? d : 0.05,
+      material,
+    )
   }
   loot.forEach((t, i) => {
     const y = [0.68, 1.23, 0.13][i % 3] as number
@@ -59,7 +89,14 @@ export function crate(s: Site, x: number, z: number, size = 0.8, loot?: LootTabl
 }
 
 /** A kitchen counter with a cupboard above. */
-export function counter(s: Site, x: number, z: number, alongX: boolean, length = 2, loot: LootTable[] = ['kitchen']): void {
+export function counter(
+  s: Site,
+  x: number,
+  z: number,
+  alongX: boolean,
+  length = 2,
+  loot: LootTable[] = ['kitchen'],
+): void {
   const [w, d] = alongX ? [length, 0.6] : [0.6, length]
   s.block(x, FLOOR, z, w, 0.9, d, 'desk')
   s.deco(x, FLOOR + 0.9, z, w + 0.04, 0.04, d + 0.04, 'concrete')
@@ -129,15 +166,41 @@ export function cabin(s: Site, variant: number): void {
   bed(s, w / 2 - 1.25, -d / 2 + 0.75, true, `bed_${s.poi.key}`, variant % 4 === 3)
   stove(s, -w / 2 + 0.7, -d / 2 + 0.6, 2.5, variant % 5 === 0)
   table(s, 0.3, 0.4, 1.4, 0.8, variant % 2 === 0 ? 'kitchen' : 'camp')
-  shelf(s, -w / 2 + 0.45, 0.6, false, variant % 2 === 0 ? ['kitchen', 'hunting'] : ['camp', 'garage'])
-  crate(s, w / 2 - 0.7, d / 2 - 0.75, 0.7, (['hunting', 'bedroom', 'medical', 'gun', 'melee'] as const)[variant % 5])
+  shelf(
+    s,
+    -w / 2 + 0.45,
+    0.6,
+    false,
+    variant % 2 === 0 ? ['kitchen', 'hunting'] : ['camp', 'garage'],
+  )
+  crate(
+    s,
+    w / 2 - 0.7,
+    d / 2 - 0.75,
+    0.7,
+    (['hunting', 'bedroom', 'medical', 'gun', 'melee'] as const)[variant % 5],
+  )
   s.loot(w / 2 - 1.2, FLOOR + 0.02, -d / 2 + 1.7, 'bedroom')
-  if (variant % 5 !== 0) s.light(0, 2.1, 0, { color: 0xffb060, intensity: variant % 2 ? 5 : 0, distance: 7, flicker: 0.5 })
+  if (variant % 5 !== 0)
+    s.light(0, 2.1, 0, {
+      color: 0xffb060,
+      intensity: variant % 2 ? 5 : 0,
+      distance: 7,
+      flicker: 0.5,
+    })
   // Outside: a woodpile, a chopping block, maybe an outhouse.
   s.block(w / 2 + 0.9, 0, -0.5, 0.8, 0.9, 2, 'log')
   s.block(-w / 2 - 1.6, 0, 1.5, 0.5, 0.45, 0.5, 'log')
   if (variant % 3 === 0) {
-    s.sub(-w / 2 - 4, -3).shell(0, 0, { w: 1.4, d: 1.4, h: 2.1, wall: 'wood', roof: 'shingle', doors: [{ side: 'e', at: 0, width: 0.9 }], noRoom: true })
+    s.sub(-w / 2 - 4, -3).shell(0, 0, {
+      w: 1.4,
+      d: 1.4,
+      h: 2.1,
+      wall: 'wood',
+      roof: 'shingle',
+      doors: [{ side: 'e', at: 0, width: 0.9 }],
+      noRoom: true,
+    })
   }
   s.zombie(2.5, d / 2 + 4)
   if (variant % 2 === 0) s.zombie(-w / 2 - 3, -1)

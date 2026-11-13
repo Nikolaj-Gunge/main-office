@@ -411,7 +411,8 @@ function scream(rate: number, v: number): Signal {
   let phase = 0
   for (let i = 0; i < out.length; i++) {
     const t = i / rate
-    const rise = 520 + 380 * Math.min(1, t * 3) + 60 * Math.sin(t * 31 + v) - 160 * (t / seconds) ** 3
+    const rise =
+      520 + 380 * Math.min(1, t * 3) + 60 * Math.sin(t * 31 + v) - 160 * (t / seconds) ** 3
     phase += (2 * Math.PI * rise) / rate
     let s = 0
     for (let h = 1; h <= 9; h++) s += Math.sin(phase * h * (1 + 0.004 * h)) / h
@@ -452,18 +453,34 @@ function dread(rate: number, v: number): Signal {
     const t = i / rate
     const f = 46 + v * 9
     out[i] =
-      (Math.sin(2 * Math.PI * f * t) + 0.6 * Math.sin(2 * Math.PI * f * 1.498 * t) + 0.4 * Math.sin(2 * Math.PI * f * 2.02 * t)) *
+      (Math.sin(2 * Math.PI * f * t) +
+        0.6 * Math.sin(2 * Math.PI * f * 1.498 * t) +
+        0.4 * Math.sin(2 * Math.PI * f * 2.02 * t)) *
       (t / seconds) ** 2
   }
   const hit = envelope(sweep(0.5, rate, 90, 30), rate, 0.002, 0.16)
-  return fadeEdges(normalize(saturate(mix(rate, out, [gain(hit, 1.6), seconds - 0.12]), 2), 0.9), rate, 0.01)
+  return fadeEdges(
+    normalize(saturate(mix(rate, out, [gain(hit, 1.6), seconds - 0.12]), 2), 0.9),
+    rate,
+    0.01,
+  )
 }
 
 /** A twig snapping somewhere out in the dark. */
 function twigSnap(rate: number, v: number): Signal {
   const r = rng(1500 + v)
-  const snap = envelope(bandpass(noise(0.05, rate, 1500 + v), rate, 1800 + r() * 1400, 1.5), rate, 0, 0.006)
-  const second = envelope(bandpass(noise(0.05, rate, 1510 + v), rate, 1200 + r() * 900, 1.2), rate, 0, 0.01)
+  const snap = envelope(
+    bandpass(noise(0.05, rate, 1500 + v), rate, 1800 + r() * 1400, 1.5),
+    rate,
+    0,
+    0.006,
+  )
+  const second = envelope(
+    bandpass(noise(0.05, rate, 1510 + v), rate, 1200 + r() * 900, 1.2),
+    rate,
+    0,
+    0.01,
+  )
   return fadeEdges(normalize(mix(rate, snap, [gain(second, 0.6), 0.04 + r() * 0.08]), 0.8), rate)
 }
 

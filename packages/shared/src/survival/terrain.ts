@@ -4,7 +4,6 @@ import {
   CHUNK,
   GRID,
   type Lake,
-  type Poi,
   type Road,
   Surface,
   type Terrain,
@@ -118,7 +117,8 @@ export function buildTerrain(
       const z = zi * CELL - WORLD_HALF
       heights[index(xi, zi)] = rawHeight(x, z, seed)
       // Mostly thick forest, with meadows where the noise dips.
-      const glade = valueNoise(x / 95, z / 95, seed + 5) + 0.35 * valueNoise(x / 31, z / 31, seed + 6)
+      const glade =
+        valueNoise(x / 95, z / 95, seed + 5) + 0.35 * valueNoise(x / 31, z / 31, seed + 6)
       const c = smoothstep(-0.62, -0.25, glade)
       cover[index(xi, zi)] = Math.round(c * 255)
       surface[index(xi, zi)] = c < 0.35 ? Surface.Meadow : Surface.Forest
@@ -132,7 +132,9 @@ export function buildTerrain(
       const w = smoothstep(site.r + skirt, site.r, d)
       heights[i] = (heights[i] as number) + (y - (heights[i] as number)) * w
       if (!clear) return
-      const keep = site.wooded ? smoothstep(site.r * 0.55, site.r + 6, d) : smoothstep(site.r + 2, site.r + 20, d)
+      const keep = site.wooded
+        ? smoothstep(site.r * 0.55, site.r + 6, d)
+        : smoothstep(site.r + 2, site.r + 20, d)
       cover[i] = Math.min(cover[i] as number, Math.round(keep * 255))
       if (d < site.r + 3) surface[i] = Surface.Dirt
     })
@@ -211,7 +213,10 @@ export function buildTerrain(
       const w = smoothstep(plan.r + 30, plan.r - 6, d)
       const bed = y - 0.2 - 1.1 * smoothstep(plan.r, plan.r * 0.4, d)
       heights[i] = (heights[i] as number) + (bed - (heights[i] as number)) * w
-      cover[i] = Math.min(cover[i] as number, Math.round(smoothstep(plan.r + 6, plan.r + 26, d) * 255))
+      cover[i] = Math.min(
+        cover[i] as number,
+        Math.round(smoothstep(plan.r + 6, plan.r + 26, d) * 255),
+      )
       if (d < plan.r + 7) surface[i] = Surface.Sand
     })
     return { ...plan, y }

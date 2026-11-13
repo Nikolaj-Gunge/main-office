@@ -152,7 +152,8 @@ export class Zed {
         seenD = d
         continue
       }
-      if (d < p.noise && (!heard || d < Math.hypot(heard.pos.x - me.x, heard.pos.z - me.z))) heard = p
+      if (d < p.noise && (!heard || d < Math.hypot(heard.pos.x - me.x, heard.pos.z - me.z)))
+        heard = p
       let sight = k.sight * (1 + grey * 0.7) * (p.light ? 2.1 : 1) * (p.crouched ? 0.6 : 1)
       // What it's already chasing is harder to lose than to find.
       if (p.id === this.targetId && this.mood === 'chase') sight *= 1.5
@@ -200,9 +201,11 @@ export class Zed {
       const d = Math.hypot(dx, dy, dz)
       if (d > WATCH_RANGE || d < 0.5) continue
       const cp = Math.cos(p.pitch)
-      const look = (-Math.sin(p.yaw) * cp * dx + Math.sin(p.pitch) * dy - Math.cos(p.yaw) * cp * dz) / d
+      const look =
+        (-Math.sin(p.yaw) * cp * dx + Math.sin(p.pitch) * dy - Math.cos(p.yaw) * cp * dz) / d
       if (look < WATCH_COS) continue
-      if (!clear({ x: p.pos.x, y: p.pos.y + EYE, z: p.pos.z }, { x: me.x, y: me.y + 1.3, z: me.z })) continue
+      if (!clear({ x: p.pos.x, y: p.pos.y + EYE, z: p.pos.z }, { x: me.x, y: me.y + 1.3, z: me.z }))
+        continue
       this.frozen = true
       return
     }
@@ -256,12 +259,19 @@ export class Zed {
       for (const p of def.pois) {
         if (!p.safe) continue
         const edge = p.r + SAFE_MARGIN
-        if (Math.hypot(goal.x - p.x, goal.z - p.z) < edge && Math.hypot(me.x - p.x, me.z - p.z) < edge + 4) {
+        if (
+          Math.hypot(goal.x - p.x, goal.z - p.z) < edge &&
+          Math.hypot(me.x - p.x, me.z - p.z) < edge + 4
+        ) {
           this.mood = 'wander'
           this.targetId = 0
           this.lastKnown = null
           const away = Math.atan2(me.z - p.z, me.x - p.x)
-          this.goal = { x: p.x + Math.cos(away) * (edge + 30), y: me.y, z: p.z + Math.sin(away) * (edge + 30) }
+          this.goal = {
+            x: p.x + Math.cos(away) * (edge + 30),
+            y: me.y,
+            z: p.z + Math.sin(away) * (edge + 30),
+          }
           goal = this.goal
         }
       }
@@ -377,9 +387,15 @@ export function doorBetween(rooms: readonly Room[], a: Point, b: Point): Point |
 }
 
 /** Which kinds live at a place: mostly walkers, with whatever makes the place special. */
-export function kindFor(poi: Poi | undefined, slot: number, roll: number, dark: boolean): ZombieKind {
+export function kindFor(
+  poi: Poi | undefined,
+  slot: number,
+  roll: number,
+  dark: boolean,
+): ZombieKind {
   if (poi?.kind === 'quarry' && slot === 0) return ZombieKind.Brute
-  if (poi?.key === 'site7') return slot === 0 ? ZombieKind.Brute : roll < 0.4 ? ZombieKind.Stalker : ZombieKind.Runner
+  if (poi?.key === 'site7')
+    return slot === 0 ? ZombieKind.Brute : roll < 0.4 ? ZombieKind.Stalker : ZombieKind.Runner
   if (poi?.kind === 'town') {
     if (slot === 3) return ZombieKind.Screamer
     if (slot === 7 && poi.key === 'ashford') return ZombieKind.Brute

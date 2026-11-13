@@ -144,6 +144,24 @@ export function cot(s: Site, x: number, z: number, alongX: boolean, y = 0): void
   s.deco(alongX ? x - 0.7 : x, y + 0.38, alongX ? z : z - 0.7, 0.4, 0.08, 0.4, 'plaster')
 }
 
+/** A note somebody left: read it with E. */
+export function note(s: Site, key: string, x: number, y: number, z: number, text: string): void {
+  s.deco(x, y, z, 0.22, 0.01, 0.3, 'whiteboard')
+  s.interact(key, 'note', x, y + 0.05, z, 'Read the note', text)
+}
+
+/** A light that has almost given up. */
+export function dying(
+  s: Site,
+  x: number,
+  y: number,
+  z: number,
+  color = 0xdfe8ff,
+  intensity = 9,
+): void {
+  s.light(x, y, z, { color, intensity, distance: 10, flicker: 0.7 })
+}
+
 // --- Streets and yards ------------------------------------------------------------------------
 
 /** Paving: a thin slab you walk "in" rather than on (so nothing has to be lifted onto it). */
@@ -185,14 +203,7 @@ export function corpse(s: Site, x: number, z: number, alongX: boolean, y = 0): v
 }
 
 /** A street lamp; `lit` gives it a working bulb. */
-export function lampPost(
-  s: Site,
-  x: number,
-  z: number,
-  lit?: LampOptions,
-  dx = 0.9,
-  dz = 0,
-): void {
+export function lampPost(s: Site, x: number, z: number, lit?: LampOptions, dx = 0.9, dz = 0): void {
   s.block(x, 0, z, 0.16, 5, 0.16, 'metal')
   s.deco(x + dx / 2, 4.9, z + dz / 2, Math.abs(dx) + 0.1, 0.1, Math.abs(dz) + 0.1, 'metal')
   s.deco(x + dx, 4.74, z + dz, 0.45, 0.14, 0.45, lit ? 'lightpanel' : 'metal')

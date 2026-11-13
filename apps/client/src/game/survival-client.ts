@@ -185,7 +185,14 @@ export class SurvivalClient {
    * Every frame. Returns true when the shadows want redrawing.
    * @param eyeYaw  where you look (the server's angles: 0 = north, + = left)
    */
-  update(dt: number, state: PlayerState, health: number, eyeYaw: number, eyePitch: number, remotes: RemotePlayers): boolean {
+  update(
+    dt: number,
+    state: PlayerState,
+    health: number,
+    eyeYaw: number,
+    eyePitch: number,
+    remotes: RemotePlayers,
+  ): boolean {
     const eye = this.camera.position
     const built = this.wilds.update(eye.x, eye.z)
     this.sinceForest += dt
@@ -200,7 +207,8 @@ export class SurvivalClient {
     // Your torch, and the nearest of everyone else's.
     const on = this.self?.light === true && state.alive
     this.torchLevel += ((on ? 1 : 0) - this.torchLevel) * Math.min(1, dt * 18)
-    const sputter = on && (this.self?.battery ?? 100) < 15 && Math.sin(performance.now() / 53) > 0.6 ? 0.35 : 1
+    const sputter =
+      on && (this.self?.battery ?? 100) < 15 && Math.sin(performance.now() / 53) > 0.6 ? 0.35 : 1
     this.torch.intensity = 70 * this.torchLevel * sputter
     const lit = remotes
       .torches()
@@ -211,7 +219,11 @@ export class SurvivalClient {
       if (!t) return
       const cp = Math.cos(t.pitch)
       light.position.set(t.x, t.y, t.z)
-      light.target.position.set(t.x - Math.sin(t.yaw) * cp * 10, t.y + Math.sin(t.pitch) * 10, t.z - Math.cos(t.yaw) * cp * 10)
+      light.target.position.set(
+        t.x - Math.sin(t.yaw) * cp * 10,
+        t.y + Math.sin(t.pitch) * 10,
+        t.z - Math.cos(t.yaw) * cp * 10,
+      )
     })
 
     // The people of Haven turn to look at you when you come close.
@@ -253,7 +265,8 @@ export class SurvivalClient {
       const a = Math.random() * Math.PI * 2
       const at = { x: eye.x + Math.cos(a) * 25, y: eye.y + 4, z: eye.z + Math.sin(a) * 25 }
       if (Math.random() < 0.6) this.audio.play('wind', { at, volume: 0.25 + Math.random() * 0.25 })
-      else this.audio.play('twig', { at: { ...at, y: eye.y - 1 }, volume: 0.25 + Math.random() * 0.2 })
+      else
+        this.audio.play('twig', { at: { ...at, y: eye.y - 1 }, volume: 0.25 + Math.random() * 0.2 })
     }
     // Something within a few metres that you haven't been stung about lately.
     const t = performance.now() / 1000
@@ -315,12 +328,16 @@ export class SurvivalClient {
     }
     if (loot && (!thing || lootScore >= best)) {
       const def = ITEMS[loot.item]
-      const name = def?.kind === 'money' ? `$${loot.n}` : `${def?.name ?? loot.item}${loot.n > 1 ? ` ×${loot.n}` : ''}`
+      const name =
+        def?.kind === 'money'
+          ? `$${loot.n}`
+          : `${def?.name ?? loot.item}${loot.n > 1 ? ` ×${loot.n}` : ''}`
       return `Take ${name}`
     }
     if (thing) return thing.label
     for (const lake of this.def.lakes) {
-      if (Math.hypot(ex - lake.x, ez - lake.z) < lake.r && state.pos.y < lake.y + 0.1) return 'Drink'
+      if (Math.hypot(ex - lake.x, ez - lake.z) < lake.r && state.pos.y < lake.y + 0.1)
+        return 'Drink'
     }
     return null
   }

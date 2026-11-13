@@ -1,4 +1,4 @@
-import { type ItemKind, ITEMS, type LootItem } from '@office-fps/shared'
+import { ITEMS, type ItemKind, type LootItem } from '@office-fps/shared'
 import * as THREE from 'three'
 import { buildGunModel } from './gun-models.ts'
 
@@ -57,7 +57,9 @@ export class LootView {
         let m = material.get(kind)
         if (!m) {
           // Dim on purpose: it reads as an object catching a little light, not as a lamp.
-          m = new THREE.MeshBasicMaterial({ color: new THREE.Color(look.color).multiplyScalar(0.55) })
+          m = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(look.color).multiplyScalar(0.55),
+          })
           material.set(kind, m)
         }
         root = new THREE.Mesh(g, m)

@@ -3,9 +3,9 @@ import {
   capacityOf,
   countOf,
   type Dialog,
+  ITEMS,
   type ItemDef,
   type ItemKind,
-  ITEMS,
   type Notice,
   type Poi,
   QUESTS,
@@ -27,7 +27,12 @@ import {
   weightOf,
 } from '@office-fps/shared'
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement, text?: string) {
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  parent?: HTMLElement,
+  text?: string,
+) {
   const node = document.createElement(tag)
   node.className = className
   if (text !== undefined) node.textContent = text
@@ -48,7 +53,18 @@ export interface SurvivalHudContext {
   carried: readonly { id: WeaponId; ammo: number }[]
 }
 
-const KIND_ORDER: ItemKind[] = ['weapon', 'ammo', 'food', 'drink', 'med', 'pack', 'tool', 'junk', 'quest', 'money']
+const KIND_ORDER: ItemKind[] = [
+  'weapon',
+  'ammo',
+  'food',
+  'drink',
+  'med',
+  'pack',
+  'tool',
+  'junk',
+  'quest',
+  'money',
+]
 const KIND_TITLE: Record<ItemKind, string> = {
   weapon: 'Weapons',
   ammo: 'Ammunition',
@@ -91,7 +107,11 @@ export function effectText(def: ItemDef): string {
   if (def.battery) parts.push('recharges the torch')
   if (def.weapon !== undefined) {
     const w = WEAPONS[def.weapon]
-    parts.push(w.slot === 'melee' ? `melee · ${w.damage} damage` : `${w.ammoType} · ${w.magSize} rounds · ${w.damage * (w.pellets ?? 1)} damage`)
+    parts.push(
+      w.slot === 'melee'
+        ? `melee · ${w.damage} damage`
+        : `${w.ammoType} · ${w.magSize} rounds · ${w.damage * (w.pellets ?? 1)} damage`,
+    )
   }
   return parts.join(' · ')
 }
@@ -109,7 +129,9 @@ export function stepLine(step: QuestStep, state: QuestState, inv: readonly Stack
       return `${step.text} (${done}/${step.targets.length})`
     }
     case 'fetch':
-      return step.n > 1 ? `${step.text} (${Math.min(step.n, countOf(inv, step.item))}/${step.n})` : step.text
+      return step.n > 1
+        ? `${step.text} (${Math.min(step.n, countOf(inv, step.item))}/${step.n})`
+        : step.text
     default:
       return step.text
   }
@@ -200,7 +222,10 @@ export class SurvivalHud {
 
     this.compass = el('div', 'sv-compass', this.root)
     for (const [i, name] of ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].entries()) {
-      this.points.push({ node: el('span', i % 2 === 0 ? 'main' : '', this.compass, name), bearing: i * 45 })
+      this.points.push({
+        node: el('span', i % 2 === 0 ? 'main' : '', this.compass, name),
+        bearing: i * 45,
+      })
     }
     this.marker = el('b', 'sv-compass-goal', this.compass)
     this.hour = el('div', 'sv-hour', this.root, 'THE GREY HOUR')
@@ -283,7 +308,9 @@ export class SurvivalHud {
     el('div', 'sv-talk-name', this.talk, d.name)
     el('div', 'sv-talk-text', this.talk)
     const list = el('div', 'sv-talk-options', this.talk)
-    d.options.forEach((o, i) => el('div', '', list, `[${i + 1}] ${o.label}`))
+    d.options.forEach((o, i) => {
+      el('div', '', list, `[${i + 1}] ${o.label}`)
+    })
   }
 
   toggleBackpack(): void {
@@ -322,7 +349,12 @@ export class SurvivalHud {
   /** A key went down; true if the HUD used it. */
   key(code: string): boolean {
     if (!this.visible) return false
-    if (this.storyNow && (code === 'Space' || code === 'Enter') && this.screen === 'none' && !this.talking) {
+    if (
+      this.storyNow &&
+      (code === 'Space' || code === 'Enter') &&
+      this.screen === 'none' &&
+      !this.talking
+    ) {
       this.storyNow.age = Number.POSITIVE_INFINITY
       return true
     }
@@ -368,7 +400,8 @@ export class SurvivalHud {
     }
 
     // Notices fade out; story cards type themselves out one after another.
-    while (this.feedLines[0] && this.feedLines[0].until < this.clock) this.feedLines.shift()?.node.remove()
+    while (this.feedLines[0] && this.feedLines[0].until < this.clock)
+      this.feedLines.shift()?.node.remove()
     if (!this.storyNow && this.storyQueue.length > 0) {
       this.storyNow = { text: this.storyQueue.shift() ?? '', shown: 0, age: 0 }
       this.story.hidden = false
@@ -420,7 +453,10 @@ export class SurvivalHud {
 
   /** The story chapter first, then side jobs. */
   private quests(): { state: QuestState; story: boolean }[] {
-    const all = (this.shared?.quests ?? []).map((state) => ({ state, story: questById(state.id)?.story === true }))
+    const all = (this.shared?.quests ?? []).map((state) => ({
+      state,
+      story: questById(state.id)?.story === true,
+    }))
     return [...all.filter((q) => q.story), ...all.filter((q) => !q.story).slice(0, 3)]
   }
 
@@ -509,12 +545,18 @@ export class SurvivalHud {
       return
     }
     if (what === 'drop') {
-      if (def.kind === 'quest') return this.onSound?.('deny')
+      if (def.kind === 'quest') return void this.onSound?.('deny')
       this.send({ a: 'drop', item: def.id, n: this.shift ? row.stack.n : 1 })
     } else if (def.kind === 'weapon') this.send({ a: 'equip', index: row.index })
-    else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med' || def.kind === 'pack' || def.battery) {
+    else if (
+      def.kind === 'food' ||
+      def.kind === 'drink' ||
+      def.kind === 'med' ||
+      def.kind === 'pack' ||
+      def.battery
+    ) {
       this.send({ a: 'use', item: def.id })
-    } else return this.onSound?.('deny')
+    } else return void this.onSound?.('deny')
     this.onSound?.('use')
   }
 
@@ -528,7 +570,10 @@ export class SurvivalHud {
   }
 
   /** The backpack's stacks in display order: by kind, then by name. */
-  private sorted(inv: readonly Stack[], filter: (def: ItemDef) => boolean = () => true): { stack: Stack; index: number }[] {
+  private sorted(
+    inv: readonly Stack[],
+    filter: (def: ItemDef) => boolean = () => true,
+  ): { stack: Stack; index: number }[] {
     return inv
       .map((stack, index) => ({ stack, index }))
       .filter((r) => {
@@ -538,7 +583,10 @@ export class SurvivalHud {
       .sort((a, b) => {
         const da = ITEMS[a.stack.item] as ItemDef
         const db = ITEMS[b.stack.item] as ItemDef
-        return KIND_ORDER.indexOf(da.kind) - KIND_ORDER.indexOf(db.kind) || da.name.localeCompare(db.name)
+        return (
+          KIND_ORDER.indexOf(da.kind) - KIND_ORDER.indexOf(db.kind) ||
+          da.name.localeCompare(db.name)
+        )
       })
   }
 
@@ -583,13 +631,25 @@ export class SurvivalHud {
         }
         const def = WEAPONS[w.id]
         el('span', 'sv-row-name', row, def.name)
-        el('span', 'sv-row-info', row, slot === 'melee' ? '' : `${w.ammo}/${def.magSize} · ${self.inv ? this.spare(def.ammoType) : 0} spare`)
+        el(
+          'span',
+          'sv-row-info',
+          row,
+          slot === 'melee'
+            ? ''
+            : `${w.ammo}/${def.magSize} · ${self.inv ? this.spare(def.ammoType) : 0} spare`,
+        )
         this.button(row, 'Stow', () => this.send({ a: 'stow', slot }), carried.length > 1)
       }
       el('div', 'sv-group', left, 'Carrying')
       const weight = weightOf(self.inv)
       const cap = capacityOf(self)
-      el('div', 'sv-pack', left, self.pack ? (ITEMS[self.pack]?.name ?? 'Backpack') : 'Pockets only — find a backpack')
+      el(
+        'div',
+        'sv-pack',
+        left,
+        self.pack ? (ITEMS[self.pack]?.name ?? 'Backpack') : 'Pockets only — find a backpack',
+      )
       const bar = el('div', 'sv-weight', left)
       const fill = el('i', weight > cap * 0.9 ? 'low' : '', bar)
       fill.style.width = `${Math.min(100, (weight / cap) * 100)}%`
@@ -598,11 +658,15 @@ export class SurvivalHud {
     }
 
     // Your things: to use and drop, or to sell.
-    this.rows = this.sorted(self.inv, shop ? (d) => d.kind !== 'quest' && d.kind !== 'money' : undefined)
+    this.rows = this.sorted(
+      self.inv,
+      shop ? (d) => d.kind !== 'quest' && d.kind !== 'money' : undefined,
+    )
     this.selected = Math.max(0, Math.min(this.rows.length - 1, this.selected))
     el('div', 'sv-group', right, shop ? 'You sell' : 'In your pack')
     const list = el('div', 'sv-list', right)
-    if (this.rows.length === 0) el('div', 'sv-row-name empty', list, shop ? 'Nothing to sell.' : 'Empty.')
+    if (this.rows.length === 0)
+      el('div', 'sv-row-name empty', list, shop ? 'Nothing to sell.' : 'Empty.')
     let lastKind: ItemKind | null = null
     this.rows.forEach((row, i) => {
       const def = ITEMS[row.stack.item] as ItemDef
@@ -621,7 +685,18 @@ export class SurvivalHud {
         this.button(node, 'Sell', () => this.act(row, 'main'))
       } else {
         el('span', 'sv-row-info', node, `${kg(def.weight * row.stack.n)} kg`)
-        const verb = def.kind === 'weapon' ? 'Equip' : def.kind === 'pack' ? 'Wear' : def.kind === 'food' ? 'Eat' : def.kind === 'drink' ? 'Drink' : def.kind === 'med' || def.battery ? 'Use' : null
+        const verb =
+          def.kind === 'weapon'
+            ? 'Equip'
+            : def.kind === 'pack'
+              ? 'Wear'
+              : def.kind === 'food'
+                ? 'Eat'
+                : def.kind === 'drink'
+                  ? 'Drink'
+                  : def.kind === 'med' || def.battery
+                    ? 'Use'
+                    : null
         if (verb) this.button(node, verb, () => this.act(row, 'main'))
         if (def.kind !== 'quest') this.button(node, 'Drop', () => this.act(row, 'drop'))
       }
@@ -636,7 +711,8 @@ export class SurvivalHud {
     const picked = list.querySelector('.selected')
     if (picked instanceof HTMLElement) {
       if (picked.offsetTop < list.scrollTop) list.scrollTop = picked.offsetTop - 30
-      else if (picked.offsetTop + 60 > list.scrollTop + list.clientHeight) list.scrollTop = picked.offsetTop + 90 - list.clientHeight
+      else if (picked.offsetTop + 60 > list.scrollTop + list.clientHeight)
+        list.scrollTop = picked.offsetTop + 90 - list.clientHeight
     }
   }
 
@@ -674,7 +750,10 @@ export class SurvivalHud {
       g.lineWidth = road.kind === 'asphalt' ? 3 : 1.5
       g.setLineDash(road.kind === 'asphalt' ? [] : [5, 4])
       g.beginPath()
-      road.line.forEach((p, i) => (i === 0 ? g.moveTo(at(p.x), at(p.z)) : g.lineTo(at(p.x), at(p.z))))
+      road.line.forEach((p, i) => {
+        if (i === 0) g.moveTo(at(p.x), at(p.z))
+        else g.lineTo(at(p.x), at(p.z))
+      })
       g.stroke()
     }
     g.setLineDash([])
@@ -738,8 +817,18 @@ export class SurvivalHud {
   }
 
   private drawPlace(g: CanvasRenderingContext2D, poi: Poi, x: number, y: number): void {
-    const small = poi.kind === 'cabin' || poi.kind === 'campsite' || poi.kind === 'cache' || poi.kind === 'start'
-    g.fillStyle = poi.safe ? '#ffb030' : poi.kind === 'town' ? '#d8d0b0' : poi.kind === 'cache' ? '#9ad06a' : '#a8a088'
+    const small =
+      poi.kind === 'cabin' ||
+      poi.kind === 'campsite' ||
+      poi.kind === 'cache' ||
+      poi.kind === 'start'
+    g.fillStyle = poi.safe
+      ? '#ffb030'
+      : poi.kind === 'town'
+        ? '#d8d0b0'
+        : poi.kind === 'cache'
+          ? '#9ad06a'
+          : '#a8a088'
     const r = poi.kind === 'town' ? 5 : small ? 2 : 3.5
     if (poi.kind === 'campsite' || poi.kind === 'cache') {
       g.beginPath()

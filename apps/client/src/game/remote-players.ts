@@ -224,7 +224,8 @@ export class RemotePlayers {
     const out: { x: number; y: number; z: number; yaw: number; pitch: number }[] = []
     for (const p of this.players.values()) {
       const s = p.shown
-      if (s?.alive && s.light) out.push({ x: s.x, y: s.y + 1.5, z: s.z, yaw: s.yaw, pitch: s.pitch })
+      if (s?.alive && s.light)
+        out.push({ x: s.x, y: s.y + 1.5, z: s.z, yaw: s.yaw, pitch: s.pitch })
     }
     return out
   }

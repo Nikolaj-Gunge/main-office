@@ -4,12 +4,12 @@ import {
   CHUNKS,
   chunkOf,
   chunkProps,
-  heightAt,
   hash2,
+  heightAt,
   PropKind,
   type Road,
-  type SurvivalDef,
   Surface,
+  type SurvivalDef,
   surfaceAt,
   WORLD_HALF,
 } from '@office-fps/shared'
@@ -57,7 +57,19 @@ class Triangles {
    * An upright box turned `turn` (radians) about the vertical through (x, z), from `y` up `h`,
    * leaning by (lx, lz) metres at the top.
    */
-  box(x: number, y: number, z: number, w: number, h: number, d: number, turn: number, color: THREE.Color, lx = 0, lz = 0, top = color): void {
+  box(
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    h: number,
+    d: number,
+    turn: number,
+    color: THREE.Color,
+    lx = 0,
+    lz = 0,
+    top = color,
+  ): void {
     const c = Math.cos(turn)
     const s = Math.sin(turn)
     const corner = (dx: number, dz: number, up: boolean) => [
@@ -67,8 +79,18 @@ class Triangles {
     ]
     const hw = w / 2
     const hd = d / 2
-    const b = [corner(-hw, -hd, false), corner(hw, -hd, false), corner(hw, hd, false), corner(-hw, hd, false)]
-    const t = [corner(-hw, -hd, true), corner(hw, -hd, true), corner(hw, hd, true), corner(-hw, hd, true)]
+    const b = [
+      corner(-hw, -hd, false),
+      corner(hw, -hd, false),
+      corner(hw, hd, false),
+      corner(-hw, hd, false),
+    ]
+    const t = [
+      corner(-hw, -hd, true),
+      corner(hw, -hd, true),
+      corner(hw, hd, true),
+      corner(-hw, hd, true),
+    ]
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4
       this.quad(b[j] as number[], b[i] as number[], t[i] as number[], t[j] as number[], color)
@@ -77,7 +99,16 @@ class Triangles {
   }
 
   /** A four-sided pyramid: base half-width `r` at height `y`, tip `h` above it. */
-  cone(x: number, y: number, z: number, r: number, h: number, turn: number, color: THREE.Color, dark: THREE.Color): void {
+  cone(
+    x: number,
+    y: number,
+    z: number,
+    r: number,
+    h: number,
+    turn: number,
+    color: THREE.Color,
+    dark: THREE.Color,
+  ): void {
     const tip = [x, y + h, z]
     const base: number[][] = []
     for (let i = 0; i < 4; i++) {
@@ -87,7 +118,13 @@ class Triangles {
     for (let i = 0; i < 4; i++) {
       this.tri(base[i] as number[], base[(i + 1) % 4] as number[], tip, i % 2 === 0 ? color : dark)
     }
-    this.quad(base[0] as number[], base[3] as number[], base[2] as number[], base[1] as number[], dark)
+    this.quad(
+      base[0] as number[],
+      base[3] as number[],
+      base[2] as number[],
+      base[1] as number[],
+      dark,
+    )
   }
 
   build(): THREE.BufferGeometry {
@@ -177,7 +214,10 @@ export class Wilds {
       opacity: 0.88,
     })
     for (const lake of def.lakes) {
-      const mesh = new THREE.Mesh(new THREE.CircleGeometry(lake.r + 28, 40).rotateX(-Math.PI / 2), water)
+      const mesh = new THREE.Mesh(
+        new THREE.CircleGeometry(lake.r + 28, 40).rotateX(-Math.PI / 2),
+        water,
+      )
       mesh.position.set(lake.x, lake.y, lake.z)
       mesh.name = 'lake'
       this.root.add(mesh)
@@ -194,7 +234,10 @@ export class Wilds {
     const wanted: { key: number; cx: number; cz: number; d: number }[] = []
     for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
       for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
-        const d = Math.hypot((cx + 0.5) * CHUNK - WORLD_HALF - x, (cz + 0.5) * CHUNK - WORLD_HALF - z)
+        const d = Math.hypot(
+          (cx + 0.5) * CHUNK - WORLD_HALF - x,
+          (cz + 0.5) * CHUNK - WORLD_HALF - z,
+        )
         if (d <= VIEW) wanted.push({ key: cx * CHUNKS + cz, cx, cz, d })
       }
     }
@@ -212,7 +255,8 @@ export class Wilds {
     const missing = wanted.filter((w) => !this.chunks.has(w.key)).sort((a, b) => a.d - b.d)
     // Everything at once the first time and after a teleport; then a little per frame.
     const near = missing.filter((m) => m.d < CHUNK * 1.6).length
-    const budget = !this.primed || near > 0 ? Math.max(near, this.primed ? 0 : missing.length) : PER_FRAME
+    const budget =
+      !this.primed || near > 0 ? Math.max(near, this.primed ? 0 : missing.length) : PER_FRAME
     for (const m of missing.slice(0, Math.max(budget, PER_FRAME))) {
       const chunk = this.buildChunk(m.cx, m.cz)
       this.chunks.set(m.key, chunk)
@@ -245,7 +289,9 @@ export class Wilds {
         const l = Math.hypot(dx, 2 * CELL, dz)
         normal.set([-dx / l, (2 * CELL) / l, -dz / l], k * 3)
         const shades = GROUND[surfaceAt(t, x, z)] ?? (GROUND[Surface.Forest] as THREE.Color[])
-        const c = shades[Math.floor(hash2(Math.round(x), Math.round(z), 3) * shades.length)] as THREE.Color
+        const c = shades[
+          Math.floor(hash2(Math.round(x), Math.round(z), 3) * shades.length)
+        ] as THREE.Color
         color.set([c.r, c.g, c.b], k * 3)
         uv.set([x / 6, z / 6], k * 2)
       }
@@ -288,31 +334,104 @@ export class Wilds {
         }
         case PropKind.DeadTree: {
           const lean = (p.turn - 0.5) * 1.2
-          tris.box(p.x, p.y - 0.3, p.z, 0.32 * s, 5.4 * s, 0.32 * s, turn, DEAD, lean, lean * 0.5, BARK_DARK)
+          tris.box(
+            p.x,
+            p.y - 0.3,
+            p.z,
+            0.32 * s,
+            5.4 * s,
+            0.32 * s,
+            turn,
+            DEAD,
+            lean,
+            lean * 0.5,
+            BARK_DARK,
+          )
           // Bare branches reaching out.
           for (let b = 0; b < 3; b++) {
             const a = turn + b * 2.2
             const h = (2.4 + b * 1.1) * s
             const bx = p.x + (lean * h) / (5.4 * s)
-            tris.box(bx, p.y + h, p.z, 0.1 * s, 1.5 * s, 0.1 * s, a, DEAD, Math.cos(a) * 1.1 * s, -Math.sin(a) * 1.1 * s)
+            tris.box(
+              bx,
+              p.y + h,
+              p.z,
+              0.1 * s,
+              1.5 * s,
+              0.1 * s,
+              a,
+              DEAD,
+              Math.cos(a) * 1.1 * s,
+              -Math.sin(a) * 1.1 * s,
+            )
           }
           break
         }
         case PropKind.Birch: {
-          tris.box(p.x, p.y - 0.3, p.z, 0.2 * s, 5.6 * s, 0.2 * s, turn, BIRCH, (p.turn - 0.5) * 0.5, 0)
+          tris.box(
+            p.x,
+            p.y - 0.3,
+            p.z,
+            0.2 * s,
+            5.6 * s,
+            0.2 * s,
+            turn,
+            BIRCH,
+            (p.turn - 0.5) * 0.5,
+            0,
+          )
           tris.box(p.x, p.y + 3.4 * s, p.z, 1.6 * s, 1.3 * s, 1.5 * s, turn, BIRCH_LEAF)
-          tris.box(p.x + 0.4 * s, p.y + 4.6 * s, p.z, 1.1 * s, 1.1 * s, 1.2 * s, turn + 0.7, BIRCH_LEAF)
+          tris.box(
+            p.x + 0.4 * s,
+            p.y + 4.6 * s,
+            p.z,
+            1.1 * s,
+            1.1 * s,
+            1.2 * s,
+            turn + 0.7,
+            BIRCH_LEAF,
+          )
           break
         }
         case PropKind.Rock:
-          tris.box(p.x, p.y - 0.25, p.z, 1.5 * s, 1.15 * s, 1.3 * s, turn, ROCK, 0.15 * s, -0.1 * s, ROCK_TOP)
+          tris.box(
+            p.x,
+            p.y - 0.25,
+            p.z,
+            1.5 * s,
+            1.15 * s,
+            1.3 * s,
+            turn,
+            ROCK,
+            0.15 * s,
+            -0.1 * s,
+            ROCK_TOP,
+          )
           break
         case PropKind.Stump:
           tris.box(p.x, p.y - 0.1, p.z, 0.62 * s, 0.55, 0.62 * s, turn, BARK, 0, 0, STUMP_TOP)
           break
         case PropKind.Bush:
-          tris.box(p.x, p.y - 0.1, p.z, 1.3 * s, 0.8 * s, 1.1 * s, turn, BUSH[pick % 2] as THREE.Color)
-          tris.box(p.x + 0.3 * s, p.y + 0.3, p.z + 0.2 * s, 0.8 * s, 0.8 * s, 0.9 * s, turn + 0.8, BUSH[(pick + 1) % 2] as THREE.Color)
+          tris.box(
+            p.x,
+            p.y - 0.1,
+            p.z,
+            1.3 * s,
+            0.8 * s,
+            1.1 * s,
+            turn,
+            BUSH[pick % 2] as THREE.Color,
+          )
+          tris.box(
+            p.x + 0.3 * s,
+            p.y + 0.3,
+            p.z + 0.2 * s,
+            0.8 * s,
+            0.8 * s,
+            0.9 * s,
+            turn + 0.8,
+            BUSH[(pick + 1) % 2] as THREE.Color,
+          )
           break
         case PropKind.Fern:
           tris.cone(p.x, p.y - 0.05, p.z, 0.5 * s, 0.45 * s, turn, FERN, BUSH[0] as THREE.Color)
@@ -349,7 +468,14 @@ export class Wilds {
       const px = -(b.z - a.z) / l
       const pz = (b.x - a.x) / l
       if (i > 0) along += Math.hypot(p.x - a.x, p.z - a.z)
-      position.push(p.x - px * half, p.y + 0.06, p.z - pz * half, p.x + px * half, p.y + 0.06, p.z + pz * half)
+      position.push(
+        p.x - px * half,
+        p.y + 0.06,
+        p.z - pz * half,
+        p.x + px * half,
+        p.y + 0.06,
+        p.z + pz * half,
+      )
       uv.push(0, along, road.width, along)
       if (i > 0) {
         const k = i * 2
@@ -372,7 +498,9 @@ export class Wilds {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
     geometry.setIndex(index)
     geometry.computeVertexNormals()
-    const material = (getSurfaceMaterial(road.kind === 'asphalt' ? 'asphalt' : 'dirt') as THREE.MeshLambertMaterial).clone()
+    const material = (
+      getSurfaceMaterial(road.kind === 'asphalt' ? 'asphalt' : 'dirt') as THREE.MeshLambertMaterial
+    ).clone()
     material.polygonOffset = true
     material.polygonOffsetFactor = -2
     material.polygonOffsetUnits = -4
@@ -382,7 +510,12 @@ export class Wilds {
     if (marks.position.length > 0) {
       const lines = new THREE.Mesh(
         marks.build(),
-        new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }),
+        new THREE.MeshLambertMaterial({
+          vertexColors: true,
+          polygonOffset: true,
+          polygonOffsetFactor: -4,
+          polygonOffsetUnits: -8,
+        }),
       )
       lines.receiveShadow = true
       group.add(lines)
