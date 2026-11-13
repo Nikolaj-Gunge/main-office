@@ -8,12 +8,15 @@ import {
   heightAt,
   PropKind,
   type Road,
+  RoadGrid,
   Surface,
   type SurvivalDef,
   surfaceAt,
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { buildDetail, detailItems, detailMaterials } from './ground-detail.ts'
+import { buildSigns } from './road-signs.ts'
 import { getSurfaceMaterial } from './textures.ts'
 import { makeSwaying } from './wind.ts'
 
@@ -21,6 +24,8 @@ import { makeSwaying } from './wind.ts'
 const VIEW = 170
 /** Chunks built per frame once the ones right around you exist (keeps frames even). */
 const PER_FRAME = 1
+/** Ground detail (grass, twigs, mushrooms…) is built for chunks this close to you (m). */
+const DETAIL_VIEW = 78
 
 /** Collects flat-shaded, vertex-coloured triangles. */
 class Triangles {
@@ -177,6 +182,13 @@ const STUMP_TOP = col(0x7a6444)
 const BUSH = [col(0x1f3a1c), col(0x2a4a22)]
 const FERN = col(0x35592a)
 
+const RUT = col(0x241c14)
+const RUT_GRASS = col(0x2e3a1c)
+const EDGE = col(0x77756c)
+const TAR = col(0x121214)
+const OIL = col(0x1a1820)
+const PUDDLE = col(0x141c26)
+
 const GROUND: Record<number, THREE.Color[]> = {
   [Surface.Forest]: [col(0x2a2c1a), col(0x30301c), col(0x24281a)],
   [Surface.Meadow]: [col(0x35451f), col(0x3d4f24), col(0x2f3f1c)],
@@ -212,6 +224,17 @@ function makeGroundTexture(): THREE.CanvasTexture {
 interface Chunk {
   ground: THREE.Mesh
   props: THREE.Mesh
+  /** The little things on the ground, near you only (see ground-detail.ts). */
+  detail: THREE.Group | null
+}
+
+/** Distance from (x, z) to the nearest point of a chunk (0 inside it). */
+function chunkDistance(cx: number, cz: number, x: number, z: number): number {
+  const x0 = cx * CHUNK - WORLD_HALF
+  const z0 = cz * CHUNK - WORLD_HALF
+  const dx = Math.max(x0 - x, 0, x - (x0 + CHUNK))
+  const dz = Math.max(z0 - z, 0, z - (z0 + CHUNK))
+  return Math.hypot(dx, dz)
 }
 
 /**
@@ -228,11 +251,15 @@ export class Wilds {
     vertexColors: true,
   })
   private readonly propMaterial = swaying(new THREE.MeshLambertMaterial({ vertexColors: true }))
+  private readonly detailMaterial = detailMaterials()
+  private readonly roads: RoadGrid
   private primed = false
 
   constructor(def: SurvivalDef) {
     this.def = def
     this.root.name = 'wilds'
+    this.roads = new RoadGrid(def.roads)
+    if (def.signs?.length) this.root.add(buildSigns(def.signs))
     for (const road of def.roads) this.root.add(this.buildRoad(road))
     const water = new THREE.MeshLambertMaterial({
       color: 0x0d1b28,
@@ -277,6 +304,7 @@ export class Wilds {
       this.root.remove(chunk.ground, chunk.props)
       chunk.ground.geometry.dispose()
       chunk.props.geometry.dispose()
+      this.dropDetail(chunk)
       this.chunks.delete(key)
     }
     const missing = wanted.filter((w) => !this.chunks.has(w.key)).sort((a, b) => a.d - b.d)
@@ -289,8 +317,45 @@ export class Wilds {
       this.chunks.set(m.key, chunk)
       this.root.add(chunk.ground, chunk.props)
     }
+    this.updateDetail(x, z, budget)
     this.primed = true
     return missing.length > 0
+  }
+
+  /** Ground detail for the chunks right around (x, z); dropped again once you've walked on. */
+  private updateDetail(x: number, z: number, budget: number): void {
+    const wanted: { chunk: Chunk; cx: number; cz: number; d: number }[] = []
+    for (const [key, chunk] of this.chunks) {
+      const cx = Math.floor(key / CHUNKS)
+      const cz = key % CHUNKS
+      const d = chunkDistance(cx, cz, x, z)
+      if (chunk.detail && d > DETAIL_VIEW + 24) this.dropDetail(chunk)
+      else if (!chunk.detail && d <= DETAIL_VIEW) wanted.push({ chunk, cx, cz, d })
+    }
+    wanted.sort((a, b) => a.d - b.d)
+    // The chunk you stand in at once; the rest a chunk a frame.
+    const now = Math.max(PER_FRAME, budget, wanted.filter((w) => w.d === 0).length)
+    for (const w of wanted.slice(0, now)) {
+      const items = detailItems(this.def, this.roads, w.cx, w.cz)
+      const { main, glow } = buildDetail(this.def.terrain, items)
+      const group = new THREE.Group()
+      group.name = 'ground-detail'
+      if (main) {
+        const mesh = new THREE.Mesh(main, this.detailMaterial.main)
+        mesh.receiveShadow = true
+        group.add(mesh)
+      }
+      if (glow) group.add(new THREE.Mesh(glow, this.detailMaterial.glow))
+      w.chunk.detail = group
+      this.root.add(group)
+    }
+  }
+
+  private dropDetail(chunk: Chunk): void {
+    if (!chunk.detail) return
+    this.root.remove(chunk.detail)
+    for (const child of chunk.detail.children) (child as THREE.Mesh).geometry.dispose()
+    chunk.detail = null
   }
 
   private buildChunk(cx: number, cz: number): Chunk {
@@ -474,7 +539,7 @@ export class Wilds {
     props.castShadow = true
     props.receiveShadow = true
     props.name = 'forest'
-    return { ground, props }
+    return { ground, props, detail: null }
   }
 
   /** A strip along the road's centre line, lying just above the ground it levelled. */
@@ -488,6 +553,10 @@ export class Wilds {
     const half = road.width / 2
     const marks = new Triangles()
     const paint = col(0x8a7c3a)
+    /** Wear: tyre ruts, tar patches, oil, and puddles (shiny, see below). */
+    const wear = new Triangles()
+    const wet = new Triangles()
+    const asphalt = road.kind === 'asphalt'
     let along = 0
     for (let i = 0; i < line.length; i++) {
       const p = line[i] as { x: number; y: number; z: number }
@@ -520,6 +589,7 @@ export class Wilds {
             paint,
           )
         }
+        this.roadWear(road, i, a, p, px, pz, wear, wet)
       }
     }
     const geometry = new THREE.BufferGeometry()
@@ -549,6 +619,110 @@ export class Wilds {
       lines.receiveShadow = true
       group.add(lines)
     }
+    if (wear.position.length > 0) {
+      const ruts = new THREE.Mesh(
+        wear.build(),
+        new THREE.MeshLambertMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: asphalt ? 0.7 : 0.4,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -3,
+          polygonOffsetUnits: -6,
+        }),
+      )
+      ruts.receiveShadow = true
+      ruts.renderOrder = 1
+      group.add(ruts)
+    }
+    if (wet.position.length > 0) {
+      // Puddles: dark, and they catch the moon and the lamps.
+      const puddles = new THREE.Mesh(
+        wet.build(),
+        new THREE.MeshPhongMaterial({
+          vertexColors: true,
+          shininess: 90,
+          specular: 0x9aa8b8,
+          polygonOffset: true,
+          polygonOffsetFactor: -5,
+          polygonOffsetUnits: -10,
+        }),
+      )
+      puddles.receiveShadow = true
+      puddles.name = 'puddles'
+      group.add(puddles)
+    }
     return group
+  }
+
+  /**
+   * One stretch of road (line point a to p, `px`/`pz` the unit normal): tyre ruts along dirt
+   * tracks, worn edge lines, tar patches and oil stains on asphalt, and now and then a puddle.
+   */
+  private roadWear(
+    road: Road,
+    i: number,
+    a: { x: number; y: number; z: number },
+    p: { x: number; y: number; z: number },
+    px: number,
+    pz: number,
+    wear: Triangles,
+    wet: Triangles,
+  ): void {
+    const half = road.width / 2
+    const roll = (k: number) => hash2(Math.round(p.x * 4) + k, Math.round(p.z * 4), 4242)
+    const strip = (off: number, w: number, y: number, color: THREE.Color) =>
+      wear.quad(
+        [a.x + px * (off + w), a.y + y, a.z + pz * (off + w)],
+        [p.x + px * (off + w), p.y + y, p.z + pz * (off + w)],
+        [p.x + px * (off - w), p.y + y, p.z + pz * (off - w)],
+        [a.x + px * (off - w), a.y + y, a.z + pz * (off - w)],
+        color,
+      )
+    if (road.kind === 'dirt') {
+      // Two ruts, wandering a little, with tufts of grass down the middle now and then.
+      const wander = Math.sin(i * 0.045 + road.line.length) * 0.14 + Math.sin(i * 0.17) * 0.04
+      strip(-0.78 + wander, 0.15, 0.07, RUT)
+      strip(0.78 + wander, 0.15, 0.07, RUT)
+      if (Math.sin(i * 0.09 + 1.3) + roll(10) * 0.6 > 0.7) strip(wander, 0.18, 0.068, RUT_GRASS)
+    } else {
+      // Worn white edge lines, gone in places.
+      if (roll(1) > 0.18) strip(half - 0.3, 0.06, 0.072, EDGE)
+      if (roll(2) > 0.18) strip(-half + 0.3, 0.06, 0.072, EDGE)
+      if (roll(3) < 0.05) {
+        const off = (roll(4) - 0.5) * (road.width - 2)
+        strip(off, 0.4 + roll(5) * 0.6, 0.071, roll(6) < 0.5 ? TAR : OIL)
+      }
+    }
+    // A puddle in a rut or a pothole.
+    if (roll(7) < (road.kind === 'dirt' ? 0.045 : 0.012)) {
+      const off =
+        road.kind === 'dirt' ? (roll(8) < 0.5 ? -0.8 : 0.8) : (roll(8) - 0.5) * (road.width - 2)
+      const cx = p.x + px * off
+      const cz = p.z + pz * off
+      const y = p.y + 0.085
+      const r = 0.45 + roll(9) * 0.9
+      const n = 9
+      const rim: number[][] = []
+      for (let k = 0; k < n; k++) {
+        const ang = (k / n) * Math.PI * 2
+        const rr = r * (0.7 + hash2(k, Math.round(cx * 4), 4244) * 0.5)
+        // Long along the road.
+        const u = Math.cos(ang) * rr * 1.5
+        const v = Math.sin(ang) * rr * 0.7
+        rim.push([cx + pz * u + px * v, y, cz - px * u + pz * v])
+      }
+      // Wind the fan so it faces up.
+      const [x0 = 0, , z0 = 0] = rim[0] as number[]
+      const [x1 = 0, , z1 = 0] = rim[1] as number[]
+      const up = (z0 - cz) * (x1 - cx) - (x0 - cx) * (z1 - cz) > 0
+      for (let k = 0; k < n; k++) {
+        const b = rim[k] as number[]
+        const c = rim[(k + 1) % n] as number[]
+        if (up) wet.tri([cx, y, cz], b, c, PUDDLE)
+        else wet.tri([cx, y, cz], c, b, PUDDLE)
+      }
+    }
   }
 }

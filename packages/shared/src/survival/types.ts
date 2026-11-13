@@ -1,5 +1,6 @@
 import type { Vec3 } from '../maps/types.ts'
 import type { LootTable } from './items.ts'
+import type { RoadSign } from './road-dressing.ts'
 
 /** The survival world is this many metres across (square, centred on the origin). */
 export const WORLD_SIZE = 3072
@@ -177,4 +178,6 @@ export interface SurvivalDef {
   rooms: Room[]
   /** Doorways and windows people can board up. */
   spots: BoardSpot[]
+  /** Road sign faces (their posts are map boxes); see road-dressing.ts. */
+  signs?: RoadSign[]
 }

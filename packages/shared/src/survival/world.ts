@@ -1,6 +1,7 @@
 import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
 import { PLACES } from './places.ts'
+import { dressRoads } from './road-dressing.ts'
 import { cabin, haven, startCabin } from './structures.ts'
 import { buildTerrain, heightAt, type RoadPlan } from './terrain.ts'
 import type { Poi, PoiKind, SurvivalDef } from './types.ts'
@@ -225,6 +226,8 @@ export function buildDeadwood(): MapDef {
     else if (poi.kind === 'camp') haven(site)
     else PLACES[poi.kind](site, poi, variant, world)
   })
+  // Along the roads: streetlamps, power lines, signs (after the places, to keep out of them).
+  const signs = dressRoads(build, { roads, pois, lakes, groundAt: world.groundAt }, SEED)
 
   const survival: SurvivalDef = {
     seed: SEED,
@@ -238,6 +241,7 @@ export function buildDeadwood(): MapDef {
     interactables: build.interactables,
     rooms: build.rooms,
     spots: build.spots,
+    signs,
   }
   const start = pois[0] as Poi
   cached = {
