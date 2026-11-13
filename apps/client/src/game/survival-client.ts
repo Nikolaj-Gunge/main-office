@@ -54,7 +54,7 @@ const NPC_GEAR: Partial<Record<Npc['role'], string[]>> = {
 }
 
 /** Other people's torches lit at once. */
-const TORCHES = 2
+const TORCHES = 1
 
 const torch = () => {
   const light = new THREE.SpotLight(0xfff2d8, 0, 48, 0.4, 0.6, 1)

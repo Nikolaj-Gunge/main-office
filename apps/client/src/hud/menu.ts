@@ -129,6 +129,7 @@ export class Menu {
           this.settings.pixelHeight = v
         },
       ),
+      this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),
       this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.toggle('Show FPS & network info', 'showDebug'),
@@ -313,7 +314,7 @@ export class Menu {
     return h('div', { class: 'menu-row' }, h('span', {}, label), group)
   }
 
-  private toggle(label: string, key: 'showDebug' | 'aimToggle'): HTMLElement {
+  private toggle(label: string, key: 'showDebug' | 'aimToggle' | 'autoQuality'): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })
     input.checked = this.settings[key]
     input.addEventListener('change', () => {

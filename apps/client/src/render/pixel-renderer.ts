@@ -87,6 +87,8 @@ export class PixelRenderer {
   private readonly postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
   private readonly uniforms: ReturnType<typeof createPostUniforms>
   private targetHeight = 270
+  /** Extra pixel size from automatic quality (see AutoQuality). */
+  private bias = 0
   // Bloom: bright-pass and ping-pong blur at half resolution, smooth (linear) on purpose — the
   // glow is then quantized and dithered with everything else in the post pass.
   private readonly bloomA: THREE.WebGLRenderTarget
@@ -196,12 +198,19 @@ export class PixelRenderer {
     }
   }
 
+  /** Coarser pixels by `bias` whole steps than the setting asks (automatic quality). */
+  setBias(bias: number): void {
+    if (bias === this.bias) return
+    this.bias = bias
+    this.resize()
+  }
+
   /** Picks a whole-number scale closest to the target height and sizes canvas + targets. */
   resize(): void {
     const dpr = window.devicePixelRatio || 1
     const screenW = Math.round(window.innerWidth * dpr)
     const screenH = Math.round(window.innerHeight * dpr)
-    this.scale = Math.max(1, Math.round(screenH / this.targetHeight))
+    this.scale = Math.max(1, Math.round(screenH / this.targetHeight)) + this.bias
     const w = Math.ceil(screenW / this.scale)
     const h = Math.ceil(screenH / this.scale)
     this.size.set(w, h)

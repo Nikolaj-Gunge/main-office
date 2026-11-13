@@ -139,6 +139,9 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
   return out
 }
 
+/** Tile size (m) for cutting big worlds up (see buildMapObject). */
+const TILE = 96
+
 /**
  * Builds the static map: one merged mesh per material (few draw calls) plus labels. Gates
  * (co-op maps) get their own group each, named `gate:<id>`, so they can be hidden when open.
@@ -147,7 +150,11 @@ export function buildMapObject(map: MapDef): THREE.Group {
   const group = new THREE.Group()
   group.name = `map:${map.id}`
 
-  const byMaterial = new Map<MaterialId, THREE.BufferGeometry[]>()
+  // Big worlds are cut into tiles, so the camera (and the shadow pass) skip what's far away;
+  // a small map stays one tile: fewest draw calls.
+  const tiles = new Map<string, Map<MaterialId, THREE.BufferGeometry[]>>()
+  const tileOf = (x: number, z: number) =>
+    map.survival ? `${Math.floor(x / TILE)},${Math.floor(z / TILE)}` : 'all'
   const gates = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
   const swings = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
   const matrix = new THREE.Matrix4()
@@ -176,7 +183,9 @@ export function buildMapObject(map: MapDef): THREE.Group {
     matrix.compose(new THREE.Vector3(...center), quaternion, new THREE.Vector3(1, 1, 1))
     geometry.applyMatrix4(matrix)
     applyWorldUVs(geometry)
-    let target = byMaterial
+    const tile = tileOf(center[0], center[2])
+    let target = tiles.get(tile) ?? new Map<MaterialId, THREE.BufferGeometry[]>()
+    tiles.set(tile, target)
     if (box.gate !== undefined) {
       target = gates.get(box.gate) ?? new Map()
       gates.set(box.gate, target)
@@ -202,7 +211,12 @@ export function buildMapObject(map: MapDef): THREE.Group {
       parent.add(mesh)
     }
   }
-  addMerged(group, byMaterial)
+  for (const [key, meshes] of tiles) {
+    const tile = new THREE.Group()
+    tile.name = `tile:${key}`
+    addMerged(tile, meshes)
+    group.add(tile)
+  }
   for (const [id, meshes] of gates) {
     const gate = new THREE.Group()
     gate.name = `gate:${id}`

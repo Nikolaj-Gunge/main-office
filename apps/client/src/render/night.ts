@@ -11,7 +11,7 @@ import { flickerLevel } from './lighting.ts'
 import { hangingLightPos, wind } from './wind.ts'
 
 /** Lamps lit at once: the nearest of the map's (the world has far more than a GPU wants). */
-const LAMPS = 8
+const LAMPS = 6
 /** Lamps further than this (m) are off; they fade in from a little further out. */
 const LAMP_RANGE = 75
 /** The moon's shadows cover this far around you (m), and are redrawn when you've walked this far. */

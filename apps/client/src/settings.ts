@@ -10,6 +10,8 @@ export interface Settings {
   fov: number
   /** Target internal render height in pixels. The real height is rounded so pixels scale by a whole number. */
   pixelHeight: number
+  /** Make pixels coarser by itself when frames get slow, finer again when there's room. */
+  autoQuality: boolean
   colorMode: ColorMode
   /** Per-channel steps in `levels` mode. */
   colorLevels: number
@@ -44,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fov: 90,
   // Phase 14 look: much finer pixels (twice the lines of 360), smoother colour, light dither.
   pixelHeight: 720,
+  autoQuality: true,
   colorMode: 'levels',
   colorLevels: 64,
   palette: 'resurrect64',

@@ -33,6 +33,9 @@ export function gradeLighting(l: MapLighting): MapLighting {
   }
 }
 
+/** Point lamps lit at once (the nearest to the camera); the rest of a map's lamps wait. */
+const POINT_POOL = 12
+
 /** Lamps: brighter and more colourful, most of all in the dark. */
 const lampBoost = (night: boolean) => (night ? 2.6 : 1.7)
 
@@ -67,48 +70,87 @@ export function createLighting(map: MapDef, scene: THREE.Scene): THREE.Direction
   sun.shadow.normalBias = 0.03
   scene.add(sun, sun.target)
 
-  // The map's own lamps (no shadows: cheap, and the sun does the shadow work).
-  const flickering: { light: THREE.Light; base: number; amount: number; seed: number }[] = []
-  const hanging: { light: THREE.Light; source: MapLight; index: number }[] = []
-  for (const [index, l] of (map.lights ?? []).entries()) {
-    const light =
-      l.kind === 'spot'
-        ? new THREE.SpotLight(
-            tuned(l.color, 1.5, 1),
-            l.intensity * boost,
-            l.distance,
-            ((l.angleDeg ?? 45) * Math.PI) / 180,
-            0.5,
-            2,
-          )
-        : new THREE.PointLight(tuned(l.color, 1.5, 1), l.intensity * boost, l.distance * 1.15, 2)
+  // The map's own lamps (no shadows: cheap, and the sun does the shadow work). Spot lamps are
+  // few and stay; point lamps share a pool of POINT_POOL lights handed to the lamps nearest the
+  // camera, since every light costs every pixel of every lit surface, lit or not.
+  const lamps = map.lights ?? []
+  for (const l of lamps) {
+    if (l.kind !== 'spot') continue
+    const light = new THREE.SpotLight(
+      tuned(l.color, 1.5, 1),
+      l.intensity * boost,
+      l.distance,
+      ((l.angleDeg ?? 45) * Math.PI) / 180,
+      0.5,
+      2,
+    )
     light.position.set(...l.pos)
-    if (l.flicker) {
-      flickering.push({
-        light,
-        base: l.intensity * boost,
-        amount: l.flicker,
-        seed: flickering.length * 7.31,
-      })
-    }
-    if (l.hang) hanging.push({ light, source: l, index })
-    if (light instanceof THREE.SpotLight) {
-      light.target.position.set(l.pos[0], 0, l.pos[2])
-      scene.add(light.target)
-    }
-    scene.add(light)
+    light.target.position.set(l.pos[0], 0, l.pos[2])
+    scene.add(light, light.target)
   }
-  if (flickering.length > 0 || hanging.length > 0) {
-    // Every frame, as the scene starts to render: failing lamps stutter and drop out now and
-    // then, and lamps on cords carry their light as they swing (see swingLamps).
-    const before = scene.onBeforeRender.bind(scene)
-    scene.onBeforeRender = (...args) => {
-      before(...args)
-      const t = performance.now() / 1000
-      for (const f of flickering) f.light.intensity = f.base * flickerLevel(t, f.seed, f.amount)
-      for (const h of hanging) {
-        hangingLightPos(h.source, h.index, wind.time, false, h.light.position)
-        h.light.updateMatrixWorld()
+  const points = [...lamps.entries()].filter(([, l]) => l.kind !== 'spot')
+  const pool: { light: THREE.PointLight; source: number; fade: number }[] = []
+  for (let i = 0; i < Math.min(POINT_POOL, points.length); i++) {
+    const light = new THREE.PointLight(0xffffff, 0, 10, 2)
+    scene.add(light)
+    pool.push({ light, source: -1, fade: 0 })
+  }
+  if (pool.length === 0) return sun
+
+  let sinceAssign = 1
+  let last = performance.now()
+  const eye = new THREE.Vector3()
+  const before = scene.onBeforeRender.bind(scene)
+  scene.onBeforeRender = (renderer, sceneArg, camera, ...rest) => {
+    before(renderer, sceneArg, camera, ...rest)
+    const now = performance.now()
+    const dt = Math.min(0.1, (now - last) / 1000)
+    last = now
+    camera.getWorldPosition(eye)
+    sinceAssign += dt
+    if (sinceAssign > 0.2) {
+      sinceAssign = 0
+      // The lamps whose light reaches nearest to you.
+      const wanted = new Set(
+        points
+          .map(([index, l]) => ({
+            index,
+            d: Math.hypot(l.pos[0] - eye.x, l.pos[1] - eye.y, l.pos[2] - eye.z) - l.distance,
+          }))
+          .sort((a, b) => a.d - b.d)
+          .slice(0, pool.length)
+          .map((n) => n.index),
+      )
+      for (const slot of pool) {
+        if (slot.source >= 0 && wanted.has(slot.source)) wanted.delete(slot.source)
+        else slot.source = -1
+      }
+      for (const index of wanted) {
+        const slot = pool.find((s) => s.source < 0)
+        const l = lamps[index]
+        if (!slot || !l) break
+        slot.source = index
+        slot.fade = 0
+        slot.light.color.setHex(tuned(l.color, 1.5, 1))
+        slot.light.distance = l.distance * 1.15
+        slot.light.position.set(...l.pos)
+      }
+    }
+    const t = now / 1000
+    for (const slot of pool) {
+      const l = slot.source >= 0 ? lamps[slot.source] : undefined
+      if (!l) {
+        slot.light.intensity = 0
+        continue
+      }
+      // Newly lit lamps come up over a moment instead of popping on.
+      slot.fade = Math.min(1, slot.fade + dt * 4)
+      const flicker = l.flicker ? flickerLevel(t, slot.source * 7.31, l.flicker) : 1
+      slot.light.intensity = l.intensity * boost * flicker * slot.fade
+      if (l.hang) {
+        // Lamps on cords carry their light as they swing (see swingLamps).
+        hangingLightPos(l, slot.source, wind.time, false, slot.light.position)
+        slot.light.updateMatrixWorld()
       }
     }
   }

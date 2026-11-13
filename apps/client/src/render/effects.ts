@@ -304,7 +304,8 @@ export class Effects {
       })
     }
 
-    for (let i = 0; i < 4; i++) {
+    // Two flash lights, reused round-robin: every light costs every lit pixel, even when off.
+    for (let i = 0; i < 2; i++) {
       const light = new THREE.PointLight(0xffa040, 0, 12, 2)
       scene.add(light)
       this.lights.push({ light, life: 0 })

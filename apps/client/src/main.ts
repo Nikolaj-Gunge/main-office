@@ -57,6 +57,8 @@ import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { Connection } from './net/connection.ts'
+import { AutoQuality } from './render/auto-quality.ts'
+import { Avatar } from './render/avatar.ts'
 import { CoopZoneMarker } from './render/coop-zone.ts'
 import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
@@ -117,6 +119,8 @@ const coopZone = new CoopZoneMarker()
 scene.add(coopZone.root)
 // Survival lights itself (see SurvivalClient): a moon that follows you, lamps only nearby.
 if (!map.survival) createLighting(map, scene)
+// Survival: nothing past the fog is worth drawing (the sky is pinned to the far plane anyway).
+if (map.survival) camera.far = 240
 // The map never moves: draw the sun's (big) shadow map once instead of every frame — the
 // single most expensive thing a laptop GPU was doing each frame.
 pixels.renderer.shadowMap.autoUpdate = false
@@ -555,7 +559,17 @@ canvas.addEventListener('click', () => {
 })
 
 // --- Settings -------------------------------------------------------------------------
+const autoQuality = new AutoQuality()
+let qualityFor = ''
+
 function applySettings() {
+  // A new pixel size (or auto quality switched off) starts from the player's choice again.
+  const quality = `${settings.pixelHeight}/${settings.autoQuality}`
+  if (quality !== qualityFor) {
+    qualityFor = quality
+    autoQuality.reset()
+    pixels.setBias(0)
+  }
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
@@ -695,12 +709,46 @@ const frameTimes = new Float32Array(120)
 let frameIndex = 0
 const outgoing: InputCommand[] = []
 
+/**
+ * Compiles every shader the game will need now, while loading, instead of stalling a frame the
+ * first time a zombie, a muzzle flash or a blood splash shows up: one body of every look is put
+ * out of sight for the moment, and hidden pooled effects are briefly shown to the compiler.
+ */
+function warmShaders(): void {
+  const looks = ['worker', 'zombie', 'runner', 'brute', 'screamer', 'stalker'] as const
+  const bodies = looks.map((look, i) => {
+    const body = new Avatar('', i, look)
+    body.root.position.set(0, -5000, 0)
+    scene.add(body.root)
+    return body
+  })
+  const hidden: THREE.Object3D[] = []
+  scene.traverse((o) => {
+    if (!o.visible) {
+      hidden.push(o)
+      o.visible = true
+    }
+  })
+  try {
+    pixels.renderer.compile(scene, camera)
+  } finally {
+    for (const o of hidden) o.visible = false
+    for (const body of bodies) {
+      scene.remove(body.root)
+      body.dispose()
+    }
+  }
+}
+warmShaders()
+
 pixels.renderer.setAnimationLoop(() => {
   const now = performance.now()
   const dt = Math.min(0.25, (now - last) / 1000)
   last = now
   fpsSmoothed += (1 / Math.max(dt, 1e-4) - fpsSmoothed) * 0.05
   frameTimes[frameIndex++ % frameTimes.length] = dt * 1000
+  // Automatic quality: coarser pixels when frames run slow, finer again when there's room.
+  if (settings.autoQuality && autoQuality.frame(dt)) pixels.setBias(autoQuality.bias)
 
   // The player keeps simulating in noclip while online (standing still), so the server and
   // prediction stay in step.
