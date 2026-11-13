@@ -7,10 +7,13 @@ import {
   initPhysics,
   loadMap,
   MAX_PLAYERS,
+  packAppearance,
   type ServerMessage,
   ServerMsg,
+  SKIN_TONES,
   SNAPSHOT_RATE,
   TICK_RATE,
+  unpackAppearance,
 } from '@office-fps/shared'
 import { Game, sanitizeName } from './game.ts'
 
@@ -62,6 +65,29 @@ describe('Game', () => {
       b.inbox.filter((m) => m.type === ServerMsg.PlayerJoined).map((m) => 'name' in m && m.name),
     ).toEqual(['Anna', 'Bo'])
     expect(a.last(ServerMsg.PlayerJoined)).toMatchObject({ id: idB, name: 'Bo' })
+  })
+
+  test('join carries the chosen look to everyone (sanitised); without one, a random look', () => {
+    const game = makeGame()
+    const a = fakeClient()
+    const b = fakeClient()
+    const look = { body: 1, skin: 6, hair: 7, hairColor: 4, eyes: 3, beard: 0 }
+    const idA = game.join('Anna', a, undefined, undefined, packAppearance(look)) ?? 0
+    // Junk in every field (15s): clamped to the last valid value, not passed on as is.
+    const idB = game.join('Bo', b, undefined, undefined, 0xffffff) ?? 0
+    const idC = game.join('Cy', fakeClient()) ?? 0
+    const joinedA = b.inbox.find((m) => m.type === ServerMsg.PlayerJoined && m.id === idA)
+    expect(joinedA).toMatchObject({ appearance: packAppearance(look) })
+    const joinedB = a.last(ServerMsg.PlayerJoined)
+    expect(joinedB?.id).toBe(idC)
+    const bo = b.inbox.find((m) => m.type === ServerMsg.PlayerJoined && m.id === idB)
+    if (bo?.type !== ServerMsg.PlayerJoined || bo.appearance === undefined)
+      throw new Error('no look')
+    expect(bo.appearance).toBe(packAppearance(unpackAppearance(0xffffff)))
+    expect(unpackAppearance(bo.appearance).skin).toBe(SKIN_TONES.length - 1)
+    // Nobody is left without a look (Cy sent none).
+    expect(joinedB?.appearance).toBeNumber()
+    expect(game.players.get(idC)?.appearance).toBe(joinedB?.appearance)
   })
 
   test('spawns players apart and gives them different colors', () => {

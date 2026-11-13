@@ -97,6 +97,11 @@ describe('zombies mode', () => {
     expect(match().players.length).toBe(2)
     const joined = clients[0]?.inbox.filter((m) => m.type === ServerMsg.PlayerJoined) ?? []
     expect(joined.some((m) => m.type === ServerMsg.PlayerJoined && (m.kind ?? 0) > 0)).toBe(true)
+    // The dead have no face of their own; people do.
+    for (const m of joined) {
+      if (m.type !== ServerMsg.PlayerJoined) continue
+      expect(m.appearance === undefined).toBe((m.kind ?? 0) > 0)
+    }
   })
 
   test('zombies climb out, walk to a survivor who stands still and claw them down', () => {

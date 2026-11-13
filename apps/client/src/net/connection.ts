@@ -35,6 +35,8 @@ export class Connection {
 
   private ws: WebSocket | null = null
   private name = ''
+  /** The character sent with the next Hello (a change applies on the next (re)join). */
+  appearance: number | undefined
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private bytesIn = 0
   private bytesOut = 0
@@ -50,8 +52,13 @@ export class Connection {
     }, 1000)
   }
 
-  connect(name: string): void {
+  /**
+   * @param appearance the character they made (packAppearance), sent with Hello; kept for
+   * reconnects. Undefined lets the server pick a random look.
+   */
+  connect(name: string, appearance?: number): void {
     this.name = name
+    this.appearance = appearance
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${location.host}${WS_PATH}`)
     ws.binaryType = 'arraybuffer'
@@ -60,7 +67,12 @@ export class Connection {
 
     ws.addEventListener('open', () => {
       this.setState('open')
-      this.send({ type: ClientMsg.Hello, protocolVersion: PROTOCOL_VERSION, name: this.name })
+      this.send({
+        type: ClientMsg.Hello,
+        protocolVersion: PROTOCOL_VERSION,
+        name: this.name,
+        ...(this.appearance === undefined ? {} : { appearance: this.appearance }),
+      })
       this.sendPing()
       this.pingTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS)
     })
@@ -83,7 +95,7 @@ export class Connection {
       this.playerId = 0
       this.setState('closed', event.reason)
       if (!FATAL_CODES.has(event.code)) {
-        setTimeout(() => this.connect(this.name), RECONNECT_DELAY_MS)
+        setTimeout(() => this.connect(this.name, this.appearance), RECONNECT_DELAY_MS)
       }
     })
   }

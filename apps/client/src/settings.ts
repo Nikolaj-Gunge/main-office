@@ -1,3 +1,9 @@
+import {
+  type Appearance,
+  DEFAULT_APPEARANCE,
+  packAppearance,
+  unpackAppearance,
+} from '@office-fps/shared'
 import { type Keybinds, withDefaults } from './input/bindings.ts'
 
 export const COLOR_MODES = { off: 0, levels: 1, palette: 2 } as const
@@ -104,4 +110,24 @@ export function loadSettings(): Settings {
 
 export function saveSettings(settings: Settings): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+}
+
+// --- Character (the creator's look; kept apart so "reset settings" doesn't undo your face) ---
+
+const CHARACTER_KEY = 'office-fps:character'
+
+/** The character made in the creator, or null if this device never made one. */
+export function loadAppearance(): Appearance | null {
+  try {
+    const raw = localStorage.getItem(CHARACTER_KEY)
+    if (raw === null) return null
+    const stored = JSON.parse(raw) as Partial<Appearance>
+    return unpackAppearance(packAppearance({ ...DEFAULT_APPEARANCE, ...stored }))
+  } catch {
+    return null
+  }
+}
+
+export function saveAppearance(appearance: Appearance): void {
+  localStorage.setItem(CHARACTER_KEY, JSON.stringify(appearance))
 }

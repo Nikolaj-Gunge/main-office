@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_APPEARANCE, packAppearance } from '../appearance.ts'
 import { HitZone } from '../sim/hitboxes.ts'
 import { createPlayerState } from '../sim/player.ts'
 import { createWeaponState } from '../sim/weapon-sim.ts'
 import { WeaponId } from '../sim/weapons.ts'
+import { gearLooks } from '../survival/gear.ts'
 import {
   type ClientMessage,
   ClientMsg,
@@ -19,6 +21,13 @@ import { quantizeInput } from './quantize.ts'
 describe('client messages', () => {
   const cases: ClientMessage[] = [
     { type: ClientMsg.Hello, protocolVersion: 7, name: 'Nikolaj' },
+    {
+      type: ClientMsg.Hello,
+      protocolVersion: 7,
+      name: 'Nikolaj',
+      appearance: packAppearance({ body: 1, skin: 7, hair: 9, hairColor: 9, eyes: 5, beard: 4 }),
+    },
+    { type: ClientMsg.Hello, protocolVersion: 7, name: 'Bald', appearance: 0 },
     { type: ClientMsg.Ping, clientTime: 12345.678, rtt: 23 },
     { type: ClientMsg.SetDebug, flags: 1 },
     {
@@ -99,6 +108,14 @@ describe('server messages', () => {
     },
     { type: ServerMsg.Pong, clientTime: 1.25, serverTime: 1700000000000.5, tickMs: 0.5 },
     { type: ServerMsg.PlayerJoined, id: 3, color: 5, name: 'Bo' },
+    { type: ServerMsg.PlayerJoined, id: 4, color: 1, name: 'Zombie', kind: 2 },
+    {
+      type: ServerMsg.PlayerJoined,
+      id: 5,
+      color: 2,
+      name: 'Ida',
+      appearance: packAppearance(DEFAULT_APPEARANCE),
+    },
     { type: ServerMsg.PlayerLeft, id: 3 },
     {
       type: ServerMsg.Snapshot,
@@ -205,6 +222,51 @@ describe('server messages', () => {
     expect(p?.slide).toBeCloseTo(0.5, 2)
     expect(p?.mantle).toBeCloseTo(0.25, 2)
     expect(p?.ledge).toBeCloseTo(1.2, 2)
+  })
+
+  test("others' worn clothes survive the wire as a u16 (all four slots)", () => {
+    const gear = gearLooks(['helmet', 'militaryvest', 'camopants', 'militaryboots'])
+    expect(gear).toBeGreaterThan(0xff)
+    const player = {
+      id: 9,
+      x: 0,
+      y: 0,
+      z: 0,
+      yaw: 0,
+      pitch: 0,
+      crouch: 0,
+      grounded: true,
+      alive: true,
+      protected: false,
+      weapon: WeaponId.Knife,
+      aiming: false,
+      stride: 0,
+      speed: 0,
+      moveDir: 0,
+      vy: 0,
+      land: 0,
+      ads: 0,
+      shotAge: 1,
+      prone: 0,
+      slide: 0,
+      mantle: 0,
+      ledge: 0,
+    }
+    const out = decodeServerMessage(
+      encodeServerMessage({
+        type: ServerMsg.Snapshot,
+        tick: 1,
+        ackSeq: 1,
+        self: null,
+        health: 100,
+        respawnIn: 0,
+        protected: false,
+        players: [{ ...player, gear }, player, { ...player, id: 10, gear: 0xf000 }],
+      }),
+    )
+    if (out.type !== ServerMsg.Snapshot) throw new Error('wrong type')
+    expect(out.players.map((p) => p.gear)).toEqual([gear, undefined, 0xf000])
+    expect(out.players[2]?.id).toBe(10)
   })
 
   test('item spawns survive the wire', () => {

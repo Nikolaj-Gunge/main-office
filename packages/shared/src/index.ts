@@ -1,3 +1,4 @@
+export * from './appearance.ts'
 export * from './constants.ts'
 export * from './maps/index.ts'
 export * from './math/spring.ts'
