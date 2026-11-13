@@ -88,7 +88,7 @@ export class Ragdolls {
     }
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     const material = new THREE.MeshLambertMaterial({ color })
-    const meshes = buildBody(skin, colorIndex, material)
+    const meshes = buildBody(skin, colorIndex, material, true)
     const world = this.physics.world
     const hit: PartName = push.headshot ? 'head' : 'chest'
     const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()

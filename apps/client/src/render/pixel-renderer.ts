@@ -60,6 +60,9 @@ function createPostUniforms(
     levels: { value: 24 },
     dither: { value: 1 },
     outlines: { value: 0.35 },
+    contrast: { value: 0.6 },
+    saturation: { value: 1.25 },
+    vignette: { value: 0.4 },
     palette: { value: Array.from({ length: MAX_PALETTE_SIZE }, () => new THREE.Vector3()) },
     paletteSize: { value: 0 },
   }
@@ -137,7 +140,7 @@ export class PixelRenderer {
       uniforms: {
         tColor: { value: this.target.texture },
         tOverlay: { value: this.overlayTarget.texture },
-        threshold: { value: 1.1 },
+        threshold: { value: 0.95 },
       },
     })
     this.blurMaterial = new THREE.ShaderMaterial({
@@ -171,6 +174,9 @@ export class PixelRenderer {
     u.levels.value = settings.colorLevels
     u.dither.value = settings.dither
     u.outlines.value = settings.outlines
+    u.contrast.value = settings.contrast
+    u.saturation.value = settings.saturation
+    u.vignette.value = settings.vignette
     u.bloomStrength.value = settings.bloom
     this.bloomEnabled = settings.bloom > 0
 

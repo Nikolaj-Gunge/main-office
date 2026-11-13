@@ -305,7 +305,7 @@ export class Effects {
     }
 
     for (let i = 0; i < 4; i++) {
-      const light = new THREE.PointLight(0xffb060, 0, 8, 2)
+      const light = new THREE.PointLight(0xffa040, 0, 12, 2)
       scene.add(light)
       this.lights.push({ light, life: 0 })
     }
@@ -567,7 +567,7 @@ export class Effects {
 
     for (const slot of this.lights) {
       slot.life = Math.max(0, slot.life - dt)
-      slot.light.intensity = slot.life > 0 ? 6 : 0
+      slot.light.intensity = slot.life > 0 ? 14 : 0
     }
   }
 

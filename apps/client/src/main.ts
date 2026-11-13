@@ -58,7 +58,7 @@ import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
-import { createLighting } from './render/lighting.ts'
+import { createLighting, gradeLighting } from './render/lighting.ts'
 import { buildMapObject } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
 import { Ragdolls } from './render/ragdoll.ts'
@@ -112,7 +112,8 @@ createLighting(map, scene)
 // single most expensive thing a laptop GPU was doing each frame.
 pixels.renderer.shadowMap.autoUpdate = false
 pixels.renderer.shadowMap.needsUpdate = true
-const sky = createSky(map.lighting.skyColor, map.lighting.fogColor)
+const graded = gradeLighting(map.lighting)
+const sky = createSky(graded.skyColor, graded.fogColor)
 scene.add(sky)
 if (map.skyline) scene.add(createSkyline())
 
