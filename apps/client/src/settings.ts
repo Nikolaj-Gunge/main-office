@@ -12,6 +12,8 @@ export interface Settings {
   pixelHeight: number
   /** Make pixels coarser by itself when frames get slow, finer again when there's room. */
   autoQuality: boolean
+  /** Soft pixels: smooth upscaling, anti-aliased edges and filtered textures (else crisp squares). */
+  smoothPixels: boolean
   colorMode: ColorMode
   /** Per-channel steps in `levels` mode. */
   colorLevels: number
@@ -44,20 +46,22 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
   fov: 90,
-  // Phase 14 look: much finer pixels (twice the lines of 360), smoother colour, light dither.
-  pixelHeight: 720,
+  // Phase 15 look: still pixel art, but fine and soft — smooth upscaling, anti-aliased edges,
+  // filtered textures, barely any banding or dither, thin outlines.
+  pixelHeight: 900,
   autoQuality: true,
+  smoothPixels: true,
   colorMode: 'levels',
-  colorLevels: 64,
+  colorLevels: 160,
   palette: 'resurrect64',
-  dither: 0.3,
-  outlines: 0.25,
+  dither: 0.12,
+  outlines: 0.15,
   // Phase 13 look: darker shadows, vivid lights, more glow.
   bloom: 0.85,
   contrast: 0.6,
   saturation: 1.25,
   vignette: 0.4,
-  lookVersion: 4,
+  lookVersion: 5,
   exposure: 1,
   masterVolume: 0.8,
   sfxVolume: 1,
@@ -71,6 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
 const STORAGE_KEY = 'office-fps:settings'
 const LOOK_KEYS = [
   'pixelHeight',
+  'smoothPixels',
   'colorMode',
   'colorLevels',
   'dither',

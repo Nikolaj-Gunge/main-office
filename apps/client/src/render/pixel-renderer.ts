@@ -25,6 +25,44 @@ const BRIGHT_FRAGMENT = /* glsl */ `
   }
 `
 
+/**
+ * FXAA (the classic "lite" version): finds edges by luma and blends along them, so smooth mode
+ * has no stair-stepped edges, then sharpens a little. Reads and writes display colour (sRGB).
+ */
+const FXAA_FRAGMENT = /* glsl */ `
+  uniform sampler2D tInput;
+  uniform vec2 texel;
+  varying vec2 vUv;
+  void main() {
+    const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+    vec3 nw = texture2D(tInput, vUv + vec2(-1.0, -1.0) * texel).rgb;
+    vec3 ne = texture2D(tInput, vUv + vec2(1.0, -1.0) * texel).rgb;
+    vec3 sw = texture2D(tInput, vUv + vec2(-1.0, 1.0) * texel).rgb;
+    vec3 se = texture2D(tInput, vUv + vec2(1.0, 1.0) * texel).rgb;
+    vec3 m = texture2D(tInput, vUv).rgb;
+    float lNW = dot(nw, LUMA);
+    float lNE = dot(ne, LUMA);
+    float lSW = dot(sw, LUMA);
+    float lSE = dot(se, LUMA);
+    float lM = dot(m, LUMA);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+    float reduce = max((lNW + lNE + lSW + lSE) * (0.25 / 8.0), 1.0 / 128.0);
+    float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+    dir = clamp(dir * rcpMin, vec2(-8.0), vec2(8.0)) * texel;
+    vec3 a = 0.5 * (texture2D(tInput, vUv + dir * (1.0 / 3.0 - 0.5)).rgb +
+                    texture2D(tInput, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture2D(tInput, vUv - dir * 0.5).rgb +
+                               texture2D(tInput, vUv + dir * 0.5).rgb);
+    float lB = dot(b, LUMA);
+    vec3 c = (lB < lMin || lB > lMax) ? a : b;
+    // A touch of sharpening against the softness of the upscale.
+    c += (c - (nw + ne + sw + se) * 0.25) * 0.3;
+    gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+  }
+`
+
 /** Separable 9-tap gaussian blur. */
 const BLUR_FRAGMENT = /* glsl */ `
   uniform sampler2D tInput;
@@ -102,6 +140,14 @@ export class PixelRenderer {
     direction: { value: new THREE.Vector2() },
   }
   private bloomEnabled = true
+  /** Smooth mode: soft upscaling, fractional pixel size, and an FXAA pass after the post pass. */
+  private smooth = false
+  private readonly postTarget: THREE.WebGLRenderTarget
+  private readonly fxaaMaterial: THREE.ShaderMaterial
+  private readonly fxaaUniforms = {
+    tInput: { value: null as THREE.Texture | null },
+    texel: { value: new THREE.Vector2() },
+  }
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -156,6 +202,20 @@ export class PixelRenderer {
     this.fxQuad.frustumCulled = false
     this.fxScene.add(this.fxQuad)
 
+    this.postTarget = new THREE.WebGLRenderTarget(1, 1, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+    })
+    this.fxaaUniforms.tInput.value = this.postTarget.texture
+    this.fxaaMaterial = new THREE.ShaderMaterial({
+      vertexShader: POST_VERTEX,
+      fragmentShader: FXAA_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: this.fxaaUniforms,
+    })
+
     this.uniforms = createPostUniforms(this.target, this.overlayTarget, this.bloomA, this.size)
     const material = new THREE.ShaderMaterial({
       vertexShader: POST_VERTEX,
@@ -192,8 +252,10 @@ export class PixelRenderer {
     })
     u.paletteSize.value = colors.length
 
-    if (settings.pixelHeight !== this.targetHeight) {
+    if (settings.pixelHeight !== this.targetHeight || settings.smoothPixels !== this.smooth) {
       this.targetHeight = settings.pixelHeight
+      this.smooth = settings.smoothPixels
+      this.canvas.style.imageRendering = this.smooth ? 'auto' : 'pixelated'
       this.resize()
     }
   }
@@ -205,12 +267,18 @@ export class PixelRenderer {
     this.resize()
   }
 
-  /** Picks a whole-number scale closest to the target height and sizes canvas + targets. */
+  /**
+   * Sizes canvas and targets for the target height. Crisp mode picks a whole-number scale, so
+   * every game pixel is an exact square; smooth mode takes the exact ratio (soft upscaling hides
+   * the in-between), and automatic quality's steps are a third coarser each instead of a whole.
+   */
   resize(): void {
     const dpr = window.devicePixelRatio || 1
     const screenW = Math.round(window.innerWidth * dpr)
     const screenH = Math.round(window.innerHeight * dpr)
-    this.scale = Math.max(1, Math.round(screenH / this.targetHeight)) + this.bias
+    this.scale = this.smooth
+      ? Math.max(1, screenH / this.targetHeight) * (1 + this.bias / 3)
+      : Math.max(1, Math.round(screenH / this.targetHeight)) + this.bias
     const w = Math.ceil(screenW / this.scale)
     const h = Math.ceil(screenH / this.scale)
     this.size.set(w, h)
@@ -220,6 +288,8 @@ export class PixelRenderer {
     this.overlayTarget.setSize(w, h)
     this.bloomA.setSize(Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2)))
     this.bloomB.setSize(Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2)))
+    this.postTarget.setSize(w, h)
+    this.fxaaUniforms.texel.value.set(1 / w, 1 / h)
     // CSS size may overshoot the window by < 1 game pixel; body has overflow: hidden.
     this.canvas.style.width = `${(w * this.scale) / dpr}px`
     this.canvas.style.height = `${(h * this.scale) / dpr}px`
@@ -247,8 +317,17 @@ export class PixelRenderer {
     if (overlay) r.render(overlay.scene, overlay.camera)
     r.setClearColor(0x000000, 1)
     if (this.bloomEnabled) this.renderBloom()
-    r.setRenderTarget(null)
+    if (!this.smooth) {
+      r.setRenderTarget(null)
+      r.render(this.postScene, this.postCamera)
+      return
+    }
+    // Smooth: grade into a target, then anti-alias onto the screen.
+    r.setRenderTarget(this.postTarget)
     r.render(this.postScene, this.postCamera)
+    this.fxQuad.material = this.fxaaMaterial
+    r.setRenderTarget(null)
+    r.render(this.fxScene, this.postCamera)
   }
 
   private renderBloom(): void {

@@ -576,9 +576,8 @@ function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-  texture.magFilter = THREE.NearestFilter
-  // Nearest mip selection keeps the crisp look while killing distance shimmer.
-  texture.minFilter = THREE.NearestMipmapNearestFilter
+  // Crisp or smooth, as the look asks (see setSmoothTextures).
+  filterTexture(texture)
   texture.generateMipmaps = true
   // World UVs are in metres; scale so one repeat covers `meters`.
   texture.repeat.set(1 / style.meters, 1 / style.meters)
@@ -586,6 +585,33 @@ function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
 }
 
 const cache = new Map<MaterialId, THREE.Material>()
+
+/** Every world texture made so far, and how they're filtered now. */
+const textures = new Set<THREE.Texture>()
+let smoothTextures = false
+let anisotropy = 1
+
+/**
+ * Crisp: nearest texels (blocky up close), nearest mips. Smooth: blended texels, trilinear mips
+ * and some anisotropy, so floors and walls stay clean at grazing angles.
+ */
+export function filterTexture(texture: THREE.Texture): void {
+  textures.add(texture)
+  texture.magFilter = smoothTextures ? THREE.LinearFilter : THREE.NearestFilter
+  texture.minFilter = smoothTextures
+    ? THREE.LinearMipmapLinearFilter
+    : THREE.NearestMipmapNearestFilter
+  texture.anisotropy = smoothTextures ? anisotropy : 1
+  texture.needsUpdate = true
+}
+
+/** Switches every world texture (made already or later) to smooth or crisp filtering. */
+export function setSmoothTextures(on: boolean, maxAnisotropy = 4): void {
+  if (on === smoothTextures && maxAnisotropy === anisotropy) return
+  smoothTextures = on
+  anisotropy = maxAnisotropy
+  for (const t of textures) filterTexture(t)
+}
 
 /** Whether boxes of this material should cast shadows. */
 export function castsShadow(id: MaterialId): boolean {

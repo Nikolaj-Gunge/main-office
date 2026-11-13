@@ -69,6 +69,7 @@ import { buildMapObject, swingLamps } from './render/map-mesh.ts'
 import { PixelRenderer } from './render/pixel-renderer.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
+import { setSmoothTextures } from './render/textures.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
 import { WorldItemsView } from './render/world-items.ts'
@@ -570,6 +571,10 @@ function applySettings() {
     autoQuality.reset()
     pixels.setBias(0)
   }
+  setSmoothTextures(
+    settings.smoothPixels,
+    Math.min(8, pixels.renderer.capabilities.getMaxAnisotropy()),
+  )
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
@@ -866,7 +871,7 @@ pixels.renderer.setAnimationLoop(() => {
     const deg = 180 / Math.PI
     const kb = (b: number) => (b / 1024).toFixed(1)
     overlay.debug.textContent = [
-      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale}`,
+      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale.toFixed(2)}`,
       `worst frame ${Math.max(...frameTimes).toFixed(1)} ms (last 2 s)`,
       noclip
         ? `NOCLIP (V) · cam ${camera.position.x.toFixed(2)} ${camera.position.y.toFixed(2)} ${camera.position.z.toFixed(2)}`

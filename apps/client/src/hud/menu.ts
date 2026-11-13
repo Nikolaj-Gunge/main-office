@@ -11,6 +11,8 @@ const PIXEL_PRESETS: [string, number][] = [
   ['Sharp', 360],
   ['Fine', 540],
   ['Crisp', 720],
+  ['Smooth', 900],
+  ['Finest', 1080],
 ]
 
 type Tab = 'play' | 'settings' | 'controls'
@@ -130,6 +132,7 @@ export class Menu {
         },
       ),
       this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),
+      this.toggle('Smooth pixels (soft edges, filtered textures)', 'smoothPixels'),
       this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.toggle('Show FPS & network info', 'showDebug'),
@@ -314,7 +317,10 @@ export class Menu {
     return h('div', { class: 'menu-row' }, h('span', {}, label), group)
   }
 
-  private toggle(label: string, key: 'showDebug' | 'aimToggle' | 'autoQuality'): HTMLElement {
+  private toggle(
+    label: string,
+    key: 'showDebug' | 'aimToggle' | 'autoQuality' | 'smoothPixels',
+  ): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })
     input.checked = this.settings[key]
     input.addEventListener('change', () => {

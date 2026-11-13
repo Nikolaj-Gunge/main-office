@@ -9,8 +9,9 @@ export function createSettingsGui(settings: Settings, onChange: () => void): GUI
 
   const render = gui.addFolder('Pixel look')
   render
-    .add(settings, 'pixelHeight', [180, 216, 240, 270, 320, 360, 480, 540, 720, 1080])
+    .add(settings, 'pixelHeight', [180, 216, 240, 270, 320, 360, 480, 540, 720, 900, 1080])
     .name('pixel height')
+  render.add(settings, 'smoothPixels').name('smooth pixels')
   render.add(settings, 'colorMode', Object.keys(COLOR_MODES)).name('color mode')
   render.add(settings, 'colorLevels', 2, 64, 1).name('levels / channel')
   render.add(settings, 'palette', Object.keys(PALETTES))

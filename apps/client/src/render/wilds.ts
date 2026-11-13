@@ -17,7 +17,7 @@ import {
 import * as THREE from 'three'
 import { buildDetail, detailItems, detailMaterials } from './ground-detail.ts'
 import { buildSigns } from './road-signs.ts'
-import { getSurfaceMaterial } from './textures.ts'
+import { filterTexture, getSurfaceMaterial } from './textures.ts'
 import { makeSwaying } from './wind.ts'
 
 /** Ground and forest are drawn in chunks whose centre is within this of you (m). */
@@ -216,8 +216,7 @@ function makeGroundTexture(): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-  texture.magFilter = THREE.NearestFilter
-  texture.minFilter = THREE.NearestMipmapNearestFilter
+  filterTexture(texture)
   return texture
 }
 
