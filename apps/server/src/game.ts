@@ -276,6 +276,7 @@ export class Game {
     this.rulesValue = { ...this.rulesValue, map: map.id }
     for (const p of this.players.values()) {
       p.body = new PlayerBody(physics, this.movement, p.client === NO_CLIENT)
+      p.body.climbs = !p.zombie
       this.applyRules(p)
       p.queue = []
       if (!p.out) this.respawn(p)
@@ -349,6 +350,7 @@ export class Game {
     const name = sanitizeName(rawName) || `Player ${id}`
     // Zombies and bots (no client) go through corn; people walk round it.
     const body = new PlayerBody(this.physics, this.movement, client === NO_CLIENT)
+    body.climbs = !zombie // the dead don't climb
     const player: ServerPlayer = {
       id,
       name,
@@ -1167,6 +1169,11 @@ function animationOf(p: ServerPlayer, tick: number) {
     land: p.land,
     ads: p.ads,
     shotAge: Math.min(1, (tick - p.shotTick) / TICK_RATE),
+    prone: s.proneAmount,
+    slide: s.slide > 0 ? Math.min(1, s.slide / p.body.config.slideTime) : 0,
+    // Never 0 while climbing (0 means not climbing), even on the tick it starts.
+    mantle: s.mantle ? Math.max(0.005, s.mantle.time / s.mantle.duration) : 0,
+    ledge: s.mantle ? s.mantle.to.y - s.pos.y : 0,
   }
 }
 

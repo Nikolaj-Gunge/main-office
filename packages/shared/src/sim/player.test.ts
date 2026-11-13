@@ -6,8 +6,10 @@ import { createPhysicsWorld, initPhysics } from '../physics/world.ts'
 import { Button, type PlayerInput } from './input.ts'
 import { DEFAULT_MOVEMENT, jumpHeight } from './movement-config.ts'
 import {
+  bodyHeight,
   clonePlayerState,
   createPlayerState,
+  eyeHeight,
   PlayerBody,
   type PlayerState,
   stepPlayer,
@@ -208,8 +210,9 @@ describe('obstacles', () => {
     expect(state.pos.y).toBeCloseTo(0.9, 1)
   })
 
-  test('cannot jump onto 1.2 m', () => {
+  test('cannot jump onto 1.2 m (only climb it)', () => {
     const { state, body } = setup(ahead(1.2))
+    body.config = { ...body.config, mantleMaxHeight: 0 } // no climbing
     run(state, body, seconds(2), (t) => Button.Forward | (t % 30 === 10 ? Button.Jump : 0))
     expect(state.pos.y).toBeLessThan(0.1)
   })
@@ -415,5 +418,232 @@ describe('robustness', () => {
         expect(Math.abs(s.pos.z)).toBeLessThan(50)
       }
     }
+  })
+})
+
+describe('climbing', () => {
+  // A crate face 1 m ahead, 7 m deep.
+  const crate = (h: number) => (m: MapBuilder) => m.span([-2, 0, -1], [2, h, -8], 'marker')
+  /** Walk at it, pressing jump once when it's in reach and once more on the way. */
+  const climb = (state: PlayerState, body: PlayerBody, ticks = seconds(2)) => {
+    const mantled: number[] = []
+    for (let t = 0; t < ticks; t++) {
+      const events = stepPlayer(
+        state,
+        { buttons: Button.Forward | (t === 5 || t === 40 ? Button.Jump : 0), yaw: 0, pitch: 0 },
+        TICK_DT,
+        body,
+      )
+      if (events.mantled) mantled.push(t)
+    }
+    return mantled
+  }
+
+  test('forward + jump at a 1.2 m crate pulls you up onto it', () => {
+    const { state, body } = setup(crate(1.2))
+    let ticks = 0
+    let mantling = 0
+    let lastY = 0
+    let rises = true
+    for (let t = 0; t < seconds(1.5); t++) {
+      stepPlayer(
+        state,
+        { buttons: Button.Forward | (t === 25 ? Button.Jump : 0), yaw: 0, pitch: 0 },
+        TICK_DT,
+        body,
+      )
+      if (state.mantle) {
+        mantling++
+        if (state.pos.y < lastY - 1e-9) rises = false
+        lastY = state.pos.y
+      }
+      ticks++
+    }
+    expect(ticks).toBeGreaterThan(0)
+    // A short scripted move: ~0.4–0.7 s, only ever upwards.
+    expect(mantling * TICK_DT).toBeGreaterThan(0.4)
+    expect(mantling * TICK_DT).toBeLessThan(0.75)
+    expect(rises).toBe(true)
+    expect(state.mantle).toBeNull()
+    expect(state.pos.y).toBeCloseTo(1.2, 1)
+    expect(state.pos.z).toBeLessThan(-1.3)
+    expect(state.grounded).toBe(true)
+    expect(state.crouched).toBe(false)
+  })
+
+  test('climbs 2 m walls, but not 2.4 m ones', () => {
+    const high = setup(crate(1.95))
+    climb(high.state, high.body)
+    expect(high.state.pos.y).toBeCloseTo(1.95, 1)
+    const wall = setup(crate(2.4))
+    expect(climb(wall.state, wall.body)).toEqual([])
+    expect(wall.state.pos.y).toBeLessThan(0.1)
+  })
+
+  test('no climbing under a low ceiling (no room on top, no clipping through it)', () => {
+    const { state, body } = setup((m) => {
+      crate(1.2)(m)
+      m.span([-3, 2.2, 2], [3, 2.4, -4], 'marker') // 2.2 m ceiling: 1 m above the crate
+    })
+    expect(climb(state, body)).toEqual([])
+    expect(state.pos.y).toBeLessThan(0.1)
+  })
+
+  test('vaults through an open window: onto the sill (crouched), then down the other side', () => {
+    const { state, body } = setup((m) => {
+      m.span([-3, 0, -1], [3, 1, -1.3], 'marker') // wall below the sill
+      m.span([-3, 2.3, -1], [3, 3, -1.3], 'marker') // above the window
+      m.span([-3, 1, -1], [-0.6, 2.3, -1.3], 'marker') // either side of it
+      m.span([0.6, 1, -1], [3, 2.3, -1.3], 'marker')
+    })
+    let crouchedOnSill = false
+    run(
+      state,
+      body,
+      seconds(1),
+      (t) => Button.Forward | (t === 5 ? Button.Jump : 0),
+      (s) => {
+        if (s.mantle) crouchedOnSill ||= s.mantle.crouch // 1.3 m of opening: no standing up there
+      },
+    )
+    expect(crouchedOnSill).toBe(true)
+    run(state, body, seconds(1.5), Button.Forward)
+    expect(state.pos.z).toBeLessThan(-1.8)
+    expect(state.pos.y).toBeLessThan(0.1)
+  })
+
+  test('climbing is deterministic: a replay from a mid-climb copy ends in the same place', () => {
+    const { state, body } = setup(crate(1.2))
+    run(state, body, 26, (t) => Button.Forward | (t === 25 ? Button.Jump : 0))
+    expect(state.mantle).not.toBeNull()
+    const copy = clonePlayerState(state)
+    run(state, body, seconds(1), Button.Forward)
+    run(copy, body, seconds(1), Button.Forward)
+    expect(copy).toEqual(state)
+  })
+})
+
+describe('prone', () => {
+  test('Z lies you down: a much lower shape and eye, a slow crawl, no sprint or jump', () => {
+    const { state, body } = setup()
+    run(state, body, 1, Button.Prone)
+    run(state, body, seconds(0.7), 0)
+    expect(state.prone).toBe(true)
+    expect(state.proneAmount).toBe(1)
+    expect(bodyHeight(state, body.config)).toBeLessThan(0.8)
+    expect(eyeHeight(state, body.config)).toBeCloseTo(0.35, 2)
+    const z = state.pos.z
+    run(state, body, seconds(2), Button.Forward | Button.Sprint)
+    expect(state.prone).toBe(true)
+    expect(state.pos.y).toBeLessThan(0.05)
+    expect(z - state.pos.z).toBeGreaterThan(1)
+    expect(z - state.pos.z).toBeLessThan(2.4)
+    // Jump gets you up (no jump); holding crouch, only to a crouch.
+    run(state, body, 1, Button.Jump | Button.Crouch)
+    expect(state.prone).toBe(false)
+    expect(state.crouched).toBe(true)
+    expect(state.vel.y).toBe(0)
+    run(state, body, 1, 0)
+    expect(state.crouched).toBe(false)
+    expect(state.pos.y).toBeLessThan(0.05)
+  })
+
+  test('getting down and up takes a moment', () => {
+    const { state, body } = setup()
+    run(state, body, 1, Button.Prone)
+    run(state, body, seconds(0.2), Button.Forward)
+    expect(state.proneAmount).toBeGreaterThan(0.2)
+    expect(state.proneAmount).toBeLessThan(0.8)
+    expect(hSpeed(state)).toBeLessThan(1) // hardly moving while getting down
+  })
+
+  test('standing up needs head room: not under a table', () => {
+    const { state, body } = setup((m) => m.span([-1, 0.85, -3], [1, 0.95, 3], 'marker'))
+    // Lie down in the open and crawl under the table top.
+    state.pos.z = 5
+    run(state, body, 1, Button.Prone)
+    run(state, body, seconds(0.7), 0)
+    run(state, body, seconds(5), Button.Forward)
+    expect(state.pos.z).toBeLessThan(2)
+    run(state, body, 1, Button.Prone)
+    run(state, body, 1, Button.Jump)
+    expect(state.prone).toBe(true)
+  })
+})
+
+describe('sliding', () => {
+  /** Sprint up to speed, then press (and hold) crouch. */
+  function slide(build?: (m: MapBuilder) => void, at?: [number, number, number]) {
+    const { state, body } = setup(build)
+    if (at) {
+      state.pos = { x: at[0], y: at[1], z: at[2] }
+      run(state, body, 10, 0)
+    }
+    run(state, body, seconds(1), Button.Forward | Button.Sprint)
+    const sprint = hSpeed(state)
+    const speeds: number[] = []
+    let slid = 0
+    let ticks = 0
+    for (let t = 0; t < seconds(2); t++) {
+      const events = stepPlayer(
+        state,
+        { buttons: Button.Forward | Button.Sprint | Button.Crouch, yaw: 0, pitch: 0 },
+        TICK_DT,
+        body,
+      )
+      if (events.slid) slid++
+      if (state.slide > 0) ticks++
+      speeds.push(hSpeed(state))
+    }
+    return { state, body, sprint, speeds, slid, ticks }
+  }
+
+  test('crouch while sprinting slides: a kick of speed that bleeds away, ending crouched', () => {
+    const { state, sprint, speeds, slid, ticks } = slide()
+    expect(slid).toBe(1)
+    expect(speeds[0]).toBeGreaterThan(sprint)
+    expect(speeds[seconds(0.5)]).toBeLessThan(speeds[0] ?? 0)
+    expect(speeds[seconds(0.5)]).toBeGreaterThan(DEFAULT_MOVEMENT.crouchSpeed)
+    expect(ticks * TICK_DT).toBeGreaterThan(0.5)
+    expect(ticks * TICK_DT).toBeLessThan(1.05)
+    expect(state.slide).toBe(0)
+    expect(state.crouched).toBe(true)
+    expect(hSpeed(state)).toBeLessThan(DEFAULT_MOVEMENT.crouchSpeed + 0.3)
+  })
+
+  test("slides can't be chained: a cooldown first", () => {
+    const { state, body } = slide()
+    state.pos = { x: 0, y: 0, z: 15 } // room to run again
+    // Up and sprinting again at once: crouch does nothing until the cooldown is over…
+    state.slideCooldown = 0.3
+    run(state, body, seconds(0.1), Button.Forward | Button.Sprint)
+    run(state, body, 1, Button.Forward | Button.Sprint | Button.Crouch)
+    expect(state.slide).toBe(0)
+    // …then it works.
+    run(state, body, seconds(1), Button.Forward | Button.Sprint)
+    run(state, body, 1, Button.Forward | Button.Sprint | Button.Crouch)
+    expect(state.slide).toBeGreaterThan(0)
+  })
+
+  test('walking speed is not enough to slide', () => {
+    const { state, body } = setup()
+    run(state, body, seconds(1), Button.Forward)
+    run(state, body, 1, Button.Forward | Button.Sprint | Button.Crouch)
+    expect(state.slide).toBe(0)
+  })
+
+  test('a slide down a slope keeps going longer', () => {
+    const flat = slide()
+    let top = 0
+    const down = slide(
+      (m) => {
+        top = m.ramp(0, 0, -16, 3, 12, 12, 'ramp', 1) // falls away towards -Z
+        m.span([-1.5, top - 0.3, -4], [1.5, top, 12], 'platform')
+      },
+      [0, 2.6, 6],
+    )
+    expect(top).toBeGreaterThan(2)
+    expect(down.slid).toBe(1)
+    expect(down.ticks).toBeGreaterThan(flat.ticks + 10)
   })
 })

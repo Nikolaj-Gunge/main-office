@@ -92,7 +92,8 @@ export class Spectator {
     }
 
     const scale = pose.scale ?? 1
-    this.head.set(pose.x, pose.y + EYE * (1 - 0.3 * pose.crouch) * scale + ABOVE, pose.z)
+    const lying = 1 - 0.75 * (pose.prone ?? 0)
+    this.head.set(pose.x, pose.y + EYE * (1 - 0.3 * pose.crouch) * lying * scale + ABOVE, pose.z)
     const cp = Math.cos(this.pitch)
     const fx = -Math.sin(this.yaw) * cp
     const fy = Math.sin(this.pitch)

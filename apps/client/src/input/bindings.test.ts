@@ -7,6 +7,7 @@ describe('keybinds', () => {
     expect(b.forward).toEqual(['KeyW'])
     expect(b.swap).toEqual(['KeyQ', 'Wheel'])
     expect(actionFor(b, 'Mouse0')).toBe('fire')
+    expect(actionFor(b, 'KeyZ')).toBe('prone')
   })
 
   test('rebinding moves a key off its old action and keeps one alternate', () => {

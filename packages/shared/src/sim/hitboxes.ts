@@ -58,6 +58,10 @@ export function remotePose(
     land: s.land,
     ads: s.ads,
     shotAge: s.shotAge,
+    prone: s.prone,
+    slide: s.slide,
+    mantle: s.mantle,
+    ledge: s.ledge,
     weapon: s.weapon,
     seed: s.id,
     ...extra,
@@ -99,7 +103,9 @@ export function poseHitboxes(pose: HitPose): Hitbox[] {
 /** Rough bounding sphere of a pose, to skip far-away players before precise tests. */
 export function poseBounds(pose: HitPose): { center: Point3; radius: number } {
   const s = pose.scale ?? 1
-  return { center: { x: pose.x, y: pose.y + 0.95 * s, z: pose.z }, radius: 1.35 * s }
+  // Lying down, the body's middle is near the floor (and it reaches as far front to back).
+  const middle = 0.95 - 0.6 * Math.max(0, Math.min(1, pose.prone ?? 0))
+  return { center: { x: pose.x, y: pose.y + middle * s, z: pose.z }, radius: 1.35 * s }
 }
 
 const dot = (a: Point3, b: Point3) => a.x * b.x + a.y * b.y + a.z * b.z

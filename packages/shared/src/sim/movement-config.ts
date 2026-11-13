@@ -41,6 +41,28 @@ export interface MovementConfig {
   sprintSeconds: number
   /** Seconds to get all your breath back. */
   breathSeconds: number
+
+  /** Lying down: capsule height (≥ 2 × radius), eye height and crawl speed. */
+  proneHeight: number
+  proneEyeHeight: number
+  proneSpeed: number
+  /** Seconds to get down flat (or back up to a crouch). */
+  proneTime: number
+
+  /** Sliding (crouch while sprinting): how long, how fast it bleeds speed (m/s²), the kick. */
+  slideTime: number
+  slideFriction: number
+  slideBoost: number
+  /** Seconds after a slide before the next one. */
+  slideCooldown: number
+  /** How far the eyes drop below crouch height mid-slide (m). */
+  slideEyeDrop: number
+
+  /** Climbing onto ledges this high above your feet (forward + jump). */
+  mantleMinHeight: number
+  mantleMaxHeight: number
+  /** How far in front of you (from the capsule's edge) a ledge can be grabbed (m). */
+  mantleReach: number
 }
 
 export const DEFAULT_MOVEMENT: MovementConfig = {
@@ -72,6 +94,21 @@ export const DEFAULT_MOVEMENT: MovementConfig = {
   snapToGround: 0.3,
   sprintSeconds: 0,
   breathSeconds: 13,
+
+  proneHeight: 0.75,
+  proneEyeHeight: 0.35,
+  proneSpeed: 1.1,
+  proneTime: 0.55,
+
+  slideTime: 0.9,
+  slideFriction: 5,
+  slideBoost: 1.12,
+  slideCooldown: 0.7,
+  slideEyeDrop: 0.25,
+
+  mantleMinHeight: 0.5,
+  mantleMaxHeight: 2,
+  mantleReach: 0.55,
 }
 
 /** Peak jump height implied by a config (for UI and tests). */

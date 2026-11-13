@@ -10,9 +10,20 @@ export const ACTIONS = [
   { id: 'back', label: 'Move back', button: Button.Back, defaults: ['KeyS'] },
   { id: 'left', label: 'Move left', button: Button.Left, defaults: ['KeyA'] },
   { id: 'right', label: 'Move right', button: Button.Right, defaults: ['KeyD'] },
-  { id: 'jump', label: 'Jump', button: Button.Jump, defaults: ['Space'] },
+  {
+    id: 'jump',
+    label: 'Jump / climb (forward + jump at a ledge)',
+    button: Button.Jump,
+    defaults: ['Space'],
+  },
   // Ctrl+W closes the tab in most browsers, so C is the safe default crouch.
-  { id: 'crouch', label: 'Crouch', button: Button.Crouch, defaults: ['KeyC', 'ControlLeft'] },
+  {
+    id: 'crouch',
+    label: 'Crouch / slide (while sprinting)',
+    button: Button.Crouch,
+    defaults: ['KeyC', 'ControlLeft'],
+  },
+  { id: 'prone', label: 'Lie down / get up', button: Button.Prone, defaults: ['KeyZ'] },
   {
     id: 'sprint',
     label: 'Sprint / hold breath (scoped)',

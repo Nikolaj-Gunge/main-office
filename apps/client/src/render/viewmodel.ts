@@ -494,6 +494,8 @@ export class Viewmodel {
   private readonly flash: THREE.Mesh
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 1.5)
   private flashTime = 0
+  /** Eased: hands busy climbing (gun lowered out of view). */
+  private climb = 0
   private aim = 0
   /** True while looking through a scope: the gun is hidden and the HUD draws the scope. */
   scoped = false
@@ -619,6 +621,7 @@ export class Viewmodel {
   /**
    * @param look   view rotation since last frame (radians) — the gun lags behind it (sway)
    * @param bob    footstep phase and weight from CameraFeel
+   * @param busy   0–1: hands busy climbing (the gun drops out of the way) or tilted in a slide
    */
   update(
     dt: number,
@@ -626,6 +629,7 @@ export class Viewmodel {
     bob: { phase: number; weight: number },
     weapon: WeaponState,
     alive: boolean,
+    busy: { climb: number; slide: number } = { climb: 0, slide: 0 },
   ): void {
     const def = WEAPONS[weapon.id]
     this.setWeapon(weapon.id)
@@ -647,9 +651,11 @@ export class Viewmodel {
     this.swayX.update(dt)
     this.swayY.update(dt)
 
-    // Reload: a real one (see reloadPose); draw: rise from below; bolt: a small rock back.
+    // Reload: a real one (see reloadPose); draw: rise from below (and drop away while climbing);
+    // bolt: a small rock back.
     const reload = this.reloadPose(weapon, def)
-    const drawT = def.drawTime > 0 ? weapon.draw / def.drawTime : 0
+    this.climb += (busy.climb - this.climb) * Math.min(1, dt * 14)
+    const drawT = Math.max(def.drawTime > 0 ? weapon.draw / def.drawTime : 0, this.climb)
     const boltT =
       def.fireMode === 'bolt' && weapon.cooldown > 0
         ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)
@@ -712,7 +718,11 @@ export class Viewmodel {
     m.group.rotation.set(
       this.kickUp.value + reload.tilt * tilt.pitch - drawT * 0.8,
       this.swayX.value * 0.03 + this.kickSide.value + reload.tilt * 0.12,
-      reload.tilt * tilt.roll + boltT * 0.35 + swing * 1.1 - this.kickRoll.value,
+      reload.tilt * tilt.roll +
+        boltT * 0.35 +
+        swing * 1.1 -
+        this.kickRoll.value +
+        busy.slide * 0.25 * (1 - this.aim),
     )
     if (swing > 0) m.group.position.x -= swing * 0.14
 

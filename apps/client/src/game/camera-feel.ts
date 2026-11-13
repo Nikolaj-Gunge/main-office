@@ -1,4 +1,10 @@
-import { type MovementConfig, type PlayerState, Spring, type StepEvents } from '@office-fps/shared'
+import {
+  type MovementConfig,
+  type PlayerState,
+  Spring,
+  type StepEvents,
+  slideWeight,
+} from '@office-fps/shared'
 
 export interface CameraFeelConfig {
   /** Vertical head bob at walk speed (m). */
@@ -88,7 +94,10 @@ export class CameraFeel {
 
     // Roll into the strafe direction (velocity along the view's right vector).
     const right = state.vel.x * Math.cos(state.yaw) - state.vel.z * Math.sin(state.yaw)
-    const targetRoll = (-right / movement.walkSpeed) * ((c.strafeRollDeg * Math.PI) / 180)
+    // A slide leans the view a little (the hand going down on the left).
+    const targetRoll =
+      (-right / movement.walkSpeed) * ((c.strafeRollDeg * Math.PI) / 180) +
+      0.06 * slideWeight(state, movement)
     this.roll += (targetRoll - this.roll) * Math.min(1, dt * 8)
   }
 }

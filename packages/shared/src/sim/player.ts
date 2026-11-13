@@ -59,6 +59,27 @@ export interface PlayerState {
   stamina: number
   /** Out of breath: no sprinting until some of it is back. */
   winded: boolean
+  /** Lying down: the collider is in the prone shape. */
+  prone: boolean
+  /** 0 = up, 1 = flat on the ground. Animated: getting down and up takes a moment. */
+  proneAmount: number
+  /** Seconds of slide left (0 = not sliding). */
+  slide: number
+  /** Seconds before another slide is allowed. */
+  slideCooldown: number
+  /** Climbing onto a ledge: a short scripted move (null when not climbing). */
+  mantle: Mantle | null
+}
+
+/** A climb onto a ledge: pulled straight up beside it, then over onto the top. */
+export interface Mantle {
+  from: MutVec3
+  to: MutVec3
+  /** Seconds since it started, and how long it takes. */
+  time: number
+  duration: number
+  /** Not enough head room on top to stand: arrive crouched. */
+  crouch: boolean
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -80,6 +101,10 @@ export interface StepEvents {
   weapon: WeaponEvents | null
   /** Switched weapons this tick. */
   switched: boolean
+  /** Started a slide / a climb, lay down or got up this tick (sounds). */
+  slid: boolean
+  mantled: boolean
+  proned: boolean
 }
 
 /** Winded until this much breath is back. */
@@ -112,6 +137,11 @@ export function createPlayerState(
     pocket,
     stamina: 1,
     winded: false,
+    prone: false,
+    proneAmount: 0,
+    slide: 0,
+    slideCooldown: 0,
+    mantle: null,
   }
 }
 
@@ -143,13 +173,32 @@ export function clonePlayerState(s: PlayerState): PlayerState {
     weapon: { ...s.weapon },
     holstered: s.holstered ? { ...s.holstered } : null,
     pocket: s.pocket ? { ...s.pocket } : null,
+    mantle: s.mantle ? { ...s.mantle, from: { ...s.mantle.from }, to: { ...s.mantle.to } } : null,
   }
 }
 
 export function eyeHeight(state: PlayerState, config: MovementConfig): number {
-  return (
+  const upright =
     config.standEyeHeight + (config.crouchEyeHeight - config.standEyeHeight) * state.crouchAmount
-  )
+  const eye = upright + (config.proneEyeHeight - upright) * state.proneAmount
+  return eye - config.slideEyeDrop * slideWeight(state, config)
+}
+
+/** How far into a slide's low pose (0–1): drops in quickly, rises as the slide runs out. */
+export function slideWeight(state: PlayerState, config: MovementConfig): number {
+  if (state.slide <= 0) return 0
+  const elapsed = config.slideTime - state.slide
+  return Math.min(1, elapsed * 8, state.slide * 5)
+}
+
+/** Capsule height for the shape the player is in. */
+export function bodyHeight(state: PlayerState, config: MovementConfig): number {
+  if (state.mantle) return config.crouchHeight
+  return state.prone
+    ? config.proneHeight
+    : state.crouched
+      ? config.crouchHeight
+      : config.standHeight
 }
 
 /** A player's Rapier collider + character controller. One per simulated player. */
@@ -161,6 +210,8 @@ export class PlayerBody {
   config: MovementConfig
   /** Server rules for shooting (spread, infinite ammo); set alongside `config`. */
   weaponRules: WeaponRules = DEFAULT_WEAPON_RULES
+  /** Can pull itself up onto ledges (the dead can't: crates and sills stay safe from them). */
+  climbs = true
 
   /** What the body bumps into: the map, plus foliage unless it goes through it. */
   private readonly groups: number
@@ -219,6 +270,87 @@ export class PlayerBody {
         this.collider,
       ) === null
     )
+  }
+
+  /** Normal of the walkable ground right under `feet`, or null (for slides down slopes). */
+  groundNormal(feet: MutVec3): MutVec3 | null {
+    const ray = new RAPIER.Ray({ x: feet.x, y: feet.y + 0.2, z: feet.z }, { x: 0, y: -1, z: 0 })
+    const hit = this.physics.world.castRayAndGetNormal(
+      ray,
+      0.5,
+      true,
+      undefined,
+      this.groups,
+      this.collider,
+    )
+    return hit ? { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } : null
+  }
+
+  /**
+   * A ledge to climb in direction (dirX, dirZ): a wall within reach whose walkable top is
+   * `minRise`–`maxRise` above `feet`, with room to pull up beside it, to move over it and to be
+   * on top (standing, or at least crouched). Returns the climb, or null.
+   */
+  findLedge(
+    feet: MutVec3,
+    dirX: number,
+    dirZ: number,
+    minRise: number,
+    maxRise: number,
+  ): { to: MutVec3; rise: number; crouch: boolean } | null {
+    const c = this.config
+    const reach = c.radius + c.mantleReach
+    // The wall: probed just above step height, then at waist and chest height.
+    let wall = -1
+    for (const h of [
+      c.stepHeight + 0.05,
+      0.95 * (c.standHeight / 1.8),
+      1.45 * (c.standHeight / 1.8),
+    ]) {
+      if (h > maxRise) break
+      const ray = new RAPIER.Ray(
+        { x: feet.x, y: feet.y + h, z: feet.z },
+        { x: dirX, y: 0, z: dirZ },
+      )
+      const hit = this.physics.world.castRayAndGetNormal(
+        ray,
+        reach,
+        true,
+        undefined,
+        this.groups,
+        this.collider,
+      )
+      if (hit && Math.abs(hit.normal.y) < 0.7) {
+        wall = hit.timeOfImpact
+        break
+      }
+    }
+    if (wall < 0) return null
+    // Its top, just past the face. A ray starting inside something taller hits at once (too high).
+    const top = feet.y + maxRise + 0.05
+    const probe = { x: feet.x + dirX * (wall + 0.15), y: top, z: feet.z + dirZ * (wall + 0.15) }
+    const down = this.physics.world.castRayAndGetNormal(
+      new RAPIER.Ray(probe, { x: 0, y: -1, z: 0 }),
+      maxRise + 0.05 - minRise,
+      true,
+      undefined,
+      this.groups,
+      this.collider,
+    )
+    if (!down) return null
+    const rise = top - down.timeOfImpact - feet.y
+    const walkable = Math.cos((c.maxSlopeDeg * Math.PI) / 180)
+    if (rise < minRise || rise > maxRise || down.normal.y < walkable) return null
+    const y = feet.y + rise
+    // Over the edge far enough that the whole capsule is above the top.
+    const ahead = wall + c.radius + 0.12
+    const to = { x: feet.x + dirX * ahead, y, z: feet.z + dirZ * ahead }
+    // Room to rise beside the wall (no ceiling), to move across, and to be there.
+    for (const t of [0, 0.35, 0.7, 1]) {
+      const at = { x: feet.x + (to.x - feet.x) * t, y: y + 0.02, z: feet.z + (to.z - feet.z) * t }
+      if (!this.fits(at, c.crouchHeight)) return null
+    }
+    return { to, rise, crouch: !this.fits(to, c.standHeight) }
   }
 
   /**
@@ -388,14 +520,19 @@ function accelerate(
   vel.z += step * wishZ
 }
 
-function applyFriction(vel: MutVec3, config: MovementConfig, dt: number) {
+function applyFriction(
+  vel: MutVec3,
+  config: MovementConfig,
+  dt: number,
+  stopSpeed = config.stopSpeed,
+) {
   const speed = Math.hypot(vel.x, vel.z)
   if (speed < 0.05) {
     vel.x = 0
     vel.z = 0
     return
   }
-  const control = Math.max(speed, config.stopSpeed)
+  const control = Math.max(speed, stopSpeed)
   const scale = Math.max(0, speed - control * config.friction * dt) / speed
   vel.x *= scale
   vel.z *= scale
@@ -424,26 +561,84 @@ export function stepPlayer(
     shot: null,
     weapon: null,
     switched: false,
+    slid: false,
+    mantled: false,
+    proned: false,
   }
   if (!state.alive) return events
+  state.slideCooldown = Math.max(0, state.slideCooldown - dt)
+  const sin = Math.sin(state.yaw)
+  const cos = Math.cos(state.yaw)
+
+  // --- Climbing onto a ledge: scripted; nothing else moves you until you're up ---------------
+  if (state.mantle) {
+    stepMantle(state, body, dt)
+    stepItems(state, buttons & ~HANDS_BUSY, pressed & ~HANDS_BUSY, dt, body, events, false)
+    return events
+  }
 
   // The state may have been reset (reconciliation, respawn): make the capsule match it.
-  body.setHeight(state.crouched ? c.crouchHeight : c.standHeight)
+  body.setHeight(bodyHeight(state, c))
+
+  // --- Prone: Z lies down flat (on the ground) and gets back up; jump or crouch gets up only to
+  // a crouch. Getting up needs head room for the shape you get up into.
+  const wantCrouch = hasButton(buttons, Button.Crouch)
+  if (state.prone) {
+    const toCrouch = hasButton(pressed, Button.Jump) || hasButton(pressed, Button.Crouch)
+    if (hasButton(pressed, Button.Prone) || toCrouch) {
+      const stand = !toCrouch && !wantCrouch && body.fits(state.pos, c.standHeight)
+      if (stand || body.fits(state.pos, c.crouchHeight)) {
+        state.prone = false
+        state.crouched = !stand
+        body.setHeight(bodyHeight(state, c))
+        events.proned = true
+      }
+    }
+  } else if (hasButton(pressed, Button.Prone) && state.grounded) {
+    state.prone = true
+    state.crouched = false
+    endSlide(state, c)
+    body.setHeight(c.proneHeight)
+    events.proned = true
+  }
+
+  // --- Slide: crouch while sprinting drops you into a slide that carries your speed ----------
+  const speedNow = Math.hypot(state.vel.x, state.vel.z)
+  if (
+    hasButton(pressed, Button.Crouch) &&
+    hasButton(buttons, Button.Sprint) &&
+    hasButton(buttons, Button.Forward) &&
+    !state.prone &&
+    state.grounded &&
+    state.slide === 0 &&
+    state.slideCooldown === 0 &&
+    speedNow > c.walkSpeed * 1.1
+  ) {
+    state.slide = c.slideTime
+    state.crouched = true
+    body.setHeight(c.crouchHeight)
+    state.vel.x *= c.slideBoost
+    state.vel.z *= c.slideBoost
+    events.slid = true
+  }
 
   // --- Crouch: shrink instantly, stand up only when there's head room ----------------------
   // In mid-air, crouching pulls the feet up instead of lowering the head (CS crouch-jump), so a
   // crouch-jump clears higher ledges; the eye moves with the head, so the view barely changes.
-  const wantCrouch = hasButton(buttons, Button.Crouch)
+  // A slide keeps you down whatever the key does.
+  const holdDown = wantCrouch || state.slide > 0
   const tuck = state.grounded ? 0 : Math.min(c.crouchJumpLift, c.standHeight - c.crouchHeight)
   const eyeRange = Math.max(1e-6, c.standEyeHeight - c.crouchEyeHeight)
-  if (wantCrouch && !state.crouched) {
+  if (state.prone) {
+    // Lying down: the crouch key does nothing more.
+  } else if (holdDown && !state.crouched) {
     state.crouched = true
     body.setHeight(c.crouchHeight)
     if (tuck > 0 && body.fits({ ...state.pos, y: state.pos.y + tuck }, c.crouchHeight)) {
       state.pos.y += tuck
       state.crouchAmount = Math.min(1, state.crouchAmount + tuck / eyeRange)
     }
-  } else if (!wantCrouch && state.crouched) {
+  } else if (!holdDown && state.crouched) {
     const lowered = { ...state.pos, y: state.pos.y - tuck }
     if (tuck > 0 && body.fits(lowered, c.standHeight)) {
       // Legs back down in the air.
@@ -456,20 +651,26 @@ export function stepPlayer(
       body.setHeight(c.standHeight)
     }
   }
-  const crouchTarget = state.crouched ? 1 : 0
+  const crouchTarget = state.crouched || state.prone ? 1 : 0
   const crouchStep = c.crouchTransitionSpeed * dt
   state.crouchAmount += Math.max(
     -crouchStep,
     Math.min(crouchStep, crouchTarget - state.crouchAmount),
   )
+  const proneStep = dt / Math.max(1e-3, c.proneTime)
+  state.proneAmount += Math.max(
+    -proneStep,
+    Math.min(proneStep, (state.prone ? 1 : 0) - state.proneAmount),
+  )
+  // Getting down or up: hardly any movement until you're there.
+  const lying = state.prone || state.proneAmount > 0.05
+  const settling = state.proneAmount > 0.05 && state.proneAmount < 0.95
 
   // --- Wish direction --------------------------------------------------------------------
   const forward =
     (hasButton(buttons, Button.Forward) ? 1 : 0) - (hasButton(buttons, Button.Back) ? 1 : 0)
   const strafe =
     (hasButton(buttons, Button.Right) ? 1 : 0) - (hasButton(buttons, Button.Left) ? 1 : 0)
-  const sin = Math.sin(state.yaw)
-  const cos = Math.cos(state.yaw)
   let wishX = -sin * forward + cos * strafe
   let wishZ = -cos * forward - sin * strafe
   const wishLen = Math.hypot(wishX, wishZ)
@@ -484,6 +685,7 @@ export function stepPlayer(
     hasButton(buttons, Button.Sprint) &&
     forward > 0 &&
     !state.crouched &&
+    !lying &&
     !aiming &&
     !hasButton(buttons, Button.Fire) &&
     !state.winded
@@ -497,26 +699,61 @@ export function stepPlayer(
     }
   }
   const handling = WEAPONS[state.weapon.id].moveSpeedFactor * (aiming ? 0.6 : 1)
-  const maxSpeed =
-    (state.crouched ? c.crouchSpeed : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)) * handling
+  const gait = state.prone
+    ? c.proneSpeed
+    : state.crouched
+      ? c.crouchSpeed
+      : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)
+  const maxSpeed = gait * handling * (settling ? 0.3 : 1)
   const wishSpeed = wishLen > 0 ? maxSpeed : 0
 
-  // --- Jump (buffered press + coyote time) -----------------------------------------------
+  // --- Jump (buffered press + coyote time); at a ledge, forward + jump climbs it instead ------
   state.jumpBuffer = hasButton(pressed, Button.Jump)
     ? c.jumpBufferTime
     : Math.max(0, state.jumpBuffer - dt)
-  const canJump = state.grounded || state.airTime < c.coyoteTime
+  const canJump = !lying && (state.grounded || state.airTime < c.coyoteTime)
+  const grab = state.grounded ? state.jumpBuffer > 0 : hasButton(buttons, Button.Jump)
+  if (!lying && forward > 0 && grab && body.climbs) {
+    // From the ground: anything from waist to over your head. In the air (holding jump into a
+    // wall) the hands are already up there: lower ledges only, so a jump can't scale a house.
+    const ledge = state.grounded
+      ? body.findLedge(state.pos, -sin, -cos, c.mantleMinHeight, c.mantleMaxHeight)
+      : body.findLedge(state.pos, -sin, -cos, c.mantleMinHeight * 0.5, c.mantleMaxHeight * 0.6)
+    if (ledge) {
+      const size = c.standHeight / 1.8
+      state.mantle = {
+        from: { ...state.pos },
+        to: ledge.to,
+        time: 0,
+        duration: 0.4 + (0.15 * ledge.rise) / size,
+        crouch: ledge.crouch,
+      }
+      endSlide(state, c)
+      state.jumpBuffer = 0
+      state.vel = { x: 0, y: 0, z: 0 }
+      state.grounded = false
+      body.setHeight(c.crouchHeight)
+      events.mantled = true
+      stepItems(state, buttons & ~HANDS_BUSY, pressed & ~HANDS_BUSY, dt, body, events, false)
+      return events
+    }
+  }
   if (state.jumpBuffer > 0 && canJump) {
     state.vel.y = c.jumpVelocity
     state.grounded = false
     state.airTime = c.coyoteTime // no second jump from coyote time
     state.jumpBuffer = 0
     events.jumped = true
+    endSlide(state, c)
   }
 
   // --- Horizontal velocity ---------------------------------------------------------------
-  if (state.grounded) {
-    applyFriction(state.vel, c, dt)
+  if (state.slide > 0 && !state.grounded) endSlide(state, c) // slid off an edge
+  if (state.slide > 0) {
+    stepSlide(state, body, dt)
+  } else if (state.grounded) {
+    // Crawling is slower than the stop speed: friction scaled down so a crawl reaches its pace.
+    applyFriction(state.vel, c, dt, state.prone ? Math.min(c.stopSpeed, c.proneSpeed) : c.stopSpeed)
     accelerate(state.vel, wishX, wishZ, wishSpeed, c.groundAccel, dt)
   } else {
     // Air control without speed gain: no strafe-jumping/bhop past your top speed.
@@ -584,7 +821,24 @@ export function stepPlayer(
     state.airTime += dt
   }
 
-  // --- Weapon: switch first, then fire — after movement, so shots leave from where you are ---
+  stepItems(state, buttons, pressed, dt, body, events, sprinting)
+  return events
+}
+
+/** Buttons that do nothing while both hands are busy climbing. */
+const HANDS_BUSY = Button.Fire | Button.Aim
+
+/** Weapons for one tick: switch first, then fire — after movement, so shots leave from where you are. */
+function stepItems(
+  state: PlayerState,
+  buttons: number,
+  pressed: number,
+  dt: number,
+  body: PlayerBody,
+  events: StepEvents,
+  sprinting: boolean,
+): void {
+  const c = body.config
   // 1 = main gun, 2 = handgun, 3 = knife, Q / wheel = the last one you had.
   const items = carried(state)
   const target = hasButton(pressed, Button.Slot1)
@@ -603,7 +857,7 @@ export function stepPlayer(
   events.weapon = stepWeapon(state.weapon, buttons, pressed, dt, {
     sprinting,
     grounded: state.grounded,
-    crouched: state.crouched,
+    crouched: state.crouched || state.prone,
     speedFactor: Math.hypot(state.vel.x, state.vel.z) / c.walkSpeed,
     rules: body.weaponRules,
   })
@@ -627,8 +881,75 @@ export function stepPlayer(
       shotIndex: shot.shotIndex,
     }
   }
+}
 
-  return events
+/** Ends a slide (and starts the wait before the next one). */
+function endSlide(state: PlayerState, c: MovementConfig): void {
+  if (state.slide <= 0) return
+  state.slide = 0
+  state.slideCooldown = c.slideCooldown
+}
+
+/**
+ * One tick of a slide: no steering, speed bleeds away at `slideFriction` — unless the ground
+ * falls away ahead, where gravity keeps you going (and the slide lasts longer). It ends when
+ * the time runs out or you're down to crouching pace.
+ */
+function stepSlide(state: PlayerState, body: PlayerBody, dt: number): void {
+  const c = body.config
+  const speed = Math.hypot(state.vel.x, state.vel.z)
+  const n = speed > 1e-6 ? body.groundNormal(state.pos) : null
+  // The ground's normal leans the way it slopes down: along your path, that's sin(slope).
+  const downhill = n && speed > 1e-6 ? (n.x * state.vel.x + n.z * state.vel.z) / speed : 0
+  const top = c.walkSpeed * c.sprintMultiplier * c.slideBoost * 1.3
+  const next = Math.min(top, Math.max(0, speed + (c.gravity * downhill - c.slideFriction) * dt))
+  if (speed > 1e-6) {
+    state.vel.x *= next / speed
+    state.vel.z *= next / speed
+  }
+  state.slide = Math.max(0, state.slide - dt * (downhill > 0.05 ? 0.5 : 1))
+  if (state.slide === 0 || next < c.crouchSpeed) {
+    state.slide = 0
+    state.slideCooldown = c.slideCooldown
+  }
+}
+
+/** One tick of a climb: up beside the ledge first, then over onto it. */
+function stepMantle(state: PlayerState, body: PlayerBody, dt: number): void {
+  const m = state.mantle
+  if (!m) return
+  const c = body.config
+  body.setHeight(c.crouchHeight)
+  m.time = Math.min(m.duration, m.time + dt)
+  const u = m.time / m.duration
+  const ease = (t: number) => {
+    const k = Math.max(0, Math.min(1, t))
+    return k * k * (3 - 2 * k)
+  }
+  const up = ease(u / 0.55)
+  const over = ease((u - 0.45) / 0.55)
+  const next = {
+    x: m.from.x + (m.to.x - m.from.x) * over,
+    y: m.from.y + (m.to.y - m.from.y) * up,
+    z: m.from.z + (m.to.z - m.from.z) * over,
+  }
+  state.vel = {
+    x: (next.x - state.pos.x) / dt,
+    y: (next.y - state.pos.y) / dt,
+    z: (next.z - state.pos.z) / dt,
+  }
+  state.pos = next
+  state.grounded = false
+  state.airTime = 0
+  state.jumpBuffer = 0
+  if (u >= 1) {
+    state.mantle = null
+    state.pos = { ...m.to }
+    state.vel.y = 0
+    state.grounded = true
+    state.crouched = m.crouch
+    body.setHeight(bodyHeight(state, c))
+  }
 }
 
 /**

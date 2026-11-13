@@ -17,6 +17,8 @@ export const Button = {
   SwapWeapon: 1 << 13,
   /** Draw the knife (3). */
   Slot3: 1 << 14,
+  /** Lie down / get back up (toggle). The last bit of the u16 on the wire. */
+  Prone: 1 << 15,
 } as const
 export type Button = (typeof Button)[keyof typeof Button]
 

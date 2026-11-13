@@ -98,6 +98,12 @@ export interface RemotePlayerState {
   ads: number
   /** Seconds since they last fired or swung, capped at 1: recoil, melee swings, claw swipes. */
   shotAge: number
+  /** Lying down 0–1 (animated), how far through a slide (1 → 0), and a climb onto a ledge. */
+  prone: number
+  slide: number
+  /** Climb progress 0–1 (0 = not climbing) and the ledge's height above their feet (m). */
+  mantle: number
+  ledge: number
   /** Survival: their torch is on. */
   light?: boolean
 }
@@ -233,6 +239,7 @@ const FLAG_PROTECTED = 8
 const FLAG_AIMING = 16
 const FLAG_LIGHT = 32
 const FLAG_WINDED = 64
+const FLAG_PRONE = 128
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -245,9 +252,18 @@ function writePlayerState(w: BinaryWriter, s: PlayerState): void {
     (s.crouched ? FLAG_CROUCHED : 0) |
       (s.grounded ? FLAG_GROUNDED : 0) |
       (s.alive ? 0 : FLAG_DEAD) |
-      (s.winded ? FLAG_WINDED : 0),
+      (s.winded ? FLAG_WINDED : 0) |
+      (s.prone ? FLAG_PRONE : 0),
   )
   w.u16(s.prevButtons).f64(s.stamina)
+  w.f64(s.proneAmount).f64(s.slide).f64(s.slideCooldown)
+  const m = s.mantle
+  w.u8(m ? (m.crouch ? 2 : 1) : 0)
+  if (m) {
+    w.f64(m.from.x).f64(m.from.y).f64(m.from.z)
+    w.f64(m.to.x).f64(m.to.y).f64(m.to.z)
+    w.f64(m.time).f64(m.duration)
+  }
   writeWeapon(w, s.weapon)
   w.u8(s.holstered ? 1 : 0)
   if (s.holstered) writeWeapon(w, s.holstered)
@@ -295,6 +311,20 @@ function readPlayerState(r: BinaryReader): PlayerState {
   const flags = r.u8()
   const prevButtons = r.u16()
   const stamina = r.f64()
+  const proneAmount = r.f64()
+  const slide = r.f64()
+  const slideCooldown = r.f64()
+  const mantling = r.u8()
+  const mantle =
+    mantling === 0
+      ? null
+      : {
+          from: { x: r.f64(), y: r.f64(), z: r.f64() },
+          to: { x: r.f64(), y: r.f64(), z: r.f64() },
+          time: r.f64(),
+          duration: r.f64(),
+          crouch: mantling === 2,
+        }
   const weapon = readWeapon(r)
   const holstered = r.u8() ? readWeapon(r) : null
   const pocket = r.u8() ? readWeapon(r) : null
@@ -315,6 +345,11 @@ function readPlayerState(r: BinaryReader): PlayerState {
     pocket,
     stamina,
     winded: (flags & FLAG_WINDED) !== 0,
+    prone: (flags & FLAG_PRONE) !== 0,
+    proneAmount,
+    slide,
+    slideCooldown,
+    mantle,
   }
 }
 
@@ -337,16 +372,33 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
   writeAnimation(w, p)
 }
 
-/** The animation-only extras of a pose (5 bytes): movement direction, jump, landing, aim, shot. */
+/**
+ * The animation-only extras of a pose (9 bytes): movement direction, jump, landing, aim, shot,
+ * lying down, sliding, climbing.
+ */
 function writeAnimation(
   w: BinaryWriter,
-  p: { moveDir?: number; vy?: number; land?: number; ads?: number; shotAge?: number },
+  p: {
+    moveDir?: number
+    vy?: number
+    land?: number
+    ads?: number
+    shotAge?: number
+    prone?: number
+    slide?: number
+    mantle?: number
+    ledge?: number
+  },
 ): void {
   w.u8(Math.round((((((p.moveDir ?? 0) / TAU) % 1) + 1) % 1) * 256) & 0xff)
   w.u8(Math.round(Math.max(-25.4, Math.min(25.4, p.vy ?? 0)) * 5) + 127)
   w.u8(Math.round(Math.max(0, Math.min(1, p.land ?? 0)) * 255))
   w.u8(Math.round(Math.max(0, Math.min(1, p.ads ?? 0)) * 255))
   w.u8(Math.round(Math.max(0, Math.min(1, p.shotAge ?? 1)) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(1, p.prone ?? 0)) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(1, p.slide ?? 0)) * 255))
+  w.u8(Math.round(Math.max(0, Math.min(1, p.mantle ?? 0)) * 255))
+  w.u8(Math.round(Math.max(-1, Math.min(4, p.ledge ?? 0)) * 50) + 50)
 }
 
 function readAnimation(r: BinaryReader): {
@@ -355,6 +407,10 @@ function readAnimation(r: BinaryReader): {
   land: number
   ads: number
   shotAge: number
+  prone: number
+  slide: number
+  mantle: number
+  ledge: number
 } {
   return {
     moveDir: (r.u8() / 256) * TAU,
@@ -362,6 +418,10 @@ function readAnimation(r: BinaryReader): {
     land: r.u8() / 255,
     ads: r.u8() / 255,
     shotAge: r.u8() / 255,
+    prone: r.u8() / 255,
+    slide: r.u8() / 255,
+    mantle: r.u8() / 255,
+    ledge: (r.u8() - 50) / 50,
   }
 }
 

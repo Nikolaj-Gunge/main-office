@@ -504,13 +504,16 @@ export class ClientCombat {
     this.selfPos.y = state.pos.y
     this.selfPos.z = state.pos.z
     const w = state.weapon
-    this.d.viewmodel.update(dt, look.delta, bob, w, state.alive)
+    this.d.viewmodel.update(dt, look.delta, bob, w, state.alive, {
+      climb: state.mantle ? 1 : 0,
+      slide: state.slide > 0 ? 1 : 0,
+    })
     this.d.hud.setWeapon(carried(state))
     this.d.hud.setSpread(
       currentSpread(w, {
         sprinting: false,
         grounded: state.grounded,
-        crouched: state.crouched,
+        crouched: state.crouched || state.prone,
         speedFactor: Math.hypot(state.vel.x, state.vel.z) / walkSpeed,
       }),
       this.d.camera.fov,

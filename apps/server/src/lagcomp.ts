@@ -1,4 +1,4 @@
-import { blendShotAge, type HitPose } from '@office-fps/shared'
+import { blendProgress, blendShotAge, type HitPose } from '@office-fps/shared'
 
 export interface HistoryPose extends HitPose {
   alive: boolean
@@ -73,6 +73,14 @@ export class PoseHistory {
       land: (a.land ?? 0) + ((b.land ?? 0) - (a.land ?? 0)) * t,
       ads: (a.ads ?? 0) + ((b.ads ?? 0) - (a.ads ?? 0)) * t,
       shotAge: blendShotAge(a.shotAge ?? 1, b.shotAge ?? 1, t),
+      prone: (a.prone ?? 0) + ((b.prone ?? 0) - (a.prone ?? 0)) * t,
+      slide: blendProgress(a.slide ?? 0, b.slide ?? 0, t, -1),
+      mantle: blendProgress(a.mantle ?? 0, b.mantle ?? 0, t, 1),
+      ledge: !a.mantle
+        ? (b.ledge ?? 0)
+        : !b.mantle
+          ? (a.ledge ?? 0)
+          : (a.ledge ?? 0) + ((b.ledge ?? 0) - (a.ledge ?? 0)) * t,
       ...(b.weapon !== undefined ? { weapon: b.weapon } : {}),
       ...(b.gait !== undefined ? { gait: b.gait } : {}),
       ...(b.seed !== undefined ? { seed: b.seed } : {}),

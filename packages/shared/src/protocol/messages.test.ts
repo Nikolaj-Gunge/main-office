@@ -65,7 +65,18 @@ describe('server messages', () => {
   self.vel = { x: 0.1, y: -2, z: 5.2 }
   self.crouched = true
   self.crouchAmount = 0.375
-  self.prevButtons = 0x41
+  self.prevButtons = 0x8041 // incl. the top bit (prone)
+  self.prone = true
+  self.proneAmount = 0.6
+  self.slide = 0.25
+  self.slideCooldown = 0.125
+  self.mantle = {
+    from: { x: 1, y: 0, z: 2 },
+    to: { x: 1, y: 1.2, z: 1.1 },
+    time: 0.1,
+    duration: 0.58,
+    crouch: true,
+  }
   self.alive = false
   self.weapon = { ...self.weapon, ammo: 7, cooldown: 0.05, shotIndex: 42, spreadSeed: 0xdeadbeef }
   self.holstered = {
@@ -161,6 +172,10 @@ describe('server messages', () => {
           land: 0.4,
           ads: 0.75,
           shotAge: 0.12,
+          prone: 1,
+          slide: 0.5,
+          mantle: 0.25,
+          ledge: 1.2,
         },
       ],
     }
@@ -185,6 +200,11 @@ describe('server messages', () => {
     expect(p?.land).toBeCloseTo(0.4, 2)
     expect(p?.ads).toBeCloseTo(0.75, 2)
     expect(p?.shotAge).toBeCloseTo(0.12, 2)
+    // Lying down, sliding, climbing a 1.2 m ledge.
+    expect(p?.prone).toBe(1)
+    expect(p?.slide).toBeCloseTo(0.5, 2)
+    expect(p?.mantle).toBeCloseTo(0.25, 2)
+    expect(p?.ledge).toBeCloseTo(1.2, 2)
   })
 
   test('item spawns survive the wire', () => {
@@ -240,6 +260,8 @@ describe('server messages', () => {
             ads: 1,
             moveDir: 1,
             shotAge: 0.3,
+            prone: 0.5,
+            ledge: -0.5,
             weapon: WeaponId.Claws,
             gait: 3,
             scale: 1.38,
@@ -260,6 +282,8 @@ describe('server messages', () => {
     expect(p?.ads).toBe(1)
     expect(p?.moveDir).toBeCloseTo(1, 1)
     expect(p?.shotAge).toBeCloseTo(0.3, 2)
+    expect(p?.prone).toBeCloseTo(0.5, 2)
+    expect(p?.ledge).toBeCloseTo(-0.5, 2)
     expect(p?.weapon).toBe(WeaponId.Claws)
     expect(p?.gait).toBe(3)
     expect(p?.scale).toBeCloseTo(1.38, 2)

@@ -59,6 +59,8 @@ export interface Prey {
   yaw: number
   pitch: number
   crouched: boolean
+  /** Lying flat: hardly there at all. */
+  prone: boolean
   /** How far their noise carries right now (m). */
   noise: number
   light: boolean
@@ -160,7 +162,8 @@ export class Zed {
       }
       if (d < p.noise && (!heard || d < Math.hypot(heard.pos.x - me.x, heard.pos.z - me.z)))
         heard = p
-      let sight = k.sight * (1 + grey * 0.7) * (p.light ? 2.1 : 1) * (p.crouched ? 0.6 : 1)
+      let sight =
+        k.sight * (1 + grey * 0.7) * (p.light ? 2.1 : 1) * (p.prone ? 0.35 : p.crouched ? 0.6 : 1)
       // What it's already chasing is harder to lose than to find.
       if (p.id === this.targetId && this.mood === 'chase') sight *= 1.5
       if (d > sight || d >= seenD) continue

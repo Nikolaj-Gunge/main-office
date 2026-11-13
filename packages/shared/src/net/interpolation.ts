@@ -1,5 +1,5 @@
 import type { RemotePlayerState } from '../protocol/messages.ts'
-import { blendShotAge } from '../sim/skeleton.ts'
+import { blendProgress, blendShotAge } from '../sim/skeleton.ts'
 
 interface Sample {
   tick: number
@@ -80,6 +80,10 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     land: lerp(a.land, b.land),
     ads: lerp(a.ads, b.ads),
     shotAge: blendShotAge(a.shotAge, b.shotAge, t),
+    prone: lerp(a.prone, b.prone),
+    slide: blendProgress(a.slide, b.slide, t, -1),
+    mantle: blendProgress(a.mantle, b.mantle, t, 1),
+    ledge: a.mantle === 0 ? b.ledge : b.mantle === 0 ? a.ledge : lerp(a.ledge, b.ledge),
     ...(b.light ? { light: true } : {}),
   }
 }

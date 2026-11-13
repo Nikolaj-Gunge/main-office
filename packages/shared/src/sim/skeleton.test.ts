@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { ZombieKind } from '../modes.ts'
-import { type HitPose, poseBounds, poseHitboxes } from './hitboxes.ts'
+import { type HitPose, HitZone, poseBounds, poseHitboxes, raycastPose } from './hitboxes.ts'
 import {
   type BodyPart,
   type BodyPose,
+  blendProgress,
   blendShotAge,
   bodyParts,
   moveDirection,
@@ -199,6 +200,69 @@ describe('melee and zombies', () => {
   })
 })
 
+describe('lying, sliding, climbing', () => {
+  const prone: BodyPose = { ...base, crouch: 1, prone: 1 }
+
+  test('prone: flat on the ground, head up, a body length front to back', () => {
+    const boxes = bodyParts(prone).filter((p) => p.name !== 'gun')
+    for (const p of boxes) expect(p.center.y).toBeLessThan(0.45)
+    const zs = boxes.map((p) => p.center.z)
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(1.2)
+    expect(part(prone, 'head').center.z).toBeLessThan(-0.3) // head in front
+    // The gun points where they look, at eye level just off the floor.
+    const gun = part(prone, 'gun')
+    expect(gun.center.y).toBeLessThan(0.4)
+    expect(qRotate(gun.rotation, { x: 0, y: 0, z: -1 }).z).toBeLessThan(-0.99)
+  })
+
+  test('prone hitboxes lie down too: a chest-high shot misses, a low one hits', () => {
+    const facing = { ...prone, z: -10, yaw: Math.PI }
+    const at = (y: number) =>
+      raycastPose({ x: 0, y, z: 0 }, { x: 0, y: 0, z: -1 }, 100, facing)?.zone ?? HitZone.None
+    expect(at(1.3)).toBe(HitZone.None)
+    expect(at(0.95)).toBe(HitZone.None)
+    expect(at(0.3)).toBe(HitZone.Head) // looking at you over the sights
+    expect(at(0.15)).not.toBe(HitZone.None)
+  })
+
+  test('crawling draws a knee up to the side; getting down blends from the crouch', () => {
+    const knee = (stride: number) => ends(part({ ...prone, speed: 1, stride }, 'thighL')).bottom
+    expect(knee(0.25).x).toBeLessThan(knee(0.75).x - 0.15)
+    expect(knee(0.25).y).toBeGreaterThan(0.05) // along the floor, not through it
+    const head = (amount: number) => part({ ...prone, prone: amount }, 'head').center.y
+    expect(head(0.5)).toBeLessThan(head(0) - 0.2)
+    expect(head(0.5)).toBeGreaterThan(head(1) + 0.2)
+  })
+
+  test('slide: hips low, leaning back, the leading leg out, a hand on the floor', () => {
+    const sliding = { ...base, crouch: 1, speed: 7, slide: 0.5 }
+    expect(part(sliding, 'stomach').center.y).toBeLessThan(0.65)
+    expect(part(sliding, 'chest').center.z).toBeGreaterThan(part(sliding, 'stomach').center.z)
+    expect(foot(sliding, 'L').z).toBeLessThan(-0.6)
+    expect(foot(sliding, 'L').y).toBeLessThan(0.1)
+    expect(ends(part(sliding, 'armL')).top.y).toBeLessThan(0.15)
+    // It drops in quickly and rises as it runs out.
+    const lead = (slide: number) => foot({ ...sliding, slide }, 'L').z
+    expect(lead(0.99)).toBeGreaterThan(lead(0.5) + 0.3)
+    expect(lead(0.01)).toBeGreaterThan(lead(0.5) + 0.3)
+  })
+
+  test('climb: both hands on the ledge, whatever its height and the body size', () => {
+    for (const [ledge, scale] of [
+      [1.2, 1],
+      [0.4, 1],
+      [1.6, 1.38],
+    ] as const) {
+      const climbing = { ...base, grounded: false, vy: 2, mantle: 0.3, ledge, scale }
+      for (const arm of ['armL', 'armR'] as const) {
+        const hand = ends(part(climbing, arm)).top
+        expect(hand.y).toBeCloseTo(ledge, 2)
+        expect(hand.z).toBeLessThan(-0.3 * scale)
+      }
+    }
+  })
+})
+
 describe('the pose is a pure function', () => {
   test('the same inputs give exactly the same boxes', () => {
     const pose: BodyPose = {
@@ -232,6 +296,13 @@ describe('the pose is a pure function', () => {
       { shotAge: 0.1, weapon: WeaponId.Sledge, pitch: -1.2 },
       { shotAge: 0.1, weapon: WeaponId.Claws, gait: ZombieKind.Runner, speed: 8 },
       { pitch: 1.4, ads: 1, scale: 1.38 },
+      { prone: 1, crouch: 1, speed: 1.1, stride: 0.3, pitch: 0.6 },
+      { prone: 1, crouch: 1, weapon: WeaponId.Claws, speed: 1, stride: 0.7 },
+      { prone: 0.5, crouch: 1, weapon: WeaponId.Sledge },
+      { slide: 0.6, crouch: 1, speed: 8, pitch: -1 },
+      { slide: 0.6, crouch: 1, speed: 8, weapon: WeaponId.Handgun, ads: 1 },
+      { mantle: 0.2, ledge: 2, grounded: false, vy: 4 },
+      { mantle: 0.7, ledge: 0.1, grounded: false, vy: 0.5, crouch: 1 },
     )
     for (const v of variants) {
       const pose: HitPose = { ...base, crouch: 0, time: 3.3, seed: 5, ...v }
@@ -255,6 +326,13 @@ describe('the pose is a pure function', () => {
         }
       }
     }
+  })
+
+  test('slides and climbs blend one way; a new one (or the end) snaps past halfway', () => {
+    expect(blendProgress(0.8, 0.6, 0.5, -1)).toBeCloseTo(0.7) // a slide running out
+    expect(blendProgress(0.1, 1, 0.4, -1)).toBe(0.1) // a new slide…
+    expect(blendProgress(0.1, 1, 0.6, -1)).toBe(1) // …starts past halfway
+    expect(blendProgress(0.95, 0, 0.3, 1)).toBe(0.95) // a climb ending doesn't play back
   })
 
   test('the shot clock blends forward, and snaps to a new shot past halfway', () => {

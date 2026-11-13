@@ -1303,13 +1303,14 @@ export class SurvivalDirector {
       // Nobody is hunted inside a safe place.
       if (this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 4)) continue
       const speed = Math.hypot(s.vel.x, s.vel.z)
-      const steps = s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
+      const steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
       out.push({
         id: sv.player.id,
         pos: s.pos,
         yaw: s.yaw,
         pitch: s.pitch,
         crouched: s.crouched,
+        prone: s.prone,
         noise: Math.max(steps, this.now < sv.noiseUntil ? sv.noise : 0),
         light: sv.self.light,
       })

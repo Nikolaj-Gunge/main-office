@@ -27,6 +27,10 @@ export const SOUNDS = {
   'shot.tail': { variants: 2, recipe: shotTail },
   step: { variants: 6, recipe: footstep },
   land: { variants: 2, recipe: land },
+  // Moving about: a slide's scrape, hands slapping onto a ledge (and a grunt), dropping prone.
+  slide: { variants: 2, recipe: slideScrape },
+  mantle: { variants: 2, recipe: mantle },
+  prone: { variants: 2, recipe: proneDrop },
   'reload.out': { variants: 1, recipe: magOut },
   'reload.in': { variants: 1, recipe: magIn },
   'reload.slide': { variants: 1, recipe: slide },
@@ -108,6 +112,52 @@ function land(rate: number, v: number): Signal {
   const thud = envelope(sweep(0.15, rate, 90, 40), rate, 0.002, 0.04)
   const cloth = envelope(lowpass(noise(0.15, rate, 130 + v), rate, 1500), rate, 0.005, 0.03)
   return fadeEdges(normalize(mix(rate, gain(thud, 1.2), [cloth, 0.004]), 0.8), rate)
+}
+
+/** Shoes and trousers scraping along the floor, fading as the slide slows. */
+function slideScrape(rate: number, v: number): Signal {
+  const r = rng(140 + v)
+  const scrape = envelope(
+    bandpass(noise(0.75, rate, 140 + v), rate, 700 + r() * 300, 0.6),
+    rate,
+    0.02,
+    0.22,
+  )
+  const grit = envelope(highpass(noise(0.6, rate, 150 + v), rate, 3500), rate, 0.01, 0.12)
+  return fadeEdges(normalize(mix(rate, scrape, gain(grit, 0.35)), 0.7), rate, 0.02)
+}
+
+/** Two palms slapping onto a ledge, then the effort of pulling up. */
+function mantle(rate: number, v: number): Signal {
+  const r = rng(160 + v)
+  const slap = (seed: number) =>
+    envelope(bandpass(noise(0.05, rate, seed), rate, 1600 + r() * 600, 1.1), rate, 0, 0.008)
+  const grunt = envelope(
+    lowpass(saturate(sweep(0.22, rate, 150 + r() * 30, 105), 3), rate, 900),
+    rate,
+    0.03,
+    0.08,
+  )
+  return fadeEdges(
+    normalize(
+      mix(
+        rate,
+        slap(160 + v),
+        [gain(slap(170 + v), 0.8), 0.05 + r() * 0.02],
+        [gain(grunt, 0.45), 0.12],
+      ),
+      0.8,
+    ),
+    rate,
+  )
+}
+
+/** Dropping flat: knees and elbows on the floor, a rustle of clothes. */
+function proneDrop(rate: number, v: number): Signal {
+  const thud = (at: number) =>
+    [envelope(sweep(0.1, rate, 100 - at * 60, 50), rate, 0.002, 0.025), at] as [Signal, number]
+  const cloth = envelope(lowpass(noise(0.35, rate, 180 + v), rate, 1800), rate, 0.03, 0.09)
+  return fadeEdges(normalize(mix(rate, thud(0), thud(0.12 + v * 0.03), [cloth, 0.02]), 0.6), rate)
 }
 
 /** Metal click with a short resonant ping. */

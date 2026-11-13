@@ -67,6 +67,13 @@ export interface BodyPose {
   time?: number
   /** Per-body offset for that idle motion (the player id), so a horde doesn't sway in step. */
   seed?: number
+  /** Lying down: 0 = up … 1 = flat on the ground. */
+  prone?: number
+  /** A slide: 1 just started … 0 over (0 = not sliding). */
+  slide?: number
+  /** Climbing onto a ledge: progress 0–1 (0 = not climbing), the ledge's height above the feet. */
+  mantle?: number
+  ledge?: number
 }
 
 export type PartName =
@@ -457,10 +464,54 @@ function swingAt(keys: [SwingKey, SwingKey, SwingKey], u: number): SwingKey {
 // --- The pose ---------------------------------------------------------------------------------
 
 /**
+ * A 0–1 progress that only runs one way (`dir` +1 up, −1 down) between two samples: running the
+ * other way means one ended or a new one began, so snap past halfway instead of playing it back.
+ */
+export function blendProgress(a: number, b: number, t: number, dir: 1 | -1): number {
+  return (b - a) * dir >= 0 ? a + (b - a) * t : t < 0.5 ? a : b
+}
+
+/** How deep into a slide's pose (0–1): drops in quickly, rises as the slide runs out. */
+const slideWeightOf = (slide: number) =>
+  slide > 0 ? clamp01(Math.min((1 - slide) * 7, slide * 4.5)) : 0
+
+type ModelPart = { name: PartName; center: V3; half: V3; rotation: Quat }
+
+/**
  * Every part of a body in this pose, in world space. Order: head first (it wins ties when a
  * shot grazes two parts), the gun among the rest (drawn, never hit).
  */
 export function bodyParts(pose: BodyPose): BodyPart[] {
+  let model = upright(pose)
+  // Lying down: blend each part from the (crouched) upright pose to flat on the ground.
+  const flat = smooth(clamp01(pose.prone ?? 0))
+  if (flat > 0) {
+    const lying = new Map(proneModel(pose).map((p) => [p.name, p]))
+    model = model.map((p) => {
+      const q = lying.get(p.name)
+      if (!q) return p
+      return {
+        name: p.name,
+        center: lerpV(p.center, q.center, flat),
+        half: lerpV(p.half, q.half, flat),
+        rotation: qBlend(p.rotation, q.rotation, flat),
+      }
+    })
+  }
+  // Model → world.
+  const size = pose.scale ?? 1
+  const world = qAxisAngle(Y_AXIS, pose.yaw)
+  const origin = v(pose.x, pose.y, pose.z)
+  return model.map((p) => ({
+    name: p.name,
+    center: add(origin, qRotate(world, scale(p.center, size))),
+    half: scale(p.half, size),
+    rotation: qMul(world, p.rotation),
+  }))
+}
+
+/** The pose on your feet (standing, running, crouching, jumping, sliding, climbing). */
+function upright(pose: BodyPose): ModelPart[] {
   const g = gaitOf(pose.gait)
   const person = g === PERSON
   const hold = holdOf(pose.weapon)
@@ -481,7 +532,13 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
   const phase = (((pose.stride ?? 0) % 1) + 1) % 1
   const time = pose.time ?? 0
   const seed = pose.seed ?? 0
-  const model: { name: PartName; center: V3; half: V3; rotation: Quat }[] = []
+  const model: ModelPart[] = []
+  // Sliding: low, leaning back, the leading leg out and a hand on the floor. Climbing: hands on
+  // the ledge, leaning over them (the legs tuck as in a jump: they're off the ground).
+  const slid = slideWeightOf(pose.slide ?? 0)
+  const climb = clamp01(pose.mantle ?? 0)
+  const climbing = climb > 0 ? clamp01(Math.min(climb * 10, (1 - climb) * 4)) : 0
+  const ledge = (pose.ledge ?? 0) / (pose.scale ?? 1) // model space
 
   // How much of each motion: the step cycle (fades in from a standstill), a run's style (longer
   // flight, higher knees), a sprint's gun carry, and idling.
@@ -491,7 +548,9 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
   const walkSpeed =
     DEFAULT_MOVEMENT.walkSpeed * (WEAPONS[pose.weapon ?? WeaponId.Rifle]?.moveSpeedFactor ?? 1)
   const sprint =
-    gun && person ? clamp01((speed / walkSpeed - 1.1) / 0.15) * (1 - ads) * (1 - air) : 0
+    gun && person
+      ? clamp01((speed / walkSpeed - 1.1) / 0.15) * (1 - ads) * (1 - air) * (1 - slid)
+      : 0
   const breath = Math.sin((time * TAU) / 3.8 + seed)
   const jerk = g.twitch
 
@@ -513,6 +572,7 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
   const rightStance =
     legPhase(1) < stanceShare ? Math.sin((Math.PI * legPhase(1)) / stanceShare) : 0
   hipY -= g.limp * 0.04 * move * rightStance
+  hipY = lerp(hipY, 0.42, slid)
   const reach = 2 * SEGMENT * 0.995
   const maxStep = Math.sqrt(Math.max(0.0025, reach * reach - hipY * hipY)) * 1.1
   const halfStep =
@@ -562,8 +622,13 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
       foot = v(lane.x, tuck.y + 0.2 * crouchIn, tuck.z)
       foot.y = Math.min(foot.y, hipY - 0.2)
     }
+    let pole = qRotate(ry(twist), v(s * (0.12 + g.width * 4), 0, -1))
+    if (slid > 0) {
+      // Left leg out ahead (knee soft, bending up), right folded under (knee forward).
+      foot = lerpV(foot, s < 0 ? v(-0.12, 0.06, -0.72) : v(0.17, 0.05, 0.22), slid)
+      pole = lerpV(pole, s < 0 ? v(0, 1, 0) : v(0.3, -0.3, -1), slid)
+    }
     const hip = add(pelvis, qRotate(pelvisRot, v(s * HIP_X, 0, 0)))
-    const pole = qRotate(ry(twist), v(s * (0.12 + g.width * 4), 0, -1))
     const { mid: knee, end } = solveLimb(hip, foot, pole)
     model.push({
       name: `thigh${L}`,
@@ -610,8 +675,11 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
     air * clamp(-vy * 0.02, -0.06, 0.08) +
     0.6 * zombieSway * Math.sin(time * 0.53 + seed * 1.7) +
     0.22 * strike -
-    0.04 * kick
+    0.04 * kick -
+    0.55 * slid +
+    0.45 * climbing * Math.sin(Math.PI * climb)
   const roll =
+    0.15 * slid +
     -side * move * (0.02 + 0.06 * run) +
     g.roll * move * Math.sin(TAU * phase) -
     g.limp * 0.08 * move * rightStance +
@@ -793,6 +861,15 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
     gunRot = chestRot
   }
 
+  if (slid > 0) handL = lerpV(handL, v(-0.38, 0.06, 0.05), slid) // a hand down on the floor
+  if (climbing > 0) {
+    // Both hands planted on the ledge's edge; the gun hangs from the right.
+    handR = lerpV(handR, v(0.22, ledge, -0.42), climbing)
+    handL = lerpV(handL, v(-0.22, ledge, -0.42), climbing)
+    grip = lerpV(grip, handR, climbing)
+    gunRot = qBlend(gunRot, qMul(ry(-0.3), rx(-1.3)), climbing)
+  }
+
   const gunDir = qRotate(gunRot, v(0, 0, -1))
   model.push({
     name: 'gun',
@@ -815,16 +892,118 @@ export function bodyParts(pose: BodyPose): BodyPart[] {
     })
   }
 
-  // Model → world.
-  const size = pose.scale ?? 1
-  const world = qAxisAngle(Y_AXIS, pose.yaw)
-  const origin = v(pose.x, pose.y, pose.z)
-  return model.map((p) => ({
-    name: p.name,
-    center: add(origin, qRotate(world, scale(p.center, size))),
-    half: scale(p.half, size),
-    rotation: qMul(world, p.rotation),
-  }))
+  return model
+}
+
+/**
+ * Flat on the ground, propped on the elbows, head up along the aim, legs straight back. Crawling
+ * draws one knee up to the side, then the other, the hands (or the gun) inching forward.
+ */
+function proneModel(pose: BodyPose): ModelPart[] {
+  const hold = holdOf(pose.weapon)
+  const pitch = clamp(pose.pitch ?? 0, -0.35, 0.6)
+  const speed = pose.speed ?? 0
+  const move = clamp01(speed / 0.6)
+  const phase = (((pose.stride ?? 0) % 1) + 1) % 1
+  const shotAge = Math.max(0, pose.shotAge ?? 1)
+  const breath = Math.sin(((pose.time ?? 0) * TAU) / 3.8 + (pose.seed ?? 0))
+  const crawl = (s: -1 | 1) => move * Math.max(0, Math.sin(TAU * (phase + (s < 0 ? 0 : 0.5))))
+  const model: ModelPart[] = []
+
+  const pelvis = v(0, 0.14, 0.3)
+  const torso = rx(-(Math.PI / 2 - 0.12)) // chest raised a little on the elbows
+  const up = (h: number) => add(pelvis, qRotate(torso, v(0, h, 0)))
+  const stomachH = PART_SIZES.stomach.y
+  const chestH = PART_SIZES.chest.y
+
+  for (const s of [-1, 1] as const) {
+    const L = s < 0 ? 'L' : 'R'
+    const k = crawl(s)
+    const hip = v(s * HIP_X, pelvis.y, pelvis.z)
+    const foot = v(s * (0.2 + 0.2 * k), 0.07, pelvis.z + 0.8 - 0.38 * k)
+    const { mid: knee, end } = solveLimb(hip, foot, v(s, 0.15, 0)) // knees out to the side
+    model.push({
+      name: `thigh${L}`,
+      center: lerpV(hip, knee, 0.5),
+      half: PART_SIZES[`thigh${L}`],
+      rotation: qFromUp(scale(sub(hip, knee), 1 / SEGMENT)),
+    })
+    model.push({
+      name: `shin${L}`,
+      center: lerpV(knee, end, 0.5),
+      half: PART_SIZES[`shin${L}`],
+      rotation: qFromUp(scale(sub(knee, end), 1 / Math.max(1e-6, length(sub(knee, end))))),
+    })
+  }
+  model.push({ name: 'stomach', center: up(stomachH), half: PART_SIZES.stomach, rotation: torso })
+  model.push({
+    name: 'chest',
+    center: add(up(2 * stomachH + chestH), v(0, 0.005 * breath, 0)),
+    half: PART_SIZES.chest,
+    rotation: torso,
+  })
+  const neck = up(2 * stomachH + 2 * chestH + NECK)
+  const headRot = rx(pitch)
+  model.unshift({
+    name: 'head',
+    center: add(neck, add(v(0, 0.06, -0.06), qRotate(headRot, v(0, 0.06, -0.04)))),
+    half: PART_SIZES.head,
+    rotation: headRot,
+  })
+
+  const shoulderY = 2 * stomachH + 2 * chestH - 0.04
+  const shoulder = (s: -1 | 1) => add(up(shoulderY), qRotate(torso, v(s * SHOULDER_X, 0, 0)))
+  const aim = rx(pitch)
+  const inch = 0.04 * move * Math.sin(TAU * phase * 2) // the gun nudged forward with each pull
+  let grip: V3
+  let gunRot = aim
+  let handR: V3
+  let handL: V3
+  const hand = (s: -1 | 1) =>
+    add(shoulder(s), v(s * 0.1, -0.15, -0.3 - 0.22 * crawl(s < 0 ? 1 : -1)))
+  if (hold === 'rifle' || hold === 'pistol') {
+    // Rifle: stock in the shoulder, sights at the eye. Pistol: both hands out in front.
+    grip = add(
+      v(0.07, 0.2, -0.5 + inch),
+      qRotate(aim, hold === 'rifle' ? v(0, 0, 0) : v(-0.05, 0.02, -0.2)),
+    )
+    const recoil = shotAge < 0.14 ? (1 - shotAge / 0.14) ** 2 : 0
+    grip = add(grip, qRotate(aim, v(0, 0, 0.04 * recoil)))
+    gunRot = qMul(aim, rx(0.08 * recoil))
+    handR = grip
+    handL =
+      hold === 'rifle'
+        ? add(grip, qRotate(gunRot, v(-0.06, 0.01, -0.26)))
+        : add(grip, qRotate(gunRot, v(-0.035, -0.035, 0.03)))
+  } else {
+    // Knife or club along the ground in the right hand; otherwise both hands pulling forward.
+    handR = hand(1)
+    handL = hand(-1)
+    grip = handR
+    gunRot = hold === 'hands' ? torso : qMul(ry(0.3), rx(-0.1))
+  }
+  const gunDir = qRotate(gunRot, v(0, 0, -1))
+  model.push({
+    name: 'gun',
+    center: add(grip, add(scale(gunDir, 0.12), qRotate(gunRot, v(0, 0.05, 0)))),
+    half: PART_SIZES.gun,
+    rotation: gunRot,
+  })
+  for (const [name, s, at] of [
+    ['armR', 1, handR],
+    ['armL', -1, handL],
+  ] as const) {
+    const from = shoulder(s)
+    const span = sub(at, from)
+    const len = Math.max(0.2, length(span))
+    model.push({
+      name,
+      center: lerpV(from, at, 0.5),
+      half: { ...PART_SIZES[name], y: len / 2 },
+      rotation: qFromUp(scale(span, 1 / len)),
+    })
+  }
+  return model
 }
 
 /** Distance along a normalized ray to an oriented box, or -1 (slab test in box space). */

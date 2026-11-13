@@ -225,6 +225,7 @@ player.feel.onFootstep = () => {
 }
 remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
+remotes.onMove = (sound, at) => audio.playNear(sound, at, 0.5, 25)
 remotes.onGroan = (at) => audio.playNear('groan', at, 0.9, 28)
 
 // Ragdolls: players who die fall over instead of vanishing. The Kill message (which arrives
@@ -717,6 +718,9 @@ pixels.renderer.setAnimationLoop(() => {
     if (events.landed && events.landingSpeed > 3) {
       audio.play('land', { volume: Math.min(0.35, events.landingSpeed / 20) })
     }
+    if (events.slid) audio.play('slide', { volume: 0.3 })
+    if (events.mantled) audio.play('mantle', { volume: 0.3 })
+    if (events.proned) audio.play('prone', { volume: 0.25 })
     if (joined) outgoing.push(command)
     accumulator -= TICK_DT
     ticks++

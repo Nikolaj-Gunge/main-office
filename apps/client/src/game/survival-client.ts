@@ -142,6 +142,10 @@ export class SurvivalClient {
           land: 0,
           ads: 0,
           shotAge: 1,
+          prone: 0,
+          slide: 0,
+          mantle: 0,
+          ledge: 0,
         },
       })
     })

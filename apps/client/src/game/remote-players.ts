@@ -54,6 +54,8 @@ export class RemotePlayers {
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
   onLand?: (at: THREE.Vector3) => void
+  /** Someone else started a slide, a climb, or lay down / got up (seen in their state). */
+  onMove?: (sound: 'slide' | 'mantle' | 'prone', at: THREE.Vector3) => void
   /** Someone just died on screen: drop a ragdoll in the pose they were last drawn in. */
   onDeath?: (
     id: number,
@@ -177,7 +179,11 @@ export class RemotePlayers {
       p.wasGrounded = b.grounded
       return
     }
-    if (b.grounded && !p.wasGrounded) this.onLand?.(at())
+    if (b.grounded && !p.wasGrounded && b.mantle === 0) this.onLand?.(at())
+    if (b.slide > a.slide + 0.3) this.onMove?.('slide', at())
+    if (b.mantle > 0 && a.mantle === 0) this.onMove?.('mantle', at())
+    if ((b.prone > 0.02 && a.prone <= 0.02) || (b.prone < 0.98 && a.prone >= 0.98))
+      this.onMove?.('prone', at())
     p.wasGrounded = b.grounded
     const speed = moved / dt
     if (!b.grounded || speed < SILENT_SPEED) return
