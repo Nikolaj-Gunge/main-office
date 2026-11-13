@@ -15,6 +15,13 @@ import * as THREE from 'three'
  * part is a group placed exactly where that part's hitbox is, so what you see is what you hit.
  */
 
+/** What a body looks like: the admin's skin, or one of the zombies (zombies mode). */
+export type BodyLook = SkinId | ZombieLook
+/** The dead: walkers, runners, and survival's brutes, screamers and stalkers. */
+export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker'
+const ZOMBIE_LOOKS: readonly string[] = ['zombie', 'runner', 'brute', 'screamer', 'stalker']
+const isZombie = (skin: BodyLook): skin is ZombieLook => ZOMBIE_LOOKS.includes(skin)
+
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
 const lambert = (color: number) => new THREE.MeshLambertMaterial({ color })
 
@@ -36,25 +43,92 @@ const metalMaterial = lambert(0x8e96a3)
 const darkMetalMaterial = lambert(0x3c424c)
 const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
 const gunMaterial = lambert(0x2b2d33)
+// Zombies: rotting skin, blood, glowing eyes (walkers red, runners yellow).
+const zombieSkin = lambert(0x7d9a63)
+const runnerSkin = lambert(0xa3ab7e)
+const bloodMaterial = lambert(0x5e1212)
+const raggedMaterial = lambert(0x3a3a36)
+// Far brighter than white (they bloom) and untouched by fog: in the dark you see the eyes first.
+const zombieEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(7, 0.35, 0.2), fog: false })
+const runnerEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 3.6, 0.3), fog: false })
+const bruteEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 1.2, 0.1), fog: false })
+const paleEyes = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 6, 7), fog: false })
+const deadEyes = lambert(0x2a0d0d)
+/** Skin, eyes and what's left of their clothes (null = the shirt colour they were given). */
+const ZOMBIE_STYLE: Record<
+  ZombieLook,
+  { flesh: THREE.Material; eyes: THREE.Material; clothes: THREE.Material | null; jaw: number }
+> = {
+  zombie: { flesh: zombieSkin, eyes: zombieEyes, clothes: null, jaw: 0.05 },
+  runner: { flesh: runnerSkin, eyes: runnerEyes, clothes: null, jaw: 0.05 },
+  brute: { flesh: lambert(0x6e4038), eyes: bruteEyes, clothes: lambert(0x2a2622), jaw: 0.07 },
+  // Mouth hanging open, far too wide.
+  screamer: { flesh: lambert(0xb4b6a6), eyes: paleEyes, clothes: lambert(0x6a6458), jaw: 0.14 },
+  // A shape of the dark itself; only the eyes show.
+  stalker: { flesh: lambert(0x101014), eyes: paleEyes, clothes: lambert(0x0c0c10), jaw: 0.03 },
+}
 const pick = <T>(list: T[], i: number): T =>
   list[((i % list.length) + list.length) % list.length] as T
 
+/** Third-person weapons are plain boxes: how long each is (m), grip to muzzle or tip. */
 const GUN_LENGTH: Record<WeaponId, number> = {
   [WeaponId.Handgun]: 0.22,
   [WeaponId.Rifle]: 0.7,
   [WeaponId.Sniper]: 0.95,
   [WeaponId.Shotgun]: 0.8,
   [WeaponId.Knife]: 0.3,
+  [WeaponId.Smg]: 0.5,
+  [WeaponId.Lmg]: 0.95,
+  [WeaponId.Claws]: 0.01,
+  [WeaponId.Bat]: 0.8,
+  [WeaponId.Crowbar]: 0.6,
+  [WeaponId.Machete]: 0.58,
+  [WeaponId.Axe]: 0.65,
+  [WeaponId.Sledge]: 0.7,
+  [WeaponId.Katana]: 0.85,
+  [WeaponId.M1911]: 0.22,
+  [WeaponId.Revolver]: 0.25,
+  [WeaponId.M9]: 0.22,
+  [WeaponId.Ruger]: 0.38,
+  [WeaponId.SawedOff]: 0.42,
+  [WeaponId.Uzi]: 0.42,
+  [WeaponId.Ump]: 0.6,
+  [WeaponId.Mac10]: 0.3,
+  [WeaponId.Ak47]: 0.78,
+  [WeaponId.Sks]: 0.9,
+  [WeaponId.HuntingRifle]: 0.95,
+  [WeaponId.Carbine22]: 0.65,
+  [WeaponId.LeverAction]: 0.82,
+  [WeaponId.DoubleBarrel]: 0.85,
+  [WeaponId.AutoShotgun]: 0.78,
+  [WeaponId.Svd]: 1.05,
+  [WeaponId.Barrett]: 1.15,
+  [WeaponId.Crossbow]: 0.7,
+}
+/** Width and height of those boxes, where a weapon is slimmer or fatter than most guns. */
+const GUN_THICKNESS: Partial<Record<WeaponId, [number, number]>> = {
+  [WeaponId.Knife]: [0.03, 0.04],
+  [WeaponId.Bat]: [0.04, 0.04],
+  [WeaponId.Crowbar]: [0.025, 0.025],
+  [WeaponId.Machete]: [0.02, 0.05],
+  [WeaponId.Axe]: [0.03, 0.05],
+  [WeaponId.Sledge]: [0.04, 0.05],
+  [WeaponId.Katana]: [0.02, 0.035],
+  [WeaponId.M1911]: [0.04, 0.09],
+  [WeaponId.Revolver]: [0.045, 0.09],
+  [WeaponId.M9]: [0.045, 0.09],
+  [WeaponId.Ruger]: [0.04, 0.07],
+  [WeaponId.SawedOff]: [0.06, 0.07],
+  [WeaponId.Mac10]: [0.06, 0.09],
+  [WeaponId.Carbine22]: [0.05, 0.08],
+  [WeaponId.Barrett]: [0.08, 0.13],
+  [WeaponId.Crossbow]: [0.1, 0.07],
 }
 const gunGeometry = Object.fromEntries(
-  Object.entries(GUN_LENGTH).map(([id, length]) => [
-    id,
-    box(
-      Number(id) === WeaponId.Knife ? 0.03 : 0.06,
-      Number(id) === WeaponId.Knife ? 0.04 : 0.1,
-      length,
-    ),
-  ]),
+  Object.entries(GUN_LENGTH).map(([id, length]) => {
+    const [width, height] = GUN_THICKNESS[Number(id) as WeaponId] ?? [0.06, 0.1]
+    return [id, box(width, height, length)]
+  }),
 ) as Record<string, THREE.BoxGeometry>
 
 /** Arm meshes are built for this length; the arm group stretches to the real shoulder–hand span. */
@@ -73,9 +147,10 @@ function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y
  * live avatar and the ragdoll, so a body falls exactly as it stood.
  */
 export function buildBody(
-  skin: SkinId,
+  skin: BodyLook,
   colorIndex: number,
   material: THREE.MeshLambertMaterial,
+  dead = false,
 ): Record<Exclude<PartName, 'gun'>, THREE.Group> {
   const s = PART_SIZES
   const g = () => new THREE.Group()
@@ -141,6 +216,59 @@ export function buildBody(
     for (const arm of [body.armL, body.armR]) arm.add(part(box(0.12, ARM_LENGTH, 0.14), material))
     for (const leg of [body.thighL, body.thighR, body.shinL, body.shinR]) {
       leg.add(part(box(...W(s.thighL)), material))
+    }
+    return body
+  }
+
+  if (isZombie(skin)) {
+    // A dead office worker: torn shirt (in the player's color), blood, no shoes, glowing eyes.
+    const style = ZOMBIE_STYLE[skin]
+    const flesh = style.flesh
+    const eyes = dead ? deadEyes : style.eyes
+    if (style.clothes) material = style.clothes as THREE.MeshLambertMaterial
+    body.head.add(
+      part(box(...W(s.head)), flesh),
+      part(box(0.2, 0.05, 0.22), hair, -0.04, s.head.y + 0.01, 0.03), // patchy hair
+      part(box(0.06, 0.04, 0.02), eyes, -0.07, 0.02, -s.head.z - 0.006),
+      part(box(0.06, 0.04, 0.02), eyes, 0.07, 0.02, -s.head.z - 0.006),
+      part(
+        box(0.14, style.jaw, 0.02),
+        skin === 'screamer' ? eyeMaterial : bloodMaterial,
+        0,
+        -0.06 - style.jaw / 2,
+        -s.head.z - 0.006,
+      ), // jaw
+    )
+    body.chest.add(
+      part(box(...W(s.chest)), material),
+      part(box(0.16, 0.12, 0.02), bloodMaterial, 0.05, -0.02, -s.chest.z - 0.006),
+      part(box(0.1, 0.08, 0.02), flesh, -0.1, 0.05, -s.chest.z - 0.007), // torn open
+    )
+    body.stomach.add(
+      part(box(...W(s.stomach)), material),
+      part(box(0.12, 0.1, 0.02), bloodMaterial, -0.06, 0.03, -s.stomach.z - 0.006),
+      part(
+        box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
+        beltMaterial,
+        0,
+        -s.stomach.y + 0.03,
+        0,
+      ),
+    )
+    for (const arm of [body.armL, body.armR]) {
+      arm.add(
+        part(box(0.12, ARM_LENGTH * 0.55, 0.14), material, 0, -ARM_LENGTH * 0.22, 0), // sleeve
+        part(box(0.1, ARM_LENGTH * 0.5, 0.11), flesh, 0, ARM_LENGTH * 0.24, 0), // bare forearm
+      )
+    }
+    for (const thigh of [body.thighL, body.thighR])
+      thigh.add(part(box(...W(s.thighL)), raggedMaterial))
+    for (const shin of [body.shinL, body.shinR]) {
+      shin.add(
+        part(box(s.shinL.x * 2, s.shinL.y, s.shinL.z * 2), raggedMaterial, 0, s.shinL.y / 2, 0),
+        part(box(0.14, s.shinL.y, 0.15), flesh, 0, -s.shinL.y / 2, 0), // bare, torn trousers
+        part(box(0.16, 0.06, 0.24), flesh, 0, -s.shinL.y + 0.02, -0.04), // feet
+      )
     }
     return body
   }
@@ -242,6 +370,39 @@ const glintMaterial = new THREE.SpriteMaterial({
   transparent: true,
 })
 
+function makeEyeGlowTexture(): THREE.CanvasTexture {
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas unavailable')
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  grad.addColorStop(0, 'rgba(255,255,255,1)')
+  grad.addColorStop(0.25, 'rgba(255,255,255,0.45)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, size, size)
+  return new THREE.CanvasTexture(canvas)
+}
+const eyeGlowTexture = makeEyeGlowTexture()
+/** The light a zombie's eyes throw off: a soft halo in front of each eye. */
+const eyeGlow = (color: THREE.Color) =>
+  new THREE.SpriteMaterial({
+    map: eyeGlowTexture,
+    color,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    transparent: true,
+  })
+const EYE_GLOW: Record<ZombieLook, THREE.SpriteMaterial> = {
+  zombie: eyeGlow(new THREE.Color(2.4, 0.08, 0.04)),
+  runner: eyeGlow(new THREE.Color(2, 1.1, 0.06)),
+  brute: eyeGlow(new THREE.Color(3, 0.4, 0.03)),
+  screamer: eyeGlow(new THREE.Color(1.2, 1.5, 1.8)),
+  stalker: eyeGlow(new THREE.Color(1.6, 1.8, 2.2)),
+}
+
 /** Places a part group at a skeleton part (arms also stretch to their shoulder–hand span). */
 export function placePart(group: THREE.Object3D, p: BodyPart, size: number): void {
   group.position.set(p.center.x, p.center.y, p.center.z)
@@ -265,14 +426,24 @@ export class Avatar {
   private readonly muzzle = new THREE.Object3D()
   private readonly glint: THREE.Sprite
   private weapon: WeaponId = WeaponId.Rifle
+  private readonly eyeGlows: THREE.Sprite[] = []
   /** The pose last drawn (for the ragdoll when they die). */
   lastParts: BodyPart[] = []
 
-  constructor(name: string, colorIndex: number, skin: SkinId = 'worker') {
+  constructor(name: string, colorIndex: number, skin: BodyLook = 'worker') {
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.parts = buildBody(skin, colorIndex, this.material)
     for (const group of Object.values(this.parts)) this.root.add(group)
+    if (isZombie(skin)) {
+      for (const x of [-0.07, 0.07]) {
+        const glow = new THREE.Sprite(EYE_GLOW[skin])
+        glow.position.set(x, 0.02, -PART_SIZES.head.z - 0.03)
+        glow.scale.setScalar(0.26)
+        this.eyeGlows.push(glow)
+        this.parts.head.add(glow)
+      }
+    }
     this.gun = part(gunGeometry[WeaponId.Rifle] as THREE.BoxGeometry, gunMaterial)
     this.glint = new THREE.Sprite(glintMaterial.clone())
     this.glint.visible = false
@@ -286,6 +457,7 @@ export class Avatar {
     this.weapon = id
     const length = GUN_LENGTH[id]
     this.gun.geometry = gunGeometry[id] as THREE.BoxGeometry
+    this.gun.visible = id !== WeaponId.Claws // zombies hold nothing
     // Gun part centre sits 0.12 m ahead of the grip; the gun's back end ~0.1 m behind the grip.
     this.gun.position.set(0, 0, 0.22 - length / 2)
     this.muzzle.position.set(0, 0, 0.22 - length)
@@ -314,6 +486,18 @@ export class Avatar {
     for (const p of parts) {
       const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
       placePart(group, p, size)
+    }
+    // Zombie eyes smoulder: the halo breathes, each zombie in its own time.
+    if (this.eyeGlows.length > 0) {
+      const breath = 0.2 + 0.04 * Math.sin(timeMs / 420 + this.root.id)
+      // Only from the front: no halo round the back of the head.
+      const facing = viewer
+        ? -Math.sin(s.yaw) * (viewer.x - s.x) - Math.cos(s.yaw) * (viewer.z - s.z) > 0
+        : true
+      for (const glow of this.eyeGlows) {
+        glow.visible = facing
+        glow.scale.setScalar(breath)
+      }
     }
     // Spawn protection: blink so attackers know shots won't count yet.
     this.material.opacity = s.protected && Math.floor(timeMs / 150) % 2 === 0 ? 0.35 : 1

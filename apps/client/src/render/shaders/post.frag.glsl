@@ -14,6 +14,9 @@ uniform int colorMode;      // 0 = off, 1 = per-channel levels, 2 = palette
 uniform float levels;
 uniform float dither;
 uniform float outlines;
+uniform float contrast;     // 0 = flat, 1 = deep blacks and hot highlights
+uniform float saturation;   // 1 = as lit
+uniform float vignette;     // 0 = none, 1 = dark corners
 uniform vec3 palette[64];   // sRGB
 uniform int paletteSize;
 
@@ -66,6 +69,16 @@ void main() {
   vec3 color = texture2D(tColor, vUv).rgb * (1.0 - overlay.a) + overlay.rgb;
   color += texture2D(tBloom, vUv).rgb * bloomStrength;
   color = linearToSRGB(acesFilm(color * exposure));
+
+  // Grade: richer colours, then an S-curve that sinks the shadows and lifts the lights.
+  float luma = dot(color, vec3(0.299, 0.587, 0.114));
+  color = max(vec3(0.0), mix(vec3(luma), color, saturation));
+  vec3 curved = color * color * (3.0 - 2.0 * color);
+  // Shadows follow the curve all the way (and a bit past it); highlights only part of it.
+  vec3 deep = mix(curved, curved * color, 0.35);
+  color = mix(color, mix(deep, curved, smoothstep(0.25, 0.75, color)), contrast);
+  vec2 fromCentre = vUv - 0.5;
+  color *= 1.0 - vignette * smoothstep(0.25, 0.95, dot(fromCentre, fromCentre) * 2.0);
 
   // 1 px outline where this pixel sits in front of a much farther neighbour (silhouette edges).
   if (outlines > 0.0 && overlay.a < 0.5) {

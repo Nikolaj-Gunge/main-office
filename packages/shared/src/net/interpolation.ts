@@ -74,6 +74,7 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     // Walk cycle wraps at 1: go the short way round.
     stride: (((a.stride + (((b.stride - a.stride + 1.5) % 1) - 0.5) * t) % 1) + 1) % 1,
     speed: lerp(a.speed, b.speed),
+    ...(b.light ? { light: true } : {}),
   }
 }
 

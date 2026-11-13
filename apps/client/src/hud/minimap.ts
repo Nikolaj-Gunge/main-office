@@ -27,9 +27,11 @@ const COLORS: Partial<Record<MaterialId, string>> = {
   rack: '#4aa8ff',
   screen: '#4a5568',
   whiteboard: '#e0e0dc',
+  hay: '#b8964a',
+  barn: '#7d2a22',
 }
-/** Never drawn: overhead stuff. */
-const SKIP = new Set<MaterialId>(['ceiling', 'lightpanel'])
+/** Never drawn: overhead stuff — and corn: you find your own way through a corn maze. */
+const SKIP = new Set<MaterialId>(['ceiling', 'lightpanel', 'corn'])
 
 interface Ping {
   x: number

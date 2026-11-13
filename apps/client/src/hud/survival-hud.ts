@@ -1,0 +1,764 @@
+import {
+  AMMO_BOX,
+  capacityOf,
+  countOf,
+  type Dialog,
+  type ItemDef,
+  type ItemKind,
+  ITEMS,
+  type Notice,
+  type Poi,
+  QUESTS,
+  type QuestState,
+  type QuestStep,
+  questById,
+  roomFor,
+  SELL_RATE,
+  type Stack,
+  type SurvivalAction,
+  type SurvivalDef,
+  type SurvivalSelf,
+  type SurvivalShared,
+  stepTargets,
+  WEAPONS,
+  type WeaponId,
+  WORLD_HALF,
+  WORLD_SIZE,
+  weightOf,
+} from '@office-fps/shared'
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement, text?: string) {
+  const node = document.createElement(tag)
+  node.className = className
+  if (text !== undefined) node.textContent = text
+  parent?.append(node)
+  return node
+}
+
+export interface SurvivalHudContext {
+  /** 0–100. */
+  health: number
+  /** 0–1. */
+  stamina: number
+  winded: boolean
+  pos: { x: number; y: number; z: number }
+  /** Radians: 0 looks north (−z), positive turns left (west). */
+  yaw: number
+  /** Weapons in your hands and holsters, the one in hand first. */
+  carried: readonly { id: WeaponId; ammo: number }[]
+}
+
+const KIND_ORDER: ItemKind[] = ['weapon', 'ammo', 'food', 'drink', 'med', 'pack', 'tool', 'junk', 'quest', 'money']
+const KIND_TITLE: Record<ItemKind, string> = {
+  weapon: 'Weapons',
+  ammo: 'Ammunition',
+  food: 'Food',
+  drink: 'Drink',
+  med: 'Medical',
+  pack: 'Backpacks',
+  tool: 'Gear',
+  junk: 'Valuables',
+  quest: 'Quest',
+  money: 'Cash',
+}
+const SLOT_KEY = { primary: '1', sidearm: '2', melee: '3' } as const
+
+/** Degrees clockwise from north that `yaw` looks. */
+export function headingOf(yaw: number): number {
+  return ((((-yaw * 180) / Math.PI) % 360) + 360) % 360
+}
+
+/** Degrees clockwise from north from `from` to `to` (x east, z south). */
+export function bearingTo(from: { x: number; z: number }, to: { x: number; z: number }): number {
+  return ((Math.atan2(to.x - from.x, -(to.z - from.z)) * 180) / Math.PI + 360) % 360
+}
+
+/** Smallest signed difference a − b in degrees (−180…180). */
+export function turnBetween(a: number, b: number): number {
+  return ((((a - b + 180) % 360) + 360) % 360) - 180
+}
+
+/** What using an item does, in a few words. */
+export function effectText(def: ItemDef): string {
+  const parts: string[] = []
+  const signed = (v: number, what: string) => parts.push(`${v > 0 ? '+' : ''}${v} ${what}`)
+  if (def.hunger) signed(def.hunger, 'food')
+  if (def.thirst) signed(def.thirst, 'water')
+  if (def.health) signed(def.health, 'health')
+  if (def.stamina) parts.push('restores breath')
+  if (def.stopsBleeding) parts.push('stops bleeding')
+  if (def.capacity) parts.push(`carries ${def.capacity} kg`)
+  if (def.battery) parts.push('recharges the torch')
+  if (def.weapon !== undefined) {
+    const w = WEAPONS[def.weapon]
+    parts.push(w.slot === 'melee' ? `melee · ${w.damage} damage` : `${w.ammoType} · ${w.magSize} rounds · ${w.damage * (w.pellets ?? 1)} damage`)
+  }
+  return parts.join(' · ')
+}
+
+/** One line for a quest step, with how far along it is. */
+export function stepLine(step: QuestStep, state: QuestState, inv: readonly Stack[]): string {
+  switch (step.kind) {
+    case 'kill':
+      return `${step.text} (${state.count}/${step.n})`
+    case 'hold':
+      return `${step.text} (${Math.max(0, step.seconds - state.count)} s)`
+    case 'collect': {
+      let done = 0
+      for (let i = 0; i < step.targets.length; i++) if (state.count & (1 << i)) done++
+      return `${step.text} (${done}/${step.targets.length})`
+    }
+    case 'fetch':
+      return step.n > 1 ? `${step.text} (${Math.min(step.n, countOf(inv, step.item))}/${step.n})` : step.text
+    default:
+      return step.text
+  }
+}
+
+const kg = (v: number) => (v >= 10 ? v.toFixed(0) : v.toFixed(1))
+
+/**
+ * Everything survival mode puts on screen: how you're doing, what the story wants, what people
+ * say, your backpack, the shop and the map. The game tells it what the server said and which
+ * keys went down; it tells the game what the player wants done.
+ */
+export class SurvivalHud {
+  onModalChange?: (open: boolean) => void
+  /** A sound to play: 'open' | 'close' | 'use' | 'deny' | 'quest' | 'story' | 'coin'. */
+  onSound?: (cue: string) => void
+
+  private readonly def: SurvivalDef
+  private readonly send: (action: SurvivalAction) => void
+  private readonly root: HTMLDivElement
+  private self: SurvivalSelf | null = null
+  private shared: SurvivalShared | null = null
+  private ctx: SurvivalHudContext | null = null
+
+  // Vitals
+  private readonly food: HTMLElement
+  private readonly water: HTMLElement
+  private readonly breath: HTMLElement
+  private readonly battery: HTMLElement
+  private readonly bleeding: HTMLElement
+  private readonly money: HTMLElement
+  // Story and jobs
+  private readonly tracker: HTMLDivElement
+  private trackerKey = ''
+  private readonly feed: HTMLDivElement
+  private readonly feedLines: { node: HTMLElement; until: number }[] = []
+  private readonly story: HTMLDivElement
+  private readonly storyText: HTMLDivElement
+  private readonly storyQueue: string[] = []
+  private storyNow: { text: string; shown: number; age: number } | null = null
+  // Compass
+  private readonly compass: HTMLDivElement
+  private readonly points: { node: HTMLElement; bearing: number }[] = []
+  private readonly marker: HTMLElement
+  private readonly hour: HTMLElement
+  // Talking
+  private readonly talk: HTMLDivElement
+  private talking: Dialog | null = null
+  private talkShown = 0
+  // Screens
+  private readonly panel: HTMLDivElement
+  private screen: 'none' | 'pack' | 'shop' = 'none'
+  private shop: Dialog | null = null
+  private selected = 0
+  private rows: { stack: Stack; index: number }[] = []
+  private shift = false
+  private readonly map: HTMLCanvasElement
+  private mapBase: HTMLCanvasElement | null = null
+  private mapOpen = false
+  private sinceMap = 1
+  private visible = false
+  private clock = 0
+
+  constructor(parent: HTMLElement, def: SurvivalDef, send: (action: SurvivalAction) => void) {
+    this.def = def
+    this.send = send
+    this.root = el('div', 'sv', parent)
+    this.root.hidden = true
+
+    const vitals = el('div', 'sv-vitals', this.root)
+    const bar = (label: string) => {
+      const row = el('div', 'sv-bar', vitals)
+      el('span', '', row, label)
+      return el('i', '', el('div', '', row))
+    }
+    this.food = bar('FOOD')
+    this.water = bar('WATER')
+    this.breath = bar('BREATH')
+    this.battery = el('div', 'sv-battery', vitals)
+    this.bleeding = el('div', 'sv-bleeding', vitals, 'BLEEDING')
+    this.money = el('div', 'sv-money', vitals)
+
+    this.tracker = el('div', 'sv-tracker', this.root)
+    this.feed = el('div', 'sv-feed', this.root)
+    this.story = el('div', 'sv-story', this.root)
+    this.storyText = el('div', '', this.story)
+    this.story.hidden = true
+
+    this.compass = el('div', 'sv-compass', this.root)
+    for (const [i, name] of ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].entries()) {
+      this.points.push({ node: el('span', i % 2 === 0 ? 'main' : '', this.compass, name), bearing: i * 45 })
+    }
+    this.marker = el('b', 'sv-compass-goal', this.compass)
+    this.hour = el('div', 'sv-hour', this.root, 'THE GREY HOUR')
+
+    this.talk = el('div', 'sv-talk', this.root)
+    this.talk.hidden = true
+    this.panel = el('div', 'sv-panel', this.root)
+    this.panel.hidden = true
+    this.map = el('canvas', 'sv-map', this.root)
+    this.map.hidden = true
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift') this.shift = true
+    })
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') this.shift = false
+    })
+  }
+
+  /** True while a screen that needs the mouse is open (backpack or shop). */
+  get modal(): boolean {
+    return this.screen !== 'none'
+  }
+
+  /** Somebody is talking to you (digits answer; they shouldn't also switch weapons). */
+  get inDialog(): boolean {
+    return this.talking !== null
+  }
+
+  setVisible(on: boolean): void {
+    if (on === this.visible) return
+    this.visible = on
+    this.root.hidden = !on
+    if (!on) {
+      this.setScreen('none')
+      this.mapOpen = false
+      this.map.hidden = true
+      this.dialog(null)
+    }
+  }
+
+  setSelf(self: SurvivalSelf): void {
+    this.self = self
+    this.refreshTracker()
+    if (this.screen !== 'none') this.drawScreen()
+  }
+
+  setShared(shared: SurvivalShared): void {
+    this.shared = shared
+    this.refreshTracker()
+  }
+
+  notice(n: Notice): void {
+    if (n.kind === 'scream') return
+    if (n.kind === 'story') {
+      this.storyQueue.push(n.text)
+      return
+    }
+    const node = el('div', `sv-note ${n.kind}`, this.feed, n.text)
+    this.feedLines.push({ node, until: this.clock + 4.5 })
+    while (this.feedLines.length > 6) this.feedLines.shift()?.node.remove()
+    if (n.kind === 'quest') this.onSound?.('quest')
+    if (n.kind === 'warn') this.onSound?.('deny')
+  }
+
+  dialog(d: Dialog | null): void {
+    if (d?.shop) {
+      this.shop = d
+      this.talking = null
+      this.talk.hidden = true
+      this.selected = 0
+      this.setScreen('shop')
+      return
+    }
+    if (this.screen === 'shop') this.setScreen('none')
+    this.talking = d
+    this.talkShown = 0
+    this.talk.hidden = d === null
+    this.talk.replaceChildren()
+    if (!d) return
+    el('div', 'sv-talk-name', this.talk, d.name)
+    el('div', 'sv-talk-text', this.talk)
+    const list = el('div', 'sv-talk-options', this.talk)
+    d.options.forEach((o, i) => el('div', '', list, `[${i + 1}] ${o.label}`))
+  }
+
+  toggleBackpack(): void {
+    if (!this.visible) return
+    this.selected = 0
+    this.setScreen(this.screen === 'pack' ? 'none' : 'pack')
+  }
+
+  toggleMap(): void {
+    if (!this.visible) return
+    this.mapOpen = !this.mapOpen
+    this.map.hidden = !this.mapOpen
+    this.sinceMap = 1
+    if (this.mapOpen) this.setScreen('none')
+    this.onSound?.(this.mapOpen ? 'open' : 'close')
+  }
+
+  /** Esc: closes whatever is open; true if something was. */
+  close(): boolean {
+    if (this.screen !== 'none') {
+      this.setScreen('none')
+      return true
+    }
+    if (this.mapOpen) {
+      this.toggleMap()
+      return true
+    }
+    if (this.talking) {
+      this.send({ a: 'choose', npc: this.talking.npc, option: 'bye' })
+      this.dialog(null)
+      return true
+    }
+    return false
+  }
+
+  /** A key went down; true if the HUD used it. */
+  key(code: string): boolean {
+    if (!this.visible) return false
+    if (this.storyNow && (code === 'Space' || code === 'Enter') && this.screen === 'none' && !this.talking) {
+      this.storyNow.age = Number.POSITIVE_INFINITY
+      return true
+    }
+    if (this.talking && code.startsWith('Digit')) {
+      const option = this.talking.options[Number(code.slice(5)) - 1]
+      if (option) {
+        this.send({ a: 'choose', npc: this.talking.npc, option: option.id })
+        if (option.id === 'bye') this.dialog(null)
+        this.onSound?.('use')
+      }
+      return true
+    }
+    if (this.screen === 'none') return false
+    const n = this.rows.length
+    if (code === 'ArrowDown' || code === 'KeyS') this.selected = Math.min(n - 1, this.selected + 1)
+    else if (code === 'ArrowUp' || code === 'KeyW') this.selected = Math.max(0, this.selected - 1)
+    else if (code === 'Enter' || code === 'KeyE') this.act(this.rows[this.selected], 'main')
+    else if (code === 'KeyG') this.act(this.rows[this.selected], 'drop')
+    else return true // everything else is swallowed while a screen is open
+    this.drawScreen()
+    return true
+  }
+
+  update(dt: number, ctx: SurvivalHudContext): void {
+    if (!this.visible) return
+    this.ctx = ctx
+    this.clock += dt
+    const self = this.self
+    if (self) {
+      this.setBar(this.food, self.hunger)
+      this.setBar(this.water, self.thirst)
+      this.setBar(this.breath, ctx.stamina * 100, ctx.winded)
+      const showBattery = self.light || self.battery < 30
+      this.battery.hidden = !showBattery
+      if (showBattery) {
+        const text = `TORCH ${'▮'.repeat(Math.ceil(self.battery / 20))}${'▯'.repeat(5 - Math.ceil(self.battery / 20))}`
+        if (this.battery.textContent !== text) this.battery.textContent = text
+        this.battery.classList.toggle('low', self.battery < 20)
+      }
+      this.bleeding.hidden = !self.bleeding
+      const money = `$${self.money}`
+      if (this.money.textContent !== money) this.money.textContent = money
+    }
+
+    // Notices fade out; story cards type themselves out one after another.
+    while (this.feedLines[0] && this.feedLines[0].until < this.clock) this.feedLines.shift()?.node.remove()
+    if (!this.storyNow && this.storyQueue.length > 0) {
+      this.storyNow = { text: this.storyQueue.shift() ?? '', shown: 0, age: 0 }
+      this.story.hidden = false
+      this.onSound?.('story')
+    }
+    const card = this.storyNow
+    if (card) {
+      card.age += dt
+      const shown = Math.min(card.text.length, Math.floor(card.age * 60))
+      if (shown !== card.shown) {
+        card.shown = shown
+        this.storyText.textContent = card.text.slice(0, shown)
+      }
+      const life = 2.5 + card.text.length * 0.055 + card.text.length / 60
+      this.story.style.opacity = String(Math.max(0, Math.min(1, life - card.age)))
+      if (card.age > life) {
+        this.storyNow = null
+        this.story.hidden = true
+      }
+    }
+    if (this.talking) {
+      const text = this.talk.children[1]
+      const shown = Math.min(this.talking.text.length, this.talkShown + Math.ceil(dt * 90))
+      if (text && shown !== this.talkShown) {
+        this.talkShown = shown
+        text.textContent = this.talking.text.slice(0, shown)
+      }
+    }
+
+    this.drawCompass(ctx)
+    this.hour.hidden = (this.shared?.time ?? 0) < 0.8
+    if (this.mapOpen) {
+      this.sinceMap += dt
+      if (this.sinceMap > 0.2) {
+        this.sinceMap = 0
+        this.drawMap(ctx)
+      }
+    }
+  }
+
+  // --- Pieces --------------------------------------------------------------------------------
+
+  private setBar(fill: HTMLElement, value: number, bad = false): void {
+    const width = `${Math.round(Math.max(0, Math.min(100, value)))}%`
+    if (fill.style.width !== width) fill.style.width = width
+    const state = bad || value < 20 ? 'low' : value < 35 ? 'warn' : ''
+    if (fill.className !== state) fill.className = state
+  }
+
+  /** The story chapter first, then side jobs. */
+  private quests(): { state: QuestState; story: boolean }[] {
+    const all = (this.shared?.quests ?? []).map((state) => ({ state, story: questById(state.id)?.story === true }))
+    return [...all.filter((q) => q.story), ...all.filter((q) => !q.story).slice(0, 3)]
+  }
+
+  private refreshTracker(): void {
+    const lines: [string, string, boolean][] = []
+    for (const { state, story } of this.quests()) {
+      const def = questById(state.id)
+      const step = def?.steps[state.step]
+      if (def && step) lines.push([def.title, stepLine(step, state, this.self?.inv ?? []), story])
+    }
+    const key = JSON.stringify(lines)
+    if (key === this.trackerKey) return
+    this.trackerKey = key
+    this.tracker.replaceChildren()
+    for (const [title, text, story] of lines) {
+      const q = el('div', story ? 'sv-quest story' : 'sv-quest', this.tracker)
+      el('b', '', q, title)
+      el('span', '', q, text)
+    }
+  }
+
+  /** Where the story wants you now: the nearest target of its current step. */
+  private goal(pos: { x: number; z: number }): { x: number; z: number } | null {
+    const story = this.quests().find((q) => q.story)
+    const step = story ? questById(story.state.id)?.steps[story.state.step] : undefined
+    if (!story || !step) return null
+    let best: { x: number; z: number } | null = null
+    let bestD = Number.POSITIVE_INFINITY
+    for (const [x, , z] of stepTargets(this.def, step, story.state.count)) {
+      const d = Math.hypot(x - pos.x, z - pos.z)
+      if (d < bestD) {
+        bestD = d
+        best = { x, z }
+      }
+    }
+    return best
+  }
+
+  private drawCompass(ctx: SurvivalHudContext): void {
+    const heading = headingOf(ctx.yaw)
+    const width = this.compass.clientWidth || 360
+    const place = (node: HTMLElement, bearing: number, clamp: boolean) => {
+      let turn = turnBetween(bearing, heading)
+      if (clamp) turn = Math.max(-88, Math.min(88, turn))
+      node.hidden = Math.abs(turn) > 90
+      if (!node.hidden) node.style.left = `${(0.5 + turn / 180) * width}px`
+    }
+    for (const p of this.points) place(p.node, p.bearing, false)
+    const goal = this.goal(ctx.pos)
+    this.marker.hidden = goal === null
+    if (goal) {
+      place(this.marker, bearingTo(ctx.pos, goal), true)
+      const text = `${Math.round(Math.hypot(goal.x - ctx.pos.x, goal.z - ctx.pos.z))} m`
+      if (this.marker.textContent !== text) this.marker.textContent = text
+    }
+  }
+
+  private setScreen(screen: 'none' | 'pack' | 'shop'): void {
+    const was = this.modal
+    if (this.screen === 'shop' && screen !== 'shop' && this.shop) {
+      this.send({ a: 'choose', npc: this.shop.npc, option: 'bye' })
+      this.shop = null
+    }
+    this.screen = screen
+    this.panel.hidden = screen === 'none'
+    if (screen !== 'none') {
+      this.mapOpen = false
+      this.map.hidden = true
+      this.drawScreen()
+    }
+    if (was !== this.modal) {
+      this.onSound?.(this.modal ? 'open' : 'close')
+      this.onModalChange?.(this.modal)
+    }
+  }
+
+  private act(row: { stack: Stack; index: number } | undefined, what: 'main' | 'drop'): void {
+    const self = this.self
+    if (!row || !self) return
+    const def = ITEMS[row.stack.item]
+    if (!def) return
+    if (this.screen === 'shop') {
+      if (def.kind === 'quest' || def.kind === 'money') return
+      this.send({ a: 'sell', item: def.id, n: this.shift ? row.stack.n : 1 })
+      this.onSound?.('coin')
+      return
+    }
+    if (what === 'drop') {
+      if (def.kind === 'quest') return this.onSound?.('deny')
+      this.send({ a: 'drop', item: def.id, n: this.shift ? row.stack.n : 1 })
+    } else if (def.kind === 'weapon') this.send({ a: 'equip', index: row.index })
+    else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med' || def.kind === 'pack' || def.battery) {
+      this.send({ a: 'use', item: def.id })
+    } else return this.onSound?.('deny')
+    this.onSound?.('use')
+  }
+
+  private button(parent: HTMLElement, label: string, onClick: () => void, enabled = true): void {
+    const b = el('button', 'sv-button', parent, label)
+    b.disabled = !enabled
+    b.addEventListener('click', (e) => {
+      e.stopPropagation()
+      onClick()
+    })
+  }
+
+  /** The backpack's stacks in display order: by kind, then by name. */
+  private sorted(inv: readonly Stack[], filter: (def: ItemDef) => boolean = () => true): { stack: Stack; index: number }[] {
+    return inv
+      .map((stack, index) => ({ stack, index }))
+      .filter((r) => {
+        const def = ITEMS[r.stack.item]
+        return def !== undefined && filter(def)
+      })
+      .sort((a, b) => {
+        const da = ITEMS[a.stack.item] as ItemDef
+        const db = ITEMS[b.stack.item] as ItemDef
+        return KIND_ORDER.indexOf(da.kind) - KIND_ORDER.indexOf(db.kind) || da.name.localeCompare(db.name)
+      })
+  }
+
+  private drawScreen(): void {
+    const self = this.self
+    if (!self) return
+    const scroll = this.panel.querySelector('.sv-list')?.scrollTop ?? 0
+    this.panel.replaceChildren()
+    const shop = this.screen === 'shop' ? this.shop : null
+    const head = el('div', 'sv-panel-head', this.panel)
+    el('b', '', head, shop ? `${shop.name.toUpperCase()}'S STALL` : 'BACKPACK')
+    el('span', 'sv-panel-money', head, `$${self.money}`)
+    const body = el('div', 'sv-panel-body', this.panel)
+    const left = el('div', 'sv-col', body)
+    const right = el('div', 'sv-col', body)
+
+    if (shop) {
+      el('div', 'sv-shop-say', left, shop.text)
+      el('div', 'sv-group', left, 'For sale')
+      const list = el('div', 'sv-list', left)
+      for (const [id, price] of shop.shop ?? []) {
+        const def = ITEMS[id]
+        if (!def) continue
+        const each = def.kind === 'ammo' ? AMMO_BOX : 1
+        const row = el('div', 'sv-row', list)
+        el('span', 'sv-row-name', row, `${def.name}${each > 1 ? ` ×${each}` : ''}`)
+        el('span', 'sv-row-info', row, `$${price}`)
+        const can = self.money >= price && roomFor(self, id) >= each
+        this.button(row, 'Buy', () => this.send({ a: 'buy', item: id, n: 1 }), can)
+        row.title = `${def.desc} ${effectText(def)}`
+      }
+    } else {
+      el('div', 'sv-group', left, 'In your hands')
+      const carried = this.ctx?.carried ?? []
+      for (const slot of ['primary', 'sidearm', 'melee'] as const) {
+        const w = carried.find((c) => WEAPONS[c.id].slot === slot)
+        const row = el('div', 'sv-row', left)
+        el('span', 'sv-row-key', row, SLOT_KEY[slot])
+        if (!w) {
+          el('span', 'sv-row-name empty', row, '— nothing —')
+          continue
+        }
+        const def = WEAPONS[w.id]
+        el('span', 'sv-row-name', row, def.name)
+        el('span', 'sv-row-info', row, slot === 'melee' ? '' : `${w.ammo}/${def.magSize} · ${self.inv ? this.spare(def.ammoType) : 0} spare`)
+        this.button(row, 'Stow', () => this.send({ a: 'stow', slot }), carried.length > 1)
+      }
+      el('div', 'sv-group', left, 'Carrying')
+      const weight = weightOf(self.inv)
+      const cap = capacityOf(self)
+      el('div', 'sv-pack', left, self.pack ? (ITEMS[self.pack]?.name ?? 'Backpack') : 'Pockets only — find a backpack')
+      const bar = el('div', 'sv-weight', left)
+      const fill = el('i', weight > cap * 0.9 ? 'low' : '', bar)
+      fill.style.width = `${Math.min(100, (weight / cap) * 100)}%`
+      el('div', 'sv-weight-text', left, `${kg(weight)} / ${kg(cap)} kg`)
+      el('div', 'sv-help', left, 'W/S select · E use or equip · G drop (Shift: all) · Tab close')
+    }
+
+    // Your things: to use and drop, or to sell.
+    this.rows = this.sorted(self.inv, shop ? (d) => d.kind !== 'quest' && d.kind !== 'money' : undefined)
+    this.selected = Math.max(0, Math.min(this.rows.length - 1, this.selected))
+    el('div', 'sv-group', right, shop ? 'You sell' : 'In your pack')
+    const list = el('div', 'sv-list', right)
+    if (this.rows.length === 0) el('div', 'sv-row-name empty', list, shop ? 'Nothing to sell.' : 'Empty.')
+    let lastKind: ItemKind | null = null
+    this.rows.forEach((row, i) => {
+      const def = ITEMS[row.stack.item] as ItemDef
+      if (def.kind !== lastKind) {
+        lastKind = def.kind
+        el('div', 'sv-kind', list, KIND_TITLE[def.kind])
+      }
+      const node = el('div', i === this.selected ? 'sv-row selected' : 'sv-row', list)
+      node.addEventListener('click', () => {
+        this.selected = i
+        this.drawScreen()
+      })
+      el('span', 'sv-row-name', node, `${def.name}${row.stack.n > 1 ? ` ×${row.stack.n}` : ''}`)
+      if (shop) {
+        el('span', 'sv-row-info', node, `$${Math.floor(def.value * SELL_RATE)}`)
+        this.button(node, 'Sell', () => this.act(row, 'main'))
+      } else {
+        el('span', 'sv-row-info', node, `${kg(def.weight * row.stack.n)} kg`)
+        const verb = def.kind === 'weapon' ? 'Equip' : def.kind === 'pack' ? 'Wear' : def.kind === 'food' ? 'Eat' : def.kind === 'drink' ? 'Drink' : def.kind === 'med' || def.battery ? 'Use' : null
+        if (verb) this.button(node, verb, () => this.act(row, 'main'))
+        if (def.kind !== 'quest') this.button(node, 'Drop', () => this.act(row, 'drop'))
+      }
+      if (i === this.selected) {
+        const detail = el('div', 'sv-detail', list)
+        el('div', '', detail, def.desc)
+        const effect = effectText(def)
+        if (effect) el('div', 'effect', detail, effect)
+      }
+    })
+    list.scrollTop = scroll
+    const picked = list.querySelector('.selected')
+    if (picked instanceof HTMLElement) {
+      if (picked.offsetTop < list.scrollTop) list.scrollTop = picked.offsetTop - 30
+      else if (picked.offsetTop + 60 > list.scrollTop + list.clientHeight) list.scrollTop = picked.offsetTop + 90 - list.clientHeight
+    }
+  }
+
+  private spare(type: string | undefined): number {
+    const def = Object.values(ITEMS).find((i) => i.ammo !== undefined && i.ammo === type)
+    return def && this.self ? countOf(this.self.inv, def.id) : 0
+  }
+
+  // --- The map -------------------------------------------------------------------------------
+
+  /** Roads and lakes never change: painted once. */
+  private paintBase(size: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const g = canvas.getContext('2d')
+    if (!g) return canvas
+    const s = size / WORLD_SIZE
+    const at = (v: number) => (v + WORLD_HALF) * s
+    g.fillStyle = '#14180f'
+    g.fillRect(0, 0, size, size)
+    // Paper grain.
+    for (let i = 0; i < 2400; i++) {
+      g.fillStyle = i % 2 ? 'rgba(60,70,40,0.25)' : 'rgba(0,0,0,0.25)'
+      g.fillRect((i * 7919) % size, (i * 104729) % size, 2, 2)
+    }
+    g.fillStyle = '#1d3a4f'
+    for (const lake of this.def.lakes) {
+      g.beginPath()
+      g.arc(at(lake.x), at(lake.z), (lake.r + 8) * s, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.lineJoin = 'round'
+    for (const road of this.def.roads) {
+      g.strokeStyle = road.kind === 'asphalt' ? '#8c8676' : '#5e5340'
+      g.lineWidth = road.kind === 'asphalt' ? 3 : 1.5
+      g.setLineDash(road.kind === 'asphalt' ? [] : [5, 4])
+      g.beginPath()
+      road.line.forEach((p, i) => (i === 0 ? g.moveTo(at(p.x), at(p.z)) : g.lineTo(at(p.x), at(p.z))))
+      g.stroke()
+    }
+    g.setLineDash([])
+    return canvas
+  }
+
+  private drawMap(ctx: SurvivalHudContext): void {
+    const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.84)
+    if (this.map.width !== size) {
+      this.map.width = this.map.height = size
+      this.mapBase = null
+    }
+    this.mapBase ??= this.paintBase(size)
+    const g = this.map.getContext('2d')
+    if (!g) return
+    const s = size / WORLD_SIZE
+    const at = (v: number) => (v + WORLD_HALF) * s
+    g.drawImage(this.mapBase, 0, 0)
+    g.textAlign = 'center'
+    const found = new Set(this.shared?.found ?? [])
+    this.def.pois.forEach((poi, i) => {
+      if (!found.has(i)) return
+      this.drawPlace(g, poi, at(poi.x), at(poi.z))
+    })
+    // Where the story (ring) and the jobs (dots) want you.
+    for (const { state, story } of this.quests()) {
+      const step = questById(state.id)?.steps[state.step]
+      if (!step) continue
+      for (const [x, , z] of stepTargets(this.def, step, state.count)) {
+        g.strokeStyle = story ? '#ffb030' : '#9ad06a'
+        g.lineWidth = 2
+        g.beginPath()
+        g.arc(at(x), at(z), story ? 9 + 2 * Math.sin(this.clock * 4) : 5, 0, Math.PI * 2)
+        g.stroke()
+      }
+    }
+    // You: an arrow pointing where you look.
+    g.save()
+    g.translate(at(ctx.pos.x), at(ctx.pos.z))
+    g.rotate(-ctx.yaw)
+    g.fillStyle = '#ffffff'
+    g.strokeStyle = '#000'
+    g.lineWidth = 1
+    g.beginPath()
+    g.moveTo(0, -9)
+    g.lineTo(6, 7)
+    g.lineTo(0, 3)
+    g.lineTo(-6, 7)
+    g.closePath()
+    g.fill()
+    g.stroke()
+    g.restore()
+    // North and a scale.
+    g.fillStyle = '#c8c0a0'
+    g.font = 'bold 14px "Pixelify Sans", monospace'
+    g.fillText('N ▲', size - 34, 26)
+    g.fillRect(20, size - 22, 500 * s, 3)
+    g.textAlign = 'left'
+    g.fillText('500 m', 20, size - 28)
+    g.fillText('DEADWOOD COUNTY', 20, 26)
+  }
+
+  private drawPlace(g: CanvasRenderingContext2D, poi: Poi, x: number, y: number): void {
+    const small = poi.kind === 'cabin' || poi.kind === 'campsite' || poi.kind === 'cache' || poi.kind === 'start'
+    g.fillStyle = poi.safe ? '#ffb030' : poi.kind === 'town' ? '#d8d0b0' : poi.kind === 'cache' ? '#9ad06a' : '#a8a088'
+    const r = poi.kind === 'town' ? 5 : small ? 2 : 3.5
+    if (poi.kind === 'campsite' || poi.kind === 'cache') {
+      g.beginPath()
+      g.moveTo(x, y - r - 2)
+      g.lineTo(x + r + 2, y + r)
+      g.lineTo(x - r - 2, y + r)
+      g.closePath()
+      g.fill()
+    } else g.fillRect(x - r, y - r, r * 2, r * 2)
+    if (poi.kind === 'church') {
+      g.fillRect(x - 1, y - r - 7, 2, 7)
+      g.fillRect(x - 3, y - r - 5, 6, 2)
+    }
+    if (small && poi.kind !== 'cache') return
+    g.font = `${poi.kind === 'town' || poi.safe ? 'bold 14px' : '11px'} "Pixelify Sans", monospace`
+    g.fillStyle = poi.safe ? '#ffb030' : '#c8c0a0'
+    g.fillText(poi.name, x, y - r - 5)
+  }
+}
+
+/** Every quest id there is (for tests). */
+export const QUEST_IDS = QUESTS.map((q) => q.id)

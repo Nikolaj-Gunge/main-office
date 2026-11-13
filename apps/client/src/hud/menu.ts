@@ -1,4 +1,4 @@
-import { MAX_NAME_LENGTH } from '@office-fps/shared'
+import { MAX_NAME_LENGTH, type ModeId } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
 import type { Settings } from '../settings.ts'
 
@@ -35,7 +35,20 @@ function h<K extends keyof HTMLElementTagNameMap>(
  *   CONTROLS — every action, click to rebind
  * The game keeps running behind it — it's multiplayer, there is no real pause.
  */
+const MODE_TIPS: Record<ModeId, string> = {
+  ffa: 'Free for all: everyone against everyone.',
+  tdm: 'Team deathmatch: Marketing against IT. No friendly fire.',
+  lms: 'Last man standing: no respawns until the next round.',
+  gungame: 'Gun game: every 2 kills gives you the next gun. A knife kill at the end wins.',
+  infection: 'Infection: the infected run faster with knives. Whoever they kill joins them.',
+  zombies:
+    'Zombies (co-op): fight through the building together. Follow the green marker. If everyone goes down, you retry the stage.',
+  survival:
+    'Survival: Deadwood at night. Scavenge, eat, drink, stay quiet. E takes and talks, Tab opens your backpack, F is your torch, M the map. Follow the story to get out alive.',
+}
+
 export class Menu {
+  private readonly modeTip: HTMLLIElement
   private readonly root: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly playButton: HTMLButtonElement
@@ -71,6 +84,7 @@ export class Menu {
     })
 
     this.status = h('p', { class: 'menu-status' })
+    this.modeTip = h('li', {}, MODE_TIPS.ffa)
     const play = h(
       'section',
       { class: 'menu-panel' },
@@ -79,7 +93,7 @@ export class Menu {
       h(
         'ul',
         { class: 'menu-tips' },
-        h('li', {}, 'Free-for-all: everyone against everyone. The match never ends.'),
+        this.modeTip,
         h(
           'li',
           {},
@@ -190,6 +204,11 @@ export class Menu {
     this.joined = joined
     this.nameInput.disabled = joined
     this.playButton.textContent = joined ? 'RESUME' : 'PLAY'
+  }
+
+  /** The first tip explains the game mode the server runs. */
+  setMode(mode: ModeId): void {
+    this.modeTip.textContent = MODE_TIPS[mode]
   }
 
   setStatus(text: string): void {

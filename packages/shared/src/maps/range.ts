@@ -68,10 +68,11 @@ export function buildRange(): MapDef {
   const RIFLE = 1
   const SNIPER = 2
   const SHOTGUN = 3
+  const MP5 = 5
   m.pickup(-4, 0, 3.4, RIFLE, 2)
   m.pickup(-1.3, 0, 3.4, SHOTGUN, 2)
   m.pickup(1.3, 0, 3.4, SNIPER, 2)
-  m.pickup(4, 0, 3.4, RIFLE, 2)
+  m.pickup(4, 0, 3.4, MP5, 2)
   m.label(0, 0.6, 4.4, 'GUNS')
 
   m.spawn(0, 0, 3, 0)

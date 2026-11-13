@@ -1,5 +1,6 @@
 import type { MapSpawn } from '../maps/types.ts'
 import {
+  PERSON_QUERY_GROUPS,
   type PhysicsWorld,
   PLAYER_COLLISION_GROUPS,
   PLAYER_QUERY_GROUPS,
@@ -54,6 +55,10 @@ export interface PlayerState {
   holstered: WeaponState | null
   /** The third item you carry (usually the knife), or null. */
   pocket: WeaponState | null
+  /** Breath for sprinting, 0–1 (only runs down when the config limits sprinting). */
+  stamina: number
+  /** Out of breath: no sprinting until some of it is back. */
+  winded: boolean
 }
 
 /** A fired bullet: eye position and (spread-adjusted) unit direction. */
@@ -76,6 +81,9 @@ export interface StepEvents {
   /** Switched weapons this tick. */
   switched: boolean
 }
+
+/** Winded until this much breath is back. */
+const WIND_BACK = 0.3
 
 /** Gap Rapier keeps between the capsule and the world. Feet sit this far above the floor. */
 const SKIN = 0.02
@@ -102,6 +110,8 @@ export function createPlayerState(
     weapon,
     holstered,
     pocket,
+    stamina: 1,
+    winded: false,
   }
 }
 
@@ -152,8 +162,13 @@ export class PlayerBody {
   /** Server rules for shooting (spread, infinite ammo); set alongside `config`. */
   weaponRules: WeaponRules = DEFAULT_WEAPON_RULES
 
-  constructor(physics: PhysicsWorld, config: MovementConfig) {
+  /** What the body bumps into: the map, plus foliage unless it goes through it. */
+  private readonly groups: number
+
+  /** `throughFoliage`: zombies and bots walk through corn; people don't (see GROUP_FOLIAGE). */
+  constructor(physics: PhysicsWorld, config: MovementConfig, throughFoliage = false) {
     this.physics = physics
+    this.groups = throughFoliage ? PLAYER_QUERY_GROUPS : PERSON_QUERY_GROUPS
     this.config = config
     this.height = config.standHeight
     this.collider = physics.world.createCollider(
@@ -200,7 +215,7 @@ export class PlayerBody {
         IDENTITY,
         shape,
         undefined,
-        PLAYER_QUERY_GROUPS,
+        this.groups,
         this.collider,
       ) === null
     )
@@ -276,7 +291,7 @@ export class PlayerBody {
       up.moved.y + 0.1,
       true,
       undefined,
-      PLAYER_QUERY_GROUPS,
+      this.groups,
       this.collider,
     )
     if (!hit) return null
@@ -308,7 +323,7 @@ export class PlayerBody {
     c.setSlideEnabled(mode.slide)
     c.setMaxSlopeClimbAngle(mode.climb ? (this.config.maxSlopeDeg * Math.PI) / 180 : 0)
     this.collider.setTranslation({ x: feet.x, y: feet.y + SKIN + this.height / 2, z: feet.z })
-    c.computeColliderMovement(this.collider, delta, undefined, PLAYER_QUERY_GROUPS)
+    c.computeColliderMovement(this.collider, delta, undefined, this.groups)
     const moved = c.computedMovement()
     const normals: MutVec3[] = []
     for (let i = 0; i < c.numComputedCollisions(); i++) {
@@ -470,7 +485,17 @@ export function stepPlayer(
     forward > 0 &&
     !state.crouched &&
     !aiming &&
-    !hasButton(buttons, Button.Fire)
+    !hasButton(buttons, Button.Fire) &&
+    !state.winded
+  if (c.sprintSeconds > 0) {
+    if (sprinting && wishLen > 0) {
+      state.stamina = Math.max(0, state.stamina - dt / c.sprintSeconds)
+      if (state.stamina === 0) state.winded = true
+    } else {
+      state.stamina = Math.min(1, state.stamina + dt / c.breathSeconds)
+      if (state.stamina >= WIND_BACK) state.winded = false
+    }
+  }
   const handling = WEAPONS[state.weapon.id].moveSpeedFactor * (aiming ? 0.6 : 1)
   const maxSpeed =
     (state.crouched ? c.crouchSpeed : c.walkSpeed * (sprinting ? c.sprintMultiplier : 1)) * handling
@@ -563,11 +588,11 @@ export function stepPlayer(
   // 1 = main gun, 2 = handgun, 3 = knife, Q / wheel = the last one you had.
   const items = carried(state)
   const target = hasButton(pressed, Button.Slot1)
-    ? items.find((w) => w.id !== WeaponId.Handgun && w.id !== WeaponId.Knife)
+    ? items.find((w) => WEAPONS[w.id].slot === 'primary')
     : hasButton(pressed, Button.Slot2)
-      ? items.find((w) => w.id === WeaponId.Handgun)
+      ? items.find((w) => WEAPONS[w.id].slot === 'sidearm')
       : hasButton(pressed, Button.Slot3)
-        ? items.find((w) => w.id === WeaponId.Knife)
+        ? items.find((w) => WEAPONS[w.id].slot === 'melee')
         : hasButton(pressed, Button.SwapWeapon)
           ? (state.holstered ?? undefined)
           : undefined

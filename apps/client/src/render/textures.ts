@@ -308,6 +308,207 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       }
     },
   },
+  // ── Farm ──
+  dirt: {
+    meters: 2,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#4a3a2a'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = ['#5a4733', '#3b2e21', '#665139', '#2f251b'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          1 + Math.floor(rand() * 3),
+          1,
+        )
+      }
+    },
+  },
+  grass: {
+    meters: 2,
+    noise: 0.12,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#2c3d22'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 400; i++) {
+        ctx.fillStyle = ['#3a5129', '#24331c', '#46602f', '#33452a'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 2)
+      }
+    },
+  },
+  corn: {
+    meters: 1,
+    noise: 0.12,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#3f5a26'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 60; i++) {
+        ctx.fillStyle = ['#56742f', '#6d7d34', '#2e4419', '#8a8a3c'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          1,
+          3 + Math.floor(rand() * 6),
+        )
+      }
+    },
+  },
+  hay: {
+    meters: 1,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#b8964a'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 120; i++) {
+        ctx.fillStyle = ['#d4b062', '#9c7c38', '#c9a556', '#8a6a2e'][Math.floor(rand() * 4)] ?? ''
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          2 + Math.floor(rand() * 5),
+          1,
+        )
+      }
+    },
+  },
+  barn: {
+    meters: 2,
+    noise: 0.06,
+    paint: (ctx, size, rand) => {
+      // Weathered red vertical boards with dark seams.
+      ctx.fillStyle = '#7d2a22'
+      ctx.fillRect(0, 0, size, size)
+      for (let x = 0; x < size; x += 8) {
+        ctx.fillStyle = ['#8a3027', '#712620', '#83342a'][Math.floor(rand() * 3)] ?? ''
+        ctx.fillRect(x + 1, 0, 7, size)
+        ctx.fillStyle = '#3a1410'
+        ctx.fillRect(x, 0, 1, size)
+        for (let i = 0; i < 6; i++) {
+          ctx.fillStyle = '#a65a4a'
+          ctx.fillRect(x + 1 + Math.floor(rand() * 6), Math.floor(rand() * size), 1, 2)
+        }
+      }
+    },
+  },
+  // ── Survival (Deadwood) ──
+  asphalt: {
+    meters: 2,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#2b2c2f'
+      ctx.fillRect(0, 0, size, size)
+      for (let i = 0; i < 160; i++) {
+        ctx.fillStyle = ['#34363a', '#222326', '#3d3f43'][Math.floor(rand() * 3)] ?? ''
+        ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 1)
+      }
+      // A crack or two.
+      ctx.fillStyle = '#18191b'
+      let x = Math.floor(rand() * size)
+      for (let y = 0; y < size; y++) {
+        if (rand() < 0.4) x += rand() < 0.5 ? -1 : 1
+        ctx.fillRect(((x % size) + size) % size, y, 1, 1)
+      }
+    },
+  },
+  log: {
+    meters: 1,
+    noise: 0.09,
+    paint: (ctx, size, rand) => {
+      // Stacked logs: dark gaps between rounded, grainy rows.
+      const rows = 4
+      const h = size / rows
+      for (let r = 0; r < rows; r++) {
+        ctx.fillStyle = ['#5a4028', '#634731', '#523a24'][r % 3] ?? ''
+        ctx.fillRect(0, r * h, size, h)
+        ctx.fillStyle = '#7a5a3c'
+        ctx.fillRect(0, r * h + 1, size, 1)
+        ctx.fillStyle = '#2a1d12'
+        ctx.fillRect(0, (r + 1) * h - 1, size, 1)
+        for (let i = 0; i < 10; i++) {
+          ctx.fillStyle = 'rgba(30,20,10,0.35)'
+          ctx.fillRect(Math.floor(rand() * size), r * h + 2 + Math.floor(rand() * (h - 4)), 3 + Math.floor(rand() * 6), 1)
+        }
+      }
+    },
+  },
+  shingle: {
+    meters: 1,
+    noise: 0.08,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#2e2a28'
+      ctx.fillRect(0, 0, size, size)
+      for (let y = 0; y < size; y += 4) {
+        for (let x = (y / 4) % 2 === 0 ? 0 : -3; x < size; x += 6) {
+          ctx.fillStyle = ['#3a3532', '#33302d', '#413b37', '#2a2624'][Math.floor(rand() * 4)] ?? ''
+          ctx.fillRect(x, y, 5, 3)
+        }
+      }
+    },
+  },
+  brick: {
+    meters: 1,
+    noise: 0.08,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#8f8a80'
+      ctx.fillRect(0, 0, size, size)
+      for (let y = 0; y < size; y += 4) {
+        for (let x = (y / 4) % 2 === 0 ? 0 : -4; x < size; x += 8) {
+          ctx.fillStyle = ['#7d3a2c', '#8a4332', '#6f3326', '#93503b'][Math.floor(rand() * 4)] ?? ''
+          ctx.fillRect(x, y, 7, 3)
+        }
+      }
+    },
+  },
+  rust: {
+    meters: 1,
+    noise: 0.1,
+    paint: (ctx, size, rand) => {
+      // Corrugated sheet going to rust.
+      for (let x = 0; x < size; x++) {
+        ctx.fillStyle = x % 4 < 2 ? '#6b6e70' : '#56595b'
+        ctx.fillRect(x, 0, 1, size)
+      }
+      for (let i = 0; i < 26; i++) {
+        ctx.fillStyle = ['rgba(138,70,30,0.7)', 'rgba(110,52,22,0.7)', 'rgba(160,92,40,0.5)'][Math.floor(rand() * 3)] ?? ''
+        const x = Math.floor(rand() * size)
+        const y = Math.floor(rand() * size)
+        ctx.fillRect(x, y, 2 + Math.floor(rand() * 5), 3 + Math.floor(rand() * 9))
+      }
+    },
+  },
+  canvas: {
+    meters: 1,
+    noise: 0.07,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#5d6248'
+      ctx.fillRect(0, 0, size, size)
+      for (let y = 0; y < size; y += 2) {
+        ctx.fillStyle = 'rgba(40,44,30,0.25)'
+        ctx.fillRect(0, y, size, 1)
+      }
+      for (let i = 0; i < 8; i++) {
+        ctx.fillStyle = 'rgba(30,32,22,0.4)'
+        ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 3 + Math.floor(rand() * 5), 2)
+      }
+    },
+  },
+  sandbag: {
+    meters: 1,
+    noise: 0.09,
+    paint: (ctx, size, rand) => {
+      ctx.fillStyle = '#4a4434'
+      ctx.fillRect(0, 0, size, size)
+      for (let y = 0; y < size; y += 8) {
+        for (let x = (y / 8) % 2 === 0 ? 0 : -8; x < size; x += 16) {
+          ctx.fillStyle = ['#8c8062', '#7d7257', '#968a6b'][Math.floor(rand() * 3)] ?? ''
+          ctx.fillRect(x + 1, y + 1, 14, 6)
+          ctx.fillStyle = 'rgba(255,255,255,0.08)'
+          ctx.fillRect(x + 2, y + 1, 12, 1)
+        }
+      }
+    },
+  },
 }
 
 function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {

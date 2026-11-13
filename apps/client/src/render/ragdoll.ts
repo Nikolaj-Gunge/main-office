@@ -8,10 +8,10 @@ import {
   type PhysicsWorld,
   PLAYER_COLORS,
   RAPIER,
-  type SkinId,
+  setGates,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { buildBody, placePart } from './avatar.ts'
+import { type BodyLook, buildBody, placePart } from './avatar.ts'
 
 const quat = (q: { x: number; y: number; z: number; w: number }) =>
   new THREE.Quaternion(q.x, q.y, q.z, q.w)
@@ -59,6 +59,11 @@ export class Ragdolls {
     this.physics.world.timestep = STEP
   }
 
+  /** Open gates (co-op maps) stop holding bodies up. */
+  setGates(open: (id: number) => boolean): void {
+    setGates(this.physics, open)
+  }
+
   /** Game rules gravity multiplier (moon gravity makes bodies float down slowly). */
   setGravity(multiplier: number): void {
     this.physics.world.gravity = { x: 0, y: -DEFAULT_MOVEMENT.gravity * multiplier, z: 0 }
@@ -70,7 +75,7 @@ export class Ragdolls {
    * @param velocity how they were moving (keeps running bodies tumbling forward)
    */
   spawn(
-    skin: SkinId,
+    skin: BodyLook,
     colorIndex: number,
     parts: BodyPart[],
     size: number,
@@ -83,7 +88,7 @@ export class Ragdolls {
     }
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     const material = new THREE.MeshLambertMaterial({ color })
-    const meshes = buildBody(skin, colorIndex, material)
+    const meshes = buildBody(skin, colorIndex, material, true)
     const world = this.physics.world
     const hit: PartName = push.headshot ? 'head' : 'chest'
     const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()

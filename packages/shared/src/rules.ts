@@ -1,4 +1,4 @@
-import { DEFAULT_MAP_ID, MAPS } from './maps/index.ts'
+import { COOP_MAPS, DEFAULT_MAP_ID, MAPS, SURVIVAL_MAP } from './maps/index.ts'
 import { MODES, type ModeId } from './modes.ts'
 import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
@@ -8,7 +8,7 @@ export const SKINS = ['worker', 'robot', 'slime'] as const
 export type SkinId = (typeof SKINS)[number]
 
 /** Main weapon everyone spawns with, next to the handgun ('none' = find one on the floor). */
-export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'random'] as const
+export const SPAWN_WEAPONS = ['none', 'rifle', 'sniper', 'shotgun', 'mp5', 'lmg', 'random'] as const
 export type SpawnWeapon = (typeof SPAWN_WEAPONS)[number]
 
 /** How well server bots aim and react. */
@@ -147,7 +147,29 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   for (const key of BOOLEAN_RULES) {
     if (typeof u[key] === 'boolean') next[key] = u[key]
   }
+  // Zombies is played on a co-op map, and co-op maps only in zombies: picking zombies moves to
+  // one, picking a co-op map starts zombies; picking another map or mode leaves.
+  if (next.mode === 'zombies' && !isCoopMap(next.map)) {
+    if (u.mode === 'zombies') next.map = COOP_MAPS[0]
+    else next.mode = 'ffa'
+  } else if (next.mode !== 'zombies' && isCoopMap(next.map)) {
+    if (typeof u.map === 'string' && isCoopMap(u.map)) next.mode = 'zombies'
+    else next.map = DEFAULT_MAP_ID
+  }
+  // Survival and its world go together the same way.
+  if (next.mode === 'survival' && next.map !== SURVIVAL_MAP) {
+    if (u.mode === 'survival') next.map = SURVIVAL_MAP
+    else next.mode = 'ffa'
+  } else if (next.mode !== 'survival' && next.map === SURVIVAL_MAP) {
+    if (u.map === SURVIVAL_MAP) next.mode = 'survival'
+    else next.map = DEFAULT_MAP_ID
+  }
   return next
+}
+
+/** Is this one of the co-op maps (zombies mode)? */
+export function isCoopMap(id: string): boolean {
+  return (COOP_MAPS as readonly string[]).includes(id)
 }
 
 /** The movement config everyone simulates with under these rules. */
@@ -170,6 +192,8 @@ export function movementFor(
     crouchSpeed: base.crouchSpeed * rules.speed,
     gravity: base.gravity * rules.gravity,
     jumpVelocity: base.jumpVelocity * rules.jump,
+    // Survival: you can't run for ever.
+    sprintSeconds: rules.mode === 'survival' ? 9 : 0,
   }
 }
 

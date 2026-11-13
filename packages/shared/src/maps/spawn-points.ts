@@ -10,13 +10,23 @@ const CLEARANCE_RADIUS = 0.55
  * Every valid random-spawn spot in the map: a grid over `map.spawnArea`, on each floor height
  * the fixed spawns use. A spot counts when the floor right below it is flat and exactly at that
  * floor's height (so never on furniture, stairs or ramps) and a slightly fat capsule fits.
- * Run once when the server starts.
+ * Run once when the server starts. `throughFoliage`: count spots inside corn too (the zombies'
+ * nav grid — they walk through it; people never spawn in it).
  */
-export function findSpawnPoints(map: MapDef, physics: PhysicsWorld, spacing = 1.5): Vec3[] {
+export function findSpawnPoints(
+  map: MapDef,
+  physics: PhysicsWorld,
+  spacing = 1.5,
+  throughFoliage = false,
+): Vec3[] {
   const area = map.spawnArea
   if (!area) return map.spawns.map((s) => s.pos)
   const floors = [...new Set(map.spawns.map((s) => s.pos[1]))]
-  const probe = new PlayerBody(physics, { ...DEFAULT_MOVEMENT, radius: CLEARANCE_RADIUS })
+  const probe = new PlayerBody(
+    physics,
+    { ...DEFAULT_MOVEMENT, radius: CLEARANCE_RADIUS },
+    throughFoliage,
+  )
   const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
   const points: Vec3[] = []
   try {

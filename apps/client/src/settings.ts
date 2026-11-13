@@ -20,6 +20,12 @@ export interface Settings {
   outlines: number
   /** Glow around bright things (lights, screens, muzzle flash). 0 = off. */
   bloom: number
+  /** 0 = flat, 1 = deep black shadows and hot highlights. */
+  contrast: number
+  /** Colour strength: 1 = as lit, above = more vivid. */
+  saturation: number
+  /** Dark corners. 0 = none. */
+  vignette: number
   /** Bumped when the default look changes, so saved settings pick up the new look once. */
   lookVersion: number
   exposure: number
@@ -43,8 +49,12 @@ export const DEFAULT_SETTINGS: Settings = {
   palette: 'resurrect64',
   dither: 0.6,
   outlines: 0.25,
-  bloom: 0.5,
-  lookVersion: 2,
+  // Phase 13 look: darker shadows, vivid lights, more glow.
+  bloom: 0.85,
+  contrast: 0.6,
+  saturation: 1.25,
+  vignette: 0.4,
+  lookVersion: 3,
   exposure: 1,
   masterVolume: 0.8,
   sfxVolume: 1,
@@ -63,6 +73,9 @@ const LOOK_KEYS = [
   'dither',
   'outlines',
   'bloom',
+  'contrast',
+  'saturation',
+  'vignette',
   'exposure',
   'lookVersion',
 ] as const

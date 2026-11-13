@@ -1,5 +1,6 @@
 import { WeaponId } from '@office-fps/shared'
 import * as THREE from 'three'
+import { survivalWorldModel } from './survival-guns.ts'
 
 const STEEL = 0x2b2d33
 const FRAME = 0x3a3d45
@@ -66,6 +67,34 @@ export function buildGunModel(id: WeaponId): THREE.Group {
         box(0.05, 0.075, 0.24, WOOD, 0, 0.055, 0.24), // stock
       )
       break
+    case WeaponId.Lmg:
+      g.add(
+        box(0.06, 0.07, 0.34, FRAME, 0, 0.09, 0), // receiver
+        box(0.05, 0.05, 0.24, STEEL, 0, 0.09, -0.28), // barrel shroud
+        box(0.022, 0.022, 0.2, STEEL, 0, 0.09, -0.5), // barrel
+        box(0.09, 0.09, 0.1, FRAME, 0.02, 0.04, -0.04), // ammo box
+        box(0.03, 0.07, 0.04, FRAME, 0, 0.035, 0.1), // grip
+        box(0.05, 0.08, 0.2, FRAME, 0, 0.07, 0.27), // stock
+      )
+      break
+    case WeaponId.Smg:
+      g.add(
+        box(0.04, 0.055, 0.26, STEEL, 0, 0.085, -0.02), // receiver
+        box(0.045, 0.045, 0.12, FRAME, 0, 0.075, -0.2), // handguard
+        box(0.016, 0.016, 0.06, STEEL, 0, 0.09, -0.29), // barrel
+        box(0.025, 0.1, 0.035, STEEL, 0, 0.03, -0.1), // curved magazine
+        box(0.026, 0.07, 0.035, FRAME, 0, 0.035, 0.07), // grip
+        box(0.02, 0.05, 0.14, FRAME, 0, 0.08, 0.18), // collapsed stock
+      )
+      break
+    case WeaponId.Knife:
+    case WeaponId.Claws:
+      break // never lie around
+    default: {
+      // Survival weapons: their first-person model without the hands (survival-guns.ts).
+      const model = survivalWorldModel(id)
+      if (model) g.add(model)
+    }
   }
   return g
 }

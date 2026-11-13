@@ -613,11 +613,12 @@ export function buildCampus(): MapDef {
   const RIFLE = 1
   const SNIPER = 2
   const SHOTGUN = 3
+  const MP5 = 5
   m.pickup(43, UP, -26, SNIPER) // B roof, back corner
   m.pickup(-20, UP, -13.75, SNIPER) // balcony, east end
   m.pickup(-9.5, 0, 2, RIFLE) // courtyard, between the low walls
-  m.pickup(-20, 0, 25, RIFLE) // parking aisle
-  m.pickup(31.5, 0, 7.5, RIFLE) // service yard, by the van
+  m.pickup(-20, 0, 25, MP5) // parking aisle
+  m.pickup(31.5, 0, 7.5, MP5) // service yard, by the van
   m.pickup(-10, UP, -30.5, RIFLE) // gallery, top of the grand stairs
   m.pickup(16, 0, -30.5, RIFLE) // A–B yard, under the bridge
   m.pickup(-34.2, 0, 2.5, SHOTGUN) // behind the café counter

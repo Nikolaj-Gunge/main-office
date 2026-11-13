@@ -1,4 +1,5 @@
 import type {
+  CoopStage,
   MapBox,
   MapDef,
   MapLabel,
@@ -14,6 +15,7 @@ import type {
 export interface BoxFlags {
   collide?: boolean
   render?: boolean
+  gate?: number
 }
 
 /**
@@ -29,6 +31,8 @@ export class MapBuilder {
   private readonly pickups: MapPickup[] = []
   private spawnArea: MapDef['spawnArea']
   private readonly targets: MapSpawn[] = []
+  private readonly stages: CoopStage[] = []
+  private readonly navLinks: [Vec3, Vec3][] = []
 
   private readonly id: string
   private readonly name: string
@@ -75,8 +79,8 @@ export class MapBuilder {
   }
 
   /**
-   * Ramp rising toward -Z. Its top surface starts at floor height `y` at z = `zStart` and climbs
-   * `run` meters (horizontal) at `angleDeg`. Returns the height reached.
+   * Ramp rising toward -Z (or +Z with `toward` = 1). Its top surface starts at floor height `y`
+   * at z = `zStart` and climbs `run` meters (horizontal) at `angleDeg`. Returns the height reached.
    */
   ramp(
     x: number,
@@ -86,24 +90,32 @@ export class MapBuilder {
     run: number,
     angleDeg: number,
     material: MaterialId = 'ramp',
+    toward: -1 | 1 = -1,
   ) {
     const a = (angleDeg * Math.PI) / 180
     const thickness = 0.3
     const length = run / Math.cos(a)
     const rise = run * Math.tan(a)
-    // Top-surface center, then push down half the thickness along the ramp normal (0, cos a, sin a).
-    const top = [x, y + rise / 2, zStart - run / 2] as const
+    // Top-surface center, then push down half the thickness along the ramp normal
+    // (0, cos a, ∓sin a — it leans back toward where the ramp rises).
+    const top = [x, y + rise / 2, zStart + (toward * run) / 2] as const
     this.boxes.push({
       center: [
         top[0],
         top[1] - (Math.cos(a) * thickness) / 2,
-        top[2] - (Math.sin(a) * thickness) / 2,
+        top[2] + (toward * Math.sin(a) * thickness) / 2,
       ],
       size: [width, thickness, length],
-      rotation: [a, 0, 0],
+      rotation: [-toward * a, 0, 0],
       material,
     })
     return rise
+  }
+
+  /** A way between floors for the zombies' nav grid (see MapDef.navLinks). */
+  navLink(bottom: Vec3, top: Vec3) {
+    this.navLinks.push([bottom, top])
+    return this
   }
 
   spawn(x: number, y: number, z: number, yawDeg = 0) {
@@ -134,6 +146,12 @@ export class MapBuilder {
     return this
   }
 
+  /** The next co-op stage (zombies mode), in play order. */
+  stage(stage: CoopStage) {
+    this.stages.push(stage)
+    return this
+  }
+
   withSkyline() {
     this.skyline = true
     return this
@@ -157,6 +175,8 @@ export class MapBuilder {
       pickups: this.pickups,
       ...(this.spawnArea ? { spawnArea: this.spawnArea } : {}),
       ...(this.targets.length > 0 ? { targets: this.targets } : {}),
+      ...(this.stages.length > 0 ? { coop: { stages: this.stages } } : {}),
+      ...(this.navLinks.length > 0 ? { navLinks: this.navLinks } : {}),
     }
   }
 }

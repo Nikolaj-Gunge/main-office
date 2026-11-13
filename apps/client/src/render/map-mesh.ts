@@ -1,6 +1,7 @@
-import type { MapDef, MaterialId } from '@office-fps/shared'
+import type { MapBox, MapDef, MaterialId } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { buildCorn } from './corn.ts'
 import { createLabel } from './labels.ts'
 import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
 
@@ -54,6 +55,34 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
         k === axis ||
         Math.min(a.max[k] ?? 0, b.max[k] ?? 0) - Math.max(a.min[k] ?? 0, b.min[k] ?? 0) > 1e-3,
     )
+  // Only boxes that are close can share a plane: look them up in a coarse x/z grid instead of
+  // comparing every box with every other (the survival world has thousands).
+  const GRID = 24
+  const grid = new Map<number, number[]>()
+  const everywhere: number[] = []
+  const cells = (b: Bounds): number[] | null => {
+    const x0 = Math.floor((b.min[0] - 0.1) / GRID)
+    const x1 = Math.floor((b.max[0] + 0.1) / GRID)
+    const z0 = Math.floor((b.min[2] - 0.1) / GRID)
+    const z1 = Math.floor((b.max[2] + 0.1) / GRID)
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > 64) return null
+    const keys: number[] = []
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) keys.push(x * 100003 + z)
+    return keys
+  }
+  /** Indices of placed boxes that may touch `b`. */
+  const near = (b: Bounds): number[] => {
+    const keys = cells(b)
+    if (!keys) return out.flatMap((o, j) => (o ? [j] : []))
+    const found = new Set<number>(everywhere)
+    for (const key of keys) for (const j of grid.get(key) ?? []) found.add(j)
+    return [...found]
+  }
+  const place = (i: number, b: Bounds) => {
+    const keys = cells(b)
+    if (!keys) everywhere.push(i)
+    else for (const key of keys) grid.set(key, [...(grid.get(key) ?? []), i])
+  }
   for (let i = 0; i < raw.length; i++) {
     const a = raw[i]
     if (!a) {
@@ -62,14 +91,15 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
     }
     const o: Bounds = { min: [...a.min], max: [...a.max] }
     const material = map.boxes[i]?.material
+    const candidates = near(o).filter((j) => map.boxes[j]?.material !== material)
     // Two passes: pushing one axis out can create an overlap across another.
-    for (let pass = 0; pass < 6; pass++) {
+    for (let pass = 0; pass < 6 && candidates.length > 0; pass++) {
       const axis = pass % 3
       // Earlier, already-placed boxes this one overlaps across this axis's faces.
       const others: Bounds[] = []
-      for (let j = 0; j < i; j++) {
+      for (const j of candidates) {
         const b = out[j]
-        if (b && map.boxes[j]?.material !== material && overlaps(o, b, axis)) others.push(b)
+        if (b && overlaps(o, b, axis)) others.push(b)
       }
       // Step each face outwards until no earlier face shares its plane.
       for (const side of ['max', 'min'] as const) {
@@ -82,6 +112,7 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
       }
     }
     out.push(o)
+    place(i, o)
   }
 
   // Glass is drawn from both sides, so a pane resting on a frame (its bottom touching the
@@ -90,8 +121,9 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
     const o = out[i]
     const material = map.boxes[i]?.material
     if (!o || !material || !isTransparent(material)) continue
+    const candidates = near(o)
     for (let axis = 0; axis < 3; axis++) {
-      for (let j = 0; j < out.length; j++) {
+      for (const j of candidates) {
         const b = out[j]
         if (j === i || !b || !overlaps(o, b, axis)) continue
         if (Math.abs((o.min[axis] ?? 0) - (b.max[axis] ?? 0)) < 1e-3) {
@@ -106,19 +138,28 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
   return out
 }
 
-/** Builds the static map: one merged mesh per material (few draw calls) plus labels. */
+/**
+ * Builds the static map: one merged mesh per material (few draw calls) plus labels. Gates
+ * (co-op maps) get their own group each, named `gate:<id>`, so they can be hidden when open.
+ */
 export function buildMapObject(map: MapDef): THREE.Group {
   const group = new THREE.Group()
   group.name = `map:${map.id}`
 
   const byMaterial = new Map<MaterialId, THREE.BufferGeometry[]>()
+  const gates = new Map<number, Map<MaterialId, THREE.BufferGeometry[]>>()
   const matrix = new THREE.Matrix4()
   const quaternion = new THREE.Quaternion()
   const euler = new THREE.Euler()
 
   const bounds = renderBounds(map)
+  const corn: MapBox[] = []
   map.boxes.forEach((box, i) => {
     if (box.render === false) return
+    if (box.material === 'corn') {
+      corn.push(box)
+      return
+    }
     const b = bounds[i]
     // Axis-aligned boxes use the z-fight-resolved bounds; rotated ones are drawn as they are.
     const size: [number, number, number] = b
@@ -133,22 +174,39 @@ export function buildMapObject(map: MapDef): THREE.Group {
     matrix.compose(new THREE.Vector3(...center), quaternion, new THREE.Vector3(1, 1, 1))
     geometry.applyMatrix4(matrix)
     applyWorldUVs(geometry)
-    const list = byMaterial.get(box.material) ?? []
+    let target = byMaterial
+    if (box.gate !== undefined) {
+      target = gates.get(box.gate) ?? new Map()
+      gates.set(box.gate, target)
+    }
+    const list = target.get(box.material) ?? []
     list.push(geometry)
-    byMaterial.set(box.material, list)
+    target.set(box.material, list)
   })
 
-  for (const [material, geometries] of byMaterial) {
-    const merged = mergeGeometries(geometries)
-    for (const g of geometries) g.dispose()
-    const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
-    mesh.name = `surface:${material}`
-    mesh.castShadow = castsShadow(material)
-    mesh.receiveShadow = !isTransparent(material)
-    // Glass after everything opaque so you see what's behind it.
-    if (isTransparent(material)) mesh.renderOrder = 1
-    group.add(mesh)
+  const addMerged = (parent: THREE.Group, meshes: Map<MaterialId, THREE.BufferGeometry[]>) => {
+    for (const [material, geometries] of meshes) {
+      const merged = mergeGeometries(geometries)
+      for (const g of geometries) g.dispose()
+      const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
+      mesh.name = `surface:${material}`
+      mesh.castShadow = castsShadow(material)
+      mesh.receiveShadow = !isTransparent(material)
+      // Glass after everything opaque so you see what's behind it.
+      if (isTransparent(material)) mesh.renderOrder = 1
+      parent.add(mesh)
+    }
   }
+  addMerged(group, byMaterial)
+  for (const [id, meshes] of gates) {
+    const gate = new THREE.Group()
+    gate.name = `gate:${id}`
+    addMerged(gate, meshes)
+    group.add(gate)
+  }
+
+  const field = buildCorn(corn)
+  if (field) group.add(field)
 
   for (const label of map.labels) {
     const sprite = createLabel(label.text)

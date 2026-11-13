@@ -1,3 +1,5 @@
+import type { SurvivalDef } from '../survival/types.ts'
+
 export type Vec3 = readonly [number, number, number]
 
 /** Surface materials. The client maps each to a texture; later the server maps them to impact/penetration rules. */
@@ -28,6 +30,20 @@ export const MATERIALS = [
   'lightpanel',
   'rack',
   'whiteboard',
+  // Farm (cornfield)
+  'dirt',
+  'grass',
+  'corn',
+  'hay',
+  'barn',
+  // Survival (Deadwood)
+  'asphalt',
+  'log',
+  'shingle',
+  'brick',
+  'rust',
+  'canvas',
+  'sandbag',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
@@ -41,6 +57,11 @@ export interface MapBox {
   collide?: boolean
   /** Default true. False = invisible collider (e.g. one solid block around a detailed desk). */
   render?: boolean
+  /**
+   * Part of a gate (co-op maps): solid and drawn while the gate is shut, gone once it opens.
+   * Gates open as the team completes stages (CoopStage.opens).
+   */
+  gate?: number
 }
 
 /** A light placed in the map (client only). */
@@ -53,6 +74,8 @@ export interface MapLight {
   distance: number
   /** Spot lights point straight down from `pos`. */
   angleDeg?: number
+  /** 0–1: how badly it flickers (a failing tube, a loose wire). Absent = steady. */
+  flicker?: number
 }
 
 export interface MapSpawn {
@@ -92,6 +115,8 @@ export interface MapPickup {
 }
 
 export interface MapDef {
+  /** Survival mode: the open world this map's boxes stand in (terrain, forest, places). */
+  survival?: SurvivalDef
   id: string
   name: string
   boxes: MapBox[]
@@ -112,4 +137,83 @@ export interface MapDef {
    * shoot, respawn in place, and don't count for scores.
    */
   targets?: MapSpawn[]
+  /** Co-op map (zombies mode): the stages the team fights through, in order. */
+  coop?: CoopDef
+  /**
+   * Walkable ways between floors (ramps), bottom → top, for the zombies' nav grid: each end
+   * is a spot on a floor just off the ramp.
+   */
+  navLinks?: [Vec3, Vec3][]
+}
+
+/** An axis-aligned area (min/max corners, feet height included). */
+export interface CoopZone {
+  min: Vec3
+  max: Vec3
+}
+
+/** What a stage asks of the team. */
+export type CoopGoal =
+  /** Kill this many zombies (scaled by the number of survivors). */
+  | { kind: 'kill'; count: number }
+  /** Any survivor gets into the zone. */
+  | { kind: 'reach'; zone: CoopZone }
+  /** Survivors stay in the zone this long in total (the clock only runs while someone is in). */
+  | { kind: 'hold'; zone: CoopZone; seconds: number }
+  /**
+   * Survivors get to every spot, in any order, and stay `seconds` in each (switches, valves,
+   * fuel cans to pick up: 0 s = just walk over it). `what` labels the spots on the HUD.
+   */
+  | { kind: 'activate'; spots: CoopZone[]; seconds: number; what: string }
+  /**
+   * Keep something alive for `seconds`: zombies that get to it tear at it (`health` points in
+   * all), and if it breaks the stage starts over. `what` names it on the HUD.
+   */
+  | { kind: 'defend'; zone: CoopZone; seconds: number; health: number; what: string }
+  /** Stay alive this long, anywhere. */
+  | { kind: 'survive'; seconds: number }
+
+export interface CoopStage {
+  name: string
+  /** The order on the HUD, e.g. "Clear the lobby". */
+  task: string
+  goal: CoopGoal
+  /** Where survivors start (and come back) in this stage. */
+  start: MapSpawn[]
+  /** Where zombies come from in this stage (spots out of the team's sight are preferred). */
+  zombieSpawns: Vec3[]
+  /** Gate that opens when the stage is done (MapBox.gate). The last stage ends the map. */
+  opens?: number
+  /** Zombies at once, relative to normal (1). */
+  intensity: number
+  /** Share of zombies that are runners (fast, fragile). */
+  runners: number
+  /**
+   * Weapon (WeaponId) everyone gets when the stage starts, unless they already carry one at
+   * least as big (WEAPON_TIER): the further you get, the bigger the guns.
+   */
+  armory?: number
+}
+
+/** The areas a goal marks in the world (none for kill and survive goals). */
+export function goalZones(goal: CoopGoal): CoopZone[] {
+  if (goal.kind === 'activate') return goal.spots
+  if (goal.kind === 'reach' || goal.kind === 'hold' || goal.kind === 'defend') return [goal.zone]
+  return []
+}
+
+export interface CoopDef {
+  stages: CoopStage[]
+}
+
+/** Is `p` (feet) inside the zone? */
+export function inZone(zone: CoopZone, p: { x: number; y: number; z: number }): boolean {
+  return (
+    p.x >= zone.min[0] &&
+    p.x <= zone.max[0] &&
+    p.y >= zone.min[1] - 0.5 &&
+    p.y <= zone.max[1] &&
+    p.z >= zone.min[2] &&
+    p.z <= zone.max[2]
+  )
 }

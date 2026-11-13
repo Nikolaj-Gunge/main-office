@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { createPhysicsWorld, initPhysics } from '../physics/world.ts'
 import { Button } from '../sim/input.ts'
 import { DEFAULT_MOVEMENT } from '../sim/movement-config.ts'
+import { PRIMARY_WEAPONS } from '../sim/weapons.ts'
 import {
   floorHeights,
   pickupReachable,
@@ -111,7 +112,7 @@ describe('rooftop map', () => {
     expect(pickups.length).toBeLessThanOrEqual(8)
     expect(pickups.filter((p) => p.weapon === 2).length).toBeLessThanOrEqual(1)
     for (const p of pickups) {
-      expect([1, 2, 3]).toContain(p.weapon)
+      expect(PRIMARY_WEAPONS as readonly number[]).toContain(p.weapon)
       expect(Math.abs(p.pos[0])).toBeLessThan(HALF)
       expect(Math.abs(p.pos[2])).toBeLessThan(HALF)
     }

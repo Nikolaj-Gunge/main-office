@@ -269,12 +269,13 @@ export function buildMeetingRoom(): MapDef {
   const RIFLE = 1
   const SNIPER = 2
   const SHOTGUN = 3
+  const MP5 = 5
   m.pickup(-1.5, 0.78, TZ + 0.6, RIFLE) // boardroom table, south edge
   m.pickup(-WX + T / 2 + 0.25, 0.8, TZ, SNIPER) // TV credenza: down the boardroom's long axis
   m.pickup(8.3, 0, -0.9, SHOTGUN) // glass room, beside the table
   m.pickup(6.5, 0.95, KW + 0.35, SHOTGUN) // kitchenette counter
   m.pickup(-10.8, 0, -7.8, SHOTGUN) // north-west hallway corner
   m.pickup(10.8, 0, 7.6, RIFLE) // south-east hallway corner
-  m.pickup(-8, 0.45, 7.3, RIFLE) // lounge coffee table
+  m.pickup(-8, 0.45, 7.3, MP5) // lounge coffee table
   return m.build()
 }

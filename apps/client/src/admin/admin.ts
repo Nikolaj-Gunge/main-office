@@ -70,6 +70,8 @@ const SPAWN_WEAPON_NAMES: Record<string, string> = {
   rifle: '+ Rifle',
   sniper: '+ Sniper',
   shotgun: '+ Shotgun',
+  mp5: '+ MP5',
+  lmg: '+ LMG',
   random: '+ Random',
 }
 
@@ -259,7 +261,7 @@ function render(): void {
   })
   const modeCard = card(
     'Game mode',
-    'Switching mode starts a new round. A round ends on time or when the score limit is reached, shows the winner, then the next one starts.',
+    'Switching mode starts a new round. A round ends on time or when the score limit is reached, shows the winner, then the next one starts. Zombies is co-op on one of the co-op maps (Outbreak, Dead Mall, Last Train — pick one under Map): the bot difficulty sets how tough the horde is, and bots fight on your team.',
     choiceGroup('Game mode', choices.modes, rules.mode, (id) => {
       if (id !== rules.mode) change({ mode: id as GameRules['mode'] }, true)
     }),

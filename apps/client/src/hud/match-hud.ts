@@ -1,4 +1,6 @@
 import {
+  type CoopDef,
+  type CoopInfo,
   GUN_GAME_LADDER,
   type MatchInfo,
   MODE_NAMES,
@@ -31,16 +33,30 @@ export class MatchHud {
   private readonly score: HTMLSpanElement
   private readonly status: HTMLDivElement
   private readonly endScreen: HTMLDivElement
+  private readonly progress: HTMLDivElement
+  private readonly progressFill: HTMLDivElement
+  private readonly banner: HTMLDivElement
+  private bannerUntil = 0
+  private lastStage: number | null = null
   private lastEndKey = ''
   /** Called once when a round ends (for the fanfare). */
   onRoundEnd?: (won: boolean) => void
+  /** Zombies: the team finished a stage (a gate opened). */
+  onStageDone?: () => void
+  /** The co-op map's stages (zombies mode). */
+  coop: CoopDef | undefined
 
   constructor(root: HTMLElement) {
     this.bar = el('div', 'hud-match', root)
     this.mode = el('span', 'hud-match-mode', this.bar)
     this.clock = el('span', 'hud-match-clock', this.bar)
     this.score = el('span', 'hud-match-score', this.bar)
+    this.progress = el('div', 'hud-coop-progress', root)
+    this.progressFill = el('div', '', this.progress)
+    this.progress.hidden = true
     this.status = el('div', 'hud-match-status', root)
+    this.banner = el('div', 'hud-coop-banner', root)
+    this.banner.hidden = true
     this.endScreen = el('div', 'hud-round-end', root)
     this.endScreen.hidden = true
     this.bar.hidden = true
@@ -76,6 +92,9 @@ export class MatchHud {
       const top = [...match.players].sort((a, b) => b.level - a.level)[0]
       score = `Level ${level + 1}/${GUN_GAME_LADDER.length}: ${step ? WEAPONS[step.weapon].name : '?'}`
       if (top && top.id !== me) score += ` · leader ${name(top.id)} (${top.level + 1})`
+    } else if (match.mode === 'zombies' && match.coop) {
+      ;({ score, status } = this.coopLine(match.coop, self?.out ?? false))
+      this.clock.textContent = match.phase === 'ended' ? 'ROUND OVER' : `${minutes}:${seconds}`
     } else if (match.mode === 'infection' && teams) {
       const survivors = match.players.filter((p) => p.team === 1).length
       const infected = match.players.filter((p) => p.team === 2).length
@@ -84,6 +103,11 @@ export class MatchHud {
         self?.team === 2 ? 'INFECTED — knife only, but faster' : 'Survive until the clock runs out'
     }
     this.score.textContent = score
+    if (match.mode !== 'zombies' || !match.coop) {
+      this.progress.hidden = true
+      this.lastStage = null
+    }
+    this.banner.hidden = performance.now() > this.bannerUntil
     this.status.textContent = status
     this.status.hidden = status === ''
     if (self && self.team !== 0 && teams)
@@ -91,6 +115,73 @@ export class MatchHud {
     else this.status.style.color = ''
 
     this.showEnd(match, me, name)
+  }
+
+  /** Zombies: stage and goal on the bar, the progress bar, and a banner when a gate opens. */
+  private coopLine(coop: CoopInfo, out: boolean): { score: string; status: string } {
+    const stages = this.coop?.stages ?? []
+    const stage = stages[coop.stage]
+    this.mode.textContent = `ZOMBIES · STAGE ${Math.min(coop.stage + 1, stages.length)}/${stages.length}`
+    if (this.lastStage !== null && coop.stage > this.lastStage) {
+      const next = stages[coop.stage]
+      this.showBanner(
+        next ? 'GATE OPEN' : 'ESCAPED!',
+        next ? `Next: ${next.name} — ${next.task}` : '',
+      )
+      this.onStageDone?.()
+    }
+    this.lastStage = coop.stage
+    if (!stage) {
+      this.progress.hidden = true
+      return { score: 'You made it out', status: '' }
+    }
+    const goal = stage.goal
+    let score = `${stage.name}: ${stage.task}`
+    let status = ''
+    switch (goal.kind) {
+      case 'kill':
+        if (coop.kills) score += ` ${coop.kills[0]}/${coop.kills[1]}`
+        break
+      case 'hold':
+        score += ` ${Math.floor(coop.progress * 100)}%`
+        if (coop.progress > 0 && coop.progress < 1) status = 'Stay in the green area!'
+        break
+      case 'survive':
+      case 'defend': {
+        const left = Math.max(0, Math.ceil(goal.seconds * (1 - coop.progress)))
+        score += ` ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+        if (goal.kind === 'defend' && coop.health !== undefined) {
+          const hp = Math.round(coop.health * 100)
+          score += ` · ${goal.what} ${hp}%`
+          if (hp < 35) status = `The ${goal.what} is breaking — get them off it!`
+        }
+        break
+      }
+      case 'activate': {
+        let done = 0
+        for (let i = 0; i < goal.spots.length; i++) if ((coop.parts ?? 0) & (1 << i)) done++
+        score += ` ${done}/${goal.spots.length}`
+        if (goal.seconds > 0) status = `Stand at each ${goal.what.toLowerCase()} until it's done`
+        break
+      }
+    }
+    this.progress.hidden = goal.kind === 'reach'
+    this.progressFill.style.width = `${Math.round(coop.progress * 100)}%`
+    if (out) status = "You're down — your team brings you back at the next checkpoint"
+    return { score, status }
+  }
+
+  showBanner(big: string, small: string, seconds = 4): void {
+    this.banner.replaceChildren()
+    el('div', 'big', this.banner).textContent = big
+    if (small) el('div', 'small', this.banner).textContent = small
+    this.bannerUntil = performance.now() + seconds * 1000
+    this.banner.hidden = false
+  }
+
+  /** Hides the stage banner once its time is up (call every frame). */
+  tick(): void {
+    if (!this.banner.hidden && performance.now() > this.bannerUntil) this.banner.hidden = true
   }
 
   private showEnd(match: MatchInfo, me: number, name: (id: number) => string): void {

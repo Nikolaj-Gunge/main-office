@@ -201,11 +201,18 @@ export class AudioEngine {
 
   /**
    * A gunshot, mixed by distance: up close you hear the mechanical crack and punch; far away
-   * mostly the echo, dulled and arriving late (sound travels 343 m/s).
+   * mostly the echo, dulled and arriving late (sound travels 343 m/s). `weapon` picks the voice
+   * (one of the original weapons); `tune` shifts its pitch and loudness for a gun that only
+   * sounds like it.
    */
-  gunshot(at: { x: number; y: number; z: number } | undefined, weapon: number): void {
+  gunshot(
+    at: { x: number; y: number; z: number } | undefined,
+    weapon: number,
+    tune: { rate: number; volume: number } = { rate: 1, volume: 1 },
+  ): void {
     const m = gunshotMix(at ? this.distanceTo(at) : null)
-    const voice = GUN_VOICES[weapon] ?? { rate: 1, volume: 1, tail: 1 }
+    const base = GUN_VOICES[weapon] ?? { rate: 1, volume: 1, tail: 1 }
+    const voice = { ...base, rate: base.rate * tune.rate, volume: base.volume * tune.volume }
     const rate = voice.rate * (0.97 + Math.random() * 0.06)
     const layer = (id: SoundId, level: number) =>
       this.play(id, {
@@ -222,7 +229,8 @@ export class AudioEngine {
 
   /**
    * Quieter world sounds (footsteps, impacts, casings): full volume within `ref` m, then falling
-   * off steeply and getting duller, silent beyond `range` m.
+   * off steeply and getting duller, silent beyond `range` m. `pitch` plays it higher (> 1) or
+   * lower.
    */
   playNear(
     id: SoundId,
@@ -230,9 +238,15 @@ export class AudioEngine {
     volume: number,
     range: number,
     ref = 3,
+    pitch = 1,
   ): void {
     const d = this.distanceTo(at)
-    this.play(id, { at, volume: volume * falloff(d, ref, range), lowpass: distanceLowpass(d) })
+    this.play(id, {
+      at,
+      volume: volume * falloff(d, ref, range),
+      lowpass: distanceLowpass(d),
+      rate: pitch * (0.96 + Math.random() * 0.08),
+    })
   }
 
   /** Health-driven heartbeat and muffled hearing. */

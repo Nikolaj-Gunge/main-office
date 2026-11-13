@@ -37,6 +37,10 @@ export interface MovementConfig {
   stepHeight: number
   maxSlopeDeg: number
   snapToGround: number
+  /** Seconds of sprinting a full breath lasts (0 = sprint for ever). */
+  sprintSeconds: number
+  /** Seconds to get all your breath back. */
+  breathSeconds: number
 }
 
 export const DEFAULT_MOVEMENT: MovementConfig = {
@@ -66,6 +70,8 @@ export const DEFAULT_MOVEMENT: MovementConfig = {
   stepHeight: 0.4,
   maxSlopeDeg: 46,
   snapToGround: 0.3,
+  sprintSeconds: 0,
+  breathSeconds: 13,
 }
 
 /** Peak jump height implied by a config (for UI and tests). */
