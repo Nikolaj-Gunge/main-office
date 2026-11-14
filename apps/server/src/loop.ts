@@ -55,7 +55,12 @@ export class GameLoop {
     let steps = 0
     while (this.accumulator >= this.stepMs && steps < MAX_CATCH_UP_TICKS) {
       const start = performance.now()
-      this.onTick()
+      try {
+        this.onTick()
+      } catch (err) {
+        // One bad tick must not stop the world for everybody: log it and carry on.
+        console.error('tick failed:', err)
+      }
       const ms = performance.now() - start
       this.tickMs += (ms - this.tickMs) * 0.05
       this.maxTickMs = Math.max(this.maxTickMs, ms)

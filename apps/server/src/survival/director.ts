@@ -26,6 +26,7 @@ import {
   infectionStage,
   type LootItem,
   MAX_PLANKS,
+  MAX_PLAYERS,
   type MapSpawn,
   type Notice,
   type Npc,
@@ -332,6 +333,13 @@ export class SurvivalDirector {
   }
 
   onLeave(player: ServerPlayer): void {
+    if (player.zombie) {
+      // One of the dead gave up its place to somebody joining: forget it (its body is gone).
+      this.pool = this.pool.filter((z) => z !== player)
+      this.zeds.delete(player.id)
+      this.turned.delete(player.id)
+      return
+    }
     const sv = this.survivors.get(player.id)
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
@@ -1715,6 +1723,13 @@ export class SurvivalDirector {
       this.game.retireZombie(z)
     }
     if (people.length === 0) return
+    // Places the dead gave up to people who have since left: take them back (keeping two free).
+    while (this.pool.length < POOL && this.game.players.size < MAX_PLAYERS - 2) {
+      const zombie = this.game.addZombie(new Zed(this.random))
+      if (!zombie) break
+      this.pool.push(zombie)
+      this.zeds.set(zombie.id, zombie.zombie as Zed)
+    }
     const free = () => this.pool.find((z) => !z.state.alive)
     const active = this.pool.filter((z) => z.state.alive)
     const dark = this.light < 0.3
