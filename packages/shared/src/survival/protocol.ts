@@ -1,20 +1,31 @@
-import type { WeaponSlot } from '../sim/weapons.ts'
 import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
-import { ITEMS, POCKETS_KG } from './items.ts'
+import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
+import { ITEMS } from './items.ts'
 import type { WeatherShared } from './weather.ts'
 
-/** Some of one item in a backpack. Weapons never stack (n = 1) and remember what's loaded. */
+/** Some of one item. Weapons never stack (n = 1) and remember what's loaded. */
 export interface Stack {
   item: string
   n: number
   ammo?: number
 }
 
+/**
+ * A stack in a pocket or the backpack (grid.ts): in container `c` with its top-left cell at
+ * (x, y), turned on its side when r = 1.
+ */
+export interface Held extends Stack {
+  c: ContainerId
+  x: number
+  y: number
+  r?: 1
+}
+
 /** What a survivor has and how they're doing (sent to them alone, when it changes). */
 export interface SurvivalSelf {
-  /** The backpack: everything carried that isn't in your hands. */
-  inv: Stack[]
+  /** Everything carried that isn't in your hands or on you, and where it lies (grid.ts). */
+  inv: Held[]
   /** The backpack worn (an item id), or null: pockets only. */
   pack: string | null
   /** Clothes and gear worn, by slot (item ids, see gear.ts). */
@@ -61,15 +72,16 @@ export interface SurvivalShared {
 }
 
 export type SurvivalAction =
-  /** Eat, drink, bandage, put on a backpack or clothes, load batteries. */
-  | { a: 'use'; item: string }
-  | { a: 'drop'; item: string; n: number }
-  /** Take the weapon at this backpack index in hand (what was in that slot goes in the pack). */
-  | { a: 'equip'; index: number }
-  /** Put the weapon in this slot into the backpack. */
-  | { a: 'stow'; slot: WeaponSlot }
-  /** Take off what you wear in this slot (it goes in the backpack). */
-  | { a: 'unwear'; slot: WearSlot }
+  /**
+   * The obvious thing: eat, drink, bandage, load batteries; put on clothes or a backpack, take a
+   * weapon in hand; take off what's worn; pick up what's on the ground.
+   */
+  | { a: 'use'; from: ItemRef }
+  /**
+   * Drag and drop: from a cell, a slot or the ground to a cell, a slot, the ground or wherever it
+   * fits. `n` moves only that many of a stack (splitting it); onto the same item, it tops it up.
+   */
+  | { a: 'move'; from: ItemRef; to: ItemDest; n?: number }
   | { a: 'buy'; item: string; n: number }
   | { a: 'sell'; item: string; n: number }
   | { a: 'light'; on: boolean }
@@ -104,13 +116,7 @@ export interface LootItem {
   z: number
 }
 
-// --- Inventory arithmetic (shared so the client can show what will fit) -----------------------
-
-export function capacityOf(self: Pick<SurvivalSelf, 'pack' | 'wear'>): number {
-  let kg = (self.pack ? ITEMS[self.pack]?.capacity : undefined) ?? POCKETS_KG
-  for (const id of Object.values(self.wear ?? {})) kg += (id ? GEAR[id]?.pockets : 0) ?? 0
-  return kg
-}
+// --- Inventory arithmetic (the grid itself: grid.ts) ------------------------------------------
 
 /**
  * What everything worn adds up to (armour by where it covers, how hidden and how quiet).
@@ -147,26 +153,7 @@ export function countOf(stacks: readonly Stack[], item: string): number {
   return n
 }
 
-/** How many of `item` still fit in the backpack (weightless things always do). */
-export function roomFor(self: Pick<SurvivalSelf, 'pack' | 'inv' | 'wear'>, item: string): number {
-  const weight = ITEMS[item]?.weight ?? 0
-  if (weight <= 0) return Number.POSITIVE_INFINITY
-  return Math.max(0, Math.floor((capacityOf(self) - weightOf(self.inv) + 1e-6) / weight))
-}
-
-/** Adds to the backpack (no capacity check: see roomFor). Weapons get their own stack each. */
-export function addStack(stacks: Stack[], item: string, n: number, ammo?: number): void {
-  if (n <= 0) return
-  if (ITEMS[item]?.kind === 'weapon') {
-    for (let i = 0; i < n; i++) stacks.push({ item, n: 1, ammo: ammo ?? 0 })
-    return
-  }
-  const existing = stacks.find((s) => s.item === item)
-  if (existing) existing.n += n
-  else stacks.push({ item, n })
-}
-
-/** Takes up to `n` out of the backpack; returns how many it got. */
+/** Takes up to `n` out of the backpack and pockets; returns how many it got. */
 export function takeStack(stacks: Stack[], item: string, n: number): number {
   let left = n
   for (let i = stacks.length - 1; i >= 0 && left > 0; i--) {
