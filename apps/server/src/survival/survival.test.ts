@@ -41,6 +41,7 @@ import {
   WeaponId,
   type WeatherKind,
   weatherAt,
+  ZombieKind,
 } from '@office-fps/shared'
 import { Game, type ServerPlayer } from '../game.ts'
 import { openGround } from './drops.ts'
@@ -277,7 +278,7 @@ describe('survival: the night', () => {
     }
   })
 
-  test('a town has many more, and a headshot does not kill outright', () => {
+  test('a town has many more; a headshot drops them, all but a brute', () => {
     const t = setup()
     t.run(1)
     const town = t.def.pois.find((p) => p.key === 'pinewatch')
@@ -287,7 +288,9 @@ describe('survival: the night', () => {
     expect(t.zombies().length).toBeGreaterThanOrEqual(6)
     const walker = t.zombies().find((z) => z.maxHealth >= 200)
     if (!walker) throw new Error('no walker')
-    expect(t.game.match.headshotKills(walker)).toBe(false)
+    expect(t.game.match.headshotKills(walker)).toBe(true)
+    const brute = { ...walker, zombie: { ...walker.zombie, kind: ZombieKind.Brute } }
+    expect(t.game.match.headshotKills(brute as typeof walker)).toBe(false)
   })
 
   test('dying drops everything where you fell; somebody new wakes at Haven', () => {
