@@ -1,17 +1,15 @@
 import {
   AMMO_BOX,
-  capacityOf,
   countOf,
   type Dialog,
   dayPhase,
-  GEAR,
-  INFECTION_SECONDS,
   ITEMS,
   type ItemDef,
   type ItemKind,
   infectionClock,
   infectionStage,
   infectionWord,
+  type LootItem,
   type Notice,
   type Poi,
   poiAt,
@@ -28,14 +26,15 @@ import {
   type SurvivalShared,
   stepTargets,
   WEAPONS,
-  WEAR_SLOTS,
-  WeaponId,
-  type WearSlot,
+  type WeaponId,
   WORLD_HALF,
   WORLD_SIZE,
-  weightOf,
 } from '@office-fps/shared'
+import { InventoryScreen } from './inventory-screen.ts'
+import { effectText } from './item-text.ts'
 import { markerSpot } from './objective-marker.ts'
+
+export { effectText }
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -63,6 +62,8 @@ export interface SurvivalHudContext {
   carried: readonly { id: WeaponId; ammo: number }[]
   /** Bitten: seconds until you turn (counted on between the server's updates), or null. */
   infected?: number | null
+  /** Things lying within reach (the inventory's vicinity panel). */
+  nearby?: readonly LootItem[]
   /** Where a world point lands on screen (CSS px), and whether it is behind you. */
   project?: (x: number, y: number, z: number) => { x: number; y: number; behind: boolean }
 }
@@ -110,7 +111,6 @@ const KIND_TITLE: Record<ItemKind, string> = {
   quest: 'Quest',
   money: 'Cash',
 }
-const SLOT_KEY = { primary: '1', sidearm: '2', melee: '3' } as const
 
 /** Degrees clockwise from north that `yaw` looks. */
 export function headingOf(yaw: number): number {
@@ -125,48 +125,6 @@ export function bearingTo(from: { x: number; z: number }, to: { x: number; z: nu
 /** Smallest signed difference a − b in degrees (−180…180). */
 export function turnBetween(a: number, b: number): number {
   return ((((a - b + 180) % 360) + 360) % 360) - 180
-}
-
-/** What shows in an empty slot of the "Wearing" list: what everyone starts out in. */
-const STARTING_CLOTHES: Record<WearSlot, string> = {
-  head: '—',
-  body: 'Tank top',
-  legs: 'Joggers',
-  feet: 'Barefoot',
-}
-
-/** What using an item does, in a few words. */
-export function effectText(def: ItemDef): string {
-  const parts: string[] = []
-  const signed = (v: number, what: string) => parts.push(`${v > 0 ? '+' : ''}${v} ${what}`)
-  if (def.hunger) signed(def.hunger, 'food')
-  if (def.thirst) signed(def.thirst, 'water')
-  if (def.health) signed(def.health, 'health')
-  if (def.stamina) parts.push('restores breath')
-  if (def.stopsBleeding) parts.push('stops bleeding')
-  if (def.infection === 'delay')
-    parts.push(`holds off the turn (${INFECTION_SECONDS / 60} min again)`)
-  if (def.infection === 'cure') parts.push('cures the bite')
-  if (def.capacity) parts.push(`carries ${def.capacity} kg`)
-  const gear = GEAR[def.id]
-  if (gear) {
-    parts.push(`worn on the ${gear.slot}`)
-    if (gear.armour) parts.push(`stops ${Math.round(gear.armour * 100)}% damage`)
-    if (gear.pockets) parts.push(`+${gear.pockets} kg pockets`)
-    if (gear.stealth) parts.push(`${Math.round(gear.stealth * 100)}% harder to see`)
-    if (gear.quiet && gear.quiet > 0) parts.push(`${Math.round(gear.quiet * 100)}% quieter`)
-    if (gear.quiet && gear.quiet < 0) parts.push('a bit noisy')
-  }
-  if (def.battery) parts.push('recharges the torch')
-  if (def.weapon !== undefined) {
-    const w = WEAPONS[def.weapon]
-    parts.push(
-      w.slot === 'melee'
-        ? `melee · ${w.damage} damage`
-        : `${w.ammoType} · ${w.magSize} rounds · ${w.damage * (w.pellets ?? 1)} damage`,
-    )
-  }
-  return parts.join(' · ')
 }
 
 /** One line for a quest step, with how far along it is. */
@@ -189,8 +147,6 @@ export function stepLine(step: QuestStep, state: QuestState, inv: readonly Stack
       return step.text
   }
 }
-
-const kg = (v: number) => (v >= 10 ? v.toFixed(0) : v.toFixed(1))
 
 /**
  * Everything survival mode puts on screen: how you're doing, what the story wants, what people
@@ -251,12 +207,14 @@ export class SurvivalHud {
   private readonly panel: HTMLDivElement
   private screen: 'none' | 'pack' | 'shop' = 'none'
   private shop: Dialog | null = null
+  /** The inventory grid (Tab / I). */
+  private readonly inventory: InventoryScreen
   private selected = 0
   /** Scroll the selected row into view on the next draw (only after W/S, never on a refresh). */
   private revealPick = false
   /** Which screen the lists' scroll positions belong to. */
   private scrolledScreen = ''
-  private rows: { stack: Stack; index: number }[] = []
+  private rows: Stack[] = []
   private shift = false
   private readonly map: HTMLCanvasElement
   private mapBase: HTMLCanvasElement | null = null
@@ -317,6 +275,7 @@ export class SurvivalHud {
     this.talk.hidden = true
     this.panel = el('div', 'sv-panel', this.root)
     this.panel.hidden = true
+    this.inventory = new InventoryScreen(this.root, send, (cue) => this.onSound?.(cue))
     this.map = el('canvas', 'sv-map', this.root)
     this.map.hidden = true
     window.addEventListener('keydown', (e) => {
@@ -352,7 +311,8 @@ export class SurvivalHud {
   setSelf(self: SurvivalSelf): void {
     this.self = self
     this.refreshTracker()
-    if (this.screen !== 'none') this.drawScreen()
+    this.inventory.setSelf(self)
+    if (this.screen === 'shop') this.drawScreen()
   }
 
   setShared(shared: SurvivalShared): void {
@@ -423,6 +383,7 @@ export class SurvivalHud {
 
   /** Esc: closes whatever is open; true if something was. */
   close(): boolean {
+    if (this.screen === 'pack' && this.inventory.key('Escape')) return true
     if (this.screen !== 'none') {
       this.setScreen('none')
       return true
@@ -461,12 +422,15 @@ export class SurvivalHud {
       return true
     }
     if (this.screen === 'none') return false
+    if (this.screen === 'pack') {
+      this.inventory.key(code)
+      return true // everything else is swallowed while a screen is open
+    }
     const n = this.rows.length
     if (code === 'ArrowDown' || code === 'KeyS') this.selected = Math.min(n - 1, this.selected + 1)
     else if (code === 'ArrowUp' || code === 'KeyW') this.selected = Math.max(0, this.selected - 1)
-    else if (code === 'Enter' || code === 'KeyE') this.act(this.rows[this.selected], 'main')
-    else if (code === 'KeyG') this.act(this.rows[this.selected], 'drop')
-    else return true // everything else is swallowed while a screen is open
+    else if (code === 'Enter' || code === 'KeyE') this.sell(this.rows[this.selected])
+    else return true
     this.revealPick = true
     this.drawScreen()
     return true
@@ -476,6 +440,13 @@ export class SurvivalHud {
     if (!this.visible) return
     this.ctx = ctx
     this.clock += dt
+    if (this.screen === 'pack') {
+      this.inventory.setContext({
+        carried: ctx.carried,
+        nearby: ctx.nearby ?? [],
+        infected: ctx.infected ?? this.self?.infected ?? null,
+      })
+    }
     const self = this.self
     if (self) {
       this.setBar(this.food, self.hunger)
@@ -720,44 +691,32 @@ export class SurvivalHud {
       this.shop = null
     }
     this.screen = screen
-    this.panel.hidden = screen === 'none'
+    this.panel.hidden = screen !== 'shop'
     if (screen !== 'none') {
       this.mapOpen = false
       this.map.hidden = true
-      this.drawScreen()
     }
+    if (screen === 'shop') this.drawScreen()
+    if (screen === 'pack' && this.ctx) {
+      this.inventory.setContext({
+        carried: this.ctx.carried,
+        nearby: this.ctx.nearby ?? [],
+        infected: this.ctx.infected ?? null,
+      })
+    }
+    if (this.inventory.open !== (screen === 'pack')) this.inventory.setOpen(screen === 'pack')
     if (was !== this.modal) {
       this.onSound?.(this.modal ? 'open' : 'close')
       this.onModalChange?.(this.modal)
     }
   }
 
-  private act(row: { stack: Stack; index: number } | undefined, what: 'main' | 'drop'): void {
-    const self = this.self
-    if (!row || !self) return
-    const def = ITEMS[row.stack.item]
-    if (!def) return
-    if (this.screen === 'shop') {
-      if (def.kind === 'quest' || def.kind === 'money') return
-      this.send({ a: 'sell', item: def.id, n: this.shift ? row.stack.n : 1 })
-      this.onSound?.('coin')
-      return
-    }
-    if (what === 'drop') {
-      if (def.kind === 'quest') return void this.onSound?.('deny')
-      this.send({ a: 'drop', item: def.id, n: this.shift ? row.stack.n : 1 })
-    } else if (def.kind === 'weapon') this.send({ a: 'equip', index: row.index })
-    else if (
-      def.kind === 'food' ||
-      def.kind === 'drink' ||
-      def.kind === 'med' ||
-      def.kind === 'pack' ||
-      def.kind === 'wear' ||
-      def.battery
-    ) {
-      this.send({ a: 'use', item: def.id })
-    } else return void this.onSound?.('deny')
-    this.onSound?.('use')
+  /** Sells one (Shift: the lot) to the trader. */
+  private sell(stack: Stack | undefined): void {
+    const def = stack ? ITEMS[stack.item] : undefined
+    if (!stack || !def || def.kind === 'quest' || def.kind === 'money') return
+    this.send({ a: 'sell', item: def.id, n: this.shift ? stack.n : 1 })
+    this.onSound?.('coin')
   }
 
   private button(parent: HTMLElement, label: string, onClick: () => void, enabled = true): void {
@@ -769,159 +728,87 @@ export class SurvivalHud {
     })
   }
 
-  /** The backpack's stacks in display order: by kind, then by name. */
-  private sorted(
-    inv: readonly Stack[],
-    filter: (def: ItemDef) => boolean = () => true,
-  ): { stack: Stack; index: number }[] {
-    return inv
-      .map((stack, index) => ({ stack, index }))
-      .filter((r) => {
-        const def = ITEMS[r.stack.item]
-        return def !== undefined && filter(def)
-      })
-      .sort((a, b) => {
-        const da = ITEMS[a.stack.item] as ItemDef
-        const db = ITEMS[b.stack.item] as ItemDef
-        return (
-          KIND_ORDER.indexOf(da.kind) - KIND_ORDER.indexOf(db.kind) ||
-          da.name.localeCompare(db.name)
-        )
-      })
+  /** What you could sell, one line per thing (stacks of it added up): by kind, then by name. */
+  private sellable(inv: readonly Stack[]): Stack[] {
+    const out: Stack[] = []
+    for (const s of inv) {
+      const def = ITEMS[s.item]
+      if (!def || def.kind === 'quest' || def.kind === 'money') continue
+      const same = def.kind !== 'weapon' && out.find((o) => o.item === s.item)
+      if (same) same.n += s.n
+      else out.push({ item: s.item, n: s.n })
+    }
+    return out.sort((a, b) => {
+      const da = ITEMS[a.item] as ItemDef
+      const db = ITEMS[b.item] as ItemDef
+      return (
+        KIND_ORDER.indexOf(da.kind) - KIND_ORDER.indexOf(db.kind) || da.name.localeCompare(db.name)
+      )
+    })
   }
 
+  /** The trader's stall: what he has, and what you could sell him. */
   private drawScreen(): void {
     const self = this.self
-    if (!self) return
+    const shop = this.shop
+    if (!self || !shop) return
     // Redraws come with every change to what you have (hunger ticking down, too): keep every list
     // where it was scrolled to.
-    const key = `${this.screen}:${this.shop?.name ?? ''}`
+    const key = `${this.screen}:${shop.name}`
     const scrolls =
       key === this.scrolledScreen
         ? [...this.panel.querySelectorAll('.sv-list')].map((l) => l.scrollTop)
         : []
     this.scrolledScreen = key
     this.panel.replaceChildren()
-    const shop = this.screen === 'shop' ? this.shop : null
     const head = el('div', 'sv-panel-head', this.panel)
-    el('b', '', head, shop ? `${shop.name.toUpperCase()}'S STALL` : 'BACKPACK')
+    el('b', '', head, `${shop.name.toUpperCase()}'S STALL`)
     el('span', 'sv-panel-money', head, `$${self.money}`)
     const body = el('div', 'sv-panel-body', this.panel)
     const left = el('div', 'sv-col', body)
     const right = el('div', 'sv-col', body)
 
-    if (shop) {
-      el('div', 'sv-shop-say', left, shop.text)
-      el('div', 'sv-group', left, 'For sale')
-      const list = el('div', 'sv-list', left)
-      // Rounds for the guns you carry come first, and say which gun they're for.
-      const carried = this.ctx?.carried ?? []
-      const forYours = (id: string) => {
-        const ammo = ITEMS[id]?.ammo
-        if (!ammo) return []
-        return carried.filter((c) => WEAPONS[c.id].ammoType === ammo).map((c) => WEAPONS[c.id].name)
-      }
-      const stock = [...(shop.shop ?? [])].sort(
-        (a, b) => Number(forYours(b[0]).length > 0) - Number(forYours(a[0]).length > 0),
-      )
-      for (const [id, price] of stock) {
-        const def = ITEMS[id]
-        if (!def) continue
-        const each = def.kind === 'ammo' ? AMMO_BOX : 1
-        const row = el('div', 'sv-row', list)
-        const yours = forYours(id)
-        el(
-          'span',
-          'sv-row-name',
-          row,
-          `${def.name}${each > 1 ? ` ×${each}` : ''}${yours.length ? ` · for your ${yours.join(', ')}` : ''}`,
-        )
-        el('span', 'sv-row-info', row, `$${price}`)
-        const can = self.money >= price && roomFor(self, id) >= each
-        this.button(row, 'Buy', () => this.send({ a: 'buy', item: id, n: 1 }), can)
-        row.title = `${def.desc} ${effectText(def)}`
-      }
-    } else {
-      el('div', 'sv-group', left, 'In your hands')
-      const carried = this.ctx?.carried ?? []
-      for (const slot of ['primary', 'sidearm', 'melee'] as const) {
-        const w = carried.find((c) => WEAPONS[c.id].slot === slot)
-        const row = el('div', 'sv-row', left)
-        el('span', 'sv-row-key', row, SLOT_KEY[slot])
-        if (!w) {
-          el('span', 'sv-row-name empty', row, '— nothing —')
-          continue
-        }
-        const def = WEAPONS[w.id]
-        el('span', 'sv-row-name', row, def.name)
-        el(
-          'span',
-          'sv-row-info',
-          row,
-          slot === 'melee'
-            ? ''
-            : `${w.ammo}/${def.magSize} · ${self.inv ? this.spare(def.ammoType) : 0} spare`,
-        )
-        // Bare fists can't be put away; a blade can (it leaves your fists).
-        if (w.id === WeaponId.Fists) continue
-        this.button(
-          row,
-          'Stow',
-          () => this.send({ a: 'stow', slot }),
-          carried.length > 1 || slot === 'melee',
-        )
-      }
-      el('div', 'sv-group', left, 'Carrying')
-      const weight = weightOf(self.inv)
-      const cap = capacityOf(self)
+    el('div', 'sv-shop-say', left, shop.text)
+    el('div', 'sv-group', left, 'For sale')
+    const stall = el('div', 'sv-list', left)
+    // Rounds for the guns you carry come first, and say which gun they're for.
+    const carried = this.ctx?.carried ?? []
+    const forYours = (id: string) => {
+      const ammo = ITEMS[id]?.ammo
+      if (!ammo) return []
+      return carried.filter((c) => WEAPONS[c.id].ammoType === ammo).map((c) => WEAPONS[c.id].name)
+    }
+    const stock = [...(shop.shop ?? [])].sort(
+      (a, b) => Number(forYours(b[0]).length > 0) - Number(forYours(a[0]).length > 0),
+    )
+    for (const [id, price] of stock) {
+      const def = ITEMS[id]
+      if (!def) continue
+      const each = def.kind === 'ammo' ? AMMO_BOX : 1
+      const row = el('div', 'sv-row', stall)
+      const yours = forYours(id)
       el(
-        'div',
-        'sv-pack',
-        left,
-        self.pack ? (ITEMS[self.pack]?.name ?? 'Backpack') : 'Pockets only — find a backpack',
+        'span',
+        'sv-row-name',
+        row,
+        `${def.name}${each > 1 ? ` ×${each}` : ''}${yours.length ? ` · for your ${yours.join(', ')}` : ''}`,
       )
-      const bar = el('div', 'sv-weight', left)
-      const fill = el('i', weight > cap * 0.9 ? 'low' : '', bar)
-      fill.style.width = `${Math.min(100, (weight / cap) * 100)}%`
-      el('div', 'sv-weight-text', left, `${kg(weight)} / ${kg(cap)} kg`)
-      el('div', 'sv-group', left, 'Wearing')
-      for (const slot of WEAR_SLOTS) {
-        const id = self.wear?.[slot]
-        const row = el('div', 'sv-worn', left)
-        el('span', 'sv-worn-slot', row, slot.toUpperCase())
-        el(
-          'span',
-          id ? 'sv-worn-name' : 'sv-worn-name empty',
-          row,
-          id ? (ITEMS[id]?.name ?? id) : STARTING_CLOTHES[slot],
-        )
-        if (id) this.button(row, 'Take off', () => this.send({ a: 'unwear', slot }))
-      }
-      // Bitten: how it's going, and roughly how long you have (only ever said here).
-      const turnIn = this.ctx?.infected ?? self.infected ?? null
-      if (turnIn !== null) {
-        el('div', 'sv-group', left, 'Condition')
-        const row = el('div', 'sv-condition', left)
-        el('b', '', row, `Infected — ${infectionWord(turnIn).toLowerCase()}.`)
-        el('span', '', row, ` ${infectionClock(turnIn)} left.`)
-        el('div', 'sv-condition-help', left, 'Adrenaline holds it back. Only a cure stops it.')
-      }
-      el('div', 'sv-help', left, 'W/S select · E use or equip · G drop (Shift: all) · Tab close')
+      el('span', 'sv-row-info', row, `$${price}`)
+      const room = roomFor(self, id) >= each
+      const can = self.money >= price && room
+      this.button(row, 'Buy', () => this.send({ a: 'buy', item: id, n: 1 }), can)
+      row.title = `${def.desc} ${effectText(def)}${room ? '' : ' (no room for it)'}`
     }
 
-    // Your things: to use and drop, or to sell.
-    this.rows = this.sorted(
-      self.inv,
-      shop ? (d) => d.kind !== 'quest' && d.kind !== 'money' : undefined,
-    )
+    // Your things, to sell.
+    this.rows = this.sellable(self.inv)
     this.selected = Math.max(0, Math.min(this.rows.length - 1, this.selected))
-    el('div', 'sv-group', right, shop ? 'You sell' : 'In your pack')
+    el('div', 'sv-group', right, 'You sell')
     const list = el('div', 'sv-list', right)
-    if (this.rows.length === 0)
-      el('div', 'sv-row-name empty', list, shop ? 'Nothing to sell.' : 'Empty.')
+    if (this.rows.length === 0) el('div', 'sv-row-name empty', list, 'Nothing to sell.')
     let lastKind: ItemKind | null = null
-    this.rows.forEach((row, i) => {
-      const def = ITEMS[row.stack.item] as ItemDef
+    this.rows.forEach((stack, i) => {
+      const def = ITEMS[stack.item] as ItemDef
       if (def.kind !== lastKind) {
         lastKind = def.kind
         el('div', 'sv-kind', list, KIND_TITLE[def.kind])
@@ -931,27 +818,9 @@ export class SurvivalHud {
         this.selected = i
         this.drawScreen()
       })
-      el('span', 'sv-row-name', node, `${def.name}${row.stack.n > 1 ? ` ×${row.stack.n}` : ''}`)
-      if (shop) {
-        el('span', 'sv-row-info', node, `$${Math.floor(def.value * SELL_RATE)}`)
-        this.button(node, 'Sell', () => this.act(row, 'main'))
-      } else {
-        el('span', 'sv-row-info', node, `${kg(def.weight * row.stack.n)} kg`)
-        const verb =
-          def.kind === 'weapon'
-            ? 'Equip'
-            : def.kind === 'pack' || def.kind === 'wear'
-              ? 'Wear'
-              : def.kind === 'food'
-                ? 'Eat'
-                : def.kind === 'drink'
-                  ? 'Drink'
-                  : def.kind === 'med' || def.battery
-                    ? 'Use'
-                    : null
-        if (verb) this.button(node, verb, () => this.act(row, 'main'))
-        if (def.kind !== 'quest') this.button(node, 'Drop', () => this.act(row, 'drop'))
-      }
+      el('span', 'sv-row-name', node, `${def.name}${stack.n > 1 ? ` ×${stack.n}` : ''}`)
+      el('span', 'sv-row-info', node, `$${Math.floor(def.value * SELL_RATE)}`)
+      this.button(node, 'Sell', () => this.sell(stack))
       if (i === this.selected) {
         const detail = el('div', 'sv-detail', list)
         el('div', '', detail, def.desc)
@@ -959,6 +828,7 @@ export class SurvivalHud {
         if (effect) el('div', 'effect', detail, effect)
       }
     })
+    el('div', 'sv-help', right, 'W/S select · E sell one (Shift: all) · Esc close')
     this.panel.querySelectorAll('.sv-list').forEach((l, i) => {
       l.scrollTop = scrolls[i] ?? 0
     })
@@ -969,11 +839,6 @@ export class SurvivalHud {
       else if (picked.offsetTop + 60 > list.scrollTop + list.clientHeight)
         list.scrollTop = picked.offsetTop + 90 - list.clientHeight
     }
-  }
-
-  private spare(type: string | undefined): number {
-    const def = Object.values(ITEMS).find((i) => i.ammo !== undefined && i.ammo === type)
-    return def && this.self ? countOf(this.self.inv, def.id) : 0
   }
 
   // --- The map -------------------------------------------------------------------------------
