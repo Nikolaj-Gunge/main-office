@@ -12,13 +12,13 @@ import { filterTexture } from './textures.ts'
  * birch). Far away the mips even it out to the plain colour.
  */
 
-/** Texels a metre. */
-export const GRAIN_PX = 12
+/** Texels a metre (big enough to survive the pixel renderer at 5–20 m). */
+export const GRAIN_PX = 8
 /** The texture is GRAIN_SIZE² texels and repeats (every GRAIN_SIZE / GRAIN_PX metres). */
 export const GRAIN_SIZE = 128
 /** A channel's 0…1 turns the colour into LOW … LOW + RANGE times itself (0.5: unchanged). */
-export const GRAIN_LOW = 0.5
-export const GRAIN_RANGE = 1
+export const GRAIN_LOW = 0.35
+export const GRAIN_RANGE = 1.3
 /** Linear red above which wood is birch bark (white with dark marks). */
 export const GRAIN_PALE = 0.25
 
@@ -53,45 +53,41 @@ function paintGrain(): Uint8Array {
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const i = y * N + x
-      // Bark: ridges, every column of texels its own shade, with dark grooves between that
-      // run a way up the trunk and break off.
+      // Bark: light ridges, every column of texels its own shade, with deep grooves between
+      // that run a way up the trunk and break off.
       const column = hash2(x, 0, 51)
       const drift = tileNoise(x, y, 16, 52)
-      const groove = column < 0.3 && tileNoise(x, y, 6, 50) > 0.35
-      bark[i] = groove ? 0.2 : 0.36 + (column - 0.3) * 0.45 + drift * 0.15
-      // Leaves: dark hollows and lit clumps half a metre across, tufts of 2×2 texels on top.
-      const clumps = tileNoise(x, y, 8, 53)
-      const tufts = hash2(x >> 1, y >> 1, 54)
-      leaf[i] = 0.2 + clumps * 0.4 + tufts * 0.25
-      // Rock: grit and broad stains.
-      rock[i] = 0.25 + hash2(x, y, 55) * 0.35 + tileNoise(x, y, 32, 56) * 0.25
-      birch[i] = 0.5 + (hash2(x, y, 57) - 0.5) * 0.12
+      const groove = column < 0.35 && tileNoise(x, y, 4, 50) > 0.3
+      bark[i] = groove ? 0.02 : 0.55 + (column - 0.35) * 0.35 + (drift - 0.5) * 0.2
+      // Needles: rows of tufts, each a few texels wide and staggered row to row, the row's
+      // underside in shadow; darker hollows and lit clumps across the tree on top of that.
+      const row = Math.floor(y / 3)
+      const tuft = Math.floor((x + (row % 2) * 2) / 4)
+      const under = y % 3 === 0 ? -0.22 : 0
+      const clumps = tileNoise(x, y, 6, 53)
+      leaf[i] = 0.12 + clumps * 0.5 + hash2(tuft, row, 54) * 0.35 + under + 0.05
+      // Rock: coarse grit and broad stains.
+      rock[i] = 0.15 + hash2(x, y, 55) * 0.5 + tileNoise(x, y, 24, 56) * 0.25
+      birch[i] = 0.52 + (hash2(x, y, 57) - 0.5) * 0.15
     }
   }
-  // Bark: deep splits running up the trunk, a texel wide, some way between branches.
-  for (let k = 0; k < 60; k++) {
-    const x = Math.floor(hash2(k, 1, 58) * N)
-    const y0 = Math.floor(hash2(k, 2, 58) * N)
-    const len = 6 + Math.floor(hash2(k, 3, 58) * 18)
-    for (let j = 0; j < len; j++) bark[((y0 + j) % N) * N + x] = 0.05
-  }
-  // Rock: cracks wandering across, a texel at a time.
-  for (let k = 0; k < 16; k++) {
+  // Rock: cracks wandering across, a texel at a time, some forking.
+  for (let k = 0; k < 28; k++) {
     let x = Math.floor(hash2(k, 4, 59) * N)
     let y = Math.floor(hash2(k, 5, 59) * N)
     const dx = hash2(k, 6, 59) < 0.5 ? 1 : -1
-    for (let j = 0; j < 14 + hash2(k, 7, 59) * 16; j++) {
-      rock[((y + N) % N) * N + ((x + N) % N)] = 0.05
+    for (let j = 0; j < 10 + hash2(k, 7, 59) * 14; j++) {
+      rock[((y + N) % N) * N + ((x + N) % N)] = 0
       if (hash2(k, j, 60) < 0.6) x += dx
       else y += hash2(k, j, 61) < 0.5 ? 1 : -1
     }
   }
   // Birch: the black dashes across a white trunk.
-  for (let k = 0; k < 400; k++) {
+  for (let k = 0; k < 300; k++) {
     const x0 = Math.floor(hash2(k, 8, 62) * N)
     const y = Math.floor(hash2(k, 9, 62) * N)
-    const len = 2 + Math.floor(hash2(k, 10, 62) * 5)
-    for (let j = 0; j < len; j++) birch[y * N + ((x0 + j) % N)] = 0.05
+    const len = 2 + Math.floor(hash2(k, 10, 62) * 4)
+    for (let j = 0; j < len; j++) birch[y * N + ((x0 + j) % N)] = 0
   }
   for (let i = 0; i < N * N; i++) {
     data[i * 4] = Math.round(clamp01(bark[i] as number) * 255)

@@ -42,6 +42,11 @@ const PER_FRAME = 1
 /** Ground detail (grass, twigs, mushrooms…) is built for chunks this close to you (m). */
 const DETAIL_VIEW = 78
 
+/** How much lighter a cone's rim (its branch tips) is than its colour. */
+const TIPS = 1.45
+const litTips = new THREE.Color()
+const litTipsDark = new THREE.Color()
+
 /** Collects flat-shaded, vertex-coloured triangles. */
 class Triangles {
   readonly position: number[] = []
@@ -57,7 +62,8 @@ class Triangles {
     this.root = { y, stiff, phase }
   }
 
-  tri(a: number[], b: number[], c: number[], color: THREE.Color): void {
+  /** @param edge colour for a and b instead (c keeps `color`: shades from one to the other) */
+  tri(a: number[], b: number[], c: number[], color: THREE.Color, edge = color): void {
     const ux = (b[0] as number) - (a[0] as number)
     const uy = (b[1] as number) - (a[1] as number)
     const uz = (b[2] as number) - (a[2] as number)
@@ -74,7 +80,8 @@ class Triangles {
     for (const p of [a, b, c]) {
       this.position.push(p[0] as number, p[1] as number, p[2] as number)
       this.normal.push(nx, ny, nz)
-      this.color.push(color.r, color.g, color.b)
+      const k = p === c ? color : edge
+      this.color.push(k.r, k.g, k.b)
       const up = Math.max(0, (p[1] as number) - this.root.y) / 6
       this.sway.push(this.root.stiff * up ** 1.5, this.root.phase)
     }
@@ -148,8 +155,18 @@ class Triangles {
       const a = turn + (i * Math.PI) / 2
       rim.push([x + Math.cos(a) * r, y, z - Math.sin(a) * r])
     }
+    // The branch tips round the rim catch more light than the inside of the tree.
+    const lit = litTips.copy(color).multiplyScalar(TIPS)
+    const litDark = litTipsDark.copy(dark).multiplyScalar(TIPS)
     for (let i = 0; i < 4; i++) {
-      this.tri(rim[i] as number[], rim[(i + 1) % 4] as number[], tip, i % 2 === 0 ? color : dark)
+      const side = i % 2 === 0
+      this.tri(
+        rim[i] as number[],
+        rim[(i + 1) % 4] as number[],
+        tip,
+        side ? color : dark,
+        side ? lit : litDark,
+      )
     }
     if (!base) return
     this.quad(rim[0] as number[], rim[3] as number[], rim[2] as number[], rim[1] as number[], dark)
@@ -185,8 +202,8 @@ const grained = <M extends THREE.Material>(material: M): M => {
   makeGrained(material)
   return material
 }
-const BARK = col(0x33261a)
-const BARK_DARK = col(0x241a12)
+const BARK = col(0x4a3725)
+const BARK_DARK = col(0x35261a)
 const NEEDLES = [col(0x1c3520), col(0x22402a), col(0x17301c), col(0x2a4526)]
 const NEEDLES_DARK = [col(0x122416), col(0x162c1c), col(0x0f2012), col(0x1c3019)]
 const DEAD = col(0x4a443c)
