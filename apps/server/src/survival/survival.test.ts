@@ -365,6 +365,7 @@ describe('survival: the night', () => {
       survival: { onLeave(p: ServerPlayer): void; onJoin(p: ServerPlayer): void }
     }
     const p = t.player()
+    p.account = 'someone' // characters are kept by account (saves.ts), not by name
     director.survival.onLeave(p)
     t.clients[0]?.inbox.splice(0)
     director.survival.onJoin(p)

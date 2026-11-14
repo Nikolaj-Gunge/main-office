@@ -6,6 +6,7 @@
     "./admin": "./src/admin.ts",
     "./game": "./src/game.ts",
     "./loop": "./src/loop.ts",
+    "./saves": "./src/saves.ts",
     "./session": "./src/session.ts"
   },
   "scripts": {

@@ -145,6 +145,11 @@ export type ClientMessage =
       name: string
       /** What they chose in the character creator (packAppearance); absent = server picks. */
       appearance?: number
+      /**
+       * This browser's secret account token (32 hex digits): the server keys saves by a hash of
+       * it. Absent = a guest whose character isn't kept.
+       */
+      token?: string
     }
   | { type: typeof ClientMsg.Input; commands: InputCommand[] }
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
@@ -582,6 +587,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
     case ClientMsg.Hello:
       w.u16(msg.protocolVersion).str8(msg.name)
       writeAppearance(w, msg.appearance)
+      w.str8(msg.token ?? '')
       break
     case ClientMsg.Input:
       w.u8(msg.commands.length)
@@ -610,7 +616,13 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
     case ClientMsg.Hello: {
       const hello = { type, protocolVersion: r.u16(), name: r.str8() }
       const appearance = readAppearance(r)
-      return appearance === undefined ? hello : { ...hello, appearance }
+      // Read only if there: an older client must still get "version mismatch", not a bad message.
+      const token = r.remaining > 0 ? r.str8() : ''
+      return {
+        ...hello,
+        ...(appearance === undefined ? {} : { appearance }),
+        ...(token ? { token } : {}),
+      }
     }
     case ClientMsg.Input: {
       const count = r.u8()

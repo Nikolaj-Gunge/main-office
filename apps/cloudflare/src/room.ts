@@ -12,6 +12,7 @@ import {
   mergeRules,
   TICK_RATE,
 } from '@office-fps/shared'
+import { vaultStore } from './vault.ts'
 
 /**
  * With no input from anyone for this long (everyone tabbed out), the loop pauses until the next
@@ -22,7 +23,7 @@ const IDLE_PAUSE_MS = 5000
 /**
  * The office room: one Durable Object running the same authoritative `Game` as the Bun server.
  * Lives in memory while anyone is connected; Cloudflare may evict it when the office is empty
- * (scores reset then, which is fine).
+ * (scores reset then, which is fine; survival characters and the world are in the vault).
  */
 export class GameRoom extends DurableObject {
   private game: Game | null = null
@@ -54,6 +55,9 @@ export class GameRoom extends DurableObject {
         .then((r) => r.json())
         .catch(() => null)
       if (saved) this.admin.apply(mergeRules(DEFAULT_RULES, saved))
+      // Characters and the world live in the vault (after the rules: a mode or map change
+      // starts a new world, which must not wipe the saved one at boot).
+      await this.game.useSaves(vaultStore(env))
       console.log(`[room] map "${this.game.mapId}" ready, ${this.game.spawnPointCount} spawn spots`)
     })
   }

@@ -7,6 +7,7 @@ globalThis.__RAPIER_WASM__ = rapierWasm
 
 export { GameRoom } from './room.ts'
 export { Settings } from './settings.ts'
+export { SaveVault } from './vault.ts'
 
 /**
  * Static client files (game and admin page) are served by Workers Assets before this runs (free,

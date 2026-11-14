@@ -136,6 +136,16 @@ export class MatchRunner {
     this.survival?.onLeave(player)
   }
 
+  /** Survival: the world was read back from the saves (see Game.useSaves). */
+  restoreWorld(): void {
+    this.survival?.restoreWorld()
+  }
+
+  /** Survival: everybody playing and the world go into the saves now. */
+  saveAll(): void {
+    this.survival?.saveAll()
+  }
+
   /** Survival: holds the weather at one kind (null: as it comes). False when not surviving. */
   pinWeather(kind: WeatherKind | null): boolean {
     if (!this.survival) return false

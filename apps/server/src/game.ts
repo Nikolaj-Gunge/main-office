@@ -64,6 +64,7 @@ import { BOT_NAMES, BotBrain } from './bots.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
+import { type SaveStore, Saves } from './saves.ts'
 import { SpawnPicker } from './spawning.ts'
 
 /** What runs a zombie (zombies mode's brain, or one of survival's dead). */
@@ -79,11 +80,15 @@ export interface ZombieMind {
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
 export interface GameClient {
   send(bytes: Uint8Array<ArrayBuffer>): void
+  /** Their account (identity.ts), if they have one: what their character is saved under. */
+  account?: string
 }
 
 interface ServerPlayer {
   id: number
   name: string
+  /** Account their character is saved under (see identity.ts); none for guests, bots, zombies. */
+  account?: string
   color: number
   /** What they look like (packAppearance, sanitised); undefined for zombies. */
   appearance?: number
@@ -198,6 +203,8 @@ export class Game {
   readonly match: MatchRunner
   /** The zombie kind each zombie was last announced as (PlayerJoined). */
   private readonly zombieLooks = new Map<number, number>()
+  /** Characters and the world, kept (in memory until useSaves gives it a real store). */
+  saves = new Saves()
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
@@ -212,6 +219,23 @@ export class Game {
     // A map tied to a mode (Deadwood: survival, co-op maps: zombies) starts in that mode.
     const rules = mergeRules(DEFAULT_RULES, { map: map.id })
     if (rules.mode !== this.rulesValue.mode) this.setRules(rules)
+  }
+
+  /**
+   * Keeps characters and the world in this store from now on: reads the world back (call before
+   * anybody joins; a restarted server carries on where it was).
+   */
+  async useSaves(store: SaveStore): Promise<void> {
+    const saves = new Saves(store)
+    await saves.loadWorld()
+    this.saves = saves
+    this.match.restoreWorld()
+  }
+
+  /** Saves everybody playing and the world now (shutting down). */
+  saveAll(): Promise<void> {
+    this.match.saveAll()
+    return this.saves.flush()
   }
 
   /** One dummy per map target (shooting range); removes dummies from the previous map. */
@@ -380,6 +404,7 @@ export class Game {
       name,
       color: this.pickColor(),
       ...(zombie ? {} : { appearance: sanitizeAppearance(appearance, id) }),
+      ...(client.account ? { account: client.account } : {}),
       client,
       body,
       state: createPlayerState(),

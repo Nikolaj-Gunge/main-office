@@ -9,6 +9,7 @@ import {
 } from '@office-fps/shared'
 import { AdminApi } from './admin.ts'
 import { createConnections, type SocketData } from './connections.ts'
+import { FileStore } from './file-store.ts'
 import { Game } from './game.ts'
 import { GameLoop } from './loop.ts'
 import { serveStatic } from './static.ts'
@@ -24,6 +25,11 @@ console.log(
   `[server] map "${map.name}": ${physics.mapColliders.length} colliders, ` +
     `${game.spawnPointCount} spawn spots, ${map.pickups?.length ?? 0} weapon pickups`,
 )
+
+// Characters and the world are kept in JSON files (gitignored), so a restart carries on.
+const saveDir = process.env.SAVE_DIR ?? new URL('../data/saves', import.meta.url).pathname
+await game.useSaves(new FileStore(saveDir))
+console.log(`[server] saves in ${saveDir}`)
 
 const admin = new AdminApi(game, { password: process.env.ADMIN_PASSWORD })
 if (!process.env.ADMIN_PASSWORD) console.log('[server] admin page disabled (set ADMIN_PASSWORD)')
@@ -76,11 +82,13 @@ setInterval(() => {
   )
 }, 10_000)
 
-function shutdown() {
+async function shutdown() {
   console.log('[server] shutting down')
   loop.stop()
   server.stop(true)
+  // Everybody still playing is saved where they stand (give up after a few seconds).
+  await Promise.race([game.saveAll(), new Promise((r) => setTimeout(r, 3000))])
   process.exit(0)
 }
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+process.on('SIGINT', () => void shutdown())
+process.on('SIGTERM', () => void shutdown())

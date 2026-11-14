@@ -8,6 +8,7 @@ import {
   ServerMsg,
   WS_PATH,
 } from '@office-fps/shared'
+import { accountToken } from './identity.ts'
 import { NetSim } from './net-sim.ts'
 
 export type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed'
@@ -67,11 +68,13 @@ export class Connection {
 
     ws.addEventListener('open', () => {
       this.setState('open')
+      const token = accountToken()
       this.send({
         type: ClientMsg.Hello,
         protocolVersion: PROTOCOL_VERSION,
         name: this.name,
         ...(this.appearance === undefined ? {} : { appearance: this.appearance }),
+        ...(token ? { token } : {}),
       })
       this.sendPing()
       this.pingTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS)

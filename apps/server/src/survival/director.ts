@@ -86,6 +86,7 @@ import {
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
+import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { Story, type StoryHost } from './story.ts'
@@ -101,6 +102,11 @@ const HUNGER_SECONDS = 45 * 60
 const THIRST_SECONDS = 30 * 60
 const BATTERY_SECONDS = 9 * 60
 const RESPAWN_SECONDS = 6
+/** Everybody playing is saved this often (s); the world is checked for changes this often. */
+const SAVE_SECONDS = 120
+const WORLD_SAVE_SECONDS = 5
+/** Nobody resumes where they logged off with one of the dead closer than this (m). */
+const UNSAFE_NEAR = 15
 /** Seconds before the dead you killed at a place are replaced by others. */
 const KILL_MEMORY = 14 * 60
 /** Seconds a place stays picked clean before things turn up there again. */
@@ -132,6 +138,11 @@ interface Survivor {
   turning: boolean
   /** Which of the cabin's starter things (def.starter) this character hasn't taken yet. */
   waiting: number[]
+  /** Back from a save: wake where they logged off (once), with the health they had. */
+  resume?: MapSpawn
+  health?: number
+  /** Back from a save with nowhere safe to resume: they wake at Haven. */
+  haven?: boolean
 }
 
 /** One of the dead that was one of you: everything they had on them, and how they looked. */
@@ -193,6 +204,17 @@ const freshSelf = (): SurvivalSelf => {
   return self
 }
 
+/** A saved backpack, made safe to play with: anything that no longer exists is left out. */
+function restoreSelf(saved: SurvivalSelf): SurvivalSelf {
+  const self: SurvivalSelf = { ...freshSelf(), ...structuredClone(saved), light: false }
+  self.inv = self.inv.filter((h) => ITEMS[h.item])
+  if (self.pack && !ITEMS[self.pack]) self.pack = null
+  for (const [slot, item] of Object.entries(self.wear))
+    if (!ITEMS[item]) delete self.wear[slot as WearSlot]
+  self.journal = { ...freshJournal(), ...self.journal }
+  return self
+}
+
 const WEAPON_SLOTS: readonly EquipSlot[] = ['primary', 'sidearm', 'melee']
 
 /** Where something being moved comes from (see SurvivalDirector.move). */
@@ -223,11 +245,8 @@ export class SurvivalDirector {
   private def!: SurvivalDef
   private readonly random: () => number
   private readonly survivors = new Map<number, Survivor>()
-  /** What people had when they left, by name: they get it back if they return. */
-  private readonly profiles = new Map<
-    string,
-    { self: SurvivalSelf; kit: Survivor['kit']; reborn: boolean; waiting: number[] }
-  >()
+  /** The world as last saved (JSON), to save it again only when something changed. */
+  private savedWorld = ''
   private readonly loot = new Map<number, Loot>()
   private readonly cells = new Map<number, Set<number>>()
   private nextLoot = 1
@@ -330,7 +349,9 @@ export class SurvivalDirector {
     this.gates = 0
     this.game.setGates(0)
     this.clearBoards()
-    this.profiles.clear()
+    // A new world: the saved one starts over, and every character with it (saves.ts).
+    this.game.saves.newWorld()
+    this.savedWorld = ''
     this.survivors.clear()
     this.rare = rollRareStock(this.random)
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
@@ -341,6 +362,7 @@ export class SurvivalDirector {
       if (zombie) this.pool.push(zombie)
     }
     for (const z of this.pool) this.zeds.set(z.id, z.zombie as Zed)
+    this.saveAll()
   }
 
   dispose(): void {
@@ -360,12 +382,12 @@ export class SurvivalDirector {
   onJoin(player: ServerPlayer): void {
     if (!isPerson(player)) return
     player.team = 1
-    const saved = this.profiles.get(player.name)
+    const saved = player.account ? this.game.saves.character(player.account) : undefined
     const sv: Survivor = {
       player,
-      self: saved ? saved.self : freshSelf(),
+      self: saved ? restoreSelf(saved.self) : freshSelf(),
       dirty: true,
-      kit: saved ? saved.kit : START_KIT.map((k) => ({ ...k })),
+      kit: saved ? saved.kit.filter((k) => WEAPONS[k.id]) : START_KIT.map((k) => ({ ...k })),
       cells: new Set(),
       noise: 0,
       noiseUntil: 0,
@@ -373,8 +395,9 @@ export class SurvivalDirector {
       warned: 0,
       reborn: saved?.reborn ?? false,
       turning: false,
-      waiting: saved ? saved.waiting : this.allStarters(),
+      waiting: saved ? saved.waiting.filter((i) => this.def?.starter[i]) : this.allStarters(),
     }
+    if (saved) this.resume(sv, saved)
     this.survivors.set(player.id, sv)
     this.layOut(sv)
     this.story.join(sv, sv.reborn)
@@ -394,12 +417,8 @@ export class SurvivalDirector {
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.story.left(player)
-    this.profiles.set(player.name, {
-      self: sv.self,
-      kit: sv.kit,
-      reborn: sv.reborn,
-      waiting: sv.waiting,
-    })
+    this.save(sv)
+    void this.game.saves.flush()
     this.clearStarters(sv)
     this.survivors.delete(player.id)
   }
@@ -428,13 +447,97 @@ export class SurvivalDirector {
     for (const l of [...this.loot.values()]) if (l.owner === sv.player.id) this.removeLoot(l)
   }
 
+  // --- Saves (see saves.ts) -------------------------------------------------------------------
+
+  /** Back from a save: where they wake (if that's still somewhere to stand) and how they are. */
+  private resume(sv: Survivor, saved: CharacterSave): void {
+    if (saved.health > 0) sv.health = saved.health
+    const at = saved.pos
+    const ground = at && this.def ? heightAt(this.def.terrain, at.x, at.z) : 0
+    if (at && Number.isFinite(at.x + at.y + at.z) && at.y > ground - 1) {
+      sv.resume = { pos: [at.x, at.y + 0.05, at.z], yaw: at.yaw }
+    } else sv.haven = true
+  }
+
+  /** Puts one character into the saves (written on the next flush). Guests aren't kept. */
+  private save(sv: Survivor): void {
+    const player = sv.player
+    if (!player.account) return
+    const s = player.state
+    const alive = s.alive && player.health > 0
+    // Somewhere to come back to: alive, not turning, and none of the dead right there.
+    const safe =
+      alive &&
+      !sv.turning &&
+      !this.pool.some((z) => z.state.alive && dist(z.state.pos, s.pos) < UNSAFE_NEAR)
+    this.game.saves.putCharacter(player.account, {
+      name: player.name,
+      self: { ...sv.self, light: false },
+      kit: alive ? kitOf(s) : sv.kit,
+      reborn: sv.reborn,
+      waiting: [...sv.waiting],
+      health: alive ? Math.ceil(player.health) : player.maxHealth,
+      ...(safe ? { pos: { x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw } } : {}),
+    })
+  }
+
+  /** Everybody playing, and the world, into the saves and written out. */
+  saveAll(): void {
+    for (const sv of this.survivors.values()) this.save(sv)
+    this.saveWorld(true)
+  }
+
+  /** The world into the saves, if it changed since it was last saved (or `always`). */
+  private saveWorld(always = false): void {
+    if (!this.def) return
+    const world = {
+      done: [...this.story.done],
+      unlocks: [...this.story.unlocks],
+      found: [...this.found].map((i) => this.def.pois[i]?.key ?? '').filter(Boolean),
+      gates: this.gates,
+      boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
+    }
+    const json = JSON.stringify(world)
+    if (json !== this.savedWorld) {
+      this.savedWorld = json
+      this.game.saves.putWorld(world)
+    } else if (!always) return
+    void this.game.saves.flush()
+  }
+
+  /** The world as it was saved: the story's progress, the map, the gates and the barricades. */
+  restoreWorld(): void {
+    if (!this.def) return
+    const w = this.game.saves.world
+    this.story.restore(w.done, w.unlocks)
+    this.def.pois.forEach((poi, i) => {
+      if (w.found.includes(poi.key)) this.found.add(i)
+    })
+    this.gates |= w.gates
+    this.game.setGates(this.gates)
+    for (const [i, planks] of w.boards)
+      if (this.def.spots[i] && planks > 0)
+        this.boards.set(i, Math.min(planks, MAX_PLANKS) * PLANK_HP)
+    setBarricades(this.game.world.physics, this.def.spots, (j) => this.planksAt(j))
+    this.boardsDirty = true
+    this.savedWorld = ''
+    this.saveWorld()
+    this.game.match.broadcast()
+  }
+
   // --- What the game asks -------------------------------------------------------------------
 
   spawnFor(player: ServerPlayer): MapSpawn | null {
     const sv = this.survivors.get(player.id)
     if (!sv) return null
     const start = this.game.world.map.spawns[0] ?? null
-    if (!sv.reborn) return start
+    // Back from a save: where they logged off, or Haven if that wasn't safe.
+    const resume = sv.resume
+    const toHaven = sv.reborn || sv.haven
+    delete sv.resume
+    delete sv.haven
+    if (resume) return resume
+    if (!toHaven) return start
     // Somebody new walks in at Haven: by the fire, facing it.
     const haven = this.def.pois.find((p) => p.key === 'haven')
     if (!haven) return start
@@ -471,6 +574,8 @@ export class SurvivalDirector {
     )
     const state = createPlayerState(spawn, order[0] ?? melee, order[1] ?? null, order[2] ?? null)
     this.syncReserves(sv, state)
+    if (sv.health !== undefined) player.health = Math.min(player.maxHealth, sv.health)
+    delete sv.health
     return state
   }
 
@@ -605,6 +710,9 @@ export class SurvivalDirector {
     sv.warned = 0
     sv.dirty = true
     this.story.died(sv)
+    // The new character is who they are now, even if they close the tab before waking.
+    this.save(sv)
+    void this.game.saves.flush()
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
     if (turning) this.rise(victim, stuff, look, at)
     else this.spill(stuff, at)
@@ -712,6 +820,8 @@ export class SurvivalDirector {
       this.drops.step()
       this.tickDay(people)
     }
+    if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
+    else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
     this.vehicles.step()

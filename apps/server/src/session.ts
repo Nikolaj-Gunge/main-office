@@ -6,6 +6,7 @@ import {
   ServerMsg,
 } from '@office-fps/shared'
 import type { Game } from './game.ts'
+import { accountOf } from './identity.ts'
 
 /** The bit of a WebSocket a session needs; Bun's and Cloudflare's both fit. */
 export interface SessionSocket {
@@ -31,6 +32,32 @@ export function createSession(
   onInput?: () => void,
 ): Session {
   let playerId = 0
+  /** Hello arrived and their save is being read. */
+  let joining = false
+  let closed = false
+
+  /** Reads their character (if they have an account) and puts them in the game. */
+  async function join(name: string, appearance: number | undefined, token: string | undefined) {
+    let account = await accountOf(token)
+    // Already playing in another tab: this one is a guest (one character, one body).
+    for (const p of game.players.values()) if (account && p.account === account) account = null
+    if (account) await game.saves.loadCharacter(account)
+    if (closed) return
+    const id = game.join(
+      name,
+      { send: (bytes) => socket.send(bytes), ...(account ? { account } : {}) },
+      undefined,
+      undefined,
+      appearance,
+    )
+    if (id === null) {
+      socket.close(4001, 'Server full')
+      return
+    }
+    playerId = id
+    const joined = game.players.get(id)?.name
+    console.log(`[ws] #${id} "${joined}" joined (${game.players.size} online)`)
+  }
 
   return {
     get playerId() {
@@ -48,25 +75,16 @@ export function createSession(
 
       switch (msg.type) {
         case ClientMsg.Hello: {
-          if (playerId) return
+          if (playerId || joining) return
           if (msg.protocolVersion !== PROTOCOL_VERSION) {
             socket.close(4000, 'Protocol version mismatch — reload the page')
             return
           }
-          const id = game.join(
-            msg.name,
-            { send: (bytes) => socket.send(bytes) },
-            undefined,
-            undefined,
-            msg.appearance,
-          )
-          if (id === null) {
-            socket.close(4001, 'Server full')
-            return
-          }
-          playerId = id
-          const name = game.players.get(id)?.name
-          console.log(`[ws] #${id} "${name}" joined (${game.players.size} online)`)
+          joining = true
+          join(msg.name, msg.appearance, msg.token).catch((err) => {
+            console.warn('[ws] join failed:', (err as Error).message)
+            socket.close(1011, 'Could not join')
+          })
           break
         }
         case ClientMsg.Input:
@@ -95,6 +113,7 @@ export function createSession(
     },
 
     close(code) {
+      closed = true
       if (!playerId) return
       const id = playerId
       playerId = 0

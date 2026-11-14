@@ -9,3 +9,6 @@ dist/
 .wrangler/
 .dev.vars
 .claude/worktrees/
+
+# Bun server saves (characters and the world)
+apps/server/data/

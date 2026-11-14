@@ -9,6 +9,8 @@ interface Env {
   ROOM: DurableObjectNamespace
   /** Admin settings shared by every room version (see settings.ts). */
   SETTINGS: DurableObjectNamespace
+  /** Characters and the world, shared by every room version (see vault.ts). */
+  SAVES: DurableObjectNamespace<import('./vault.ts').SaveVault>
   /** Secret: `bunx wrangler secret put ADMIN_PASSWORD`. Unset = admin page disabled. */
   ADMIN_PASSWORD?: string
 }

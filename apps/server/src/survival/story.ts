@@ -171,6 +171,17 @@ export class Story {
     this.headline = null
   }
 
+  /**
+   * The world as it was saved (saves.ts): what was done and unlocked, and whoever was brought
+   * home living there again. Unknown quests and unlocks (renamed since) are left out.
+   */
+  restore(done: readonly string[], unlocks: readonly string[]): void {
+    for (const id of done) if (questById(id) && !this.done.includes(id)) this.done.push(id)
+    for (const key of unlocks)
+      if (UNLOCKS[key] && !this.unlocks.includes(key)) this.unlocks.push(key)
+    for (const key of this.unlocks) if (WALKERS[key]) this.settle(key)
+  }
+
   /** Everybody here has seen the story through. */
   get won(): boolean {
     const people = this.host.people()
