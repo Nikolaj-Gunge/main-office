@@ -37,6 +37,7 @@ import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
+import { CampFolk } from '../render/camp-folk.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
@@ -104,6 +105,8 @@ export class SurvivalClient {
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
   private readonly heli: HeliView
+  /** Haven's townsfolk going about their day. */
+  private readonly folk: CampFolk
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
   readonly weather: WeatherView
   private readonly projected = new THREE.Vector3()
@@ -145,6 +148,8 @@ export class SurvivalClient {
     this.boards = new BarricadeView(o.def.spots)
     o.scene.add(this.boards.root)
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
+    this.folk = new CampFolk(o.def, o.audio)
+    o.scene.add(this.folk.root)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
@@ -361,6 +366,8 @@ export class SurvivalClient {
       // They breathe and shift their weight (idle motion on the local clock: nobody shoots them).
       npc.avatar.update(npc.state, remotePose(npc.state, { time: now / 1000 }), now, eye)
     }
+
+    this.folk.update(dt, time, eye, state.pos)
 
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
