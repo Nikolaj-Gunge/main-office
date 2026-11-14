@@ -369,7 +369,7 @@ export function haven(s: Site): void {
   // Tom the hunter by the east wall, Sam the kid by the fire.
   s.npc('tom', 'Tom', 'hunter', 12, 6, 90, 2)
   s.block(13.5, 0, 6, 0.9, 0.9, 1.6, 'cover')
-  s.npc('sam', 'Sam', 'kid', -3, 4.4, 180, 1)
+  s.npc('sam', 'Sam', 'kid', -5.2, 5.6, -55, 1)
 
   // Tents along the north wall.
   for (const x of [8, 14, 20]) {

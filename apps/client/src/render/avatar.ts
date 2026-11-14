@@ -518,12 +518,7 @@ export class Avatar {
     if ((s.gear ?? 0) !== this.gear) this.setGear(s.gear ?? 0)
     this.root.visible = s.alive
     const size = pose.scale ?? 1
-    const parts = bodyParts(pose)
-    this.lastParts = parts
-    for (const p of parts) {
-      const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
-      placePart(group, p, size)
-    }
+    this.place(bodyParts(pose), size)
     // Your eye inside their body (you stand where they stand: both woke at the same spot, or
     // walked into each other): their insides would fill the screen (the eyes as two huge boxes
     // in the sky), so they aren't drawn until you step apart.
@@ -563,6 +558,25 @@ export class Avatar {
       ;(this.glint.material as THREE.SpriteMaterial).opacity = strength
       this.glint.scale.setScalar(0.4 + strength * 1.2)
     }
+  }
+
+  /** Puts every part where `parts` says (world space). */
+  private place(parts: BodyPart[], size: number): void {
+    this.lastParts = parts
+    for (const p of parts) {
+      const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
+      placePart(group, p, size)
+    }
+  }
+
+  /**
+   * A pose made elsewhere (Haven's townsfolk sitting and working): the parts in world space,
+   * what's in their hands (Claws for nothing) and what they wear.
+   */
+  pose(parts: BodyPart[], weapon: WeaponId, gear: number): void {
+    if (weapon !== this.weapon) this.setWeapon(weapon)
+    if (gear !== this.gear) this.setGear(gear)
+    this.place(parts, 1)
   }
 
   /** Team color instead of the player's own (team modes); null = back to their own. */
