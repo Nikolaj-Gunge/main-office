@@ -128,7 +128,8 @@ void main() {
       max(viewDepth(vUv + vec2(texel.x, 0.0)), viewDepth(vUv - vec2(texel.x, 0.0))),
       max(viewDepth(vUv + vec2(0.0, texel.y)), viewDepth(vUv - vec2(0.0, texel.y)))
     );
-    float edge = step(0.12 * d + 0.15, far - d);
+    // None far off, where the haze has softened every edge (or a far forest gets a pen line).
+    float edge = step(0.12 * d + 0.15, far - d) * (1.0 - smoothstep(250.0, 420.0, d));
     color *= 1.0 - edge * outlines;
   }
 

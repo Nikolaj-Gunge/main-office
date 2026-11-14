@@ -52,9 +52,12 @@ export interface SkyWeather {
 /** Under heavy cloud and rain by day: a low, wet grey. */
 const RAIN_SKY = new THREE.Color(0x4a535c)
 const RAIN_FOG = new THREE.Color(0x5c6468)
-/** Fog is lit: paler than the dark around it. */
+/**
+ * Fog is lit: paler than the dark around it. At night a dim moonlit grey that trees fade into
+ * as dark shapes, while the ground at your feet stays as dark as ever.
+ */
 const FOG_DAY = new THREE.Color(0x9aa3a6)
-const FOG_NIGHT = new THREE.Color(0x1c232c)
+const FOG_NIGHT = new THREE.Color(0x2c3540)
 /** A lightning flash: the whole sky goes blue-white. */
 const FLASH_SKY = new THREE.Color(0xc4d0f4)
 const FLASH_LIGHT = new THREE.Color(0xdfe6ff)
@@ -162,14 +165,15 @@ export class Night {
     // Fog weather closes in; rain does a little. Fog lies in banks: walk into one, out again.
     const bank = 0.5 + 0.5 * valueNoise(viewer.x / 110 + wind.time * 0.004, viewer.z / 110, 77)
     const thick = (1 - w.fog * (0.5 + 0.25 * bank)) * (1 - w.rain * 0.3)
-    this.fog.near = mix(this.base.fogNear, DAY.fogNear, day) * (1 - w.fog * 0.8)
+    // (At night the first few metres stay clear: the fog is out there, not in your face.)
+    this.fog.near = mix(this.base.fogNear, DAY.fogNear, day) * (1 - w.fog * mix(0.5, 0.8, day))
     this.fog.far = mix(this.base.fogFar, DAY.fogFar, day) * thick
     this.fog.color
       .copy(this.darkFog)
       .lerp(DAY.fog, day)
       .lerp(RAIN_FOG, grey * day * 0.7)
       .lerp(EMBER, low * 0.35 * (1 - grey))
-      .lerp(day > 0.5 ? FOG_DAY : FOG_NIGHT, w.fog * 0.5)
+      .lerp(day > 0.5 ? FOG_DAY : FOG_NIGHT, w.fog * mix(0.85, 0.5, day))
       .lerp(FLASH_SKY, w.flash * 0.45)
     this.sky?.horizon.copy(this.fog.color)
     this.sky?.top
@@ -177,6 +181,8 @@ export class Night {
       .multiplyScalar(1 - w.cloud * 0.45)
       .lerp(DAY.sky, day)
       .lerp(RAIN_SKY, grey * day * 0.8)
+      // In thick fog there's no sky to speak of: only more fog.
+      .lerp(this.fog.color, w.fog * 0.7)
       .lerp(FLASH_SKY, w.flash * 0.75)
 
     // The sun crosses from east to west by day; at night the moon hangs where the map put it.
