@@ -1,4 +1,5 @@
 import {
+  CLOSE_RESTING,
   type ClientMessage,
   ClientMsg,
   decodeServerMessage,
@@ -13,14 +14,16 @@ import { NetSim } from './net-sim.ts'
 export type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed'
 
 export interface ConnectionEvents {
-  onState?: (state: ConnectionState, reason?: string) => void
+  /** `code` is the WebSocket close code when closed (4002 = the servers are resting). */
+  onState?: (state: ConnectionState, reason?: string, code?: number) => void
   onMessage?: (msg: ServerMessage) => void
 }
 
-const PING_INTERVAL_MS = 1000
 const RECONNECT_DELAY_MS = 2000
-/** Close codes where reconnecting won't help (see server connections.ts). */
-const FATAL_CODES = new Set([4000, 4001])
+/** Close codes where reconnecting won't help (see server session.ts). */
+const FATAL_CODES = new Set([4000, 4001, CLOSE_RESTING])
+/** Time between pings. Each is a metered message on Cloudflare, so not too often. */
+const PING_INTERVAL_MS = 2000
 
 /** WebSocket to the game server: binary codec, ping, traffic stats, net-sim, auto-reconnect. */
 export class Connection {
@@ -93,7 +96,7 @@ export class Connection {
       if (this.ws !== ws) return
       this.ws = null
       this.playerId = 0
-      this.setState('closed', event.reason)
+      this.setState('closed', event.reason, event.code)
       if (!FATAL_CODES.has(event.code)) {
         setTimeout(() => this.connect(this.name, this.appearance), RECONNECT_DELAY_MS)
       }
@@ -119,9 +122,9 @@ export class Connection {
     this.events.onMessage?.(msg)
   }
 
-  private setState(state: ConnectionState, reason?: string): void {
+  private setState(state: ConnectionState, reason?: string, code?: number): void {
     this.state = state
-    this.events.onState?.(state, reason)
+    this.events.onState?.(state, reason, code)
   }
 
   private sendPing(): void {

@@ -15,6 +15,7 @@ import {
   WEATHER_KINDS,
   type WeatherKind,
 } from '@office-fps/shared'
+import type { BudgetSnapshot } from './budget.ts'
 import type { Game } from './game.ts'
 
 /** Wrong passwords allowed per client before it is locked out for LOCKOUT_MS. */
@@ -26,6 +27,8 @@ export interface AdminOptions {
   password: string | undefined
   /** Called after every rules change (the Durable Object stores them). */
   onRulesChanged?: (rules: GameRules) => void
+  /** Today's Cloudflare request use, shown on the admin page. */
+  budget?: () => BudgetSnapshot
 }
 
 /**
@@ -150,6 +153,7 @@ export class AdminApi {
           ping: Math.round(p.ping),
           bot: p.bot !== undefined,
         })),
+      budget: this.options.budget?.() ?? null,
     }
   }
 }

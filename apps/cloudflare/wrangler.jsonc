@@ -22,5 +22,8 @@
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
     { "tag": "v2", "new_sqlite_classes": ["Settings"] }
   ],
+  // Requests a day before new joins are told the servers are resting (at 95%). The free plan
+  // allows 100000; set "0" after moving to the paid plan to turn the cutoff off.
+  "vars": { "FREE_REQUEST_LIMIT": "100000" },
   "observability": { "enabled": true }
 }

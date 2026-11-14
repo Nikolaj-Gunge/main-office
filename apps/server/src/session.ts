@@ -1,16 +1,26 @@
 import {
+  CLOSE_RESTING,
   ClientMsg,
   decodeClientMessage,
   encodeServerMessage,
   PROTOCOL_VERSION,
   ServerMsg,
 } from '@office-fps/shared'
+import type { RequestBudget } from './budget.ts'
 import type { Game } from './game.ts'
+import { MessageLimiter } from './rate-limit.ts'
 
 /** The bit of a WebSocket a session needs; Bun's and Cloudflare's both fit. */
 export interface SessionSocket {
   send(bytes: Uint8Array): void
   close(code: number, reason: string): void
+}
+
+export interface SessionOptions {
+  /** Called once a message has been accepted as input (wakes an idle Cloudflare room). */
+  onInput?: () => void
+  /** Counts incoming messages; once it is resting, Hello is answered with CLOSE_RESTING. */
+  budget?: RequestBudget | undefined
 }
 
 export interface Session {
@@ -28,9 +38,11 @@ export function createSession(
   game: Game,
   socket: SessionSocket,
   getTickMs: () => number,
-  onInput?: () => void,
+  options: SessionOptions = {},
 ): Session {
+  const { onInput, budget } = options
   let playerId = 0
+  const limiter = new MessageLimiter()
 
   return {
     get playerId() {
@@ -38,6 +50,7 @@ export function createSession(
     },
 
     message(raw) {
+      budget?.message()
       let msg: ReturnType<typeof decodeClientMessage>
       try {
         msg = decodeClientMessage(raw)
@@ -45,12 +58,18 @@ export function createSession(
         console.warn(`[ws] bad message from #${playerId}:`, (err as Error).message)
         return
       }
+      if (!limiter.allow(msg.type, () => (playerId ? `#${playerId}` : 'a new connection'))) return
 
       switch (msg.type) {
         case ClientMsg.Hello: {
           if (playerId) return
           if (msg.protocolVersion !== PROTOCOL_VERSION) {
             socket.close(4000, 'Protocol version mismatch — reload the page')
+            return
+          }
+          // People already playing keep going; only new arrivals are turned away.
+          if (budget?.resting) {
+            socket.close(CLOSE_RESTING, 'The servers are resting')
             return
           }
           const id = game.join(
