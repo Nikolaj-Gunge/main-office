@@ -2,6 +2,7 @@ import type { WeaponSlot } from '../sim/weapons.ts'
 import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import { ITEMS, POCKETS_KG } from './items.ts'
+import type { WeatherShared } from './weather.ts'
 
 /** Some of one item in a backpack. Weapons never stack (n = 1) and remember what's loaded. */
 export interface Stack {
@@ -55,6 +56,8 @@ export interface SurvivalShared {
   boards: number[]
   /** Supply drops on their way down or lying unopened (see drops.ts). */
   drops?: SupplyDrop[]
+  /** The weather's seed and clock: everything else follows from them (see weather.ts). */
+  weather?: WeatherShared
 }
 
 export type SurvivalAction =

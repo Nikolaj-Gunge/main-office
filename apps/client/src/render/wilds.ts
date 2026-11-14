@@ -9,15 +9,15 @@ import {
   PropKind,
   type Road,
   RoadGrid,
-  Surface,
   type SurvivalDef,
-  surfaceAt,
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { type GroundColour, groundColour } from './ground-colour.ts'
 import { buildDetail, detailItems, detailMaterials } from './ground-detail.ts'
 import { buildSigns } from './road-signs.ts'
 import { filterTexture, getSurfaceMaterial } from './textures.ts'
+import { wetGroundMaterial, wetUniforms } from './wet-ground.ts'
 import { makeSwaying } from './wind.ts'
 
 /** Ground and forest are drawn in chunks whose centre is within this of you (m). */
@@ -188,14 +188,9 @@ const EDGE = col(0x77756c)
 const TAR = col(0x121214)
 const OIL = col(0x1a1820)
 const PUDDLE = col(0x141c26)
-
-const GROUND: Record<number, THREE.Color[]> = {
-  [Surface.Forest]: [col(0x2a2c1a), col(0x30301c), col(0x24281a)],
-  [Surface.Meadow]: [col(0x35451f), col(0x3d4f24), col(0x2f3f1c)],
-  [Surface.Dirt]: [col(0x43382a), col(0x4a3e2e), col(0x3b3226)],
-  [Surface.Sand]: [col(0x6e6449), col(0x776c50), col(0x655c42)],
-  [Surface.Rock]: [col(0x505356), col(0x5a5d60), col(0x47494c)],
-}
+/** Puddles' shine, dry weather and in the rain. */
+const PUDDLE_SHINE = col(0x9aa8b8)
+const PUDDLE_SHINE_WET = col(0xd8e2ee)
 
 function makeGroundTexture(): THREE.CanvasTexture {
   const size = 64
@@ -245,10 +240,9 @@ export class Wilds {
   readonly root = new THREE.Group()
   private readonly def: SurvivalDef
   private readonly chunks = new Map<number, Chunk>()
-  private readonly groundMaterial = new THREE.MeshLambertMaterial({
-    map: makeGroundTexture(),
-    vertexColors: true,
-  })
+  // Weather: the ground soaks up the rain (wet-ground.ts) and the puddles gleam (setWetness).
+  private readonly groundMaterial = wetGroundMaterial(makeGroundTexture())
+  private readonly puddleMaterials: THREE.MeshPhongMaterial[] = []
   private readonly propMaterial = swaying(new THREE.MeshLambertMaterial({ vertexColors: true }))
   private readonly detailMaterial = detailMaterials()
   private readonly roads: RoadGrid
@@ -274,6 +268,15 @@ export class Wilds {
       mesh.position.set(lake.x, lake.y, lake.z)
       mesh.name = 'lake'
       this.root.add(mesh)
+    }
+  }
+
+  /** How soaked the ground is, 0 dry … 1 after a long rain: darker, muddier, shinier. */
+  setWetness(wet: number): void {
+    wetUniforms.uWet.value = wet
+    for (const m of this.puddleMaterials) {
+      m.specular.copy(PUDDLE_SHINE).lerp(PUDDLE_SHINE_WET, wet)
+      m.shininess = 90 + wet * 60
     }
   }
 
@@ -367,6 +370,8 @@ export class Wilds {
     const normal = new Float32Array(n * n * 3)
     const color = new Float32Array(n * n * 3)
     const uv = new Float32Array(n * n * 2)
+    const mud = new Float32Array(n * n)
+    const ground: GroundColour = { r: 0, g: 0, b: 0, mud: 0 }
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         const x = x0 + i * CELL
@@ -379,11 +384,10 @@ export class Wilds {
         const dz = heightAt(t, x, z + CELL) - heightAt(t, x, z - CELL)
         const l = Math.hypot(dx, 2 * CELL, dz)
         normal.set([-dx / l, (2 * CELL) / l, -dz / l], k * 3)
-        const shades = GROUND[surfaceAt(t, x, z)] ?? (GROUND[Surface.Forest] as THREE.Color[])
-        const c = shades[
-          Math.floor(hash2(Math.round(x), Math.round(z), 3) * shades.length)
-        ] as THREE.Color
-        color.set([c.r, c.g, c.b], k * 3)
+        // Blended surfaces, patches and mud (ground-colour.ts).
+        groundColour(t, this.def.lakes, x, z, ground)
+        color.set([ground.r, ground.g, ground.b], k * 3)
+        mud[k] = ground.mud
         uv.set([x / 6, z / 6], k * 2)
       }
     }
@@ -403,10 +407,11 @@ export class Wilds {
     geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3))
     geometry.setAttribute('color', new THREE.BufferAttribute(color, 3))
     geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+    geometry.setAttribute('mud', new THREE.BufferAttribute(mud, 1))
     geometry.setIndex(index)
-    const ground = new THREE.Mesh(geometry, this.groundMaterial)
-    ground.receiveShadow = true
-    ground.name = 'ground'
+    const groundMesh = new THREE.Mesh(geometry, this.groundMaterial)
+    groundMesh.receiveShadow = true
+    groundMesh.name = 'ground'
 
     const tris = new Triangles()
     for (const p of chunkProps(t, this.def.seed, cx, cz)) {
@@ -538,7 +543,7 @@ export class Wilds {
     props.castShadow = true
     props.receiveShadow = true
     props.name = 'forest'
-    return { ground, props, detail: null }
+    return { ground: groundMesh, props, detail: null }
   }
 
   /** A strip along the road's centre line, lying just above the ground it levelled. */
@@ -637,17 +642,16 @@ export class Wilds {
     }
     if (wet.position.length > 0) {
       // Puddles: dark, and they catch the moon and the lamps.
-      const puddles = new THREE.Mesh(
-        wet.build(),
-        new THREE.MeshPhongMaterial({
-          vertexColors: true,
-          shininess: 90,
-          specular: 0x9aa8b8,
-          polygonOffset: true,
-          polygonOffsetFactor: -5,
-          polygonOffsetUnits: -10,
-        }),
-      )
+      const shiny = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        shininess: 90,
+        specular: PUDDLE_SHINE,
+        polygonOffset: true,
+        polygonOffsetFactor: -5,
+        polygonOffsetUnits: -10,
+      })
+      this.puddleMaterials.push(shiny)
+      const puddles = new THREE.Mesh(wet.build(), shiny)
       puddles.receiveShadow = true
       puddles.name = 'puddles'
       group.add(puddles)

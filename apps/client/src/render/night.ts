@@ -5,6 +5,7 @@ import {
   type MapLight,
   NIGHTFALL,
   sunProgress,
+  valueNoise,
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { flickerLevel } from './lighting.ts'
@@ -38,6 +39,25 @@ const DAY = {
 /** The low sun at dawn and dusk tints the fog and sky. */
 const EMBER = new THREE.Color(0xc8784a)
 
+/** What the weather does to the light (see weather-view.ts). All 0–1. */
+export interface SkyWeather {
+  cloud: number
+  rain: number
+  fog: number
+  /** Lightning lighting everything up right now. */
+  flash: number
+}
+
+/** Under heavy cloud and rain by day: a low, wet grey. */
+const RAIN_SKY = new THREE.Color(0x4a535c)
+const RAIN_FOG = new THREE.Color(0x5c6468)
+/** Fog is lit: paler than the dark around it. */
+const FOG_DAY = new THREE.Color(0x9aa3a6)
+const FOG_NIGHT = new THREE.Color(0x1c232c)
+/** A lightning flash: the whole sky goes blue-white. */
+const FLASH_SKY = new THREE.Color(0xc4d0f4)
+const FLASH_LIGHT = new THREE.Color(0xdfe6ff)
+
 /**
  * Survival's light: a faint moon whose shadows follow you through the trees, the few lamps and
  * fires near you, fog that closes in — and the grey, overcast day that comes round in between.
@@ -66,6 +86,7 @@ export class Night {
   private sinceLamps = 1
   /** Lamps count for less in daylight. */
   private lampLevel = 1
+  private weather: SkyWeather = { cloud: 0, rain: 0, fog: 0, flash: 0 }
 
   constructor(map: MapDef, scene: THREE.Scene, sky: THREE.Mesh | null) {
     this.scene = scene
@@ -107,6 +128,11 @@ export class Night {
       : null
   }
 
+  /** The weather to light the world for, from the next update on. */
+  setWeather(weather: SkyWeather): void {
+    this.weather = weather
+  }
+
   /**
    * @param time  the day's clock (SurvivalShared.time)
    * @param moved the world around the viewer changed (new forest): redraw the shadows
@@ -117,22 +143,40 @@ export class Night {
     const u = ((time % 1) + 1) % 1
     // Dawn and dusk glow: strongest halfway through each.
     const low = u >= DAWN && u < NIGHTFALL ? Math.sin(Math.min(1, Math.max(0, day)) * Math.PI) : 0
-    this.hemi.intensity = mix(this.base.ambientIntensity, DAY.ambient, day)
+    const w = this.weather
+    // Cloud hides the moon and dims the sun; rain greys everything; lightning lights it all up.
+    const grey = Math.min(1, w.cloud * 0.6 + w.rain * 0.4)
+    this.hemi.intensity =
+      mix(this.base.ambientIntensity, DAY.ambient, day) * (1 - w.rain * 0.2) + w.flash * 2.2
     this.hemi.color.copy(this.darkHemiSky).lerp(DAY.hemiSky, day)
     this.hemi.groundColor.copy(this.darkHemiGround).lerp(DAY.hemiGround, day)
-    this.moon.intensity = mix(this.base.sunIntensity * MOON, DAY.sunIntensity, day)
+    this.moon.intensity =
+      mix(this.base.sunIntensity * MOON, DAY.sunIntensity, day) * (1 - w.cloud * 0.55) +
+      w.flash * 4.5
     this.moon.color
       .copy(this.moonColor)
       .lerp(DAY.sun, day)
-      .lerp(EMBER, low * 0.5)
-    this.fog.near = mix(this.base.fogNear, DAY.fogNear, day)
-    this.fog.far = mix(this.base.fogFar, DAY.fogFar, day)
+      .lerp(EMBER, low * 0.5 * (1 - grey))
+      .lerp(FLASH_LIGHT, Math.min(1, w.flash * 1.5))
+    // Fog weather closes in; rain does a little. Fog lies in banks: walk into one, out again.
+    const bank = 0.5 + 0.5 * valueNoise(viewer.x / 110 + wind.time * 0.004, viewer.z / 110, 77)
+    const thick = (1 - w.fog * (0.5 + 0.25 * bank)) * (1 - w.rain * 0.3)
+    this.fog.near = mix(this.base.fogNear, DAY.fogNear, day) * (1 - w.fog * 0.8)
+    this.fog.far = mix(this.base.fogFar, DAY.fogFar, day) * thick
     this.fog.color
       .copy(this.darkFog)
       .lerp(DAY.fog, day)
-      .lerp(EMBER, low * 0.35)
+      .lerp(RAIN_FOG, grey * day * 0.7)
+      .lerp(EMBER, low * 0.35 * (1 - grey))
+      .lerp(day > 0.5 ? FOG_DAY : FOG_NIGHT, w.fog * 0.5)
+      .lerp(FLASH_SKY, w.flash * 0.45)
     this.sky?.horizon.copy(this.fog.color)
-    this.sky?.top.copy(this.darkSky).lerp(DAY.sky, day)
+    this.sky?.top
+      .copy(this.darkSky)
+      .multiplyScalar(1 - w.cloud * 0.45)
+      .lerp(DAY.sky, day)
+      .lerp(RAIN_SKY, grey * day * 0.8)
+      .lerp(FLASH_SKY, w.flash * 0.75)
 
     // The sun crosses from east to west by day; at night the moon hangs where the map put it.
     const p = sunProgress(u)

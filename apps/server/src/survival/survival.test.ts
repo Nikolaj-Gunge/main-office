@@ -35,8 +35,10 @@ import {
   tableItems,
   WEAPONS,
   WeaponId,
+  type WeatherKind,
+  weatherAt,
 } from '@office-fps/shared'
-import { Game } from '../game.ts'
+import { Game, type ServerPlayer } from '../game.ts'
 import { openGround } from './drops.ts'
 import type { Zed } from './horde.ts'
 
@@ -512,5 +514,53 @@ describe('survival: clothes and gear', () => {
     }
     expect(TRADER_STOCK.some((id) => slotOf(id) === 'legs')).toBe(true)
     expect(tableItems('bedroom').some((id) => ITEMS[id]?.kind === 'weapon')).toBe(true)
+  })
+})
+
+describe('survival: weather', () => {
+  test('everybody is told the weather, it runs on, and an admin can hold it', () => {
+    const t = setup()
+    t.run(2)
+    const first = t.match().survival?.weather
+    if (!first) throw new Error('no weather')
+    expect(first.kind).toBe(weatherAt(first.seed, first.clock).kind)
+    expect(first.clock).toBeGreaterThan(1.5)
+    t.run(3)
+    const later = t.match().survival?.weather
+    expect(later?.seed).toBe(first.seed)
+    expect((later?.clock ?? 0) - first.clock).toBeCloseTo(3, 1)
+    expect(t.game.match.pinWeather('storm')).toBe(true)
+    const pinned = t.match().survival?.weather
+    expect(pinned?.pin).toBe('storm')
+    expect(pinned?.kind).toBe('storm')
+    t.game.match.pinWeather(null)
+    expect(t.match().survival?.weather?.pin).toBeUndefined()
+  })
+
+  test('rain drowns out footsteps and shots: the dead hear you from less far', () => {
+    const t = setup()
+    t.run(1)
+    const director = (
+      t.game.match as unknown as {
+        survival: { heardFrom(p: ServerPlayer): number; pinWeather(k: WeatherKind | null): void }
+      }
+    ).survival
+    const me = t.player()
+    me.state.vel = { x: 7, y: 0, z: 0 }
+    director.pinWeather('clear')
+    const dry = director.heardFrom(me)
+    expect(dry).toBe(16)
+    director.pinWeather('rain')
+    const wet = director.heardFrom(me)
+    director.pinWeather('storm')
+    const storm = director.heardFrom(me)
+    expect(wet).toBeLessThan(dry * 0.75)
+    expect(storm).toBeLessThan(wet)
+    // A shot carries further than steps, rain or not, but rain shortens it too.
+    t.game.match.onShot(me)
+    const shotInStorm = director.heardFrom(me)
+    director.pinWeather('clear')
+    expect(director.heardFrom(me)).toBeGreaterThan(shotInStorm)
+    expect(shotInStorm).toBeGreaterThan(storm)
   })
 })

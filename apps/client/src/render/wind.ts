@@ -9,10 +9,12 @@ import * as THREE from 'three'
 export const wind = {
   /** Seconds, the clock everything sways to. */
   time: 0,
-  /** 0 in a lull … 1 at the peak of a gust. */
+  /** 0 in a lull … 1 at the peak of a gust (up to 1.5 in a gale). */
   gust: 0,
   /** Which way it blows (unit vector on the ground plane). */
   dir: new THREE.Vector2(0.8, 0.6).normalize(),
+  /** What the weather adds: 0 the usual breeze … 1 a gale (survival sets it, see weather.ts). */
+  weather: 0,
 }
 
 /** Gust strength at time t: slow swells with a quicker flutter on top, 0–1. */
@@ -25,7 +27,8 @@ export function gustAt(t: number): number {
 /** Advance the wind to now (call once a frame). */
 export function tickWind(seconds: number): void {
   wind.time = seconds
-  wind.gust = gustAt(seconds)
+  const w = wind.weather
+  wind.gust = Math.min(1.5, gustAt(seconds) * (1 + w * 0.45) + w * 0.2)
 }
 
 /**
