@@ -1,5 +1,4 @@
 import {
-  type Appearance,
   type BodyPart,
   createPhysicsWorld,
   DEFAULT_MOVEMENT,
@@ -12,8 +11,7 @@ import {
   setGates,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { type BodyLook, buildBody, disposeBody, placePart } from './avatar.ts'
-import { steadyArms } from './body-rig.ts'
+import { type BodyLook, buildBody, placePart } from './avatar.ts'
 
 const quat = (q: { x: number; y: number; z: number; w: number }) =>
   new THREE.Quaternion(q.x, q.y, q.z, q.w)
@@ -38,7 +36,7 @@ export interface DeathPush {
 }
 
 interface Ragdoll {
-  parts: { body: RAPIER.RigidBody; mesh: THREE.Object3D }[]
+  parts: { body: RAPIER.RigidBody; mesh: THREE.Group }[]
   material: THREE.MeshLambertMaterial
   age: number
 }
@@ -83,22 +81,18 @@ export class Ragdolls {
     size: number,
     velocity: THREE.Vector3,
     push: DeathPush,
-    appearance?: Appearance,
-    /** What they wore (survival gear value); null = office clothes. */
-    gear: number | null = null,
   ): void {
-    parts = steadyArms(parts)
     if (this.ragdolls.length >= MAX_RAGDOLLS) {
       const oldest = this.ragdolls.shift()
       if (oldest) this.remove(oldest)
     }
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     const material = new THREE.MeshLambertMaterial({ color })
-    const meshes = buildBody(skin, colorIndex, material, true, appearance, gear)
+    const meshes = buildBody(skin, colorIndex, material, true)
     const world = this.physics.world
     const hit: PartName = push.headshot ? 'head' : 'chest'
     const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()
-    const placed: { body: RAPIER.RigidBody; mesh: THREE.Object3D }[] = []
+    const placed: { body: RAPIER.RigidBody; mesh: THREE.Group }[] = []
 
     for (const p of parts) {
       if (p.name === 'gun') continue
@@ -207,7 +201,6 @@ export class Ragdolls {
 
   private remove(r: Ragdoll): void {
     for (const { body, mesh } of r.parts) {
-      disposeBody(mesh)
       this.scene.remove(mesh)
       this.physics.world.removeRigidBody(body)
     }

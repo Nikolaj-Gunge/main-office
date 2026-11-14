@@ -1,129 +1,35 @@
-import { BODY_LOOKS, FEET_LOOKS, HEAD_LOOKS, LEGS_LOOKS } from '@office-fps/shared'
+import { BODY_LOOKS, bodyLook, HEAD_LOOKS, headLook, PART_SIZES } from '@office-fps/shared'
 import * as THREE from 'three'
-import { type Kit, mix, noise3, seeded, shade, step } from './body-kit.ts'
-import {
-  type Figure,
-  faceZ,
-  type HeadShape,
-  hairCap,
-  jawShell,
-  type Legwear,
-  type Paint,
-  skullPoint,
-  TORSO_SEG,
-  torsoPoint,
-} from './figure.ts'
+import { ARM_LENGTH, type Baked, Kit, seeded } from './body-kit.ts'
 
 /**
- * What people wear in survival, as everyone else sees it. The worn gear value packs one look per
- * slot: head | body << 4 | legs << 8 | feet << 12. Everyone starts in a white tank top, grey
- * joggers and bare feet; clothes they find are mostly paint on the smooth body (a flannel's
- * plaid, a camo pattern) plus the shape they add (a hood, a vest's plates, boots, a hat).
+ * Survival gear as other people see it: one head piece and one body piece (gear.ts packs them
+ * into the replicated `gear` value). Pieces are decoration on the part groups, a little larger
+ * than the parts they cover, baked once per look into one vertex-coloured mesh per part.
  */
 
-/** How a person is dressed (people.ts paints the body with it). */
-export interface Dress {
-  /** Torso colour above the trousers (model space); null = bare skin. */
-  top: (q: THREE.Vector3) => number | null
-  /** Sleeves down to `cuff` (arm space), `baggy` m over the arm; null = bare arms. */
-  sleeve: { cuff: number; baggy: number; color: number; paint?: Paint } | null
-  legs: Legwear | null
-  legColor: number
-  legPaint?: Paint
-  /** Shoes (shin space); null = barefoot. */
-  feet: { size?: { length: number; width: number; height: number }; paint: Paint } | null
-  /** Shapes on top (collars, plates, pockets, a hood). */
-  extras?: (k: Kit, fig: Figure) => void
-  /** A closed coat hides the tie and collar under it (office). */
-  hidesUnder: boolean
-}
+const H = PART_SIZES.head
+const C = PART_SIZES.chest
+const S = PART_SIZES.stomach
+const L = ARM_LENGTH
+const SIDES = [-1, 1] as const
+const ARMS = ['armL', 'armR'] as const
 
-const head = (g: number) => g & 15
-const body = (g: number) => (g >> 4) & 15
-const legsOf = (g: number) => (g >> 8) & 15
-const feetOf = (g: number) => (g >> 12) & 15
+/** Shells: just over the chest, stomach and sleeves (sleeves stop short of the hands). */
+const SHELL_CHEST = [C.x * 2 + 0.03, C.y * 2 + 0.012, C.z * 2 + 0.03] as const
+const SHELL_STOMACH = [S.x * 2 + 0.03, S.y * 2 + 0.01, S.z * 2 + 0.03] as const
+const SLEEVE = [0.14, L - 0.08, 0.16] as const
+/** Centre of a sleeve: from just past the shoulder end (no z-fighting caps) to the wrist. */
+const SLEEVE_Y = -0.06
+const CZ = -C.z - 0.016 // front faces of the shells
+const SZ = -S.z - 0.016
 
-/** The white tank top everyone starts in: scooped neck, armholes, a little grubby. */
-const TANK = 0xe9e6dc
-function tankTop(q: THREE.Vector3): number | null {
-  if (q.y > 1.49) return null
-  const ax = Math.abs(q.x)
-  const strap = ax > 0.06 && ax < 0.12
-  if (q.y > 1.3 && ax > 0.138) return null // armholes
-  if (q.z < 0 && q.y > 1.36 && !strap) return null // scoop neck
-  if (q.z >= 0 && q.y > 1.425 && !strap) return null
-  const grime = noise3(q.x * 14, q.y * 9, q.z * 14)
-  const ribs = 0.97 + 0.03 * Math.sin(q.x * 160 + q.z * 160)
-  return shade(mix(TANK, 0xb8ae98, 0.25 * grime ** 2), ribs)
-}
-
-const camo = (q: THREE.Vector3, base: number) => {
-  const n = noise3(q.x * 8, q.y * 7, q.z * 8) + 0.5 * noise3(q.x * 19 + 3, q.y * 17, q.z * 19)
-  if (n > 1.05) return 0x26281c
-  if (n > 0.85) return 0x3a4228
-  if (n < 0.5) return 0x7a7448
-  return base
-}
-
-const plaid = (q: THREE.Vector3, red: number) => {
-  const u = q.x + q.z * 0.6
-  const bandY = Math.abs(Math.sin(q.y * 48)) > 0.82
-  const bandX = Math.abs(Math.sin(u * 48)) > 0.82
-  if (bandY && bandX) return 0x1a0a08
-  if (bandY || bandX) return shade(red, 0.45)
-  if (Math.abs(Math.sin(q.y * 48 + 1.5)) > 0.97) return 0xc8584a
-  return red
-}
-
-/** A shape along the torso at an inflation: rings from..to, u from u0..u1 (open sheet). */
-function torsoSheet(
-  k: Kit,
-  fig: Figure,
-  color: number | Paint,
-  rings: readonly number[],
-  inflate: number,
-  u0 = 0,
-  u1 = 1,
-): void {
-  const open = u1 - u0 < 1
-  k.on('torso').surface(
-    typeof color === 'number' ? color : 0xffffff,
-    open ? Math.max(3, Math.round(TORSO_SEG * (u1 - u0)) + 1) : TORSO_SEG,
-    rings.length,
-    (u, v) => {
-      const ring = rings[Math.round(v * (rings.length - 1))] as number
-      const q = torsoPoint(fig, (u0 + (u1 - u0) * u) * Math.PI * 2, ring, inflate)
-      return [q.x, q.y, q.z]
-    },
-    { open, colorFn: typeof color === 'number' ? undefined : (q) => color(q) },
-  )
-}
-
-/** Torso front depth at height y (centre line). */
-function frontZ(fig: Figure, y: number, inflate = 0): number {
-  let z = 0
-  for (let ring = 0; ring < 18; ring++) {
-    const q = torsoPoint(fig, Math.PI * 1.5, ring, inflate)
-    if (q.y <= y + 1e-6) z = q.z
-  }
-  return z
-}
-function backZ(fig: Figure, y: number, inflate = 0): number {
-  let z = 0
-  for (let ring = 0; ring < 18; ring++) {
-    const q = torsoPoint(fig, Math.PI * 0.5, ring, inflate)
-    if (q.y <= y + 1e-6) z = q.z
-  }
-  return z
-}
-
-function makePoliceTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined') return null
+function makePoliceTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = 64
   canvas.height = 16
   const ctx = canvas.getContext('2d')
-  if (!ctx) return null
+  if (!ctx) throw new Error('2D canvas unavailable')
   ctx.fillStyle = '#e8ecf0'
   ctx.fillRect(0, 0, 64, 16)
   ctx.fillStyle = '#141c30'
@@ -141,600 +47,276 @@ const policeStrip = new THREE.MeshLambertMaterial({
   emissive: 0x30343a,
 })
 
-/** A flat label on the back or front of the torso (a plane bent round it a little). */
-function label(
-  k: Kit,
-  fig: Figure,
-  material: THREE.Material,
-  y: number,
-  w: number,
-  h: number,
-  back: boolean,
-): void {
-  const z = back ? backZ(fig, y, 0.03) + 0.004 : frontZ(fig, y, 0.03) - 0.004
-  const plane = new THREE.PlaneGeometry(w, h, 4, 1)
-  const pos = plane.getAttribute('position')
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i)
-    pos.setZ(i, (back ? -1 : 1) * 2.2 * x * x)
-  }
-  if (back) plane.rotateY(Math.PI)
-  k.on('torso').add(material, plane, [0, y, z])
+type Build = (k: Kit) => void
+
+const HEAD: Record<number, Build> = {
+  [HEAD_LOOKS.cap]: (k) => {
+    const red = 0xa82828
+    k.on('head').box(red, [0.335, 0.1, 0.335], [0, H.y + 0.04, 0.005])
+    k.box(red, [0.3, 0.025, 0.16], [0, H.y + 0.0, -H.z - 0.07], [-0.12, 0, 0]) // brim
+    k.box(0xeaeaea, [0.04, 0.02, 0.04], [0, H.y + 0.1, 0.005])
+  },
+  [HEAD_LOOKS.beanie]: (k) => {
+    const knit = 0x2f5a78
+    k.on('head').box(knit, [0.33, 0.15, 0.33], [0, H.y + 0.04, 0])
+    k.box(0x264a64, [0.345, 0.06, 0.345], [0, H.y - 0.03, 0]) // turned-up cuff
+    k.box(0xd8d8d0, [0.08, 0.06, 0.08], [0, H.y + 0.14, 0]) // pompom
+  },
+  [HEAD_LOOKS.hardhat]: (k) => {
+    const yellow = 0xf0be14
+    const dome = new THREE.SphereGeometry(0.19, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2)
+    k.on('head').add(yellow, dome, [0, H.y - 0.02, 0], [0, 0, 0], [1, 0.78, 1.08])
+    k.add(
+      yellow,
+      new THREE.CylinderGeometry(0.235, 0.235, 0.025, 12),
+      [0, H.y - 0.01, -0.03],
+      [0, 0, 0],
+      [1, 1, 1.18],
+    )
+    k.box(0xd8a80c, [0.05, 0.04, 0.34], [0, H.y + 0.13, 0])
+  },
+  [HEAD_LOOKS.helmet]: (k) => {
+    const olive = 0x4c5634
+    const dome = new THREE.SphereGeometry(0.205, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2)
+    k.on('head').add(olive, dome, [0, H.y - 0.03, 0.01], [0, 0, 0], [1, 0.82, 1.08])
+    k.add(
+      olive,
+      new THREE.CylinderGeometry(0.21, 0.225, 0.07, 12),
+      [0, H.y - 0.06, 0.01],
+      [0, 0, 0],
+      [1, 1, 1.08],
+    )
+    k.box(0x343a24, [0.43, 0.03, 0.46], [0, H.y - 0.03, 0.01]) // cover band
+    k.box(0x1e1e1a, [0.14, 0.05, 0.03], [0, H.y - 0.01, -0.235]) // NVG mount
+    for (const s of SIDES) k.box(0x262620, [0.015, 0.2, 0.03], [s * 0.158, -0.04, -0.03])
+    k.box(0x262620, [0.2, 0.015, 0.04], [0, -H.y + 0.01, -0.1])
+  },
+  [HEAD_LOOKS.bandana]: (k) => {
+    const red = 0x9a1c1c
+    k.on('head').box(red, [0.32, 0.13, 0.32], [0, -0.07, 0])
+    k.box(red, [0.15, 0.15, 0.014], [0, -0.14, -H.z - 0.012], [0, 0, Math.PI / 4]) // the point
+    k.box(red, [0.07, 0.06, 0.05], [0, -0.04, H.z + 0.02]) // knot
+    for (const s of SIDES)
+      k.box(red, [0.04, 0.14, 0.014], [s * 0.03, -0.12, H.z + 0.04], [0.2, 0, s * 0.2])
+    const rnd = seeded(5)
+    for (let i = 0; i < 9; i++) {
+      const x = -0.12 + rnd() * 0.24
+      const y = -0.12 + rnd() * 0.09
+      k.box(0xf0e8d8, [0.02, 0.02, 0.01], [x, y, -H.z - 0.012])
+    }
+  },
+  [HEAD_LOOKS.cowboy]: (k) => {
+    const hide = 0x7a5230
+    k.on('head').add(
+      hide,
+      new THREE.CylinderGeometry(0.3, 0.3, 0.02, 14),
+      [0, H.y + 0.01, 0],
+      [0, 0, 0],
+      [1, 1, 1.12],
+    )
+    for (const s of SIDES)
+      k.box(hide, [0.1, 0.02, 0.5], [s * 0.27, H.y + 0.05, 0], [0, 0, s * 0.55])
+    k.box(hide, [0.25, 0.16, 0.3], [0, H.y + 0.09, 0])
+    k.box(0x5a3a20, [0.06, 0.03, 0.22], [0, H.y + 0.16, 0]) // the crease
+    k.box(0x2a1a10, [0.255, 0.035, 0.305], [0, H.y + 0.035, 0]) // band
+  },
+  [HEAD_LOOKS.gasmask]: (k) => {
+    const rubber = 0x1c1e20
+    const fz = -H.z - 0.025
+    k.on('head').box(rubber, [0.3, 0.26, 0.05], [0, -0.03, fz])
+    k.box(rubber, [0.31, 0.035, 0.31], [0, 0.06, 0]) // strap round the head
+    k.box(rubber, [0.03, 0.03, 0.31], [0, H.y + 0.01, 0]) // over the top
+    for (const s of SIDES) {
+      const lens = new THREE.CylinderGeometry(0.048, 0.048, 0.03, 10)
+      k.add(0x0a0a0a, lens, [s * 0.068, 0.03, fz - 0.02], [Math.PI / 2, 0, 0], [1.12, 1, 1.12])
+      const glass = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 10)
+      k.add(0x8fb8c0, glass, [s * 0.068, 0.03, fz - 0.027], [Math.PI / 2, 0, 0])
+    }
+    const canister = new THREE.CylinderGeometry(0.06, 0.06, 0.1, 10)
+    k.add(0x4a5236, canister, [0, -0.11, fz - 0.07], [Math.PI / 2 - 0.4, 0, 0])
+    k.box(0x2a2e1e, [0.08, 0.02, 0.08], [0, -0.13, fz - 0.115], [-0.4, 0, 0])
+  },
 }
 
-type Wear = (d: Dress, fig: Figure) => void
+/** A shell over chest, stomach and both sleeves in one colour. */
+function shells(k: Kit, chest: number, stomach = chest, sleeves: number | null = chest): void {
+  k.on('chest').box(chest, SHELL_CHEST)
+  k.on('stomach').box(stomach, SHELL_STOMACH)
+  if (sleeves !== null) for (const arm of ARMS) k.on(arm).box(sleeves, SLEEVE, [0, SLEEVE_Y, 0])
+}
 
-const BODY: Record<number, Wear> = {
-  [BODY_LOOKS.hoodie]: (d) => {
+const BODY: Record<number, Build> = {
+  [BODY_LOOKS.hoodie]: (k) => {
     const grey = 0x5c616b
-    d.top = (q) =>
-      q.y > 1.5 ? null : shade(grey, 0.95 + 0.1 * noise3(q.x * 20, q.y * 20, q.z * 20))
-    d.sleeve = { cuff: 0.25, baggy: 0.016, color: grey }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      // The hood, down on the shoulders; the pouch pocket and drawstrings.
-      torsoSheet(k, fig, shade(grey, 0.85), [13, 14, 15], 0.035, 0.05, 0.45)
-      k.on('torso').blob(
-        shade(grey, 0.85),
-        [0.12, 0.07, 0.05],
-        [0, 1.47, backZ(fig, 1.45) + 0.03],
-        [0.3, 0, 0],
-        8,
-        5,
-      )
-      const fz = frontZ(fig, 1.02, 0.02)
-      k.blob(shade(grey, 0.88), [0.11, 0.055, 0.015], [0, 1.0, fz - 0.002], [0, 0, 0], 8, 4)
-      for (const s of [-1, 1])
-        k.blob(
-          0xe2e2dc,
-          [0.005, 0.05, 0.005],
-          [s * 0.04, 1.4, frontZ(fig, 1.4, 0.01) - 0.006],
-          [0, 0, 0],
-          4,
-          4,
-        )
-      // Ribbed hem.
-      torsoSheet(k, fig, shade(grey, 0.8), [3, 4], 0.016)
-    }
+    const rib = 0x484c55
+    shells(k, grey)
+    k.on('chest').box(rib, [0.38, 0.16, 0.16], [0, C.y + 0.02, C.z + 0.05]) // the hood, down
+    k.box(rib, [0.24, 0.06, 0.06], [0, C.y + 0.06, C.z + 0.02])
+    for (const s of SIDES) k.box(0xe2e2dc, [0.014, 0.13, 0.014], [s * 0.05, C.y - 0.09, CZ - 0.006])
+    k.on('stomach').box(rib, [0.26, 0.13, 0.014], [0, -0.02, SZ - 0.004]) // pouch pocket
+    k.box(rib, [S.x * 2 + 0.035, 0.05, S.z * 2 + 0.035], [0, -S.y + 0.025, 0])
+    for (const arm of ARMS) k.on(arm).box(rib, [0.145, 0.06, 0.165], [0, L / 2 - 0.13, 0])
   },
-  [BODY_LOOKS.jacket]: (d) => {
+  [BODY_LOOKS.jacket]: (k) => {
     const leather = 0x3a281c
-    const under = d.top
-    // Open down the front: the top shows between the panels.
-    d.top = (q) => {
-      if (q.y > 1.5) return null
-      if (q.z < 0 && Math.abs(q.x) < 0.05 + (q.y > 1.35 ? (q.y - 1.35) * 0.6 : 0)) return under(q)
-      return shade(leather, 0.92 + 0.12 * noise3(q.x * 25, q.y * 25, q.z * 25))
+    const edge = 0x241810
+    // Open down the front: the shirt (and tie) show between the panels.
+    for (const s of SIDES) {
+      k.on('chest').box(leather, [0.2, SHELL_CHEST[1], SHELL_CHEST[2]], [s * 0.145, 0, 0])
+      k.box(edge, [0.11, 0.07, 0.03], [s * 0.1, C.y - 0.03, CZ - 0.008], [0, 0, s * 0.45]) // lapel
+      k.box(0x9a9aa0, [0.008, 0.3, 0.008], [s * 0.046, 0, CZ - 0.004]) // zip
+      k.on('stomach').box(leather, [0.18, SHELL_STOMACH[1], SHELL_STOMACH[2]], [s * 0.135, 0, 0])
+      k.box(edge, [0.1, 0.012, 0.012], [s * 0.13, 0.02, SZ - 0.004]) // pocket flap
     }
-    d.sleeve = { cuff: 0.255, baggy: 0.014, color: leather }
-    d.hidesUnder = false
-    d.extras = (k, fig) => {
-      torsoSheet(k, fig, 0x241810, [14, 15, 16], 0.03, 0.05, 0.45) // collar
-      for (const s of [-1, 1]) {
-        const y = 1.4
-        k.on('torso').blob(
-          0x241810,
-          [0.035, 0.07, 0.008],
-          [s * 0.075, y, frontZ(fig, y, 0.012) + 0.004],
-          [0, s * 0.3, s * 0.35],
-          6,
-          4,
-        ) // lapel
-        k.blob(
-          0x241810,
-          [0.04, 0.006, 0.01],
-          [s * 0.1, 1.02, frontZ(fig, 1.02, 0.012)],
-          [0, 0, 0],
-          6,
-          3,
-        )
+    k.on('chest').box(leather, [0.1, SHELL_CHEST[1], 0.14], [0, 0, 0.075])
+    k.box(edge, [0.4, 0.08, 0.05], [0, C.y + 0.02, C.z]) // collar
+    k.on('stomach').box(leather, [0.1, SHELL_STOMACH[1], 0.13], [0, 0, 0.07])
+    k.box(edge, [S.x * 2 + 0.035, 0.05, S.z * 2 + 0.035], [0, -S.y + 0.03, 0.0])
+    for (const arm of ARMS) {
+      k.on(arm).box(leather, SLEEVE, [0, SLEEVE_Y, 0])
+      k.box(edge, [0.145, 0.04, 0.165], [0, L / 2 - 0.12, 0])
+    }
+  },
+  [BODY_LOOKS.camo]: (k) => {
+    shells(k, 0x5a6440)
+    const blots = [0x3a4228, 0x7a7448, 0x26281c, 0x6a5a3a]
+    const rnd = seeded(11)
+    const blot = (w: number, h: number, at: [number, number, number], ry: number) =>
+      k.box(blots[Math.floor(rnd() * blots.length)] as number, [w, h, 0.008], at, [
+        0,
+        ry,
+        rnd() * 0.6,
+      ])
+    for (const [part, [hx, hy, hz]] of [
+      ['chest', SHELL_CHEST],
+      ['stomach', SHELL_STOMACH],
+    ] as const) {
+      k.on(part)
+      for (let i = 0; i < 14; i++) {
+        const front = i % 2 ? -1 : 1
+        const x = (rnd() - 0.5) * (hx - 0.08)
+        const y = (rnd() - 0.5) * (hy - 0.06)
+        blot(0.06 + rnd() * 0.07, 0.04 + rnd() * 0.05, [x, y, front * (hz / 2 + 0.004)], 0)
+      }
+      for (const s of SIDES) {
+        for (let i = 0; i < 3; i++) {
+          const z = (rnd() - 0.5) * (hz - 0.06)
+          const y = (rnd() - 0.5) * (hy - 0.06)
+          blot(0.05 + rnd() * 0.05, 0.04 + rnd() * 0.04, [s * (hx / 2 + 0.004), y, z], Math.PI / 2)
+        }
+      }
+    }
+    for (const arm of ARMS) {
+      k.on(arm)
+      for (let i = 0; i < 8; i++) {
+        const y = -L / 2 + 0.06 + rnd() * (L - 0.2)
+        const face = i % 4
+        const at: [number, number, number] =
+          face < 2 ? [0, y, (face ? 1 : -1) * 0.084] : [(face === 2 ? 1 : -1) * 0.074, y, 0]
+        blot(0.06, 0.05 + rnd() * 0.06, at, face < 2 ? 0 : Math.PI / 2)
       }
     }
   },
-  [BODY_LOOKS.camo]: (d) => {
-    d.top = (q) => (q.y > 1.5 ? null : camo(q, 0x5a6440))
-    d.sleeve = { cuff: 0.255, baggy: 0.014, color: 0x5a6440, paint: (q) => camo(q, 0x5a6440) }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      torsoSheet(k, fig, 0x3a4228, [14, 15], 0.025, 0.05, 0.45)
-      for (const s of [-1, 1]) {
-        const y = 1.3
-        k.on('torso').blob(
-          0x4a5236,
-          [0.05, 0.035, 0.012],
-          [s * 0.09, y, frontZ(fig, y, 0.012) + 0.002],
-          [0, 0, 0],
-          6,
-          4,
-        )
-      }
-    }
-  },
-  [BODY_LOOKS.police]: (d) => {
+  [BODY_LOOKS.police]: (k) => {
     const navy = 0x1a2236
     const shirt = 0x86a2c4
-    d.top = (q) => (q.y > 1.5 ? null : q.y > 1.47 ? shirt : navy)
-    d.sleeve = { cuff: 0.0, baggy: 0.008, color: shirt }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      label(k, fig, policeStrip, 1.33, 0.3, 0.075, true)
-      label(k, fig, policeStrip, 1.22, 0.24, 0.055, false)
-      const fz = frontZ(fig, 1.36, 0.02)
-      k.on('torso').box(0xd2a838, [0.04, 0.05, 0.01], [-0.1, 1.38, fz])
-      k.box(0x111111, [0.05, 0.08, 0.035], [0.12, 1.37, fz - 0.01])
-      k.box(0x111111, [0.015, 0.04, 0.015], [0.135, 1.43, fz - 0.01])
-      torsoSheet(k, fig, 0x101010, [2, 3], 0.03) // duty belt
-      k.box(0x101010, [0.05, 0.1, 0.05], [0.19, 0.88, -0.03])
-    }
+    shells(k, navy, navy, shirt)
+    k.on('chest').box(policeStrip, [0.34, 0.075, 0.012], [0, -0.04, CZ - 0.004])
+    k.box(policeStrip, [0.4, 0.09, 0.012], [0, 0.03, -CZ + 0.004])
+    k.box(0xd2a838, [0.045, 0.055, 0.01], [-0.12, 0.08, CZ - 0.005]) // badge
+    k.box(0x111111, [0.06, 0.09, 0.04], [0.15, 0.09, CZ - 0.02]) // radio
+    k.box(0x111111, [0.02, 0.04, 0.02], [0.17, 0.155, CZ - 0.02])
+    for (const s of SIDES) k.box(navy, [0.1, 0.03, 0.3], [s * 0.13, C.y + 0.012, 0])
+    k.on('stomach').box(0x101010, [S.x * 2 + 0.04, 0.06, S.z * 2 + 0.04], [0, -S.y + 0.03, 0])
+    k.box(0x101010, [0.06, 0.1, 0.05], [0.2, -S.y + 0.0, -0.04]) // holster
+    k.box(0x101010, [0.07, 0.06, 0.04], [-0.12, -S.y + 0.03, SZ - 0.015]) // cuffs pouch
   },
-  [BODY_LOOKS.military]: (d) => {
+  [BODY_LOOKS.military]: (k) => {
     const coyote = 0x6e6246
     const strap = 0x4e4630
     const olive = 0x4c5236
-    d.top = (q) => (q.y > 1.5 ? null : fold(olive, q))
-    d.sleeve = { cuff: 0.255, baggy: 0.014, color: olive }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      // Plate carrier: front and back plates, cummerbund, shoulder straps, pouches.
-      for (const back of [false, true]) {
-        const y = 1.25
-        const z = back ? backZ(fig, y, 0.04) : frontZ(fig, y, 0.04)
-        k.on('torso').tube(
-          coyote,
-          [
-            [1.07, 0.15, 0.022, 0, z],
-            [1.42, 0.15, 0.022, 0, z],
-          ],
-          8,
-          { square: 5 },
-        )
-      }
-      torsoSheet(k, fig, coyote, [4, 5, 6, 7], 0.03)
-      for (const s of [-1, 1]) {
-        k.on('torso').tube(
-          coyote,
-          [
-            [1.42, 0.035, 0.11, s * 0.12, 0],
-            [1.47, 0.035, 0.1, s * 0.12, 0],
-          ],
-          6,
-          { square: 4 },
-        )
-      }
-      const fz = frontZ(fig, 1.15, 0.065)
-      for (let i = 0; i < 3; i++) {
-        k.on('torso').tube(
-          strap,
-          [
-            [1.08, 0.035, 0.022, -0.09 + i * 0.09, fz - 0.01],
-            [1.2, 0.035, 0.022, -0.09 + i * 0.09, fz - 0.01],
-          ],
-          6,
-          { square: 5 },
-        )
-      }
-      k.box(strap, [0.14, 0.09, 0.04], [0, 1.32, frontZ(fig, 1.32, 0.06) - 0.02])
-      k.box(0x2a2a22, [0.08, 0.12, 0.05], [0.07, 1.25, backZ(fig, 1.25, 0.06) + 0.03])
-      k.box(0x1a1a1a, [0.01, 0.22, 0.01], [0.1, 1.45, backZ(fig, 1.4, 0.06) + 0.04], [0.2, 0, 0])
+    for (const arm of ARMS) k.on(arm).box(olive, SLEEVE, [0, SLEEVE_Y, 0])
+    k.on('chest').box(olive, SHELL_CHEST)
+    // Plates front and back, shoulder straps, pouches in rows.
+    k.box(coyote, [0.42, 0.3, 0.05], [0, -0.01, CZ - 0.01])
+    k.box(coyote, [0.42, 0.3, 0.05], [0, -0.01, -CZ + 0.01])
+    for (const s of SIDES) k.box(coyote, [0.09, 0.04, 0.34], [s * 0.13, C.y + 0.02, 0])
+    for (let i = 0; i < 3; i++) k.box(strap, [0.4, 0.012, 0.012], [0, -0.1 + i * 0.07, CZ - 0.04])
+    k.box(strap, [0.16, 0.1, 0.04], [0, 0.05, CZ - 0.05]) // admin pouch
+    k.box(0x1a1a1a, [0.012, 0.22, 0.012], [0.14, C.y + 0.08, -CZ + 0.02], [0.2, 0, 0]) // antenna
+    k.box(0x2a2a22, [0.08, 0.12, 0.05], [0.12, 0.0, -CZ + 0.05]) // radio
+    k.on('stomach').box(olive, SHELL_STOMACH)
+    k.box(coyote, [S.x * 2 + 0.05, 0.14, S.z * 2 + 0.05], [0, 0.07, 0]) // cummerbund
+    for (let i = 0; i < 3; i++) {
+      k.box(strap, [0.085, 0.13, 0.06], [-0.1 + i * 0.1, 0.06, SZ - 0.04]) // magazine pouches
+      k.box(coyote, [0.085, 0.03, 0.065], [-0.1 + i * 0.1, 0.125, SZ - 0.04])
     }
+    k.box(0x1c1c18, [S.x * 2 + 0.04, 0.05, S.z * 2 + 0.04], [0, -S.y + 0.03, 0])
   },
-  [BODY_LOOKS.raincoat]: (d) => {
+  [BODY_LOOKS.raincoat]: (k) => {
     const yellow = 0xe6c21e
-    const fold2 = 0xc8a614
-    d.top = (q) => (q.y > 1.5 ? null : q.z < 0 && Math.abs(q.x - 0.02) < 0.006 ? fold2 : yellow)
-    d.sleeve = { cuff: 0.265, baggy: 0.02, color: yellow }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      torsoSheet(k, fig, fold2, [13, 14, 15], 0.035, 0.05, 0.45) // hood, down
-      // The long skirt to mid-thigh, flaring a little (hangs from the hips, doesn't bend).
-      k.on('torso').rigid()
-      k.tube(
-        yellow,
-        [
-          [0.95, 0.178, 0.118, 0, 0.008],
-          [0.8, 0.2, 0.135, 0, 0.008],
-          [0.62, 0.225, 0.15, 0, 0.01],
-        ],
-        14,
-        {
-          caps: [false, false],
-          colorFn: (q) => (q.z < 0 && Math.abs(q.x - 0.02) < 0.01 ? fold2 : yellow),
-        },
-      )
-      k.rigid(false)
-      for (let i = 0; i < 3; i++) {
-        const y = 1.36 - i * 0.14
-        k.on('torso').blob(
-          0x222222,
-          [0.012, 0.012, 0.006],
-          [0.04, y, frontZ(fig, y, 0.012) - 0.002],
-          [0, 0, 0],
-          6,
-          3,
-        )
-      }
-    }
+    const fold = 0xc8a614
+    shells(k, yellow)
+    k.on('chest').box(fold, [0.34, 0.12, 0.13], [0, C.y + 0.02, C.z + 0.04]) // hood down
+    for (let i = 0; i < 2; i++)
+      k.box(0x222222, [0.03, 0.03, 0.012], [0.04, 0.06 - i * 0.12, CZ - 0.004])
+    k.box(fold, [0.012, SHELL_CHEST[1], 0.012], [0.02, 0, CZ - 0.002])
+    // Long: the skirt hangs to mid-thigh, flaring a little.
+    k.on('stomach').box(yellow, [0.47, 0.26, 0.29], [0, -S.y - 0.11, 0])
+    k.box(fold, [0.012, 0.5, 0.012], [0.02, -0.12, -0.147])
+    for (let i = 0; i < 2; i++)
+      k.box(0x222222, [0.03, 0.03, 0.012], [0.04, 0.0 - i * 0.12, SZ - 0.004])
+    for (const s of SIDES) k.box(fold, [0.1, 0.012, 0.03], [s * 0.12, -0.02, SZ - 0.004]) // pocket flaps
+    for (const arm of ARMS) k.on(arm).box(yellow, [0.15, L - 0.04, 0.17], [0, -0.04, 0])
   },
-  [BODY_LOOKS.flannel]: (d) => {
+  [BODY_LOOKS.flannel]: (k) => {
     const red = 0x9a2c26
-    d.top = (q) => (q.y > 1.5 ? null : plaid(q, red))
-    d.sleeve = { cuff: 0.25, baggy: 0.012, color: red, paint: (q) => plaid(q, red) }
-    d.hidesUnder = true
-    d.extras = (k, fig) => {
-      torsoSheet(k, fig, 0x2a1210, [14, 15], 0.022, 0.55, 0.95) // collar
-      for (let i = 0; i < 4; i++) {
-        const y = 1.4 - i * 0.1
-        k.on('torso').blob(
-          0xe8e0d0,
-          [0.007, 0.007, 0.004],
-          [0, y, frontZ(fig, y, 0.008) - 0.001],
-          [0, 0, 0],
-          5,
-          3,
-        )
-      }
+    const dark = 0x2a1210
+    const light = 0xc8584a
+    shells(k, red)
+    // Plaid: dark bands right round the shell, both ways, with a few lighter ones between.
+    for (const [part, [w, h, d]] of [
+      ['chest', SHELL_CHEST],
+      ['stomach', SHELL_STOMACH],
+    ] as const) {
+      k.on(part)
+      for (const y of [-0.1, 0.0, 0.1]) k.box(dark, [w + 0.006, 0.025, d + 0.006], [0, y, 0])
+      for (const x of [-0.16, -0.055, 0.055, 0.16])
+        k.box(dark, [0.025, h + 0.006, d + 0.006], [x, 0, 0])
+      for (const y of [-0.05, 0.05]) k.box(light, [w + 0.004, 0.01, d + 0.004], [0, y, 0])
+    }
+    k.on('chest').box(dark, [0.32, 0.05, 0.06], [0, C.y - 0.01, CZ + 0.01]) // collar
+    for (const arm of ARMS) {
+      k.on(arm)
+      for (const y of [-0.18, -0.04, 0.1]) k.box(dark, [0.146, 0.03, 0.166], [0, y, 0])
+      k.box(dark, [0.026, L - 0.08, 0.166], [0, SLEEVE_Y, 0])
     }
   },
 }
 
-/** Fold shading for clothes (local copy: people.ts owns the office one). */
-function fold(color: number, q: THREE.Vector3): number {
-  const n = noise3(q.x * 9, q.y * 3, q.z * 9)
-  const crease = Math.max(0, Math.sin(q.y * 70 + n * 6 + q.x * 8)) ** 3
-  return shade(color, 1 - 0.06 * crease - 0.06 * (n - 0.5))
-}
+const cache = new Map<string, Baked | null>()
 
-const LEGS: Record<number, Wear> = {
-  [LEGS_LOOKS.joggers]: (d) => {
-    d.legs = { hem: 0.1, baggy: 0.02, straight: 0, cuff: true }
-    d.legColor = 0x8a8c90
-    d.legPaint = (q) => (q.y < 0.17 ? 0x7a7c80 : 0x8a8c90)
-    d.extras = chain(d.extras, (k, fig) => {
-      const fz = frontZ(fig, 0.92, 0.01)
-      for (const s of [-1, 1])
-        k.on('torso').blob(
-          0xe8e8e0,
-          [0.004, 0.03, 0.004],
-          [s * 0.02, 0.9, fz - 0.006],
-          [0, 0, 0],
-          4,
-          4,
-        )
-    })
-  },
-  [LEGS_LOOKS.jeans]: (d) => {
-    d.legs = { hem: 0.05, baggy: 0.01, straight: 0.062, cuff: false }
-    d.legColor = 0x34507a
-    d.legPaint = (q) => {
-      const side = Math.abs(Math.abs(q.x) - 0.105 - 0.06) < 0.006
-      return side
-        ? 0x4c6a96
-        : mix(
-            0x34507a,
-            0x5a7aa4,
-            0.4 * step(0.55, 0.75, q.y) * noise3(q.x * 30, q.y * 10, q.z * 30),
-          )
-    }
-    d.extras = chain(d.extras, (k, fig) => {
-      const bz = backZ(fig, 0.86, 0.008)
-      for (const s of [-1, 1])
-        k.on('torso').blob(
-          0x2c4468,
-          [0.05, 0.05, 0.008],
-          [s * 0.08, 0.86, bz + 0.002],
-          [0, 0, 0],
-          6,
-          3,
-        )
-    })
-  },
-  [LEGS_LOOKS.cargo]: (d) => {
-    d.legs = { hem: 0.05, baggy: 0.016, straight: 0.064, cuff: false }
-    d.legColor = 0x6b6448
-    d.extras = chain(d.extras, (k) => {
-      for (const s of [-1, 1]) {
-        k.on(s < 0 ? 'thighL' : 'thighR').blob(
-          0x5e573c,
-          [0.022, 0.06, 0.045],
-          [s * 0.088, -0.02, 0],
-          [0, 0, 0],
-          6,
-          4,
-        )
-        k.box(0x4e4830, [0.012, 0.02, 0.07], [s * 0.1, 0.035, 0])
-      }
-    })
-  },
-  [LEGS_LOOKS.camo]: (d) => {
-    d.legs = { hem: 0.05, baggy: 0.014, straight: 0.062, cuff: false }
-    d.legColor = 0x5a6440
-    d.legPaint = (q) => camo(q, 0x5a6440)
-  },
-  [LEGS_LOOKS.work]: (d) => {
-    d.legs = { hem: 0.05, baggy: 0.016, straight: 0.064, cuff: false }
-    d.legColor = 0x5a4430
-    d.extras = chain(d.extras, (k) => {
-      for (const shin of ['shinL', 'shinR'] as const)
-        k.on(shin).blob(0x2a2420, [0.05, 0.05, 0.02], [0, 0.17, -0.07], [0, 0, 0], 8, 5) // knee pads
-    })
-  },
-  [LEGS_LOOKS.police]: (d) => {
-    d.legs = { hem: 0.05, baggy: 0.01, straight: 0.062, cuff: false }
-    d.legColor = 0x1a2236
-    d.legPaint = (q) =>
-      Math.abs(Math.abs(q.x) - 0.105 - 0.065) < 0.008 && q.y > 0.1 ? 0xc8a838 : 0x1a2236
-  },
-}
-
-/** Calls both shape adders. */
-function chain(a: Dress['extras'], b: NonNullable<Dress['extras']>): NonNullable<Dress['extras']> {
-  return (k, fig) => {
-    a?.(k, fig)
-    b(k, fig)
+function bake(key: string, build: Build | undefined): Baked | null {
+  if (cache.has(key)) return cache.get(key) ?? null
+  let baked: Baked | null = null
+  if (build) {
+    const k = new Kit()
+    build(k)
+    baked = k.bake()
   }
+  cache.set(key, baked)
+  return baked
 }
 
-/** Shoes (shin space: sole at y = -0.23). */
-function footwear(look: number): Dress['feet'] {
-  const size = { length: 0.135, width: 0.05, height: 0.05 }
-  switch (look) {
-    case FEET_LOOKS.sneakers:
-      return {
-        size,
-        paint: (q) => {
-          if (q.y < -0.212) return 0xf2f2ee
-          if (Math.abs(q.x) > 0.035 && q.y < -0.19 && q.y > -0.205) return 0x2a5aa8
-          if (q.z < -0.02 && q.z > -0.09 && Math.abs(q.x) < 0.016 && q.y > -0.19) return 0xffffff
-          return 0xd8d8d4
-        },
-      }
-    case FEET_LOOKS.boots:
-      return { size, paint: (q) => (q.y < -0.215 ? 0x1a1410 : 0x5a3a22) }
-    case FEET_LOOKS.military:
-      return {
-        size,
-        paint: (q) => {
-          if (q.y < -0.212) return 0x2a2620
-          if (q.z < -0.01 && Math.abs(q.x) < 0.014 && q.y > -0.2) return 0x0c0c0c
-          return 0x1e1e1c
-        },
-      }
-    default:
-      return null
-  }
+/** The head piece and body piece for a replicated gear value (null = nothing shows). */
+export function gearBodies(gear: number): { head: Baked | null; body: Baked | null } {
+  const h = headLook(gear)
+  const b = bodyLook(gear)
+  return { head: bake(`h${h}`, HEAD[h]), body: bake(`b${b}`, BODY[b]) }
 }
 
-/** Boot shafts up the shins. */
-function bootShafts(k: Kit, look: number): void {
-  const top = look === FEET_LOOKS.military ? -0.02 : look === FEET_LOOKS.boots ? -0.07 : null
-  if (top === null) return
-  const color = look === FEET_LOOKS.military ? 0x1e1e1c : 0x5a3a22
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin)
-      .rigid()
-      .tube(
-        color,
-        [
-          [-0.2, 0.048, 0.06, 0, 0.0],
-          [-0.12, 0.045, 0.05, 0, 0.0],
-          [top, 0.05, 0.056, 0, 0.004],
-        ],
-        10,
-        { caps: [false, false] },
-      )
-    k.tube(
-      shade(color, 0.7),
-      [
-        [top - 0.012, 0.052, 0.058, 0, 0.004],
-        [top + 0.006, 0.052, 0.058, 0, 0.004],
-      ],
-      10,
-      {
-        caps: [false, false],
-      },
-    )
-    k.rigid(false)
-  }
+/** Jackets are worn open: what's under them (tie, collar) stays visible. */
+export const showsUnder = (gear: number): boolean => {
+  const b = bodyLook(gear)
+  return b === BODY_LOOKS.none || b === BODY_LOOKS.jacket
 }
-
-/** How someone in survival is dressed for a gear value. */
-export function dressFor(gear: number, _fig: Figure): Dress {
-  const d: Dress = {
-    top: tankTop,
-    sleeve: null,
-    legs: null,
-    legColor: 0x8a8c90,
-    feet: null,
-    hidesUnder: false,
-  }
-  ;(LEGS[legsOf(gear)] ?? LEGS[LEGS_LOOKS.joggers])?.(d, _fig)
-  BODY[body(gear)]?.(d, _fig)
-  const f = feetOf(gear)
-  d.feet = footwear(f)
-  if (d.feet) {
-    // Trousers go into or over the shoes.
-    if (d.legs) d.legs = { ...d.legs, hem: Math.max(d.legs.hem, 0.07) }
-    d.extras = chain(d.extras, (k) => bootShafts(k, f))
-  }
-  return d
-}
-
-/** A dome over the skull down to `line` (theta as a fraction of π), `lift` m over it. */
-function dome(
-  k: Kit,
-  h: HeadShape,
-  color: number,
-  line: { front: number; side: number; back: number },
-  lift: number,
-): void {
-  hairCap(k, h, color, line, () => lift, 16, 6)
-}
-
-const HEADS: Record<number, (k: Kit, h: HeadShape) => void> = {
-  [HEAD_LOOKS.cap]: (k, h) => {
-    const red = 0xa82828
-    dome(k, h, red, { front: 0.3, side: 0.36, back: 0.4 }, 0.022)
-    const q = skullPoint(h, 0.32 * Math.PI, Math.PI * 1.5, 0.03)
-    k.on('head').blob(
-      red,
-      [0.085, 0.008, 0.06],
-      [0, q.y - 0.005, q.z - 0.045],
-      [-0.12, 0, 0],
-      10,
-      4,
-    ) // brim
-    k.blob(0xeaeaea, [0.012, 0.008, 0.012], [0, h.cy + h.ry + 0.03, 0], [0, 0, 0], 6, 3)
-  },
-  [HEAD_LOOKS.beanie]: (k, h) => {
-    const knit = 0x2f5a78
-    dome(k, h, knit, { front: 0.36, side: 0.42, back: 0.45 }, 0.03)
-    const q = skullPoint(h, 0.36 * Math.PI, 0, 0.04)
-    k.on('head').tube(
-      0x264a64,
-      [
-        [q.y - 0.03, h.rx + 0.03, h.rz + 0.03],
-        [q.y + 0.01, h.rx + 0.03, h.rz + 0.03],
-      ],
-      14,
-      { caps: [false, false] },
-    )
-    k.blob(0xd8d8d0, [0.035, 0.03, 0.035], [0, h.cy + h.ry + 0.055, 0], [0, 0, 0], 8, 5)
-  },
-  [HEAD_LOOKS.hardhat]: (k, h) => {
-    const yellow = 0xf0be14
-    dome(k, h, yellow, { front: 0.38, side: 0.4, back: 0.42 }, 0.04)
-    const y = skullPoint(h, 0.4 * Math.PI, 0, 0.04).y
-    k.on('head').tube(
-      yellow,
-      [
-        [y - 0.012, h.rx + 0.07, h.rz + 0.09, 0, -0.02],
-        [y, h.rx + 0.07, h.rz + 0.09, 0, -0.02],
-      ],
-      16,
-    )
-    k.blob(0xd8a80c, [0.018, 0.03, h.rz + 0.03], [0, h.cy + h.ry + 0.02, 0], [0, 0, 0], 6, 6)
-  },
-  [HEAD_LOOKS.helmet]: (k, h) => {
-    const olive = 0x4c5634
-    dome(k, h, olive, { front: 0.36, side: 0.5, back: 0.5 }, 0.035)
-    const y = skullPoint(h, 0.42 * Math.PI, 0, 0.04).y
-    k.on('head').tube(
-      0x343a24,
-      [
-        [y - 0.01, h.rx + 0.045, h.rz + 0.045],
-        [y + 0.02, h.rx + 0.045, h.rz + 0.045],
-      ],
-      14,
-      { caps: [false, false] },
-    )
-    const q = skullPoint(h, 0.3 * Math.PI, Math.PI * 1.5, 0.05)
-    k.box(0x1e1e1a, [0.07, 0.04, 0.025], [0, q.y, q.z]) // NVG mount
-    for (const s of [-1, 1])
-      k.box(0x262620, [0.008, 0.16, 0.02], [s * (h.rx + 0.005), -0.04, -0.02], [0, 0, s * 0.05])
-  },
-  [HEAD_LOOKS.bandana]: (k, h) => {
-    const rnd = seeded(5)
-    const dots: [number, number][] = Array.from({ length: 14 }, () => [
-      rnd() * 0.2 - 0.1,
-      -0.13 + rnd() * 0.1,
-    ])
-    const red = 0x9a1c1c
-    k.on('head').surface(
-      red,
-      12,
-      5,
-      (u, v) => {
-        const phi = Math.PI + 0.2 + u * (Math.PI - 0.4)
-        const theta = (0.5 + v * 0.42) * Math.PI
-        const q = skullPoint(h, theta, phi, 0.018 + 0.02 * v * (1 - Math.abs(u - 0.5) * 2))
-        return [q.x, q.y - 0.02 * v * (1 - Math.abs(u - 0.5) * 2), q.z]
-      },
-      {
-        open: true,
-        colorFn: (q) =>
-          dots.some(([x, y]) => Math.hypot(q.x - x, q.y - y) < 0.009) ? 0xf0e8d8 : red,
-      },
-    )
-    const q = skullPoint(h, 0.5 * Math.PI, Math.PI * 0.5, 0.02)
-    k.blob(red, [0.03, 0.025, 0.02], [0, q.y, q.z + 0.01], [0, 0, 0], 6, 4)
-  },
-  [HEAD_LOOKS.cowboy]: (k, h) => {
-    const hide = 0x7a5230
-    const top = h.cy + h.ry
-    k.on('head').surface(
-      hide,
-      18,
-      4,
-      (u, v) => {
-        const a = u * Math.PI * 2
-        const r = 0.12 + v * 0.17
-        const side = Math.abs(Math.cos(a))
-        return [Math.cos(a) * r, top - 0.04 + v * v * 0.06 * side, Math.sin(a) * r * 1.1]
-      },
-      { poles: [false, false] },
-    )
-    k.tube(
-      hide,
-      [
-        [top - 0.045, 0.11, 0.125],
-        [top + 0.06, 0.1, 0.12],
-        [top + 0.09, 0.08, 0.1],
-      ],
-      14,
-    )
-    k.tube(
-      0x2a1a10,
-      [
-        [top - 0.03, 0.113, 0.128],
-        [top - 0.005, 0.112, 0.127],
-      ],
-      14,
-      { caps: [false, false] },
-    )
-  },
-  [HEAD_LOOKS.gasmask]: (k, h) => {
-    const rubber = 0x1c1e20
-    jawShell(k, h, rubber, 0.02, 0.4)
-    const fz = faceZ(h, 0.037, 0.022)
-    for (const s of [-1, 1]) {
-      k.on('head').tube(
-        0x0a0a0a,
-        [
-          [0, 0.026, 0.026],
-          [0.02, 0.026, 0.026],
-        ],
-        10,
-        { at: [s * 0.04, 0.022, fz - 0.018], rot: [Math.PI / 2, 0, 0] },
-      )
-      k.blob(0x8fb8c0, [0.022, 0.022, 0.006], [s * 0.04, 0.022, fz - 0.04], [0, 0, 0], 8, 4)
-    }
-    const mz = faceZ(h, 0, -0.07)
-    k.tube(
-      0x4a5236,
-      [
-        [0, 0.03, 0.03],
-        [0.06, 0.03, 0.03],
-      ],
-      10,
-      { at: [0, -0.08, mz - 0.03], rot: [Math.PI / 2 + 0.4, 0, 0] },
-    )
-    k.tube(
-      rubber,
-      [
-        [h.cy + 0.03, h.rx + 0.012, h.rz + 0.012],
-        [h.cy + 0.05, h.rx + 0.012, h.rz + 0.012],
-      ],
-      14,
-      { caps: [false, false] },
-    )
-  },
-}
-
-/** The head piece for a head look (head space). */
-export function wearHead(k: Kit, look: number, h: HeadShape): void {
-  HEADS[look]?.(k, h)
-  k.rigid(false)
-}
-
-/** Head look of a worn gear value (hair under a hat is trimmed). */
-export const headOf = head
