@@ -15,6 +15,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { FarForest } from './forest-lod.ts'
+import { makeGrained } from './grain.ts'
 import { type GroundColour, groundColour } from './ground-colour.ts'
 import { buildDetail, detailItems, detailMaterials } from './ground-detail.ts'
 import { buildSigns } from './road-signs.ts'
@@ -178,6 +179,10 @@ const STIFFNESS: Partial<Record<PropKind, number>> = {
 
 const swaying = <M extends THREE.Material>(material: M): M => {
   makeSwaying(material)
+  return material
+}
+const grained = <M extends THREE.Material>(material: M): M => {
+  makeGrained(material)
   return material
 }
 const BARK = col(0x33261a)
@@ -359,9 +364,12 @@ export class Wilds {
   // Weather: the ground soaks up the rain (wet-ground.ts) and the puddles gleam (setWetness).
   private readonly groundMaterial = wetGroundMaterial(makeGroundTexture())
   private readonly puddleMaterials: THREE.MeshPhongMaterial[] = []
-  private readonly propMaterial = swaying(new THREE.MeshLambertMaterial({ vertexColors: true }))
+  // Both grained (grain.ts): bark, leaves and rock look the same near and simplified.
+  private readonly propMaterial = grained(
+    swaying(new THREE.MeshLambertMaterial({ vertexColors: true })),
+  )
   /** Simplified trees don't sway: no wind work in their shader. */
-  private readonly stillMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
+  private readonly stillMaterial = grained(new THREE.MeshLambertMaterial({ vertexColors: true }))
   private readonly detailMaterial = detailMaterials()
   private readonly roads: RoadGrid
   private readonly far: FarForest
