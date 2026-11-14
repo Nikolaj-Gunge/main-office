@@ -696,6 +696,7 @@ export const TRADER_STOCK: string[] = [
   'bandage',
   'medkit',
   'painkillers',
+  'adrenaline',
   'water',
   'coffee',
   'apple',
@@ -737,7 +738,6 @@ export const AMMO_BOX = 10
  * at his own price. Once it's sold it's gone until he turns up another.
  */
 export const RARE_STOCK: { item: string; chance: number; price: number }[] = [
-  { item: 'adrenaline', chance: 0.35, price: 650 },
   { item: 'cure', chance: 0.05, price: 4000 },
 ]
 

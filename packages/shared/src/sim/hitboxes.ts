@@ -62,6 +62,7 @@ export function remotePose(
     slide: s.slide,
     mantle: s.mantle,
     ledge: s.ledge,
+    windup: s.windup ?? 0,
     weapon: s.weapon,
     seed: s.id,
     ...extra,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   INFECTION_SECONDS,
+  infectionClock,
   infectionLeftText,
   infectionLevel,
   infectionStage,
@@ -30,6 +31,10 @@ describe('infection: how far along', () => {
   })
 
   test('the backpack says roughly how long is left, never to the second', () => {
+    expect(infectionClock(null)).toBe('')
+    expect(infectionClock(INFECTION_SECONDS)).toBe('20:00')
+    expect(infectionClock(65.2)).toBe('1:06')
+    expect(infectionClock(0)).toBe('0:00')
     expect(infectionLeftText(null)).toBe('')
     expect(infectionLeftText(INFECTION_SECONDS)).toBe('About 20 minutes left.')
     expect(infectionLeftText(after(8))).toBe('About 10 minutes left.')

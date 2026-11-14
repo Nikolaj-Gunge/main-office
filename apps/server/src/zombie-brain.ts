@@ -6,6 +6,7 @@ import {
   WeaponId,
   ZombieKind,
 } from '@office-fps/shared'
+import { CLAW_TIMING, ClawAttack } from './claw-attack.ts'
 import type { Point } from './items.ts'
 
 const EYE = 1.6
@@ -42,7 +43,8 @@ export class ZombieBrain {
   private seq = 1
   private yaw = 0
   private pitch = 0
-  private swing = false
+  /** Winding up, clawing and (after a miss) recovering. */
+  private readonly attack = new ClawAttack()
   private stuckFor = 0
   private unstickFor = 0
   private unstickSide = 1
@@ -61,6 +63,17 @@ export class ZombieBrain {
     this.yaw = yaw
     this.pitch = 0
     this.stuckFor = 0
+    this.attack.reset()
+  }
+
+  /** How far through winding up a blow (0–1), or 0. */
+  get windup(): number {
+    return this.attack.windup
+  }
+
+  /** Its blow landed, or clawed at air. */
+  struck(landed: boolean): void {
+    this.attack.struck(landed)
   }
 
   think(self: PlayerState, senses: ZombieSenses, viewTick: number, dt: number): InputCommand {
@@ -87,6 +100,7 @@ export class ZombieBrain {
       }
     }
 
+    let facing = Math.PI
     if (goal) {
       const dx = goal.x - self.pos.x
       const dz = goal.z - self.pos.z
@@ -94,8 +108,10 @@ export class ZombieBrain {
       // Fan out on the approach; close in dead straight for the last couple of metres.
       if (seen && flat > 3) want += this.lean
       const pitch = seen && target ? Math.atan2(target.y + CHEST - eye.y, Math.max(flat, 0.1)) : 0
-      this.turnTowards(want, pitch, (runner ? 9 : 6) * dt)
-      if (!seen || flat > 1.1) buttons |= Button.Forward
+      // Winding up a blow it can only turn so fast after you; off balance after a miss, not at all.
+      this.turnTowards(want, pitch, Math.min((runner ? 9 : 6) * dt, this.attack.turnLimit ?? 9))
+      facing = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw))
+      if (!this.attack.busy && (!seen || flat > 1.1)) buttons |= Button.Forward
       if (runner) buttons |= Button.Sprint
     }
 
@@ -115,21 +131,23 @@ export class ZombieBrain {
       push += ((ox * -fz + oz * fx) / d) * weight // + = the other one is on my left
       if ((-ox * fx - oz * fz) / d > 0.7) ahead = true
     }
+    if (this.attack.busy) push = 0 // planted for the blow
     if (push > 0.15) buttons |= Button.Right
     else if (push < -0.15) buttons |= Button.Left
     if (ahead && seen && flat < 2.5) buttons &= ~Button.Forward
 
-    // In reach: swing (a fresh click every other tick; the claws' own cooldown paces it).
-    const reach = WEAPONS[WeaponId.Claws].range + 0.25
-    if (seen && flat < reach) {
-      this.swing = !this.swing
-      if (this.swing) buttons |= Button.Fire
-    }
+    // In reach: wind up, then claw (see ClawAttack): a blow you can see coming.
+    // It plants its feet for the blow, so only from well inside the claws' reach.
+    const reach = WEAPONS[WeaponId.Claws].range - 0.2
+    const claws = self.weapon
+    const ready = claws.cooldown + claws.draw <= (CLAW_TIMING[this.kind]?.windup ?? 0.6)
+    if (this.attack.tick(this.kind, seen && flat < reach, facing, ready)) buttons |= Button.Fire
 
     // Stuck on something: hop and sidestep for a moment.
     const moved = Math.hypot(self.pos.x - this.lastPos.x, self.pos.z - this.lastPos.z)
     this.lastPos = { x: self.pos.x, z: self.pos.z }
     const trying = (buttons & Button.Forward) !== 0
+    if (this.attack.busy) this.unstickFor = 0
     this.stuckFor = trying && moved < 0.6 * dt ? this.stuckFor + dt : 0
     if (this.stuckFor > STUCK_SECONDS) {
       this.stuckFor = 0

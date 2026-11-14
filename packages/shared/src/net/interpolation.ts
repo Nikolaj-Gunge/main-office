@@ -86,7 +86,14 @@ function blend(a: RemotePlayerState, b: RemotePlayerState, t: number): RemotePla
     ledge: a.mantle === 0 ? b.ledge : b.mantle === 0 ? a.ledge : lerp(a.ledge, b.ledge),
     ...(b.light ? { light: true } : {}),
     ...(b.gear ? { gear: b.gear } : {}),
+    ...windupOf(a, b, t),
   }
+}
+
+/** A wind-up only runs forward: blend it like a climb (a fresh one snaps, never plays back). */
+function windupOf(a: RemotePlayerState, b: RemotePlayerState, t: number): { windup?: number } {
+  const windup = blendProgress(a.windup ?? 0, b.windup ?? 0, t, 1)
+  return windup > 0 ? { windup } : {}
 }
 
 /**

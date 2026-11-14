@@ -522,48 +522,77 @@ function loopable(x: Signal, rate: number, overlap: number): Signal {
   return out
 }
 
-/** Drops landing one by one: short ticks at random, `perSecond` of them. */
-function drops(seconds: number, rate: number, seed: number, perSecond: number): Signal {
+/**
+ * Drops landing one by one, `perSecond` of them: each a tiny burst of noise, coloured somewhere
+ * between `lo` and `hi` Hz (pure tones here sounded like electronic beeps, not water).
+ */
+function drops(
+  seconds: number,
+  rate: number,
+  seed: number,
+  perSecond: number,
+  lo: number,
+  hi: number,
+): Signal {
   const out = new Float32Array(Math.round(seconds * rate))
   const r = rng(seed)
   const count = Math.round(seconds * perSecond)
+  const len = Math.round(rate * 0.03)
   for (let d = 0; d < count; d++) {
-    const at = Math.floor(r() * (out.length - rate * 0.02))
-    const f = 1800 + r() * 4200
-    const level = 0.2 + r() * r() * 0.8
-    const decay = 0.0015 + r() * 0.004
-    for (let i = 0; i < rate * 0.02; i++) {
-      const t = i / rate
-      out[at + i] =
-        (out[at + i] ?? 0) + Math.sin(2 * Math.PI * f * t) * Math.exp(-t / decay) * level
+    const at = Math.floor(r() * (out.length - len))
+    const cutoff = lo + r() * (hi - lo)
+    const k = 1 - Math.exp((-2 * Math.PI * cutoff) / rate)
+    const kLow = 1 - Math.exp((-2 * Math.PI * cutoff * 0.3) / rate)
+    const level = (0.15 + r() * r() * 0.85) / Math.sqrt(k)
+    const decay = 0.002 + r() * 0.006
+    let y = 0
+    let low = 0
+    for (let i = 0; i < len; i++) {
+      // Noise band-limited around the cutoff: lowpassed, minus what's well below it.
+      y += k * (r() * 2 - 1 - y)
+      low += kLow * (y - low)
+      out[at + i] = (out[at + i] ?? 0) + (y - low) * Math.exp(-i / rate / decay) * level
     }
   }
   return out
 }
 
-/** Light rain on leaves: a soft hiss with drops pattering through it (loops). */
+/** Light rain on leaves: a soft, even hush with drops pattering through it (loops). */
 function rainLight(rate: number, _v: number): Signal {
-  const seconds = 3.5
-  const hiss = lowpass(highpass(noise(seconds, rate, 2100), rate, 1500), rate, 6000)
-  const patter = drops(seconds, rate, 2101, 90)
-  return loopable(normalize(mix(rate, gain(hiss, 0.35), gain(patter, 0.6)), 0.6), rate, 0.5)
+  // Long, so the ear doesn't catch the loop coming round.
+  const seconds = 9
+  const hush = lowpass(
+    lowpass(highpass(noise(seconds, rate, 2100), rate, 500), rate, 3500),
+    rate,
+    5000,
+  )
+  const patter = drops(seconds, rate, 2101, 70, 1200, 4500)
+  return loopable(normalize(mix(rate, gain(hush, 0.5), gain(patter, 0.45)), 0.55), rate, 1)
 }
 
-/** A downpour: a broad roar of water with heavy drops in it (loops). */
+/** A downpour: a broad, dark roar of water with heavier drops in it (loops). */
 function rainHeavy(rate: number, _v: number): Signal {
-  const seconds = 4.5
-  const roar = lowpass(highpass(noise(seconds, rate, 2200), rate, 300), rate, 2600)
-  const sheet = lowpass(highpass(noise(seconds, rate, 2201), rate, 2500), rate, 9000)
+  const seconds = 10
+  const roar = lowpass(
+    lowpass(highpass(noise(seconds, rate, 2200), rate, 150), rate, 1600),
+    rate,
+    2400,
+  )
+  const sheet = lowpass(
+    lowpass(highpass(noise(seconds, rate, 2201), rate, 1000), rate, 4500),
+    rate,
+    6000,
+  )
   // It comes in waves.
   for (let i = 0; i < roar.length; i++) {
     const t = i / rate
     roar[i] = (roar[i] ?? 0) * (0.8 + 0.2 * Math.sin(t * 1.7) * Math.sin(t * 0.9 + 1))
   }
-  const patter = drops(seconds, rate, 2202, 260)
+  const patter = drops(seconds, rate, 2202, 220, 700, 3500)
   return loopable(
-    normalize(mix(rate, gain(roar, 1), gain(sheet, 0.4), gain(patter, 0.45)), 0.65),
+    normalize(mix(rate, gain(roar, 1), gain(sheet, 0.35), gain(patter, 0.35)), 0.6),
     rate,
-    0.6,
+    1,
   )
 }
 

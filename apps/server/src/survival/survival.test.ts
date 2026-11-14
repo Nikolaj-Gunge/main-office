@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import {
+  ammoBeside,
   BAREFOOT_NOISE,
   Button,
   capacityOf,
@@ -41,7 +42,9 @@ import {
   WeaponId,
   type WeatherKind,
   weatherAt,
+  ZombieKind,
 } from '@office-fps/shared'
+import { CLAW_TIMING } from '../claw-attack.ts'
 import { Game, type ServerPlayer } from '../game.ts'
 import { START_MONEY } from './director.ts'
 import { openGround } from './drops.ts'
@@ -399,7 +402,7 @@ describe('survival: the night', () => {
     }
   })
 
-  test('a town has many more, and a headshot does not kill outright', () => {
+  test('a town has many more; a headshot drops them, all but a brute', () => {
     const t = setup()
     t.run(1)
     const town = t.def.pois.find((p) => p.key === 'pinewatch')
@@ -409,7 +412,9 @@ describe('survival: the night', () => {
     expect(t.zombies().length).toBeGreaterThanOrEqual(6)
     const walker = t.zombies().find((z) => z.maxHealth >= 200)
     if (!walker) throw new Error('no walker')
-    expect(t.game.match.headshotKills(walker)).toBe(false)
+    expect(t.game.match.headshotKills(walker)).toBe(true)
+    const brute = { ...walker, zombie: { ...walker.zombie, kind: ZombieKind.Brute } }
+    expect(t.game.match.headshotKills(brute as typeof walker)).toBe(false)
   })
 
   test('dying drops everything where you fell; somebody new wakes at Haven', () => {
@@ -533,7 +538,7 @@ describe('survival: the bite', () => {
     expect(t.self().infected).toBeNull()
   })
 
-  test('the cure is very rare; adrenaline is rare; Gus has them only now and then', () => {
+  test('the cure is very rare and Gus has it only now and then; he always sells adrenaline', () => {
     const odds = (table: (typeof LOOT_TABLES)[number], item: string) => {
       const random = seeded(3)
       let n = 0
@@ -546,7 +551,7 @@ describe('survival: the bite', () => {
     }
     expect(odds('medical', 'adrenaline')).toBeLessThan(0.02)
     expect(TRADER_STOCK).not.toContain('cure')
-    expect(TRADER_STOCK).not.toContain('adrenaline')
+    expect(TRADER_STOCK).toContain('adrenaline')
     for (const r of RARE_STOCK) expect(ITEMS[r.item]?.id).toBe(r.item)
 
     // Today he has a cure: it's on the stall, dear, and once sold it's gone.
@@ -879,6 +884,100 @@ describe('survival: clothes and gear', () => {
     expect(TRADER_STOCK.some((id) => slotOf(id) === 'legs')).toBe(true)
     expect(tableItems('bedroom').some((id) => ITEMS[id]?.kind === 'weapon')).toBe(true)
   })
+
+  test('most homes keep a gun, and only a cheap one', () => {
+    const def = loadMap('deadwood').survival
+    if (!def) throw new Error('no survival world')
+    // Every lone house, cabin and camper has a spot for it (and so do the homes in town).
+    const homes = def.pois.flatMap((p, i) =>
+      p.kind === 'house' || p.kind === 'cabin' || p.kind === 'camper' ? [i] : [],
+    )
+    expect(homes.length).toBeGreaterThan(50)
+    for (const i of homes)
+      expect(def.loot.some((l) => l.poi === i && l.table === 'homegun')).toBe(true)
+    expect(def.loot.filter((l) => l.table === 'homegun').length).toBeGreaterThan(75)
+    // Pistols and old shotguns: no rifles, nothing military.
+    for (const id of tableItems('homegun')) {
+      const weapon = ITEMS[id]?.weapon
+      expect(weapon).toBeDefined()
+      const ammo = WEAPONS[weapon as WeaponId].ammoType
+      expect(['9mm', '.22', '.45', '.357', '12ga']).toContain(ammo as string)
+      expect(ITEMS[id]?.value ?? 0).toBeLessThanOrEqual(400)
+    }
+    // About four homes in five still have it.
+    const random = seeded(5)
+    let found = 0
+    for (let i = 0; i < 20000; i++) if (rollLoot('homegun', random)) found++
+    expect(found / 20000).toBeGreaterThan(0.7)
+    expect(found / 20000).toBeLessThan(0.85)
+  })
+
+  test('a gun lies with a few of its own rounds beside it', () => {
+    const random = seeded(9)
+    for (const [id, def] of Object.entries(ITEMS)) {
+      if (def.kind !== 'weapon' || def.weapon === undefined) continue
+      const beside = ammoBeside(id, random)
+      const type = WEAPONS[def.weapon].ammoType
+      if (!type) {
+        expect(beside).toBeNull()
+        continue
+      }
+      expect(ITEMS[beside?.item ?? '']?.ammo).toBe(type)
+      expect(beside?.n).toBeGreaterThanOrEqual(2)
+      expect(beside?.n).toBeLessThanOrEqual(12)
+    }
+    expect(ammoBeside('beans', random)).toBeNull()
+
+    // In the world: walk past some houses and look at what was put out.
+    const t = setup()
+    const houses = t.def.pois.filter((p) => p.kind === 'house').slice(0, 8)
+    const seen = () =>
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    for (const h of houses) {
+      t.move(h.x, h.y + 0.14, h.z)
+      t.run(0.5)
+    }
+    const loot = seen()
+    const guns = loot.filter((l) => {
+      const weapon = ITEMS[l.item]?.weapon
+      const inHouse = houses.some((h) => Math.hypot(l.x - h.x, l.z - h.z) < h.r)
+      return weapon !== undefined && WEAPONS[weapon].ammoType !== undefined && inHouse
+    })
+    expect(guns.length).toBeGreaterThan(3)
+    for (const g of guns) {
+      const type = WEAPONS[ITEMS[g.item]?.weapon as WeaponId].ammoType
+      const near = loot.some(
+        (l) => ITEMS[l.item]?.ammo === type && l.n <= 12 && Math.hypot(l.x - g.x, l.z - g.z) < 0.35,
+      )
+      expect(near).toBe(true)
+    }
+  })
+
+  test('ammunition turns up a good deal more often in ordinary places', () => {
+    const ammoOdds = (table: (typeof LOOT_TABLES)[number]) => {
+      const random = seeded(4)
+      let n = 0
+      for (let i = 0; i < 20000; i++) {
+        const roll = rollLoot(table, random)
+        if (roll && ITEMS[roll.item]?.kind === 'ammo') n++
+      }
+      return n / 20000
+    }
+    // Before: kitchens ~1%, bedrooms ~12%, garages ~3%, shops none, camps ~8%.
+    expect(ammoOdds('kitchen')).toBeGreaterThan(0.04)
+    expect(ammoOdds('bedroom')).toBeGreaterThan(0.2)
+    expect(ammoOdds('garage')).toBeGreaterThan(0.07)
+    expect(ammoOdds('store')).toBeGreaterThan(0.04)
+    expect(ammoOdds('camp')).toBeGreaterThan(0.11)
+    // Still a handful at a time, so the trader's boxes are worth buying.
+    for (const table of ['kitchen', 'bedroom', 'garage', 'store', 'office', 'camp'] as const) {
+      const random = seeded(6)
+      for (let i = 0; i < 4000; i++) {
+        const roll = rollLoot(table, random)
+        if (roll && ITEMS[roll.item]?.kind === 'ammo') expect(roll.n).toBeLessThanOrEqual(16)
+      }
+    }
+  })
 })
 
 describe('survival: weather', () => {
@@ -928,5 +1027,140 @@ describe('survival: weather', () => {
     director.pinWeather('clear')
     expect(director.heardFrom(me)).toBeGreaterThan(shotInStorm)
     expect(shotInStorm).toBeGreaterThan(storm)
+  })
+})
+
+describe('survival: dodging a blow', () => {
+  /**
+   * Player 0 in the open woods, facing a walker that stands 1.4 m in front of them and is coming
+   * for them (every other zombie put away). `step(buttons)` is one tick of player 0's input.
+   */
+  const duel = (kind: ZombieKind = ZombieKind.Walker) => {
+    const t = setup()
+    t.run(1)
+    let spot: { x: number; y: number; z: number } | null = null
+    for (let i = 0; i < 4000 && !spot; i++) {
+      const x = ((i * 137) % 2400) - 1200
+      const z = ((i * 211) % 2400) - 1200
+      if (!openGround(t.def, x, z, 0.5)) continue
+      if (t.def.pois.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + 60)) continue
+      const y = heightAt(t.def.terrain, x, z)
+      const flat = [-3, 3].every(
+        (d) =>
+          Math.abs(heightAt(t.def.terrain, x + d, z) - y) < 0.25 &&
+          Math.abs(heightAt(t.def.terrain, x, z + d) - y) < 0.25,
+      )
+      if (flat) spot = { x, y, z }
+    }
+    if (!spot) throw new Error('no open ground')
+    for (const z of t.zombies()) t.game.retireZombie(z)
+    t.move(spot.x, spot.y + 0.05, spot.z)
+    const me = t.player()
+    me.protectedUntil = 0
+    me.state.yaw = 0 // facing -z, at the zombie
+    const zombie = [...t.game.players.values()].find((p) => p.zombie) as ServerPlayer
+    const zed = zombie.zombie as Zed
+    zed.reset(kind, -1, false)
+    t.game.placeZombie(zombie, { pos: [spot.x, spot.y + 0.05, spot.z - 1.4], yaw: Math.PI }, 5000)
+    zed.speedChanged()
+    t.game.applyRules(zombie)
+    zed.mood = 'chase'
+    zed.targetId = me.id
+    zed.lastKnown = { ...me.state.pos }
+    const health = () => t.game.players.get(me.id)?.health ?? 0
+    const step = (buttons = 0) => {
+      // Keep it one on one: nothing else wanders in.
+      for (const z of t.zombies()) if (z !== zombie) t.game.retireZombie(z)
+      t.input(buttons, me.state.yaw, 0)
+    }
+    /** Ticks until the zombie starts winding up (fails after 2 s). */
+    const untilWindup = () => {
+      for (let i = 0; i < 2 * TICK_RATE; i++) {
+        if (zed.windup > 0) return i
+        step()
+      }
+      throw new Error('it never wound up')
+    }
+    return { t, me, zombie, zed, health, step, untilWindup }
+  }
+  const WALKER = CLAW_TIMING[ZombieKind.Walker]?.windup ?? 0
+  const ticks = (seconds: number) => Math.round(seconds * TICK_RATE)
+  /** A person sees the wind-up this late: reaction time plus a fair ping (s). */
+  const REACTION = 0.3
+  const react = (d: ReturnType<typeof duel>) => {
+    for (let i = 0; i < ticks(REACTION); i++) d.step()
+  }
+
+  test('standing in front of it: the blow lands once the wind-up is done', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    // All through the wind-up nothing happens…
+    for (let i = 0; i < ticks(WALKER) - 3; i++) d.step()
+    expect(d.zed.windup).toBeGreaterThan(0.8)
+    expect(d.health()).toBe(before)
+    // …then the claws come down, and draw blood: bitten.
+    for (let i = 0; i < 6; i++) d.step()
+    expect(d.health()).toBeLessThan(before)
+    expect(survivorOf(d.t).self.infected).toBe(INFECTION_SECONDS)
+  })
+
+  test('backing off during the wind-up: it claws at air', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    for (let i = 0; i < ticks(WALKER); i++) d.step()
+    expect(d.health()).toBe(before)
+    expect(survivorOf(d.t).self.infected).toBeNull()
+  })
+
+  test('sidestepping during the wind-up: it claws at air', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    react(d)
+    for (let i = 0; i < ticks(0.35); i++) d.step(Button.Left)
+    for (let i = 0; i < ticks(WALKER); i++) d.step()
+    expect(d.health()).toBe(before)
+    expect(survivorOf(d.t).self.infected).toBeNull()
+  })
+
+  test('after a miss it stands there, open to the knife, then comes again', () => {
+    const d = duel()
+    d.untilWindup()
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    // Wait for the strike (the wind-up runs out), then step right back in front of it.
+    while (d.zed.windup > 0) d.step()
+    d.step()
+    const at = { ...d.zombie.state.pos }
+    const yaw = d.zombie.state.yaw
+    const before = d.health()
+    for (let i = 0; i < ticks(0.15); i++) d.step(Button.Forward)
+    const recover = CLAW_TIMING[ZombieKind.Walker]?.recover ?? 0
+    for (let i = 0; i < ticks(recover - 0.3); i++) {
+      d.step()
+      expect(d.zed.windup).toBe(0)
+    }
+    // Off balance: it hasn't moved, turned or touched you.
+    expect(Math.hypot(d.zombie.state.pos.x - at.x, d.zombie.state.pos.z - at.z)).toBeLessThan(0.05)
+    expect(d.zombie.state.yaw).toBeCloseTo(yaw, 5)
+    expect(d.health()).toBe(before)
+    // Once it has its balance back it comes at you again.
+    for (let i = 0; i < ticks(1) && d.zed.windup === 0; i++) d.step()
+    expect(d.zed.windup).toBeGreaterThan(0)
+  })
+
+  test('a runner hardly winds up at all', () => {
+    expect(CLAW_TIMING[ZombieKind.Runner]?.windup ?? 1).toBeLessThan(WALKER / 1.5)
+    const d = duel(ZombieKind.Runner)
+    d.untilWindup()
+    const before = d.health()
+    // The same back-off that beats a walker is too late for it.
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    expect(d.health()).toBeLessThan(before)
   })
 })

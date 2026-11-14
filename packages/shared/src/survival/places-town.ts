@@ -65,6 +65,8 @@ function cottage(b: Site, o: Home): void {
   desk(b, 1.6, 0.7, 1.4, 0.8, 'kitchen')
   cabinet(b, -3.5, 0.4, 0.5, 0.9, 1.2, 'wood', 'bedroom')
   b.loot(-1.3, F + 0.02, -1.5, 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(-2.5, F + 0.02, -1.2, 'homegun')
   if (o.bag) bed(b, 3.1, 2.2, true, o.bag, true)
   if (o.n % 2 === 1) blood(b, -0.6, 1.6, 1.2, 0.9, F)
   b.zombie(0, -0.6, F)
@@ -101,6 +103,8 @@ function bungalow(b: Site, o: Home): void {
   bed(b, 4.3, -2.2, false)
   cabinet(b, 3.4, 3.05, 1.2, 0.9, 0.5, 'wood', 'bedroom')
   b.loot(3.3, F + 0.02, -1.8, 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(2.6, F + 0.02, -0.3, 'homegun')
   if (o.bag) bed(b, 4.2, 1.2, false, o.bag, true)
   if (o.n % 3 === 0) corpse(b, 2.6, 1.6, false, F)
   b.zombie(-2.8, 1.2, F).zombie(2.6, -0.6, F)
@@ -149,6 +153,8 @@ function lHouse(b: Site, o: Home): void {
   bed(b, 7.8, -1.2, false)
   cabinet(b, 6, -2.05, 1.2, 0.9, 0.5, 'wood', 'bedroom')
   b.loot(6.8, F + 0.02, 1.7, 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(6.5, F + 0.02, 0.1, 'homegun')
   if (o.bag) bed(b, 5.4, 1.6, true, o.bag, true)
   if (o.n % 2 === 0) blood(b, 5.6, 0.2, 1.3, 1, F)
   b.zombie(0.9, 1.5, F)

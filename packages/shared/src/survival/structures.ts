@@ -181,6 +181,8 @@ export function cabin(s: Site, variant: number): void {
     (['hunting', 'bedroom', 'medical', 'gun', 'melee'] as const)[variant % 5],
   )
   s.loot(w / 2 - 1.2, FLOOR + 0.02, -d / 2 + 1.7, 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  s.loot(w / 2 - 1, FLOOR + 0.02, 0.5, 'homegun')
   if (variant % 5 !== 0)
     s.lantern(0, 2.5, 0, 0.5, {
       color: 0xffb060,

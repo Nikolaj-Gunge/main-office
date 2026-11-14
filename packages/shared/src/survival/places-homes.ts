@@ -160,6 +160,8 @@ function farmhouse(b: Site, poi: Poi, v: number, wall: MaterialId): void {
   up.deco(3.6, F + 0.3, -2.4, 0.76, 0.1, 1.56, 'accent')
   crate(up, -3.6, 2.6, 0.7, v % 3 === 0 ? 'gun' : 'medical', F)
   up.loot(1.8, F + 0.02, 2.2, 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  up.loot(-1, F + 0.02, -1.2, 'homegun')
   up.loot(-1.2, F + 0.02, 1.4, v % 2 === 0 ? 'pack' : 'bedroom')
   note(up, `house_note_${v}`, -2.8, F + 0.5, -1.5, HOUSE_NOTES[v % HOUSE_NOTES.length] ?? '')
   if (v % 2 === 1) corpse(up, 2.4, 1.2, true, F)
@@ -204,6 +206,8 @@ function ranch(s: Site, poi: Poi, v: number, wall: MaterialId): void {
   bed(b, 4.3, -2, false, `bed_${poi.key}`)
   cabinet(b, 1.6, -3.05, 1.2, 0.9, 0.5, 'wood', 'bedroom')
   b.loot(2.6, F + 0.02, -1.2, v % 4 === 1 ? 'gun' : 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(0.3, F + 0.02, -1.5, 'homegun')
   // Living room (south-east).
   b.block(3.6, F, 0.7, 2, 0.45, 0.8, 'fabric')
   desk(b, 0.4, 2.6, 1.2, 0.6, v % 2 ? 'office' : 'store')
@@ -264,6 +268,8 @@ function cottage(b: Site, poi: Poi, v: number, wall: MaterialId): void {
   bed(b, 2.9, -1.7, false, `bed_${poi.key}`)
   cabinet(b, 3.45, 1.8, 0.5, 0.9, 1.2, 'wood', 'bedroom')
   b.loot(2.2, F + 0.02, 0.4, 'medical')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(3, F + 0.02, -0.15, 'homegun')
   note(b, `house_note_${v}`, -1.2, F + 0.79, 0.6, HOUSE_NOTES[v % HOUSE_NOTES.length] ?? '')
   if (v % 2 === 0) blood(b, 2.4, 1.4, 1.3, 1, F)
   if (v % 3 === 1)
@@ -331,6 +337,8 @@ function ruin(b: Site, v: number): void {
   b.loot(-1, F + 0.02, -1.6, 'kitchen')
   b.loot(1.8, F + 0.02, 1.4, 'bedroom')
   b.loot(-3.4, F + 0.02, 2.2, 'medical')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(1.6, F + 0.02, -1.7, 'homegun')
   b.block(2.6, F, -0.6, 0.9, 0.5, 0.5, 'rust')
   corpse(b, 0, 0.4, true, F)
   note(b, `house_note_${v}`, 2.6, F + 0.52, -0.6, HOUSE_NOTES[(v + 3) % HOUSE_NOTES.length] ?? '')
@@ -501,6 +509,8 @@ export function camper(s: Site, _poi: Poi, variant: number): void {
   rv.block(-W / 2 + 1.1, F, 0, 1.8, 0.45, 2.2, 'wood')
   rv.deco(-W / 2 + 1.1, F + 0.45, 0, 1.7, 0.12, 2.1, 'fabricAlt')
   rv.loot(-W / 2 + 1.1, F + 0.6, 0.5, 'bedroom')
+  // The gun lies on the bed, where they slept with it.
+  rv.loot(-W / 2 + 1.1, F + 0.6, -0.4, 'homegun')
   counter(rv, 0.4, -0.95, true, 2, ['kitchen', 'kitchen'])
   rv.block(W / 2 - 1, F, 0.3, 0.8, 0.7, 0.8, 'desk')
   rv.loot(W / 2 - 1, F + 0.75, 0.3, kind === 1 ? 'gun' : 'camp')

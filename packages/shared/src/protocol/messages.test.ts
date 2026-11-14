@@ -267,6 +267,24 @@ describe('server messages', () => {
     if (out.type !== ServerMsg.Snapshot) throw new Error('wrong type')
     expect(out.players.map((p) => p.gear)).toEqual([gear, undefined, 0xf000])
     expect(out.players[2]?.id).toBe(10)
+    // A zombie winding up a blow: the progress rides along (after any gear), none means none.
+    const windups = decodeServerMessage(
+      encodeServerMessage({
+        type: ServerMsg.Snapshot,
+        tick: 1,
+        ackSeq: 1,
+        self: null,
+        health: 100,
+        respawnIn: 0,
+        protected: false,
+        players: [{ ...player, windup: 0.5, gear }, { ...player, windup: 0.001 }, player],
+      }),
+    )
+    if (windups.type !== ServerMsg.Snapshot) throw new Error('wrong type')
+    expect(windups.players[0]?.windup).toBeCloseTo(0.5, 2)
+    expect(windups.players[0]?.gear).toBe(gear)
+    expect(windups.players[1]?.windup).toBeGreaterThan(0)
+    expect(windups.players[2]?.windup).toBeUndefined()
   })
 
   test('item spawns survive the wire', () => {

@@ -72,6 +72,8 @@ export class RemotePlayers {
   ) => void
   /** A zombie within earshot, now and then (they groan). */
   onGroan?: (at: THREE.Vector3) => void
+  /** A zombie started winding up a blow: a snarl, so you hear it coming too. */
+  onWindup?: (at: THREE.Vector3) => void
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -171,7 +173,9 @@ export class RemotePlayers {
           this.onDeath?.(id, before, p.velocity, color, look, size, p.appearance)
         }
         this.detectSteps(p, before, p.shown, dt)
-        if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
+        if (p.kind !== 0 && p.shown.alive && (p.shown.windup ?? 0) > 0 && !before.windup) {
+          this.onWindup?.(new THREE.Vector3(p.shown.x, p.shown.y + 1.6, p.shown.z))
+        } else if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
           this.onGroan?.(new THREE.Vector3(p.shown.x, p.shown.y + 1.6, p.shown.z))
         }
       }
