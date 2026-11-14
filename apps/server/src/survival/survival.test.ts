@@ -13,6 +13,8 @@ import {
   feetLook,
   GEAR,
   gearLooks,
+  HAVEN_FIRE,
+  HAVEN_SEATS,
   heightAt,
   INFECTION_SECONDS,
   ITEMS,
@@ -192,6 +194,38 @@ describe('survival: the catalogue', () => {
       }
     }
     expect(missing).toEqual([])
+  })
+})
+
+describe('survival: Haven', () => {
+  test('nothing solid on the gate road, the ground people wake on, the seats or the people', () => {
+    const map = loadMap('deadwood')
+    const haven = map.survival?.pois.find((p) => p.key === 'haven')
+    if (!haven) throw new Error('no haven')
+    const solid = map.boxes.filter(
+      (b) =>
+        b.collide !== false &&
+        Math.hypot(b.center[0] - haven.x, b.center[2] - haven.z) < haven.r &&
+        b.center[1] - b.size[1] / 2 < haven.y + 1.6 &&
+        b.center[1] + b.size[1] / 2 > haven.y + 0.3,
+    )
+    const hits = (x0: number, z0: number, x1: number, z1: number) =>
+      solid.filter(
+        (b) =>
+          Math.abs(b.center[0] - (haven.x + (x0 + x1) / 2)) < b.size[0] / 2 + (x1 - x0) / 2 &&
+          Math.abs(b.center[2] - (haven.z + (z0 + z1) / 2)) < b.size[2] / 2 + (z1 - z0) / 2,
+      )
+    // From inside the gate to the fire, and the ground south of it where people wake.
+    expect(hits(-2.4, -29, 2.4, -2.5)).toEqual([])
+    expect(hits(-5, 7.5, 5, 11)).toEqual([])
+    for (const [x, z] of HAVEN_SEATS)
+      expect(hits(x - 0.25, z - 0.25, x + 0.25, z + 0.25)).toEqual([])
+    expect(HAVEN_FIRE).toEqual([0, 2])
+    for (const n of map.survival?.npcs ?? []) {
+      if (Math.hypot(n.pos[0] - haven.x, n.pos[2] - haven.z) > haven.r) continue
+      const [x, z] = [n.pos[0] - haven.x, n.pos[2] - haven.z]
+      expect(hits(x - 0.3, z - 0.3, x + 0.3, z + 0.3)).toEqual([])
+    }
   })
 })
 

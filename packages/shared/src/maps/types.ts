@@ -48,6 +48,8 @@ export const MATERIALS = [
   'warnlight',
   /** A warm glowing lantern (oil or battery). */
   'lantern',
+  /** A lit window seen from outside: warm light through a curtain. */
+  'windowglow',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
