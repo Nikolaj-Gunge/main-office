@@ -89,6 +89,8 @@ const lane = (...ids: string[]) => {
 }
 
 // --- The lanes (edit here to re-route; the tests check they keep clear of everything solid) ---
+// Laid out round Haven as p19-start furnishes it (places-haven.ts): the plank walks, the market
+// stalls, the cook station, the water tower and the string-light posts.
 
 // The gate, the road in, and the ring round the fire (5 m out).
 node('gate', 0, -27)
@@ -96,7 +98,7 @@ node('road', 0, -16)
 const RING: [string, number, number][] = [
   ['ringN', 0, -3.2],
   ['ringNE', 3.68, -1.68],
-  ['ringE', 5.2, 2],
+  ['ringE', 4.7, 2],
   ['ringSE', 3.68, 5.68],
   ['ringS', 0, 7.2],
   ['ringSW', -3.68, 5.68],
@@ -106,34 +108,41 @@ const RING: [string, number, number][] = [
 for (const [id, x, z] of RING) node(id, x, z)
 lane(...RING.map(([id]) => id), 'ringN')
 lane('gate', 'road', 'ringN')
-// North: the gate's east side (crates come in here) and the tents along the north wall.
-node('gateE', 5, -25.5)
-node('tents', 11, -19)
+// North: between the tents and through the string-light posts, round the market stalls to the
+// back of Gus' stall; the dirt path east from the fire to it.
+node('tents', 10, -18.6)
+node('tentsE', 17, -18.4)
+node('market', 13.2, -15.5)
 node('stallW', 13.4, -10)
-lane('gate', 'gateE')
-lane('road', 'tents', 'stallW', 'ringE')
-lane('road', 'stallW')
-// West: the kitchen, the long table, the army tent; the washing line and the bunkhouse.
+node('gusPath', 12.5, -0.8)
+lane('road', 'tents', 'tentsE')
+lane('tents', 'market', 'stallW')
+lane('ringNE', 'gusPath')
+// West: the kitchen and the long table; the plank walk to the bunkhouse, the washing line.
 node('west', -6, -13)
 node('kitchen', -11.5, -14.5)
-node('kitchenW', -16, -14.5)
 node('armyTent', -20, -19.5)
+node('kitchenW', -16, -14.5)
 lane('road', 'west', 'kitchen', 'kitchenW', 'armyTent')
 lane('west', 'ringNW')
 node('tableN', -10.2, -13.1)
 node('tableNW', -11.8, -13.1)
+node('tableE', -7.6, -9.4)
 node('tableS', -10.2, -9.9)
 node('tableSW', -11.8, -9.9)
 lane('west', 'tableN', 'tableNW')
-lane('west', 'tableS', 'tableSW')
-node('yard', -10, 7)
+lane('ringNW', 'tableE', 'tableS', 'tableSW')
+node('yard', -9, 5.6)
+node('bunkWalk', -14, 5.6)
 node('washing', -18, 9.6)
-lane('ringW', 'yard', 'washing')
-// East: past Tom to the workbench outside the workshop; round the south of the camp.
-node('east', 9, 8.5)
+lane('ringW', 'yard', 'bunkWalk', 'washing')
+node('chopS', -6.75, 2.6)
+lane('ringW', 'chopS')
+// East: the plank walk to the workshop, on to the workbench; round the south of the camp.
+node('east', 9, 9.2)
 node('bench', 21.4, 10.5)
 node('benchS', 22, 12.4)
-lane('ringE', 'east', 'bench', 'benchS')
+lane('ringSE', 'east', 'bench', 'benchS')
 node('southE', 8, 17)
 node('southW', -5, 16)
 lane('east', 'southE', 'southW', 'ringS')
@@ -161,25 +170,28 @@ spot('table0', -11.8, -10.65, { yaw: 0, doing: 'sit', seat: 0.45 }, 'tableSW')
 spot('table1', -10.2, -10.65, { yaw: 0, doing: 'sit', seat: 0.45 }, 'tableS')
 spot('table2', -11.8, -12.35, { yaw: Math.PI, doing: 'sit', seat: 0.45 }, 'tableNW')
 spot('table3', -10.2, -12.35, { yaw: Math.PI, doing: 'sit', seat: 0.45 }, 'tableN')
-// The chopping block is at (-5.4, 1.2): stand west of it, swing east.
-spot('chop', -6.15, 1.2, { yaw: deg(-90), doing: 'chop' }, 'ringW')
+// The chopping block is at (-6, 1.5): stand west of it, swing east.
+spot('chop', -6.75, 1.5, { yaw: deg(-90), doing: 'chop' }, 'chopS')
+// The kitchen tent's counter, and the cook station east of the fire (the stock pot).
 spot('cook', -10.9, -18.3, { yaw: 0, doing: 'cook' }, 'kitchen')
+spot('stove', 6.1, 2.15, { yaw: 0, doing: 'cook' }, 'ringE')
 spot('wash1', -22.2, 9.1, { yaw: 0, doing: 'laundry' }, 'washing')
 spot('wash2', -25, 9.1, { yaw: 0, doing: 'laundry' }, 'wash1')
 spot('saw', 23.4, 10.45, { yaw: 0, doing: 'saw' }, 'bench')
 spot('hammer', 23.6, 12.3, { yaw: 0, doing: 'hammer' }, 'benchS')
-spot('notices', 6.5, -5.2, { yaw: 0, doing: 'stand' }, 'ringN')
-spot('watchGate', -4.2, -27.4, { yaw: 0, doing: 'guard' }, 'gate')
+spot('notices', 6.5, -6.6, { yaw: 0, doing: 'stand' }, 'ringN')
+// Behind the sandbags west of the gate.
+spot('watchGate', -5.6, -27.3, { yaw: 0, doing: 'guard' }, 'gate')
 // Crates: picked up inside the gate, set down behind Gus' stall.
-spot('crates', 11.2, -26.4, { yaw: 0, doing: 'stand' }, 'gateE')
-lane('crates', 'tents')
+spot('crates', 11.2, -26.4, { yaw: 0, doing: 'stand' }, 'tents')
 spot('stall', 13.6, -5.8, { yaw: deg(-90), doing: 'stand' }, 'stallW')
+lane('gusPath', 'stall')
 // Beds: the tents along the north wall, the army tent, the bunkhouse.
-spot('tent1', 8, -19.4, { yaw: Math.PI, doing: 'sleep' }, 'road')
-spot('tent2', 14, -19.4, { yaw: Math.PI, doing: 'sleep' }, 'tents')
-spot('tent3', 20, -19.4, { yaw: Math.PI, doing: 'sleep' }, 'tent2')
+spot('tent1', 8, -20, { yaw: Math.PI, doing: 'sleep' }, 'tents')
+spot('tent2', 14, -20, { yaw: Math.PI, doing: 'sleep' }, 'tentsE')
+spot('tent3', 20, -20, { yaw: Math.PI, doing: 'sleep' }, 'tentsE')
 spot('cots', -20, -21.4, { yaw: Math.PI, doing: 'sleep' }, 'armyTent')
-spot('bunks', -14, 12.2, { yaw: Math.PI, doing: 'sleep' }, 'yard')
+spot('bunks', -14, 12.2, { yaw: Math.PI, doing: 'sleep' }, 'bunkWalk')
 
 export const FOLK_NODES: Readonly<Record<string, FolkNode>> = NODES
 export const FOLK_SPOTS: Readonly<Record<string, FolkSpot>> = SPOTS
@@ -218,7 +230,18 @@ const R = (round: string[], dwell = 4, carry = false, look?: number): FolkTask =
   ...(look === undefined ? {} : { look }),
 })
 const STROLL = ['ringS', 'east', 'stallW', 'road', 'west', 'yard', 'southW']
-const PATROL = ['gate', 'tents', 'stallW', 'east', 'southE', 'southW', 'yard', 'west', 'road']
+const PATROL = [
+  'gate',
+  'tentsE',
+  'stallW',
+  'gusPath',
+  'east',
+  'southE',
+  'southW',
+  'yard',
+  'west',
+  'road',
+]
 
 /**
  * Who lives here and their day. Night is 0–0.4 and 0.96–1, the day 0.48–0.88: after dark most
@@ -286,7 +309,7 @@ export const CAMP_FOLK: FolkDef[] = [
       [0.3, { at: 'cots' }],
       [0.4, { at: 'cook' }],
       [0.72, R(STROLL, 6)],
-      [0.8, { at: 'cook' }],
+      [0.8, { at: 'stove' }],
       [0.92, { at: 'fire6' }],
     ],
   },
