@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   type ServerMessage,
   ServerMsg,
+  SnapshotCodec,
   WS_PATH,
 } from '@office-fps/shared'
 import { accountToken } from './identity.ts'
@@ -37,7 +38,15 @@ export class Connection {
   bytesInPerSec = 0
   bytesOutPerSec = 0
 
+  /**
+   * Newest snapshot (tick) read on this connection: sent back with inputs so the server can
+   * delta-encode the next ones against it.
+   */
+  snapshotAck = 0
+
   private ws: WebSocket | null = null
+  /** What we know of everyone else, snapshot by snapshot (reads delta snapshots). */
+  private readonly snapshots = new SnapshotCodec()
   private name = ''
   /** The character sent with the next Hello (a change applies on the next (re)join). */
   appearance: number | undefined
@@ -67,6 +76,8 @@ export class Connection {
     const ws = new WebSocket(`${protocol}//${location.host}${WS_PATH}`)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
+    this.snapshots.reset()
+    this.snapshotAck = 0
     this.setState('connecting')
 
     ws.addEventListener('open', () => {
@@ -89,7 +100,16 @@ export class Connection {
       this.bytesIn += data.byteLength
       this.sim.delay('in', () => {
         if (this.ws !== ws) return // arrived after a reconnect
-        this.handle(decodeServerMessage(data))
+        let msg: ServerMessage
+        try {
+          msg = decodeServerMessage(data, this.snapshots)
+        } catch (err) {
+          // Out of step with the server's snapshots (should never happen): start over afresh.
+          console.warn('[net] unreadable message, reconnecting:', (err as Error).message)
+          ws.close()
+          return
+        }
+        this.handle(msg)
       })
     })
 
@@ -118,6 +138,7 @@ export class Connection {
 
   private handle(msg: ServerMessage): void {
     if (msg.type === ServerMsg.Welcome) this.playerId = msg.playerId
+    if (msg.type === ServerMsg.Snapshot) this.snapshotAck = msg.tick
     if (msg.type === ServerMsg.Pong) {
       this.rtt = performance.now() - msg.clientTime
       this.serverTickMs = msg.tickMs

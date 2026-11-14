@@ -108,7 +108,7 @@ export function createSession(
         }
         case ClientMsg.Input:
           if (!playerId) break
-          game.handleInput(playerId, msg.commands)
+          game.handleInput(playerId, msg.commands, msg.snapAck)
           onInput?.()
           break
         case ClientMsg.SetDebug:

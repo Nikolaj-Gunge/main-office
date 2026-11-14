@@ -19,6 +19,7 @@ import {
   PROTOCOL_VERSION,
   type RemotePlayerState,
   ServerMsg,
+  SnapshotCodec,
   TICK_RATE,
 } from '@office-fps/shared'
 
@@ -61,7 +62,9 @@ class Bot {
   private timer: ReturnType<typeof setInterval> | null = null
   private lastTick = 0
   private self = { x: 0, y: 0, z: 0, alive: true }
-  private others: RemotePlayerState[] = []
+  private others = new Map<number, RemotePlayerState>()
+  /** Reads delta snapshots, like a real client. */
+  private readonly snapshots = new SnapshotCodec()
   welcomed = false
 
   constructor(index: number) {
@@ -76,14 +79,16 @@ class Bot {
       })
     })
     this.ws.addEventListener('message', (e) => {
-      const msg = decodeServerMessage(e.data as ArrayBuffer)
+      const msg = decodeServerMessage(e.data as ArrayBuffer, this.snapshots)
       if (msg.type === ServerMsg.Welcome && !this.welcomed) {
         this.welcomed = true
         this.timer = setInterval(() => this.tick(), 1000 / TICK_RATE)
       }
+      if (msg.type === ServerMsg.PlayerLeft) this.others.delete(msg.id)
       if (msg.type === ServerMsg.Snapshot) {
         this.lastTick = msg.tick
-        this.others = msg.players
+        for (const p of msg.players) this.others.set(p.id, p)
+        for (const id of msg.removed ?? []) this.others.delete(id)
         if (msg.self) this.self = { ...msg.self.pos, alive: msg.self.alive }
       }
     })
@@ -126,7 +131,7 @@ class Bot {
       viewTick: this.lastTick,
     }
     if (this.batcher.add(command)) {
-      this.send({ type: ClientMsg.Input, commands: this.batcher.take() })
+      this.send({ type: ClientMsg.Input, commands: this.batcher.take(), snapAck: this.lastTick })
     }
     // Jump is edge-triggered: release it after one tick.
     this.buttons &= ~Button.Jump
@@ -135,7 +140,7 @@ class Bot {
   private nearestTarget(): RemotePlayerState | null {
     let best: RemotePlayerState | null = null
     let bestD = 40 // only shoot within 40 m
-    for (const p of this.others) {
+    for (const p of this.others.values()) {
       if (!p.alive) continue
       const d = Math.hypot(p.x - this.self.x, p.z - this.self.z)
       if (d < bestD) {

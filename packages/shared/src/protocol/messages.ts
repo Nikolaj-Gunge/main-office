@@ -16,6 +16,14 @@ import type {
 } from '../survival/protocol.ts'
 import { BinaryReader, BinaryWriter } from './binary.ts'
 import { decodePitch, decodeYaw, encodePitch, encodeYaw } from './quantize.ts'
+import {
+  fromWire,
+  readWireRemote,
+  type SnapshotCodec,
+  toWire,
+  type WireRemote,
+  writeWireRemote,
+} from './snapshot-delta.ts'
 
 /** Message ids sent from client to server (0x01–0x7f). */
 export const ClientMsg = {
@@ -151,7 +159,15 @@ export type ClientMessage =
        */
       token?: string
     }
-  | { type: typeof ClientMsg.Input; commands: InputCommand[] }
+  | {
+      type: typeof ClientMsg.Input
+      commands: InputCommand[]
+      /**
+       * Newest snapshot (tick) the client has read: the server may delta-encode against it.
+       * Absent/0 = none, every snapshot comes whole.
+       */
+      snapAck?: number
+    }
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
   | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
@@ -188,7 +204,18 @@ export type ServerMessage =
       respawnIn: number
       /** Recipient has spawn protection. */
       protected: boolean
+      /**
+       * Everyone in the recipient's area of interest this snapshot (far ones only now and then;
+       * the client keeps them until they are named in `removed`).
+       */
       players: RemotePlayerState[]
+      /**
+       * Snapshot (tick) the players are delta-encoded against: one the client acknowledged.
+       * Absent = every player is sent whole. Only meaningful with a SnapshotCodec on both ends.
+       */
+      baseTick?: number
+      /** Players that left the recipient's area of interest (or the game): hide them. */
+      removed?: number[]
       /** Survival: the cars near the recipient (absent when there are none). */
       vehicles?: VehicleNet[]
     }
@@ -272,14 +299,8 @@ const TAU = Math.PI * 2
 const FLAG_CROUCHED = 1
 const FLAG_GROUNDED = 2
 const FLAG_DEAD = 4
-const FLAG_PROTECTED = 8
-const FLAG_AIMING = 16
-const FLAG_LIGHT = 32
 const FLAG_WINDED = 64
 const FLAG_PRONE = 128
-/** Others' state only: a gear u16 follows the animation bytes (own state uses bit 0 for crouch). */
-const FLAG_GEAR = 1
-const FLAG_WINDUP = 64
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -393,29 +414,6 @@ function readPlayerState(r: BinaryReader): PlayerState {
   }
 }
 
-// --- Other players: compact (f32 position, quantized angles) ------------------------------
-
-function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
-  w.u16(p.id).f32(p.x).f32(p.y).f32(p.z)
-  w.u16(encodeYaw(p.yaw)).i16(encodePitch(p.pitch))
-  w.u8(Math.round(Math.max(0, Math.min(1, p.crouch)) * 255))
-  w.u8(
-    (p.grounded ? FLAG_GROUNDED : 0) |
-      (p.alive ? 0 : FLAG_DEAD) |
-      (p.protected ? FLAG_PROTECTED : 0) |
-      (p.aiming ? FLAG_AIMING : 0) |
-      (p.light ? FLAG_LIGHT : 0) |
-      (p.gear ? FLAG_GEAR : 0) |
-      (p.windup ? FLAG_WINDUP : 0),
-  )
-  w.u8(p.weapon)
-  w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
-  w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
-  writeAnimation(w, p)
-  if (p.gear) w.u16(p.gear & 0xffff)
-  if (p.windup) w.u8(Math.max(1, Math.round(Math.min(1, p.windup) * 255)))
-}
-
 /**
  * The animation-only extras of a pose (9 bytes): movement direction, jump, landing, aim, shot,
  * lying down, sliding, climbing.
@@ -469,41 +467,48 @@ function readAnimation(r: BinaryReader): {
   }
 }
 
-function readRemote(r: BinaryReader): RemotePlayerState {
-  const id = r.u16()
-  const x = r.f32()
-  const y = r.f32()
-  const z = r.f32()
-  const yaw = decodeYaw(r.u16())
-  const pitch = decodePitch(r.i16())
-  const crouch = r.u8() / 255
-  const flags = r.u8()
-  const weapon = r.u8() as WeaponId
-  const stride = r.u8() / 255
-  const speed = r.u8() / 10
-  const animation = readAnimation(r)
-  const gear = flags & FLAG_GEAR ? r.u16() : 0
-  const windup = flags & FLAG_WINDUP ? r.u8() / 255 : 0
-  return {
-    stride,
-    speed,
-    ...animation,
-    id,
-    x,
-    y,
-    z,
-    yaw,
-    pitch,
-    crouch,
-    grounded: (flags & FLAG_GROUNDED) !== 0,
-    alive: (flags & FLAG_DEAD) === 0,
-    protected: (flags & FLAG_PROTECTED) !== 0,
-    aiming: (flags & FLAG_AIMING) !== 0,
-    weapon,
-    ...(flags & FLAG_LIGHT ? { light: true } : {}),
-    ...(gear ? { gear } : {}),
-    ...(windup ? { windup } : {}),
+// --- Other players: delta-encoded against an acknowledged snapshot (snapshot-delta.ts) ------
+
+type SnapshotMsg = Extract<ServerMessage, { type: typeof ServerMsg.Snapshot }>
+
+/** The server sends the same state objects to every client in a round: quantize each once. */
+const wireCache = new WeakMap<RemotePlayerState, WireRemote>()
+
+function wireOf(p: RemotePlayerState): WireRemote {
+  let q = wireCache.get(p)
+  if (!q) {
+    q = toWire(p)
+    wireCache.set(p, q)
   }
+  return q
+}
+
+function writePlayers(w: BinaryWriter, msg: SnapshotMsg, codec?: SnapshotCodec): void {
+  const base = msg.baseTick ? codec?.knownAt(msg.baseTick) : undefined
+  w.u32(base ? (msg.baseTick ?? 0) : 0)
+  const sent = msg.players.map(wireOf)
+  w.u8(sent.length)
+  for (const q of sent) writeWireRemote(w, q, base?.get(q[0] ?? 0))
+  const removed = msg.removed ?? []
+  w.u8(removed.length)
+  for (const id of removed) w.u16(id)
+  codec?.record(msg.tick, sent, removed)
+}
+
+function readPlayers(
+  r: BinaryReader,
+  tick: number,
+  codec?: SnapshotCodec,
+): { players: RemotePlayerState[]; baseTick: number; removed: number[] } {
+  const baseTick = r.u32()
+  const base = baseTick ? codec?.knownAt(baseTick) : undefined
+  if (baseTick && !base) throw new Error(`snapshot baseline ${baseTick} missing`)
+  const sent: WireRemote[] = []
+  for (let i = r.u8(); i > 0; i--) sent.push(readWireRemote(r, (id) => base?.get(id)))
+  const removed: number[] = []
+  for (let i = r.u8(); i > 0; i--) removed.push(r.u16())
+  codec?.record(tick, sent, removed)
+  return { players: sent.map(fromWire), baseTick, removed }
 }
 
 // --- Cars ------------------------------------------------------------------------------------
@@ -595,6 +600,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
         w.u32(c.seq).u16(c.buttons).u16(encodeYaw(c.yaw)).i16(encodePitch(c.pitch))
         writeTick(w, c.viewTick)
       }
+      w.u32(msg.snapAck ?? 0)
       break
     case ClientMsg.SetDebug:
       w.u8(msg.flags)
@@ -636,7 +642,8 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
           viewTick: readTick(r),
         })
       }
-      return { type, commands }
+      const snapAck = r.u32()
+      return { type, commands, ...(snapAck ? { snapAck } : {}) }
     }
     case ClientMsg.SetDebug:
       return { type, flags: r.u8() }
@@ -649,8 +656,16 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
   }
 }
 
-export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer> {
-  const w = new BinaryWriter(64).u8(msg.type)
+/**
+ * @param codec the recipient's snapshot record (see snapshot-delta.ts): needed to delta-encode
+ *              snapshots against `baseTick`, and updated with every snapshot written
+ */
+export function encodeServerMessage(
+  msg: ServerMessage,
+  codec?: SnapshotCodec,
+): Uint8Array<ArrayBuffer> {
+  // Snapshots run to a few hundred bytes: start big enough not to regrow the buffer.
+  const w = new BinaryWriter(msg.type === ServerMsg.Snapshot ? 1024 : 64).u8(msg.type)
   switch (msg.type) {
     case ServerMsg.Welcome:
       w.u16(msg.playerId).u32(msg.serverTick).u8(msg.tickRate).u8(msg.snapshotRate)
@@ -663,8 +678,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       w.u8(Math.max(0, Math.min(255, Math.ceil(msg.health))))
       w.f32(msg.respawnIn)
       w.u8(msg.protected ? 1 : 0)
-      w.u8(msg.players.length)
-      for (const p of msg.players) writeRemote(w, p)
+      writePlayers(w, msg, codec)
       w.u8(msg.vehicles?.length ?? 0)
       for (const v of msg.vehicles ?? []) writeVehicle(w, v)
       break
@@ -769,7 +783,14 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
   return w.finish()
 }
 
-export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessage {
+/**
+ * @param codec this connection's snapshot record: required to read delta snapshots, and updated
+ *              with every snapshot read
+ */
+export function decodeServerMessage(
+  data: ArrayBuffer | Uint8Array,
+  codec?: SnapshotCodec,
+): ServerMessage {
   const r = new BinaryReader(data)
   const type = r.u8()
   switch (type) {
@@ -789,9 +810,7 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       const health = r.u8()
       const respawnIn = r.f32()
       const isProtected = r.u8() === 1
-      const count = r.u8()
-      const players: RemotePlayerState[] = []
-      for (let i = 0; i < count; i++) players.push(readRemote(r))
+      const { players, baseTick, removed } = readPlayers(r, tick, codec)
       const vehicles: VehicleNet[] = []
       for (let i = r.u8(); i > 0; i--) vehicles.push(readVehicle(r))
       return {
@@ -803,6 +822,8 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
         respawnIn,
         protected: isProtected,
         players,
+        ...(baseTick ? { baseTick } : {}),
+        ...(removed.length > 0 ? { removed } : {}),
         ...(vehicles.length > 0 ? { vehicles } : {}),
       }
     }

@@ -40,6 +40,7 @@ import {
   type ShotEvent,
   ShotResult,
   SNAPSHOT_RATE,
+  SnapshotCodec,
   type SpawnWeapon,
   type SurvivalAction,
   seeded,
@@ -61,6 +62,7 @@ import {
   zombieScale,
 } from '@office-fps/shared'
 import { BOT_NAMES, BotBrain } from './bots.ts'
+import { type InterestEntity, pickInterest, SpatialGrid } from './interest.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
@@ -101,6 +103,10 @@ interface ServerPlayer {
   lastQueuedSeq: number
   /** Highest seq simulated — echoed in snapshots for reconciliation. */
   ackSeq: number
+  /** Newest snapshot (tick) the client says it has read: the baseline for delta snapshots. */
+  snapAck: number
+  /** What this client knows of everyone else, snapshot by snapshot (delta encoding + interest). */
+  snapshots: SnapshotCodec
   health: number
   /** Tick at which a dead player respawns. */
   respawnAt: number
@@ -187,6 +193,8 @@ export class Game {
   /** Smoothed cost of simulation and of building + sending snapshots (ms), for /healthz. */
   readonly timing = { simMs: 0, snapshotMs: 0 }
   private nextId = 1
+  /** Snapshots sent so far (far players take turns by it). */
+  private snapshotCount = 0
   private map: MapDef
   private physics: PhysicsWorld
   private readonly history = new PoseHistory(
@@ -411,6 +419,8 @@ export class Game {
       queue: [],
       lastQueuedSeq: 0,
       ackSeq: 0,
+      snapAck: 0,
+      snapshots: new SnapshotCodec(),
       health: MAX_HEALTH,
       respawnAt: 0,
       protectedUntil: this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE,
@@ -472,9 +482,12 @@ export class Game {
     this.match.check()
   }
 
-  handleInput(id: number, commands: InputCommand[]): void {
+  /** @param snapAck newest snapshot the client has read (absent/0: none) */
+  handleInput(id: number, commands: InputCommand[], snapAck = 0): void {
     const player = this.players.get(id)
     if (!player) return
+    // Only forward, and never a snapshot we haven't sent yet.
+    if (snapAck > player.snapAck && snapAck <= this.tick) player.snapAck = snapAck
     for (const command of commands.slice(0, MAX_COMMANDS_PER_MESSAGE)) {
       if (command.seq <= player.lastQueuedSeq) continue
       player.lastQueuedSeq = command.seq
@@ -1115,18 +1128,54 @@ export class Game {
   }
 
   private sendSnapshots(): void {
-    const everyone: RemotePlayerState[] = [...this.players.values()].map((p) =>
-      toRemote(
-        p,
-        this.tick < p.protectedUntil,
-        this.match.lightOn(p),
-        this.tick,
-        this.match.gearOf(p),
-      ),
-    )
+    this.snapshotCount++
+    const everyone = new Map<number, RemotePlayerState>()
+    for (const p of this.players.values()) {
+      everyone.set(
+        p.id,
+        toRemote(
+          p,
+          this.tick < p.protectedUntil,
+          this.match.lightOn(p),
+          this.tick,
+          this.match.gearOf(p),
+        ),
+      )
+    }
+    // Survival's world is big: each client only gets who is around them (interest.ts). The
+    // arena maps are small enough that everyone sees everyone.
+    const entities: InterestEntity[] = []
+    if (this.map.survival) {
+      for (const p of this.players.values()) {
+        entities.push({ id: p.id, x: p.state.pos.x, z: p.state.pos.z, person: !p.zombie })
+      }
+    }
+    const grid = this.map.survival ? new SpatialGrid(entities) : null
+    const people = entities.filter((e) => e.person)
     for (const player of this.players.values()) {
-      const vehicles = player.client === NO_CLIENT ? [] : this.match.vehiclesFor(player)
-      send(player.client, {
+      if (player.client === NO_CLIENT) continue
+      const codec = player.snapshots
+      let players: RemotePlayerState[]
+      let removed: number[]
+      if (grid) {
+        const pick = pickInterest(
+          { id: player.id, x: player.state.pos.x, z: player.state.pos.z },
+          grid,
+          people,
+          codec.known,
+          this.snapshotCount,
+        )
+        players = pick.send.flatMap((id) => everyone.get(id) ?? [])
+        removed = pick.removed
+      } else {
+        players = []
+        for (const [id, state] of everyone) if (id !== player.id) players.push(state)
+        removed = [...codec.known.keys()].filter((id) => !everyone.has(id))
+      }
+      const vehicles = this.match.vehiclesFor(player)
+      // Delta against the newest snapshot the client has confirmed, while we still remember it.
+      const baseTick = codec.knownAt(player.snapAck) ? player.snapAck : 0
+      const msg: ServerMessage = {
         type: ServerMsg.Snapshot,
         tick: this.tick,
         ackSeq: player.ackSeq,
@@ -1134,9 +1183,12 @@ export class Game {
         health: player.health,
         respawnIn: player.state.alive ? 0 : Math.max(0, player.respawnAt - this.tick) / TICK_RATE,
         protected: this.tick < player.protectedUntil,
-        players: everyone.filter((p) => p.id !== player.id),
+        players,
+        ...(baseTick ? { baseTick } : {}),
+        ...(removed.length > 0 ? { removed } : {}),
         ...(vehicles.length > 0 ? { vehicles } : {}),
-      })
+      }
+      player.client.send(encodeServerMessage(msg, codec))
     }
   }
 
