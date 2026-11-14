@@ -26,8 +26,8 @@ export interface SurvivalSelf {
   /** Torch battery, 0–100. */
   battery: number
   light: boolean
-  /** The bed you wake up in after dying (an interactable key), or null: the start. */
-  bed: string | null
+  /** Bitten: seconds until you turn (see infection.ts), or null when you're clean. */
+  infected: number | null
 }
 
 export interface QuestState {

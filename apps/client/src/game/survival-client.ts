@@ -36,6 +36,7 @@ import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { Night } from '../render/night.ts'
 import { Wilds } from '../render/wilds.ts'
+import { Infection, type InfectionFx } from './infection.ts'
 import type { RemotePlayers } from './remote-players.ts'
 
 /** How far you reach for things, and how close you stand to talk (m): the server's numbers. */
@@ -73,6 +74,9 @@ export class SurvivalClient {
   shared: SurvivalShared | null = null
   /** What E would do right now ("Take …", "Talk to …"), or null. */
   prompt: string | null = null
+  /** The bite on screen this frame (for the post pass), or null when you're clean. */
+  infectionFx: InfectionFx | null = null
+  private readonly infection: Infection
 
   private readonly def: SurvivalDef
   private readonly scene: THREE.Scene
@@ -124,6 +128,7 @@ export class SurvivalClient {
     o.scene.add(this.boards.root)
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
+    this.infection = new Infection(o.audio)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
     o.scene.add(o.camera)
@@ -178,6 +183,7 @@ export class SurvivalClient {
     switch (msg.type) {
       case ServerMsg.Survival:
         this.self = msg.self
+        this.infection.set(msg.self.infected ?? null)
         this.hud.setSelf(msg.self)
         return true
       case ServerMsg.Loot:
@@ -226,6 +232,7 @@ export class SurvivalClient {
     this.loot.clear()
     this.heli.clear()
     this.self = null
+    this.infection.set(null)
     this.applyBoards([])
   }
 
@@ -311,7 +318,9 @@ export class SurvivalClient {
 
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
+    this.infectionFx = this.infection.update(dt, state.alive)
     this.hud.update(dt, {
+      infected: state.alive ? this.infection.left : null,
       health,
       stamina: state.stamina,
       winded: state.winded,

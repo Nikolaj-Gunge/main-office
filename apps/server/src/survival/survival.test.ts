@@ -9,6 +9,7 @@ import {
   decodeServerMessage,
   gearLooks,
   heightAt,
+  INFECTION_SECONDS,
   ITEMS,
   initPhysics,
   LOOT_TABLES,
@@ -20,6 +21,8 @@ import {
   POCKETS_KG,
   planksFor,
   QUESTS,
+  RARE_STOCK,
+  rollLoot,
   type ServerMessage,
   ServerMsg,
   type SurvivalSelf,
@@ -279,22 +282,216 @@ describe('survival: the night', () => {
     expect(t.game.match.headshotKills(walker)).toBe(false)
   })
 
-  test('dying drops the backpack where you fell and wakes you up at the start', () => {
+  test('dying drops everything where you fell; somebody new wakes at Haven', () => {
     const t = setup()
     t.run(1)
-    const d = (
-      t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }
-    ).survival
-    d.survivors.get(t.ids[0] ?? 0)?.self.inv.push({ item: 'beans', n: 3 })
+    const sv = survivorOf(t)
+    sv.self.inv.push({ item: 'beans', n: 3 }, { item: 'radio_tube', n: 1 })
+    sv.self.wear.body = 'policevest'
+    sv.self.pack = 'pack_school'
+    sv.self.money = 75
+    sv.self.infected = 400
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
-    expect(t.self().inv).toEqual([])
-    t.run(7)
-    expect(t.player().state.alive).toBe(true)
-    expect(t.player().state.weapon.id).toBe(WeaponId.Handgun)
+    // A new character: the start kit, fresh, clean.
+    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(t.self().money).toBe(0)
+    expect(t.self().pack).toBeNull()
+    expect(t.self().wear).toEqual({})
+    expect(t.self().infected).toBeNull()
     const dropped =
       t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
-    expect(dropped.some((l) => l.item === 'beans' && l.n === 3)).toBe(true)
+    for (const [item, n] of [
+      ['beans', 3],
+      ['radio_tube', 1],
+      ['policevest', 1],
+      ['pack_school', 1],
+      ['cash', 75],
+      ['glock', 1],
+      ['knife', 1],
+    ] as const) {
+      expect(dropped.some((l) => l.item === item && l.n === n)).toBe(true)
+    }
+    t.run(7)
+    const s = t.player().state
+    expect(s.alive).toBe(true)
+    expect(s.weapon.id).toBe(WeaponId.Handgun)
+    expect(s.weapon.ammo).toBe(12)
+    expect(s.holstered?.id).toBe(WeaponId.Knife)
+    const haven = t.def.pois.find((p) => p.key === 'haven')
+    if (!haven) throw new Error('no haven')
+    expect(Math.hypot(s.pos.x - haven.x, s.pos.z - haven.z)).toBeLessThan(15)
+    expect(Math.abs(s.pos.y - haven.y)).toBeLessThan(0.5)
+    expect(t.self().hunger).toBe(70)
+  })
+})
+
+/** The director's insides, for tests that set somebody up. */
+type Insides = {
+  survivors: Map<number, { self: SurvivalSelf }>
+  turned: Map<number, { stuff: { item: string; n: number }[]; look: number }>
+  rare: Map<string, number>
+}
+const insides = (t: ReturnType<typeof setup>) =>
+  (t.game.match as unknown as { survival: Insides }).survival
+const survivorOf = (t: ReturnType<typeof setup>, i = 0) => {
+  const sv = insides(t).survivors.get(t.ids[i] ?? 0)
+  if (!sv) throw new Error('no survivor')
+  return sv
+}
+
+describe('survival: the bite', () => {
+  test('a claw that draws blood infects you, once; the clock runs', () => {
+    const t = setup()
+    t.run(1)
+    const zombie = [...t.game.players.values()].find((p) => p.zombie)
+    if (!zombie) throw new Error('no zombie')
+    expect(t.self().infected).toBeNull()
+    t.game.match.onDamage(t.player(), zombie, 10)
+    t.run(0.1)
+    expect(t.self().infected).toBe(INFECTION_SECONDS)
+    t.run(10)
+    const sv = survivorOf(t)
+    expect(sv.self.infected).toBeGreaterThanOrEqual(INFECTION_SECONDS - 11)
+    expect(sv.self.infected).toBeLessThanOrEqual(INFECTION_SECONDS - 9)
+    // Another bite doesn't start it over (or make it faster).
+    const left = sv.self.infected
+    t.game.match.onDamage(t.player(), zombie, 10)
+    expect(sv.self.infected).toBe(left)
+    // The client hears about it now and then, not every second.
+    const told = t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Survival).length ?? 0
+    t.run(10)
+    const more =
+      (t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Survival).length ?? 0) - told
+    expect(more).toBeGreaterThanOrEqual(1)
+    expect(more).toBeLessThanOrEqual(3)
+  })
+
+  test('adrenaline winds the clock back; the cure ends it', () => {
+    const t = setup()
+    t.run(1)
+    const sv = survivorOf(t)
+    const id = t.ids[0] ?? 0
+    sv.self.inv.push({ item: 'adrenaline', n: 1 }, { item: 'cure', n: 1 })
+    // Not infected: the cure isn't wasted.
+    t.game.handleAction(id, { a: 'use', item: 'cure' })
+    expect(countOf(sv.self.inv, 'cure')).toBe(1)
+    sv.self.infected = 90
+    t.game.handleAction(id, { a: 'use', item: 'adrenaline' })
+    expect(sv.self.infected).toBe(INFECTION_SECONDS)
+    expect(countOf(sv.self.inv, 'adrenaline')).toBe(0)
+    sv.self.infected = 30
+    t.game.handleAction(id, { a: 'use', item: 'cure' })
+    expect(sv.self.infected).toBeNull()
+    expect(countOf(sv.self.inv, 'cure')).toBe(0)
+    t.run(0.1)
+    expect(t.self().infected).toBeNull()
+  })
+
+  test('the cure is very rare; adrenaline is rare; Gus has them only now and then', () => {
+    const odds = (table: (typeof LOOT_TABLES)[number], item: string) => {
+      const random = seeded(3)
+      let n = 0
+      for (let i = 0; i < 20000; i++) if (rollLoot(table, random)?.item === item) n++
+      return n / 20000
+    }
+    for (const table of ['cache', 'drop', 'military', 'lab'] as const) {
+      expect(tableItems(table)).toContain('cure')
+      expect(odds(table, 'cure')).toBeLessThan(0.03)
+    }
+    expect(odds('medical', 'adrenaline')).toBeLessThan(0.02)
+    expect(TRADER_STOCK).not.toContain('cure')
+    expect(TRADER_STOCK).not.toContain('adrenaline')
+    for (const r of RARE_STOCK) expect(ITEMS[r.item]?.id).toBe(r.item)
+
+    // Today he has a cure: it's on the stall, dear, and once sold it's gone.
+    const t = setup()
+    t.run(1)
+    const gus = t.def.npcs.find((n) => n.role === 'trader')
+    if (!gus) throw new Error('no trader')
+    const sv = survivorOf(t)
+    const id = t.ids[0] ?? 0
+    insides(t).rare = new Map([['cure', 1]])
+    sv.self.money = 10000
+    t.move(gus.pos[0], gus.pos[1], gus.pos[2] - 2)
+    t.useAt(gus.pos[0], gus.pos[1] + 1.4, gus.pos[2])
+    t.game.handleAction(id, { a: 'choose', npc: gus.key, option: 'shop' })
+    const price = RARE_STOCK.find((r) => r.item === 'cure')?.price ?? 0
+    expect(t.last(ServerMsg.Dialog)?.dialog?.shop?.[0]).toEqual(['cure', price])
+    t.game.handleAction(id, { a: 'buy', item: 'cure', n: 1 })
+    expect(countOf(sv.self.inv, 'cure')).toBe(1)
+    expect(sv.self.money).toBe(10000 - price)
+    t.game.handleAction(id, { a: 'buy', item: 'cure', n: 1 })
+    expect(countOf(sv.self.inv, 'cure')).toBe(1)
+  })
+
+  test('when the clock runs out you turn: one of the dead walks off with all you had', () => {
+    const t = setup(2)
+    t.run(1)
+    const sv = survivorOf(t)
+    sv.self.inv.push({ item: 'beans', n: 3 })
+    sv.self.wear.body = 'policevest'
+    sv.self.money = 120
+    sv.self.infected = 3
+    const where = { ...t.player().state.pos }
+    t.run(3.5)
+    expect(t.player().state.alive).toBe(false)
+    // Up it gets, where you stood, with your name, your vest and everything else.
+    const risen = [...insides(t).turned.keys()].map((id) => t.game.players.get(id))[0]
+    if (!risen) throw new Error('nobody turned')
+    expect(risen.state.alive).toBe(true)
+    expect(risen.name).toBe('P0 (turned)')
+    expect(Math.hypot(risen.state.pos.x - where.x, risen.state.pos.z - where.z)).toBeLessThan(1)
+    expect(t.game.match.gearOf(risen)).toBe(gearLooks(['policevest']))
+    const stuff = insides(t).turned.get(risen.id)?.stuff ?? []
+    for (const item of ['beans', 'policevest', 'cash', 'glock', 'knife'])
+      expect(stuff.some((s) => s.item === item)).toBe(true)
+    // The other player is told, and the new you starts over.
+    const told = t.clients[1]?.inbox.some(
+      (m) => m.type === ServerMsg.Notice && m.notice.text.includes('P0 turned'),
+    )
+    expect(told).toBe(true)
+    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(t.self().infected).toBeNull()
+    // Put it down: everything spills out where it falls.
+    t.game.killPlayer(risen.id, t.ids[1] ?? 0)
+    t.run(0.6)
+    const loot = (
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    ).filter((l) => Math.hypot(l.x - risen.state.pos.x, l.z - risen.state.pos.z) < 2)
+    for (const [item, n] of [
+      ['beans', 3],
+      ['policevest', 1],
+      ['cash', 120],
+      ['glock', 1],
+    ] as const) {
+      expect(loot.some((l) => l.item === item && l.n === n)).toBe(true)
+    }
+    expect(insides(t).turned.size).toBe(0)
+    // And you wake at Haven with the start kit.
+    t.run(7)
+    const s = t.player().state
+    expect(s.alive).toBe(true)
+    expect(s.weapon.id).toBe(WeaponId.Handgun)
+    const haven = t.def.pois.find((p) => p.key === 'haven')
+    expect(Math.hypot(s.pos.x - (haven?.x ?? 0), s.pos.z - (haven?.z ?? 0))).toBeLessThan(15)
+  })
+
+  test('turning inside Haven: the guards see to it, and your things stay there', () => {
+    const t = setup()
+    t.run(1)
+    const haven = t.def.pois.find((p) => p.key === 'haven')
+    if (!haven) throw new Error('no haven')
+    t.move(haven.x + 3, haven.y + 0.1, haven.z + 9)
+    const sv = survivorOf(t)
+    sv.self.inv.push({ item: 'beans', n: 2 })
+    sv.self.infected = 2
+    t.run(2.5)
+    expect(t.player().state.alive).toBe(false)
+    expect(insides(t).turned.size).toBe(0)
+    const loot =
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    expect(loot.some((l) => l.item === 'beans' && l.n === 2)).toBe(true)
   })
 })
 

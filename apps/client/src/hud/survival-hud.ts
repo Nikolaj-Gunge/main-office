@@ -5,9 +5,13 @@ import {
   type Dialog,
   dayPhase,
   GEAR,
+  INFECTION_SECONDS,
   ITEMS,
   type ItemDef,
   type ItemKind,
+  infectionLeftText,
+  infectionStage,
+  infectionWord,
   type Notice,
   type Poi,
   poiAt,
@@ -54,6 +58,8 @@ export interface SurvivalHudContext {
   yaw: number
   /** Weapons in your hands and holsters, the one in hand first. */
   carried: readonly { id: WeaponId; ammo: number }[]
+  /** Bitten: seconds until you turn (counted on between the server's updates), or null. */
+  infected?: number | null
   /** Where a world point lands on screen (CSS px), and whether it is behind you. */
   project?: (x: number, y: number, z: number) => { x: number; y: number; behind: boolean }
 }
@@ -127,6 +133,9 @@ export function effectText(def: ItemDef): string {
   if (def.health) signed(def.health, 'health')
   if (def.stamina) parts.push('restores breath')
   if (def.stopsBleeding) parts.push('stops bleeding')
+  if (def.infection === 'delay')
+    parts.push(`holds off the turn (${INFECTION_SECONDS / 60} min again)`)
+  if (def.infection === 'cure') parts.push('cures the bite')
   if (def.capacity) parts.push(`carries ${def.capacity} kg`)
   const gear = GEAR[def.id]
   if (gear) {
@@ -195,6 +204,7 @@ export class SurvivalHud {
   private readonly breath: HTMLElement
   private readonly battery: HTMLElement
   private readonly bleeding: HTMLElement
+  private readonly infected: HTMLElement
   private readonly money: HTMLElement
   // Story and jobs
   private readonly tracker: HTMLDivElement
@@ -257,6 +267,8 @@ export class SurvivalHud {
     this.breath = bar('BREATH')
     this.battery = el('div', 'sv-battery', vitals)
     this.bleeding = el('div', 'sv-bleeding', vitals, 'BLEEDING')
+    this.infected = el('div', 'sv-infected', vitals)
+    this.infected.hidden = true
     this.money = el('div', 'sv-money', vitals)
 
     this.tracker = el('div', 'sv-tracker', this.root)
@@ -451,6 +463,13 @@ export class SurvivalHud {
         this.battery.classList.toggle('low', self.battery < 20)
       }
       this.bleeding.hidden = !self.bleeding
+      const left = ctx.infected ?? null
+      this.infected.hidden = left === null
+      const word = infectionWord(left)
+      const status = word ? `INFECTED · ${word.toUpperCase()}` : ''
+      if (this.infected.textContent !== status) this.infected.textContent = status
+      const stage = String(Math.max(0, infectionStage(left)))
+      if (this.infected.dataset.stage !== stage) this.infected.dataset.stage = stage
       const money = `$${self.money}`
       if (this.money.textContent !== money) this.money.textContent = money
     }
@@ -831,6 +850,15 @@ export class SurvivalHud {
           id ? (ITEMS[id]?.name ?? id) : '—',
         )
         if (id) this.button(row, 'Take off', () => this.send({ a: 'unwear', slot }))
+      }
+      // Bitten: how it's going, and roughly how long you have (only ever said here).
+      const turnIn = this.ctx?.infected ?? self.infected ?? null
+      if (turnIn !== null) {
+        el('div', 'sv-group', left, 'Condition')
+        const row = el('div', 'sv-condition', left)
+        el('b', '', row, `Infected — ${infectionWord(turnIn).toLowerCase()}.`)
+        el('span', '', row, ` ${infectionLeftText(turnIn)}`)
+        el('div', 'sv-condition-help', left, 'Adrenaline holds it back. Only a cure stops it.')
       }
       el('div', 'sv-help', left, 'W/S select · E use or equip · G drop (Shift: all) · Tab close')
     }

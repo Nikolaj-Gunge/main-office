@@ -38,6 +38,8 @@ export interface ItemDef {
   stamina?: number
   /** Using it stops bleeding. */
   stopsBleeding?: boolean
+  /** The bite (infection.ts): 'delay' winds the clock back to the start, 'cure' ends it. */
+  infection?: 'delay' | 'cure'
   /** Backpacks: how much you can carry with it on (kg). */
   capacity?: number
   /** Batteries: recharges the torch (0–100). */
@@ -186,7 +188,19 @@ med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', {
 })
 med('painkillers', 'Painkillers', 0.05, 40, "You'll feel it tomorrow instead.", { health: 22 })
 med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', { health: 35 })
-med('adrenaline', 'Adrenaline shot', 0.05, 110, 'Run now, pay later.', { health: 15, stamina: 100 })
+med('adrenaline', 'Adrenaline shot', 0.05, 160, 'Run now, pay later. Holds the turn back.', {
+  health: 15,
+  stamina: 100,
+  infection: 'delay',
+})
+med(
+  'cure',
+  'Experimental cure',
+  0.1,
+  1500,
+  "Dr. Voss's serum in a cracked vial. Stops the turn, if you take it while you're still you.",
+  { health: 10, infection: 'cure' },
+)
 
 // ── Backpacks ──
 const pack = (
@@ -351,6 +365,8 @@ export const LOOT_TABLES = [
   'lumber',
   /** A supply crate dropped from a helicopter: the good stuff. */
   'drop',
+  /** Site 7's laboratory: what Voss worked on, and now and then what it was for. */
+  'lab',
 ] as const
 export type LootTable = (typeof LOOT_TABLES)[number]
 
@@ -396,7 +412,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['painkillers', 8],
       ['medkit', 3],
       ['antibiotics', 2],
-      ['adrenaline', 1.5],
+      ['adrenaline', 0.4],
       ['water', 2],
     ],
   },
@@ -545,7 +561,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['mre', 6],
       ['medkit', 3],
       ['bandage', 4, 1, 2],
-      ['adrenaline', 1.5],
+      ['adrenaline', 0.5],
+      ['cure', 0.04],
       ['m4', 1.2],
       ['ak47', 1],
       ['ump', 0.9],
@@ -636,7 +653,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['mac10', 0.5],
       ['katana', 0.4],
       ['pack_military', 0.8],
-      ['adrenaline', 2],
+      ['adrenaline', 0.8],
+      ['cure', 0.12],
       ['whiskey', 2],
       ['ring', 2],
     ],
@@ -704,7 +722,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['medkit', 8],
       ['bandage', 6, 2, 4],
       ['antibiotics', 4],
-      ['adrenaline', 4],
+      ['adrenaline', 1.6],
+      ['cure', 0.2],
       ['mre', 8, 1, 3],
       ['water', 5, 1, 2],
       ['batteries', 4, 1, 2],
@@ -715,6 +734,19 @@ const TABLES: Record<LootTable, TableDef> = {
       ['saiga', 1],
       ['barrett', 0.6],
       ['pack_military', 2],
+    ],
+  },
+  lab: {
+    empty: 0.2,
+    entries: [
+      ['bandage', 6, 1, 2],
+      ['painkillers', 5],
+      ['antibiotics', 4],
+      ['medkit', 2],
+      ['electronics', 4],
+      ['gasmask', 1],
+      ['adrenaline', 1],
+      ['cure', 0.6],
     ],
   },
   fuel: {

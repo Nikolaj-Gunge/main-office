@@ -870,6 +870,13 @@ export class Game {
     zombie.zombie?.face(spawn.yaw)
   }
 
+  /** Renames a pooled zombie (survival: someone who turned), telling every client. */
+  nameZombie(zombie: ServerPlayer, name: string): void {
+    if (zombie.name === name) return
+    zombie.name = name
+    this.broadcast(joinedMessage(zombie))
+  }
+
   /** Takes a zombie out quietly (no kill, no score): back into the pool. */
   retireZombie(zombie: ServerPlayer): void {
     zombie.state.alive = false

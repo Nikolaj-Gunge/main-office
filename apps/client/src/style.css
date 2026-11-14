@@ -976,6 +976,31 @@ body {
   animation: hud-blink 0.8s steps(2) infinite;
 }
 
+/* Bitten: a sickly status that gets angrier as you turn (data-stage 0–4). */
+.sv-infected {
+  align-self: flex-start;
+  padding: 1px 6px;
+  background: #3c4a1c;
+  color: #e4f0b0;
+  letter-spacing: 1px;
+}
+
+.sv-infected[data-stage="2"],
+.sv-infected[data-stage="3"] {
+  background: #6a2a12;
+  color: #ffd8b8;
+}
+
+.sv-infected[data-stage="3"] {
+  animation: hud-blink 1.2s steps(2) infinite;
+}
+
+.sv-infected[data-stage="4"] {
+  background: #9a0e0a;
+  color: #fff0e8;
+  animation: hud-blink 0.5s steps(2) infinite;
+}
+
 .sv-money {
   font-size: 16px;
   color: #a8c878;
@@ -1477,6 +1502,16 @@ body {
 .sv-weight-text {
   font-size: 12px;
   opacity: 0.7;
+}
+
+.sv-condition {
+  font-size: 12px;
+  color: #e8b0a0;
+}
+
+.sv-condition-help {
+  font-size: 11px;
+  opacity: 0.6;
 }
 
 .sv-help {
