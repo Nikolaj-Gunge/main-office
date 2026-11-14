@@ -287,6 +287,20 @@ function wheelHeights(s: VehicleState, body: VehicleBody): [number, number, numb
 }
 
 /**
+ * How a particular car drives (see car-condition.ts): engine power (0 = it won't go, only
+ * rolls and brakes), share of the top speed, and how hard it pulls to one side (−1 … 1).
+ */
+export interface DriveTune {
+  power: number
+  top: number
+  pull: number
+}
+
+const AS_NEW: DriveTune = { power: 1, top: 1, pull: 0 }
+/** Full pull steers this far (radians) when you let go of the wheel. */
+const PULL_STEER = 0.05
+
+/**
  * One tick of driving. `buttons`: Forward = throttle, Back = brake then reverse, Left / Right
  * steer, Jump = handbrake. An empty car is stepped with 0 and rolls to a stop.
  */
@@ -295,6 +309,7 @@ export function stepVehicle(
   buttons: number,
   dt: number,
   body: VehicleBody,
+  tune: DriveTune = AS_NEW,
 ): VehicleEvents {
   const events: VehicleEvents = { impact: 0 }
   const throttle = (buttons & Button.Forward ? 1 : 0) - (buttons & Button.Back ? 1 : 0)
@@ -315,14 +330,17 @@ export function stepVehicle(
   let side = s.vx * fz - s.vz * fx
 
   if (onGround) {
-    const g = body.grip(s.x, s.z)
-    // Engine, brakes and reverse.
+    const terrainGrip = body.grip(s.x, s.z)
+    // A worn engine (or a flat) doesn't reach the top speed a good one would.
+    const g = { ...terrainGrip, top: terrainGrip.top * tune.top }
+    // Engine, brakes and reverse (a dead engine only rolls and brakes).
     if (throttle > 0) {
       if (forward < -0.3) forward = approach(forward, 0, BRAKE * dt)
-      else forward += ENGINE * Math.max(0, 1 - Math.max(0, forward) / g.top) * dt
+      else forward += ENGINE * tune.power * Math.max(0, 1 - Math.max(0, forward) / g.top) * dt
     } else if (throttle < 0) {
       if (forward > 0.3) forward = approach(forward, 0, BRAKE * dt)
-      else forward -= REVERSE * Math.max(0, 1 - Math.max(0, -forward) / REVERSE_TOP) * dt
+      else
+        forward -= REVERSE * tune.power * Math.max(0, 1 - Math.max(0, -forward) / REVERSE_TOP) * dt
     } else forward = approach(forward, 0, (ROLLING + g.rough) * dt)
     if (handbrake) forward = approach(forward, 0, HANDBRAKE * dt)
     // Too fast for this ground (off the road at speed): it drags you down quickly.
@@ -333,7 +351,8 @@ export function stepVehicle(
     forward -= Math.sin(s.pitch) * GRAVITY * 0.55 * dt
 
     // Steering: a bicycle model, the lock easing off at speed. The handbrake swings the tail.
-    const angle = (s.steer * MAX_STEER) / (1 + Math.abs(forward) / 14)
+    // (A bent axle or a flat pulls it to one side.)
+    const angle = (s.steer * MAX_STEER + tune.pull * PULL_STEER) / (1 + Math.abs(forward) / 14)
     const yawRate = (forward * Math.tan(angle)) / WHEELBASE
     const turn = yawRate * dt * (handbrake ? 1.45 : 1)
     if (turn !== 0) {

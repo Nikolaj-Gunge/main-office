@@ -131,6 +131,11 @@ const SIZES: Record<string, Size> = {
   whiskey: [1, 2],
   toolkit: [3, 2],
   gasoline: [3, 3],
+  // Car parts
+  carbattery: [3, 2],
+  sparkplugs: [1, 1],
+  tyre: [3, 3],
+  radiatorhose: [2, 1],
   // Quest things
   radio_board: [2, 2],
   research: [2, 2],

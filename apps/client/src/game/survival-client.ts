@@ -609,7 +609,8 @@ export class SurvivalClient {
       return `Take ${name}`
     }
     if (thing) return thing.label
-    const car = this.vehicles.prompt(state.pos)
+    const inv = this.self?.inv ?? []
+    const car = this.vehicles.prompt(state.pos, (item) => countOf(inv, item) > 0)
     if (car) return car
     for (const lake of this.def.lakes) {
       if (Math.hypot(ex - lake.x, ez - lake.z) < lake.r && state.pos.y < lake.y + 0.1)

@@ -271,6 +271,25 @@ add({
   battery: 100,
   desc: 'Fresh light for your torch.',
 })
+// Car parts: what the cars by the roads are missing (see car-condition.ts).
+const part = (id: string, name: string, weight: number, value: number, desc: string) =>
+  add({ id, name, kind: 'tool', weight, value, desc })
+part(
+  'carbattery',
+  'Car battery',
+  13,
+  140,
+  'Heavy. Might still hold a charge. A dead car wants one.',
+)
+part('sparkplugs', 'Spark plugs', 0.2, 45, 'A set of four, still boxed. Fitting them takes tools.')
+part('tyre', 'Spare tyre', 9, 90, 'Bald, but it holds air. For a car on a flat.')
+part(
+  'radiatorhose',
+  'Radiator hose',
+  0.6,
+  60,
+  'Rubber, a bit perished. Fitting it takes tools. (Duct tape does, for a while.)',
+)
 
 // ── Junk: only good for selling ──
 const junk = (id: string, name: string, weight: number, value: number, desc: string) =>
@@ -441,6 +460,10 @@ const TABLES: Record<LootTable, TableDef> = {
   garage: {
     empty: 0.18,
     entries: [
+      ['carbattery', 2.5],
+      ['sparkplugs', 4],
+      ['tyre', 2.5],
+      ['radiatorhose', 3.5],
       ['hardhat', 3],
       ['boots', 2],
       ['worktrousers', 2.5],
@@ -816,6 +839,9 @@ const TABLES: Record<LootTable, TableDef> = {
   fuel: {
     empty: 0.15,
     entries: [
+      ['carbattery', 1.5],
+      ['sparkplugs', 1.5],
+      ['radiatorhose', 1],
       ['gasoline', 10],
       ['scrap', 3, 1, 2],
       ['lighter', 2],

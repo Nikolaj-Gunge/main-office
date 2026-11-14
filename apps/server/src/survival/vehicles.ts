@@ -1,16 +1,39 @@
 import {
+  Button,
   CAR_HALF_LENGTH,
   CAR_HALF_WIDTH,
+  type CarFix,
+  CarPart,
+  COOLDOWN_SECONDS,
+  CRANK_CHANCE,
+  CRANK_SECONDS,
+  carFixFor,
   carSpots,
   carToWorld,
+  carTune,
   createVehicleState,
+  dealKinds,
   distanceToCar,
+  ENGINE_PARTS,
+  Engine,
+  FRAGILE_MAX,
+  FRAGILE_MIN,
+  FUEL_IDLE,
+  FUEL_PER_METRE,
+  FUEL_SPUTTER,
   forwardSpeed,
+  HOSE_SPLITS,
   type InputCommand,
+  JERRYCAN_FUEL,
   type Notice,
+  needsText,
+  quantizeTune,
+  rollCondition,
   SEAT_DROP,
   SEATS,
+  SPUTTER_SECONDS,
   type SurvivalDef,
+  seeded,
   stepSeated,
   stepVehicle,
   syncForest,
@@ -62,6 +85,49 @@ const ABANDON_SECONDS = 8 * 60
 const UNSEEN = 70
 /** Health a car loses per second for each of the dead clawing at it while someone is inside. */
 const SCRATCH = 2.5
+/** How close to a car (m from its body) you work on it, and how far you may shift while you do. */
+const WORK_REACH = 2.2
+const WORK_DRIFT = 0.5
+/** A dead engine's "won't start" is said at most this often (s) while you hold W. */
+const NAG_SECONDS = 3
+
+/** What has gone, or is going, wrong with a car (see car-condition.ts). */
+export interface Trouble {
+  kind: 'fragile' | 'dead' | 'worn'
+  /** CarPart bits it needs, and those somebody has found out about. */
+  needs: number
+  known: number
+  fuel: number
+  top: number
+  pull: number
+  /** Metres driven, and the odometer reading at which a fragile engine gives out. */
+  odometer: number
+  breakAt: number
+  /** Coughing until this time (s; 0 = it isn't), then it dies. */
+  sputterUntil: number
+  /** Died hot: won't catch before `coolUntil`, then catches on a lucky try. */
+  overheated: boolean
+  coolUntil: number
+  /** Next time (s) holding W tries the engine, or says it won't start. */
+  crankAt: number
+  /** Told the driver the fuel light is on. */
+  lowFuelSaid: boolean
+}
+
+/** Somebody fixing a car: who, what, since when, and where they stood. */
+interface Job {
+  player: number
+  fix: CarFix
+  started: number
+  at: { x: number; z: number }
+  pack: Pack
+}
+
+/** What a player carries, as far as fixing cars goes (the director's view of their pockets). */
+export interface Pack {
+  has(item: string): boolean
+  take(item: string): void
+}
 
 interface Car {
   id: number
@@ -79,6 +145,12 @@ interface Car {
   hits: Map<number, number>
   /** Its driver steered it this tick (it isn't rolled on by itself). */
   driven: boolean
+  trouble: Trouble
+  /** Somebody working on it. */
+  job: Job | null
+  /** How often a fresh one has been put here (seeds its condition). */
+  generation: number
+  random: () => number
 }
 
 export type Say = (player: ServerPlayer, kind: Notice['kind'], text: string) => void
@@ -109,6 +181,7 @@ export class Vehicles {
     const spots = carSpots(def)
     // The trees around the spots, so no car is parked in one (they let go of them again later).
     syncForest(physics, spots)
+    const kinds = dealKinds(spots.length, seeded(spots.length * 31 + 7))
     for (const spot of spots) {
       const body = new VehicleBody(physics, def.terrain)
       const state = this.park(body, spot)
@@ -118,8 +191,10 @@ export class Vehicles {
       }
       body.place(state)
       physics.world.step()
+      const id = this.cars.length + 1
+      const random = seeded(id * 7919 + 13)
       this.cars.push({
-        id: this.cars.length + 1,
+        id,
         look: spot.look,
         home: { ...state },
         state,
@@ -130,8 +205,21 @@ export class Vehicles {
         usedAt: this.game.tick,
         hits: new Map(),
         driven: false,
+        trouble: newTrouble(random, kinds[spot.look] ?? 'worn'),
+        job: null,
+        generation: 0,
+        random,
       })
     }
+  }
+
+  /** A car's trouble, for tests (and anything that wants to fix one outright). */
+  troubleOf(id: number): Trouble | undefined {
+    return this.cars.find((c) => c.id === id)?.trouble
+  }
+
+  private get now(): number {
+    return this.game.tick / TICK_RATE
   }
 
   /** Finds room for a car near `spot`: along the road a little, or further off the verge. */
@@ -171,23 +259,35 @@ export class Vehicles {
     if (!at) return false
     const { car, seat } = at
     if (seat === 0 && !car.wrecked) {
-      const { impact } = stepVehicle(car.state, command.buttons, TICK_DT, car.body)
+      const { x, z } = car.state
+      const { impact } = stepVehicle(
+        car.state,
+        command.buttons,
+        TICK_DT,
+        car.body,
+        carTune({ ...car.trouble, engine: engineOf(car.trouble) }),
+      )
       car.driven = true
       car.body.place(car.state)
       if (impact > CRASH_SPEED) this.damage(car, (impact - CRASH_SPEED) * CRASH_DAMAGE)
+      this.drive(player, car, command.buttons, Math.hypot(car.state.x - x, car.state.z - z))
     }
     stepSeated(player.state, command)
     if (this.seatOf(player)) this.sit(player, car, seat)
     return true
   }
 
-  /** E: get out if you're in a car, else into the nearest one in reach. True if E was used. */
-  use(player: ServerPlayer): boolean {
+  /**
+   * E: get out if you're in a car; else, at a car you carry the fix for (`pack`), set to work on
+   * it; else into the nearest one in reach. True if E was used.
+   */
+  use(player: ServerPlayer, pack?: Pack): boolean {
     const at = this.seatOf(player)
     if (at) {
       this.getOut(player, at.car, at.seat)
       return true
     }
+    if (pack && this.startWork(player, pack)) return true
     const s = player.state
     let best: { car: Car; d: number } | null = null
     for (const car of this.cars) {
@@ -206,7 +306,143 @@ export class Vehicles {
     s.vel = { x: 0, y: 0, z: 0 }
     s.crouched = false
     this.sit(player, car, seat)
+    if (seat === 0) this.turnKey(player, car)
     return true
+  }
+
+  /** At the wheel: you turn the key and find out what's wrong with it. */
+  private turnKey(player: ServerPlayer, car: Car): void {
+    const t = car.trouble
+    t.known = t.needs
+    if (t.needs & ENGINE_PARTS) {
+      this.say(player, 'warn', `It won't start. Needs: ${needsText(t.needs)}.`)
+    } else if (t.overheated) {
+      this.say(player, 'info', 'The engine is still hot. Give it a moment, then hold W.')
+    } else if (t.fuel < 15) {
+      this.say(player, 'info', `The fuel needle barely lifts: ${Math.round(t.fuel)}%.`)
+    }
+  }
+
+  /** Starts fixing the car in front of you, if you carry what it needs. */
+  private startWork(player: ServerPlayer, pack: Pack): boolean {
+    const s = player.state
+    let best: { car: Car; d: number } | null = null
+    for (const car of this.cars) {
+      if (car.wrecked || Math.abs(s.pos.y - car.state.y) > 2.5) continue
+      const d = distanceToCar(car.state, s.pos.x, s.pos.z)
+      if (d <= WORK_REACH && (!best || d < best.d)) best = { car, d }
+    }
+    if (!best) return false
+    const car = best.car
+    if (car.job) return car.job.player === player.id
+    // Anybody already working on another car stops.
+    for (const other of this.cars) if (other.job?.player === player.id) other.job = null
+    const t = car.trouble
+    const fix = carFixFor({ needs: t.needs & t.known, fuel: t.fuel }, (item) => pack.has(item))
+    if (!fix) return false
+    car.job = { player: player.id, fix, started: this.now, at: { ...s.pos }, pack }
+    this.say(player, 'info', `${fix.label}… (hold E)`)
+    return true
+  }
+
+  /** Every tick: whoever is fixing a car keeps at it (holding E, standing still) until done. */
+  private work(car: Car): void {
+    const job = car.job
+    if (!job) return
+    const p = this.game.players.get(job.player)
+    const s = p?.state
+    const kept =
+      p &&
+      s?.alive &&
+      !this.seatOf(p) &&
+      (s.prevButtons & Button.Use) !== 0 &&
+      Math.hypot(s.pos.x - job.at.x, s.pos.z - job.at.z) < WORK_DRIFT &&
+      distanceToCar(car.state, s.pos.x, s.pos.z) <= WORK_REACH
+    if (!kept) {
+      car.job = null
+      if (p?.state.alive) this.say(p, 'info', 'You stop working on the car.')
+      return
+    }
+    if (this.now - job.started < job.fix.seconds) return
+    car.job = null
+    if (!job.pack.has(job.fix.item)) return
+    job.pack.take(job.fix.item)
+    const t = car.trouble
+    const fix = job.fix
+    if (fix.part === CarPart.Fuel) t.fuel = Math.min(100, t.fuel + JERRYCAN_FUEL)
+    t.needs &= ~fix.part
+    t.known &= ~fix.part
+    if (fix.part === CarPart.Fuel) t.lowFuelSaid = false
+    if (fix.part === CarPart.Hose) {
+      t.overheated = false
+      // Tape holds a while; a new hose for good.
+      t.breakAt = fix.patch ? t.odometer + roll(car.random) : Number.POSITIVE_INFINITY
+    }
+    this.say(p, 'info', fix.done)
+  }
+
+  /**
+   * The driver's tick, after the car moved `metres`: fuel burns, a fragile engine wears out, and
+   * holding W tries a stalled one again.
+   */
+  private drive(player: ServerPlayer, car: Car, buttons: number, metres: number): void {
+    const t = car.trouble
+    const engine = engineOf(t)
+    const now = this.now
+    if (engine === Engine.Ok || engine === Engine.Sputter) {
+      t.fuel = Math.max(0, t.fuel - metres * FUEL_PER_METRE - FUEL_IDLE * TICK_DT)
+      t.odometer += metres
+      if (t.fuel <= 0) {
+        t.needs |= CarPart.Fuel
+        t.known |= CarPart.Fuel
+        t.sputterUntil = 0
+        return void this.say(player, 'warn', 'The engine coughs and dies. The tank is dry.')
+      }
+      if (t.fuel < FUEL_SPUTTER && !t.lowFuelSaid) {
+        t.lowFuelSaid = true
+        this.say(player, 'warn', 'The fuel light is on. The engine is coughing.')
+      }
+      if (t.odometer >= t.breakAt && t.sputterUntil === 0) {
+        t.breakAt = Number.POSITIVE_INFINITY
+        t.sputterUntil = now + SPUTTER_SECONDS
+        this.say(player, 'warn', 'Steam from under the bonnet. The engine is coughing.')
+      }
+      return
+    }
+    if ((buttons & Button.Forward) === 0 || now < t.crankAt) return
+    if (engine === Engine.Dead) {
+      t.crankAt = now + NAG_SECONDS
+      return void this.say(player, 'warn', `It won't start. Needs: ${needsText(t.needs)}.`)
+    }
+    // Stalled: too hot yet, or a try of the key.
+    if (now < t.coolUntil) {
+      t.crankAt = now + NAG_SECONDS
+      return void this.say(player, 'info', 'Still too hot. It needs a minute.')
+    }
+    t.crankAt = now + CRANK_SECONDS
+    if (car.random() < CRANK_CHANCE) {
+      t.overheated = false
+      t.breakAt = t.odometer + roll(car.random)
+      this.say(player, 'info', 'It catches.')
+    } else this.say(player, 'info', "It turns over, but won't catch.")
+  }
+
+  /** Every tick: a coughing engine dies when its time is up. */
+  private cough(car: Car): void {
+    const t = car.trouble
+    if (t.sputterUntil === 0 || this.now < t.sputterUntil) return
+    t.sputterUntil = 0
+    const driver = this.game.players.get(car.seats[0] ?? 0)
+    if (car.random() < HOSE_SPLITS) {
+      t.needs |= CarPart.Hose
+      t.known |= CarPart.Hose
+      if (driver) this.say(driver, 'warn', 'Something bursts under the bonnet. The radiator hose.')
+      return
+    }
+    t.overheated = true
+    t.coolUntil = this.now + COOLDOWN_SECONDS
+    t.crankAt = 0
+    if (driver) this.say(driver, 'warn', 'The engine dies. Let it cool, then hold W to try it.')
   }
 
   /** Someone died or left: out of their seat, without being put anywhere. */
@@ -219,6 +455,8 @@ export class Vehicles {
   noiseOf(player: ServerPlayer): number {
     const at = this.seatOf(player)
     if (!at || at.car.wrecked || at.car.seats[0] === 0) return 0
+    const engine = engineOf(at.car.trouble)
+    if (engine !== Engine.Ok && engine !== Engine.Sputter) return 0
     return Math.min(60, 26 + Math.abs(forwardSpeed(at.car.state)) * 1.4)
   }
 
@@ -236,9 +474,26 @@ export class Vehicles {
         wrecked: car.wrecked,
         seats: car.seats,
         state: car.state,
+        ...this.condition(car),
       })
     }
     return out
+  }
+
+  /** What a car's condition looks like from outside (and to whoever drives it). */
+  private condition(
+    car: Car,
+  ): Pick<VehicleNet, 'fuel' | 'engine' | 'needs' | 'top' | 'pull' | 'work'> {
+    const t = car.trouble
+    const job = car.job
+    return {
+      fuel: t.fuel,
+      engine: engineOf(t),
+      needs: t.needs & t.known,
+      top: t.top,
+      pull: t.pull,
+      work: job ? Math.min(1, (this.now - job.started) / job.fix.seconds) : 0,
+    }
   }
 
   // --- Every tick ----------------------------------------------------------------------------
@@ -255,6 +510,8 @@ export class Vehicles {
         if (id !== 0 && !this.game.players.get(id)?.state.alive) car.seats[i] = 0
       }
       const s = car.state
+      this.cough(car)
+      this.work(car)
       const rolling = Math.hypot(s.vx, s.vz) > 0.01 || Math.abs(s.vy) > 0.01
       // Nobody at the wheel: it rolls to a stop on its own.
       if (car.seats[0] === 0 && rolling && !car.wrecked) {
@@ -356,6 +613,11 @@ export class Vehicles {
     car.state = { ...car.home }
     car.health = MAX_HEALTH
     car.wrecked = false
+    // A different car, in whatever state that one was left.
+    car.generation++
+    car.random = seeded(car.id * 7919 + car.generation * 104729 + 13)
+    car.trouble = newTrouble(car.random, car.trouble.kind)
+    car.job = null
     car.usedAt = this.game.tick
     car.hits.clear()
     car.body.place(car.state)
@@ -421,4 +683,38 @@ export class Vehicles {
     s.vel = { x: 0, y: 0, z: 0 }
     s.grounded = false
   }
+}
+
+/** How far a fragile engine goes before it gives out (m). */
+function roll(random: () => number): number {
+  return FRAGILE_MIN + random() * (FRAGILE_MAX - FRAGILE_MIN)
+}
+
+/** A freshly parked car's trouble. A flat tyre is plain to see; the rest you find out. */
+function newTrouble(random: () => number, kind: Trouble['kind']): Trouble {
+  const c = rollCondition(random, kind)
+  const { top, pull } = quantizeTune(c.top, c.pull)
+  return {
+    kind: c.kind,
+    needs: c.needs,
+    known: c.needs & CarPart.Tyre,
+    fuel: c.fuel,
+    top,
+    pull,
+    odometer: 0,
+    breakAt: c.breakAt,
+    sputterUntil: 0,
+    overheated: false,
+    coolUntil: 0,
+    crankAt: 0,
+    lowFuelSaid: false,
+  }
+}
+
+/** What the engine is doing. */
+export function engineOf(t: Trouble): Engine {
+  if (t.needs & ENGINE_PARTS) return Engine.Dead
+  if (t.overheated) return Engine.Stalled
+  if (t.sputterUntil > 0 || t.fuel < FUEL_SPUTTER) return Engine.Sputter
+  return Engine.Ok
 }

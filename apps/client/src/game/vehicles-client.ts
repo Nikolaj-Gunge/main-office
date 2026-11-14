@@ -1,7 +1,14 @@
 import {
+  CarPart,
+  carFixFor,
   carToWorld,
+  carTrouble,
+  carTune,
   cloneVehicleState,
+  type DriveTune,
   distanceToCar,
+  Engine,
+  FUEL_SPUTTER,
   forwardSpeed,
   type InputCommand,
   type PhysicsWorld,
@@ -21,8 +28,9 @@ import { distanceLowpass, falloff } from '../audio/mixing.ts'
 import { type CarPose, CarView, HEADLAMP } from '../render/vehicle-view.ts'
 import { rumble } from './game-feel.ts'
 
-/** The server's reach for getting into a car (m from its body). */
+/** The server's reach for getting into a car, and for working on one (m from its body). */
 const ENTER_REACH = 1.7
+const WORK_REACH = 2.2
 /** Corrections bigger than this snap; smaller ones fade out over CORRECTION_SMOOTH_TIME (s). */
 const SNAP_DISTANCE = 3
 const CORRECTION_SMOOTH_TIME = 0.15
@@ -215,7 +223,8 @@ export class VehiclesClient {
     while (d.pending.length > 0 && (d.pending[0]?.seq ?? 0) <= ackSeq) d.pending.shift()
     const before = d.state
     const state = cloneVehicleState(net.state)
-    for (const p of d.pending) stepVehicle(state, p.buttons, TICK_DT, car.body)
+    const tune = tuneOf(net)
+    for (const p of d.pending) stepVehicle(state, p.buttons, TICK_DT, car.body, tune)
     d.state = state
     const cx = state.x - before.x
     const cy = state.y - before.y
@@ -239,7 +248,7 @@ export class VehiclesClient {
     const car = d ? this.cars.get(d.id) : undefined
     if (!d || !car) return
     d.prev = cloneVehicleState(d.state)
-    const { impact } = stepVehicle(d.state, command.buttons, TICK_DT, car.body)
+    const { impact } = stepVehicle(d.state, command.buttons, TICK_DT, car.body, tuneOf(car.latest))
     car.body.place(d.state)
     d.pending.push({ seq: command.seq, buttons: command.buttons })
     if (d.pending.length > MAX_PENDING) d.pending.shift()
@@ -285,8 +294,12 @@ export class VehiclesClient {
         car.speed = forwardSpeed(s as VehicleState)
       }
       const net = car.latest
-      const on = net.seats[0] !== 0 && !net.wrecked
-      car.view.update(dt, car.pose, car.speed, on, night, net.health, net.wrecked)
+      const runs = net.engine === Engine.Ok || net.engine === Engine.Sputter
+      const on = net.seats[0] !== 0 && !net.wrecked && runs
+      car.view.update(dt, car.pose, car.speed, on, night, net.health, net.wrecked, {
+        sputter: on && net.engine === Engine.Sputter,
+        flat: (net.needs & CarPart.Tyre) !== 0,
+      })
       if (on) running.push(car)
       this.engineSound(car, on, eye)
     }
@@ -320,8 +333,14 @@ export class VehiclesClient {
     if (!car.engine) return
     const mine = this.seat?.car === car.id
     const rev = Math.min(1, Math.abs(car.speed) / 25)
-    car.engine.pitch(0.75 + rev * 1.5)
-    const volume = mine ? 0.28 + rev * 0.12 : 0.45 * falloff(distance, 4, ENGINE_RANGE)
+    // A worn engine idles rough; a dying one misses and catches.
+    const t = performance.now() / 1000
+    const rough = (1 - car.latest.top) * 0.5 * Math.sin(t * 37) * Math.sin(t * 5.3)
+    const sputter = car.latest.engine === Engine.Sputter
+    const miss = sputter && Math.sin(t * 11) * Math.sin(t * 3.7 + car.id) > 0.25
+    car.engine.pitch((0.75 + rev * 1.5) * (1 + rough) * (miss ? 0.7 : 1))
+    const volume =
+      (mine ? 0.28 + rev * 0.12 : 0.45 * falloff(distance, 4, ENGINE_RANGE)) * (miss ? 0.25 : 1)
     car.engine.set(volume, mine ? 2400 : distanceLowpass(distance))
   }
 
@@ -332,10 +351,24 @@ export class VehiclesClient {
       return
     }
     this.hud.style.display = ''
+    const net = car.latest
     const kmh = Math.round(Math.abs(car.speed) * 3.6)
-    const health = Math.max(0, Math.round(car.latest.health))
+    const health = Math.max(0, Math.round(net.health))
+    const fuel = Math.round(net.fuel)
     const help = this.seat?.seat === 0 ? '\nW/S drive · A/D steer · Space handbrake · V view' : ''
-    this.hud.textContent = `${kmh} km/h  ·  car ${health}%${help}`
+    // The dashboard's warning, if any.
+    const blink = Math.floor(performance.now() / 450) % 2 === 0
+    let warn = ''
+    if (net.engine === Engine.Dead) warn = carTrouble(net) ?? "Won't start"
+    else if (net.engine === Engine.Stalled) warn = 'STALLED — let it cool, then hold W'
+    else if (net.engine === Engine.Sputter)
+      warn = blink ? (net.fuel < FUEL_SPUTTER ? '! FUEL EMPTY' : '! ENGINE HOT') : ''
+    else if (net.fuel < 10) warn = 'LOW FUEL'
+    if (net.engine !== Engine.Dead && net.needs & CarPart.Tyre) warn ||= 'FLAT TYRE'
+    const worn = net.top < 0.9 ? '  ·  worn' : ''
+    this.hud.textContent = `${kmh} km/h  ·  fuel ${fuel}%  ·  car ${health}%${worn}${
+      warn ? `\n${warn}` : ''
+    }${help}`
   }
 
   /**
@@ -393,21 +426,38 @@ export class VehiclesClient {
     return true
   }
 
-  /** What E does about cars here: get out, drive, get in (or null: no car in reach). */
-  prompt(pos: { x: number; y: number; z: number }): string | null {
+  /**
+   * What E does about cars here: get out, fix one with what you carry (`has`), drive, get in;
+   * and what's known to be wrong with it. Null: no car in reach.
+   */
+  prompt(pos: { x: number; y: number; z: number }, has?: (item: string) => boolean): string | null {
     if (this.seat) return 'Get out'
-    let best: { car: Car; d: number } | null = null
-    for (const car of this.cars.values()) {
-      const net = car.latest
-      if (!car.present || net.wrecked || !net.seats.includes(0)) continue
-      if (Math.abs(pos.y - net.state.y) > 2.5) continue
-      const d = distanceToCar(net.state, pos.x, pos.z)
-      if (d <= ENTER_REACH && (!best || d < best.d)) best = { car, d }
+    const nearest = (reach: number, free: boolean) => {
+      let best: { car: Car; d: number } | null = null
+      for (const car of this.cars.values()) {
+        const net = car.latest
+        if (!car.present || net.wrecked || (free && !net.seats.includes(0))) continue
+        if (Math.abs(pos.y - net.state.y) > 2.5) continue
+        const d = distanceToCar(net.state, pos.x, pos.z)
+        if (d <= reach && (!best || d < best.d)) best = { car, d }
+      }
+      return best?.car ?? null
     }
-    if (!best) return null
+    // The same choice the server makes: a car you can fix first, then one to get into.
+    const work = nearest(WORK_REACH, false)
+    if (work) {
+      const net = work.latest
+      const trouble = carTrouble(net)
+      if (net.work > 0) return `Working… ${Math.round(net.work * 100)}% (keep holding)`
+      const fix = has ? carFixFor(net, has) : null
+      if (fix) return `${fix.label} (hold)${trouble ? `  ·  ${trouble}` : ''}`
+    }
+    const car = nearest(ENTER_REACH, true)
+    if (!car) return null
     // Nobody at the wheel: the server puts you there.
-    const seat = best.car.latest.seats[0] === 0 ? 0 : 1
-    return seat === 0 ? 'Drive' : 'Get in'
+    const what = car.latest.seats[0] === 0 ? 'Drive' : 'Get in'
+    const trouble = carTrouble(car.latest)
+    return trouble ? `${what}  ·  ${trouble}` : what
   }
 
   /** A new game: no cars until the server says. */
@@ -425,6 +475,11 @@ export class VehiclesClient {
     this.driven = null
     this.hud.style.display = 'none'
   }
+}
+
+/** How a car drives, from what the server says of it. */
+function tuneOf(net: VehicleNet): DriveTune {
+  return carTune(net)
 }
 
 /** A car's pose at fractional server tick `t`, between the snapshots either side of it. */
