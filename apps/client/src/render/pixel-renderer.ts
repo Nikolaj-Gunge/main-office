@@ -290,8 +290,18 @@ export class PixelRenderer implements GameRenderer {
     return this.renderer.capabilities.getMaxAnisotropy()
   }
 
-  compile(scene: THREE.Scene, camera: THREE.Camera): void {
-    this.renderer.compile(scene, camera)
+  /**
+   * Compiles for the scene target (shaders differ by output colour space: compiled for the canvas
+   * they'd all be built again on the first frame), in parallel where the browser can
+   * (KHR_parallel_shader_compile), and resolves once they're ready without blocking the page.
+   */
+  async compile(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer
+    const previous = r.getRenderTarget()
+    r.setRenderTarget(this.target)
+    const ready = r.compileAsync(scene, camera)
+    r.setRenderTarget(previous)
+    await ready
   }
 
   setAnimationLoop(callback: (() => void) | null): void {

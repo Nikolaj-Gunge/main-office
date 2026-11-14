@@ -521,7 +521,7 @@ Built in 3 testable parts on `phase-11`:
 - Emotes, sprays, chat, spectator mode.
 - WebRTC/unreliable transport if remote players on bad connections complain.
 - Delta-compressed snapshots, interest management if > 32 players.
-- ~~Smaller first load~~ done (phase 16): the client build swaps Rapier's inlined base64 for its binary `.wasm` (vite.config.ts), preloaded and compiled while streaming; three.js + Rapier sit in a `vendor` chunk; survival client code is a lazy chunk; `/assets/*` are cached as immutable; the client asks `/healthz` which map the server runs so survival no longer loads the office first and reloads.
+- ~~Smaller first load~~ done (phase 16): the client build swaps Rapier's inlined base64 for its binary `.wasm` (vite.config.ts), preloaded and compiled while streaming; three.js + Rapier sit in a `vendor` chunk; survival client code is a lazy chunk; `/assets/*` are cached as immutable; the client asks `/healthz` which map the server runs so survival no longer loads the office first and reloads. Survival's world builder is a lazy chunk too (`loadMapAsync`; the server and worker keep the eager `loadMap`), and three/webgpu stays out of `vendor`. Deadwood's first frame builds only the chunk you stand in (the rest follow a few a frame), and the shader warm-up compiles for the scene target (it used to compile canvas variants, so the first frame built ~20 shaders again) with `compileAsync`.
 
 ---
 

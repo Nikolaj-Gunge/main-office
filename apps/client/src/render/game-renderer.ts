@@ -20,8 +20,8 @@ export interface GameRenderer {
   setBias(bias: number): void
   resize(): void
   maxAnisotropy(): number
-  /** Builds the shaders for everything in the scene now (visible or not). */
-  compile(scene: THREE.Scene, camera: THREE.Camera): void
+  /** Builds the shaders for everything in the scene now (visible or not); await it if async. */
+  compile(scene: THREE.Scene, camera: THREE.Camera): void | Promise<void>
   setAnimationLoop(callback: (() => void) | null): void
   /** Survival's bite on screen (see game/infection.ts); null: none. */
   setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void
