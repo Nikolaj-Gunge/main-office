@@ -2070,6 +2070,224 @@ body {
   color: #000;
 }
 
+/* A note read: on paper, with what it is over it. */
+.sv-story.paper {
+  left: 50%;
+  right: auto;
+  width: min(540px, 82vw);
+  transform: translateX(-50%);
+  padding: 14px 20px 16px;
+  background: #d8cfb4;
+  border: 2px solid #8a7d5c;
+  box-shadow: 6px 6px 0 rgb(0 0 0 / 0.75);
+  text-shadow: none;
+}
+
+.sv-story.paper div {
+  width: auto;
+  text-align: left;
+  font-size: clamp(14px, 1.9vh, 17px);
+  color: #2a2418;
+}
+
+.sv-story.paper .sv-story-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #6a5a30;
+}
+
+/* A siege: the camp's bar under the compass. */
+.sv-siege {
+  position: absolute;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: rgb(40 8 6 / 0.82);
+  border: 2px solid #b03a2e;
+  box-shadow: 3px 3px 0 #000;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #ffd8c8;
+  animation: sv-in 0.15s steps(3);
+}
+
+.sv-siege-name {
+  color: #ff6a50;
+}
+
+.sv-siege-bar {
+  width: 120px;
+  height: 8px;
+  border: 2px solid rgb(255 216 200 / 0.6);
+  background: #000;
+}
+
+.sv-siege-fill {
+  display: block;
+  height: 100%;
+  background: #d8a040;
+}
+
+.sv-siege-fill.low {
+  background: #d83a2e;
+}
+
+.sv-talk-who {
+  margin-left: 10px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: none;
+  color: #8a8270;
+  font-size: 12px;
+}
+
+/* The journal. */
+.sv-tabs {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sv-tab {
+  padding: 0 8px;
+  border: 2px solid #3a372c;
+  color: #8a8270;
+  cursor: pointer;
+}
+
+.sv-tab.on {
+  border-color: #e0a040;
+  color: #e0a040;
+}
+
+.sv-journal-list {
+  flex: 0 0 38%;
+}
+
+.sv-journal-page {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #6a644e transparent;
+}
+
+.sv-row-mark {
+  width: 14px;
+  color: #8a8270;
+}
+
+.sv-row-mark.active {
+  color: #e0a040;
+}
+
+.sv-row-mark.done {
+  color: #8a9a5a;
+}
+
+.sv-row-name.faded {
+  opacity: 0.55;
+}
+
+.sv-page-kind {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #8a8270;
+}
+
+.sv-page-title {
+  margin: 2px 0 2px;
+  font-size: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #ffc850;
+}
+
+.sv-page-from {
+  font-size: 12px;
+  color: #6cc6d8;
+}
+
+.sv-page-text {
+  margin: 8px 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.sv-page-text.ending {
+  padding-left: 10px;
+  border-left: 2px solid #6a644e;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.sv-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sv-step {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.sv-step.done {
+  opacity: 0.5;
+}
+
+.sv-step.now {
+  color: #fff4dc;
+}
+
+.sv-step.later {
+  opacity: 0.35;
+}
+
+.sv-step.choice {
+  padding-left: 16px;
+  color: #a8d888;
+  font-size: 12px;
+}
+
+.sv-page-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #8a8270;
+}
+
+.sv-page-reward {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #a8c878;
+}
+
+.sv-paper {
+  padding: 14px 18px;
+  color: #2a2418;
+  background: #d8cfb4;
+  border: 2px solid #8a7d5c;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.sv-paper-title {
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #6a5a30;
+}
+
+.sv-paper-text {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .sv-map {
   position: absolute;
   top: 50%;

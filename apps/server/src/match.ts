@@ -328,7 +328,7 @@ export class MatchRunner {
     const name = (p: ServerPlayer) => p.name
 
     if (mode === 'survival') {
-      return this.survival?.won ? win(null, 1, 'You made it out of Deadwood') : undefined
+      return this.survival?.won ? win(null, 1, this.survival.headline) : undefined
     }
     if (mode === 'zombies') {
       const z = this.zombies

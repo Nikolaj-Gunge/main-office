@@ -222,6 +222,7 @@ const survival =
         audio,
         send: (action) => net.send({ type: ClientMsg.Action, action }),
         myId: () => net.playerId,
+        me: () => net.playerId,
       })
     : null
 /** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
@@ -657,6 +658,7 @@ window.addEventListener('keydown', (e) => {
         return
       }
       if (action === 'map') return survival.hud.toggleMap()
+      if (action === 'journal') return survival.hud.toggleJournal()
       if (action === 'light') return survival.toggleTorch()
     }
   }

@@ -3,6 +3,7 @@ import {
   ammoBeside,
   BAREFOOT_NOISE,
   Button,
+  bossSpot,
   carried,
   countOf,
   createPhysicsWorld,
@@ -23,6 +24,7 @@ import {
   initPhysics,
   LEGS_LOOKS,
   LOOT_TABLES,
+  LORE,
   legsLook,
   loadMap,
   MAX_PLANKS,
@@ -43,9 +45,11 @@ import {
   TICK_RATE,
   TRADER_STOCK,
   tableItems,
+  WALKERS,
   WEAPONS,
   WeaponId,
   type WeatherKind,
+  walkerHideout,
   weatherAt,
   ZombieKind,
 } from '@office-fps/shared'
@@ -192,14 +196,29 @@ describe('survival: the catalogue', () => {
     const poi = (key?: string) =>
       key && !def.pois.some((p) => p.key === key) && missing.push(`poi ${key}`)
     const npc = (key?: string) =>
-      key && !def.npcs.some((p) => p.key === key) && missing.push(`npc ${key}`)
+      key && !def.npcs.some((p) => p.key === key) && !WALKERS[key] && missing.push(`npc ${key}`)
     const thing = (key: string) =>
       !def.interactables.some((p) => p.key === key) && missing.push(`thing ${key}`)
     for (const q of QUESTS) {
       npc(q.giver)
       for (const step of q.steps) {
         if (step.kind === 'reach' || step.kind === 'hold' || step.kind === 'kill') poi(step.poi)
-        if (step.kind === 'talk' || step.kind === 'fetch') npc(step.npc)
+        if (
+          step.kind === 'talk' ||
+          step.kind === 'fetch' ||
+          step.kind === 'choose' ||
+          step.kind === 'defend'
+        )
+          npc(step.npc)
+        if (step.kind === 'defend' || step.kind === 'escort')
+          poi(step.kind === 'defend' ? step.poi : step.to)
+        if (step.kind === 'read') thing(step.note)
+        if (step.kind === 'meet' && !walkerHideout(def, step.who))
+          missing.push(`hideout ${step.who}`)
+        if (step.kind === 'kill' && step.boss && !bossSpot(def, step.boss))
+          missing.push(`boss ${step.boss}`)
+        if (step.clue && !def.interactables.some((p) => p.key === step.clue) && !LORE[step.clue])
+          missing.push(`clue ${step.clue}`)
         if (step.kind === 'use') {
           thing(step.target)
           poi(step.wakes)
@@ -266,7 +285,7 @@ describe('survival: the night', () => {
     expect(s.holstered?.id).toBe(WeaponId.Knife)
     expect([s.weapon, s.holstered, s.pocket].some((w) => w?.id === WeaponId.Fists)).toBe(false)
     expect(plain(t.self().inv)).toEqual([{ item: 'water', n: 1 }])
-    expect(t.match().survival?.quests[0]?.id).toBe('wake')
+    expect(t.self().journal.quests[0]?.id).toBe('wake')
     // Standing on the cabin floor, not fallen through the world.
     const start = t.def.pois[0]
     expect(Math.abs(s.pos.y - ((start?.y ?? 0) + 0.12))).toBeLessThan(0.1)
@@ -386,20 +405,22 @@ describe('survival: the night', () => {
     if (!note) throw new Error('no note')
     t.move(note.pos[0] + 1, note.pos[1] - 0.8, note.pos[2])
     t.useAt(...note.pos)
-    expect(t.match().survival?.quests[0]?.step).toBe(1)
+    t.run(0.1)
+    expect(t.self().journal.quests[0]?.step).toBe(1)
     const haven = t.def.pois.find((p) => p.key === 'haven')
     if (!haven) throw new Error('no haven')
     t.move(haven.x, haven.y + 0.1, haven.z - 12)
     t.run(1.2)
-    const s = t.match().survival
-    expect(s?.done).toContain('wake')
-    expect(s?.quests[0]?.id).toBe('keep')
+    expect(t.match().survival?.done).toContain('wake')
+    expect(t.self().journal.done).toContain('wake')
+    expect(t.self().journal.quests[0]?.id).toBe('keep')
     const mara = t.def.npcs.find((n) => n.key === 'mara')
     if (!mara) throw new Error('no mara')
     t.move(mara.pos[0], mara.pos[1], mara.pos[2] - 2)
     t.useAt(mara.pos[0], mara.pos[1] + 1.4, mara.pos[2])
     expect(t.last(ServerMsg.Dialog)?.dialog?.name).toBe('Mara')
-    expect(t.match().survival?.quests[0]?.step).toBe(1)
+    t.run(0.1)
+    expect(t.self().journal.quests[0]?.step).toBe(1)
   })
 
   test('eating, bandaging and wearing a pack work from the backpack', () => {
@@ -948,7 +969,7 @@ describe('survival: supply drops', () => {
     const director = (
       t.game.match as unknown as {
         survival: {
-          done: string[]
+          story: { done: string[] }
           drops: { nextAt: number }
           survivors: Map<number, { self: SurvivalSelf }>
         }
@@ -963,7 +984,7 @@ describe('survival: supply drops', () => {
     t.run(3)
     expect(t.match().survival?.drops ?? []).toEqual([])
 
-    director.done.push('wake', 'keep', 'deadair', 'tower')
+    director.story.done.push('wake', 'keep', 'gate', 'tower')
     director.drops.nextAt = now()
     t.run(1.5)
     const drops = t.match().survival?.drops ?? []
