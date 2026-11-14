@@ -1,7 +1,9 @@
 import type { PlaceWorld, Site } from './kit.ts'
+import { camper, house, shed } from './places-homes.ts'
 import { bunker, checkpoint, crash, radio } from './places-military.ts'
 import { farm, gas, motel, quarry, sawmill, trailers } from './places-roadside.ts'
 import { town } from './places-town.ts'
+import { stand, treehouse } from './places-trees.ts'
 import { cache, campsite, church, lake, ranger, tower } from './places-wild.ts'
 import type { Poi, PoiKind } from './types.ts'
 
@@ -29,4 +31,9 @@ export const PLACES: Record<Exclude<PoiKind, 'start' | 'cabin' | 'camp'>, PlaceB
   quarry: (s) => quarry(s),
   radio: (s) => radio(s),
   cache,
+  house,
+  camper,
+  shed,
+  treehouse,
+  stand,
 }
