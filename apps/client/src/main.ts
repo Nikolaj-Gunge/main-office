@@ -221,6 +221,7 @@ const survival =
         hudRoot,
         audio,
         send: (action) => net.send({ type: ClientMsg.Action, action }),
+        myId: () => net.playerId,
       })
     : null
 /** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
@@ -241,6 +242,8 @@ if (survival) {
     else if (cue === 'story') audio.play('dread', { bus: 'ui', volume: 0.35, rate: 1.2 })
   }
 }
+// People sitting in cars aren't drawn (the car is).
+if (survival) remotes.hidden = (id) => survival.vehicles.isSeated(id)
 const debugHitboxes = new DebugHitboxes(scene)
 const worldItems = new WorldItemsView(scene)
 /** Ignore item sounds for the batch the server sends right after joining. */
@@ -697,6 +700,11 @@ window.addEventListener('keydown', (e) => {
     debugHitboxes.enabled = !debugHitboxes.enabled
     net.send({ type: ClientMsg.SetDebug, flags: debugHitboxes.enabled ? DebugFlag.LagComp : 0 })
   }
+  if (e.code === 'KeyV' && survival?.vehicles.seated) {
+    // In a car: from behind it, or from your seat.
+    survival.vehicles.firstPerson = !survival.vehicles.firstPerson
+    return
+  }
   if (e.code === 'KeyV') {
     noclip = !noclip
     // Offline, leaving noclip drops you where the camera is. Online the server owns your
@@ -785,6 +793,8 @@ await warmShaders()
 performance.mark('load:shaders')
 
 let firstFrame = true
+/** Sitting in a car this frame (survival): no gun in your hands on screen. */
+let seated = false
 pixels.setAnimationLoop(() => {
   const now = performance.now()
   const dt = Math.min(0.25, (now - last) / 1000)
@@ -805,7 +815,10 @@ pixels.setAnimationLoop(() => {
     else if (survival?.hud.inDialog)
       sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
     const input = noclip ? { buttons: 0, yaw: look.yaw, pitch: look.pitch } : sampled
+    // In a car your legs stay put; at the wheel the same input drives (predicted alike).
+    player.predictor.seated = survival?.vehicles.seated ?? false
     const { command, events } = player.tick(input, remotes.renderTick)
+    survival?.vehicles.predict(command)
     const aiming = (input.buttons & Button.Aim) !== 0
     if (events.shot) combat.onLocalShot(events.shot, player.state.weapon.id, aiming)
     if (events.weapon) combat.onWeaponEvents(events.weapon, player.state.weapon)
@@ -832,8 +845,10 @@ pixels.setAnimationLoop(() => {
     const kick = recoil.update(dt)
     look.addRotation(kick.yaw, kick.pitch)
     player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
+    // In a car: the camera rides with it instead (and no gun sways in front of you).
+    seated = survival?.drive(dt, accumulator / TICK_DT, remotes.renderTick, look) === true && joined
     // Scope sway: the view drifts exactly as much as the bullet will (shared weaponSway).
-    const sway = weaponSway(player.state.weapon)
+    const sway = seated ? { yaw: 0, pitch: 0 } : weaponSway(player.state.weapon)
     camera.rotation.x += sway.pitch
     camera.rotation.y += sway.yaw
     const s = shake.update(dt)
@@ -903,7 +918,7 @@ pixels.setAnimationLoop(() => {
   )
 
   sky.position.copy(camera.position)
-  pixels.render(scene, camera, noclip ? undefined : viewmodel)
+  pixels.render(scene, camera, noclip || seated ? undefined : viewmodel)
   stats.update()
   if (firstFrame) {
     firstFrame = false

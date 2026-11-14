@@ -12,6 +12,7 @@ import {
   rng,
   type Signal,
   saturate,
+  silence,
   sweep,
   tone,
 } from './dsp.ts'
@@ -70,6 +71,8 @@ export const SOUNDS = {
   'thunder.far': { variants: 2, recipe: thunderFar },
   /** One second of helicopter: replayed back to back while one is about (see render/heli.ts). */
   heli: { variants: 2, recipe: rotor },
+  /** A car's engine: one second, looped and pitched up with speed. */
+  engine: { variants: 1, recipe: engine },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -744,6 +747,28 @@ function pickup(rate: number, v: number): Signal {
   const rustle = envelope(bandpass(noise(0.12, rate, 1600 + v), rate, 2600, 0.8), rate, 0.01, 0.04)
   const click = envelope(tone(0.03, rate, 1300 + v * 300), rate, 0, 0.008)
   return fadeEdges(normalize(mix(rate, gain(rustle, 0.8), [gain(click, 0.5), 0.07]), 0.6), rate)
+}
+
+/**
+ * One second of a car engine ticking over, made to be played back to back: a whole number of
+ * firing thumps a second over a low hum and a little rumble. Played faster, it revs.
+ */
+function engine(rate: number, v: number): Signal {
+  const seconds = 1
+  const fire = 30
+  const out = silence(seconds, rate)
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate
+    const phase = (t * fire) % 1
+    const thump = Math.exp(-phase * 6) * Math.sin(2 * Math.PI * phase * 1.5)
+    out[i] =
+      thump +
+      0.3 * Math.sin(2 * Math.PI * fire * 2 * t) +
+      0.18 * Math.sin(2 * Math.PI * (fire / 2) * t)
+  }
+  const rumble = gain(lowpass(noise(seconds, rate, 2100 + v), rate, 260), 1.4)
+  const body = lowpass(mix(rate, out, rumble), rate, 700)
+  return fadeEdges(normalize(saturate(body, 1.5), 0.8), rate, 0.004)
 }
 
 /**

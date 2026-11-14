@@ -3,6 +3,7 @@ import { DEFAULT_RULES, type GameRules, mergeRules } from '../rules.ts'
 import type { HitPose, HitZone } from '../sim/hitboxes.ts'
 import type { PlayerInput } from '../sim/input.ts'
 import type { PlayerState } from '../sim/player.ts'
+import type { VehicleState } from '../sim/vehicle.ts'
 import type { WeaponState } from '../sim/weapon-sim.ts'
 import type { WeaponId } from '../sim/weapons.ts'
 import { ITEM_LIST, itemIndex } from '../survival/items.ts'
@@ -113,6 +114,20 @@ export interface RemotePlayerState {
   gear?: number
 }
 
+/** A car as everyone near it is told (survival): enough to draw it and to drive it on. */
+export interface VehicleNet {
+  id: number
+  /** Paint and body (see the client's vehicle view). */
+  look: number
+  /** 0 (wrecked) – 100. */
+  health: number
+  wrecked: boolean
+  /** Who sits where (player ids; 0 = empty): driver, front passenger, rear left, rear right. */
+  seats: number[]
+  /** Everything the car's simulation needs to carry on from here (the driver predicts it). */
+  state: VehicleState
+}
+
 /** What a shot hit, for drawing tracers and impacts on other clients. */
 export const ShotResult = {
   Nothing: 0,
@@ -167,6 +182,8 @@ export type ServerMessage =
       /** Recipient has spawn protection. */
       protected: boolean
       players: RemotePlayerState[]
+      /** Survival: the cars near the recipient (absent when there are none). */
+      vehicles?: VehicleNet[]
     }
   | {
       type: typeof ServerMsg.PlayerJoined
@@ -477,6 +494,38 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   }
 }
 
+// --- Cars ------------------------------------------------------------------------------------
+
+function writeVehicle(w: BinaryWriter, v: VehicleNet): void {
+  w.u8(v.id).u8(v.look)
+  w.u8(Math.max(0, Math.min(100, Math.ceil(v.health))) | (v.wrecked ? 0x80 : 0))
+  for (let i = 0; i < 4; i++) w.u16(v.seats[i] ?? 0)
+  const s = v.state
+  w.f32(s.x).f32(s.y).f32(s.z).f32(s.yaw)
+  w.f32(s.vx).f32(s.vy).f32(s.vz).f32(s.steer)
+  w.f32(s.pitch).f32(s.roll)
+}
+
+function readVehicle(r: BinaryReader): VehicleNet {
+  const id = r.u8()
+  const look = r.u8()
+  const health = r.u8()
+  const seats = [r.u16(), r.u16(), r.u16(), r.u16()]
+  const state: VehicleState = {
+    x: r.f32(),
+    y: r.f32(),
+    z: r.f32(),
+    yaw: r.f32(),
+    vx: r.f32(),
+    vy: r.f32(),
+    vz: r.f32(),
+    steer: r.f32(),
+    pitch: r.f32(),
+    roll: r.f32(),
+  }
+  return { id, look, health: health & 0x7f, wrecked: (health & 0x80) !== 0, seats, state }
+}
+
 // --- Small helpers ---------------------------------------------------------------------------
 
 function writeVec(w: BinaryWriter, v: { x: number; y: number; z: number }): void {
@@ -597,6 +646,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       w.u8(msg.protected ? 1 : 0)
       w.u8(msg.players.length)
       for (const p of msg.players) writeRemote(w, p)
+      w.u8(msg.vehicles?.length ?? 0)
+      for (const v of msg.vehicles ?? []) writeVehicle(w, v)
       break
     case ServerMsg.PlayerJoined:
       w.u16(msg.id)
@@ -722,7 +773,19 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       const count = r.u8()
       const players: RemotePlayerState[] = []
       for (let i = 0; i < count; i++) players.push(readRemote(r))
-      return { type, tick, ackSeq, self, health, respawnIn, protected: isProtected, players }
+      const vehicles: VehicleNet[] = []
+      for (let i = r.u8(); i > 0; i--) vehicles.push(readVehicle(r))
+      return {
+        type,
+        tick,
+        ackSeq,
+        self,
+        health,
+        respawnIn,
+        protected: isProtected,
+        players,
+        ...(vehicles.length > 0 ? { vehicles } : {}),
+      }
     }
     case ServerMsg.PlayerJoined: {
       const joined = { type, id: r.u16(), color: r.u8(), name: r.str8() }

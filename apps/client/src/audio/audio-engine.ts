@@ -23,6 +23,8 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 export interface AmbientLoop {
   /** Fades to `volume` (and `lowpass` Hz, 20000 = open) over about `seconds`. */
   set(volume: number, lowpass?: number, seconds?: number): void
+  /** Plays it faster (> 1, higher) or slower, gliding there over about `seconds`. */
+  pitch(rate: number, seconds?: number): void
 }
 
 /**
@@ -226,6 +228,9 @@ export class AudioEngine {
         const t = ctx.currentTime
         g.gain.setTargetAtTime(Math.max(0, volume), t, seconds / 3)
         lp.frequency.setTargetAtTime(Math.min(20000, Math.max(200, lowpass)), t, seconds / 3)
+      },
+      pitch: (rate, seconds = 0.15) => {
+        src.playbackRate.setTargetAtTime(Math.max(0.1, rate), ctx.currentTime, seconds / 3)
       },
     }
   }

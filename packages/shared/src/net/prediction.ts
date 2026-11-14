@@ -9,6 +9,7 @@ import {
   type StepEvents,
   stepPlayer,
 } from '../sim/player.ts'
+import { stepSeated } from '../sim/vehicle.ts'
 
 /** Unacknowledged inputs kept for replay. ~2 s at 60 Hz; older ones mean we're desynced. */
 const MAX_PENDING = 120
@@ -26,6 +27,8 @@ export class Predictor {
   private readonly body: PlayerBody
   private pending: InputCommand[] = []
   private nextSeq = 1
+  /** Sitting in a car: the car carries you, input only turns your head (see stepSeated). */
+  seated = false
 
   constructor(state: PlayerState, body: PlayerBody) {
     this.state = state
@@ -42,7 +45,7 @@ export class Predictor {
    */
   predict(input: PlayerInput, viewTick = 0): { command: InputCommand; events: StepEvents } {
     const command: InputCommand = { seq: this.nextSeq++, ...quantizeInput(input), viewTick }
-    const events = stepPlayer(this.state, command, TICK_DT, this.body)
+    const events = this.step(command)
     this.pending.push(command)
     if (this.pending.length > MAX_PENDING) this.pending.shift()
     return { command, events }
@@ -57,13 +60,34 @@ export class Predictor {
     while (this.pending.length > 0 && (this.pending[0]?.seq ?? 0) <= ackSeq) this.pending.shift()
 
     this.state = clonePlayerState(serverState)
-    for (const command of this.pending) stepPlayer(this.state, command, TICK_DT, this.body)
+    for (const command of this.pending) this.step(command)
 
     return {
       x: this.state.pos.x - before.x,
       y: this.state.pos.y - before.y,
       z: this.state.pos.z - before.z,
     }
+  }
+
+  private step(command: InputCommand): StepEvents {
+    if (!this.seated) return stepPlayer(this.state, command, TICK_DT, this.body)
+    stepSeated(this.state, command)
+    return {
+      jumped: false,
+      landed: false,
+      landingSpeed: 0,
+      shot: null,
+      weapon: null,
+      switched: false,
+      slid: false,
+      mantled: false,
+      proned: false,
+    }
+  }
+
+  /** Commands sent but not yet acknowledged by the server, oldest first. */
+  get unacknowledged(): readonly InputCommand[] {
+    return this.pending
   }
 
   /** Forget everything (new connection or respawn). */

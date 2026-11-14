@@ -19,6 +19,7 @@ import {
   TEAMS,
   type TeamId,
   TICK_RATE,
+  type VehicleNet,
   WEAPONS,
   WeaponId,
   type WeatherKind,
@@ -102,6 +103,16 @@ export class MatchRunner {
   /** Survival: E and what you carry are the mode's business, not the weapons-on-the-floor code. */
   get ownsUse(): boolean {
     return this.survival !== null
+  }
+
+  /** Survival: one input of someone sitting in a car (true: the car took it, not their legs). */
+  ride(player: ServerPlayer, command: InputCommand): boolean {
+    return this.survival?.ride(player, command) ?? false
+  }
+
+  /** Survival: the cars near `player`, for their snapshot. */
+  vehiclesFor(player: ServerPlayer): VehicleNet[] {
+    return this.survival?.vehiclesFor(player) ?? []
   }
 
   onUse(player: ServerPlayer): void {
