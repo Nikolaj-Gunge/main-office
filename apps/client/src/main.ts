@@ -14,13 +14,14 @@ import {
   INPUT_BATCH_TICKS,
   type InputCommand,
   initPhysics,
-  loadMap,
-  MAPS,
+  loadMapAsync,
+  MAP_IDS,
   type MatchInfo,
   type PartName,
   PLAYER_QUERY_GROUPS,
   RAPIER,
   ServerMsg,
+  SURVIVAL_MAP,
   setGates,
   syncForest,
   TEAMS,
@@ -103,10 +104,10 @@ const physicsReady = initPhysics()
 // `?map=gym` loads another map; otherwise the one the server runs (it says so again on join).
 const params = new URLSearchParams(location.search)
 const requestedMap = params.get('map') ?? (await serverMap(1500)) ?? ''
-const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
-const map = loadMap(mapId)
-// Survival's code only loads for the survival map.
-const survivalCode = map.survival ? import('./game/survival-client.ts') : null
+const mapId = MAP_IDS.includes(requestedMap) ? requestedMap : DEFAULT_MAP_ID
+// Survival's code only loads for the survival map (it downloads alongside the world builder).
+const survivalCode = mapId === SURVIVAL_MAP ? import('./game/survival-client.ts') : null
+const map = await loadMapAsync(mapId)
 
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
@@ -323,7 +324,7 @@ const net = new Connection({
     if (survival?.onMessage(msg)) return
     switch (msg.type) {
       case ServerMsg.Welcome:
-        if (msg.mapId !== map.id && msg.mapId in MAPS) {
+        if (msg.mapId !== map.id && MAP_IDS.includes(msg.mapId)) {
           // Server runs another map (or the admin just switched it): reload into it and
           // rejoin straight away (keeps ?mute and other params).
           if (joined) sessionStorage.setItem(AUTOJOIN_KEY, '1')
@@ -737,8 +738,10 @@ const outgoing: InputCommand[] = []
  * Compiles every shader the game will need now, while loading, instead of stalling a frame the
  * first time a zombie, a muzzle flash or a blood splash shows up: one body of every look is put
  * out of sight for the moment, and hidden pooled effects are briefly shown to the compiler.
+ * Compiles in parallel where the browser can (KHR_parallel_shader_compile) and waits for it
+ * without blocking the page.
  */
-function warmShaders(): void {
+async function warmShaders(): Promise<void> {
   const looks = ['worker', 'zombie', 'runner', 'brute', 'screamer', 'stalker'] as const
   const bodies = looks.map((look, i) => {
     const body = new Avatar('', i, look)
@@ -754,7 +757,7 @@ function warmShaders(): void {
     }
   })
   try {
-    pixels.renderer.compile(scene, camera)
+    await pixels.renderer.compileAsync(scene, camera)
   } finally {
     for (const o of hidden) o.visible = false
     for (const body of bodies) {
@@ -763,8 +766,10 @@ function warmShaders(): void {
     }
   }
 }
+// Survival: the ground you start on, so its shaders are warmed too.
+survival?.prime(player.state.pos.x, player.state.pos.z)
 performance.mark('load:scene')
-warmShaders()
+await warmShaders()
 performance.mark('load:shaders')
 
 let firstFrame = true

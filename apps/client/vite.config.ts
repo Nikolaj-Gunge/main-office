@@ -18,6 +18,8 @@ const clientPort = Number(process.env.CLIENT_PORT ?? 5173)
 const INLINED_WASM = /[A-Za-z_$][\w$]*\.toByteArray\("[A-Za-z0-9+/=]{1000,}"\)(\.buffer)?/
 const RAPIER_MODULE = /rapier3d-compat[\\/]dist[\\/]rapier\.mjs$/
 const WASM_NAME = 'rapier_wasm3d_bg.wasm'
+const SURVIVAL_WORLD =
+  /shared[\\/]src[\\/]survival[\\/](world|kit|structures|places(-\w+)?|road-dressing)\.ts$/
 
 function rapierBinaryWasm(): Plugin {
   return {
@@ -79,7 +81,17 @@ export default defineConfig({
       // deploys that only change the game.
       output: {
         codeSplitting: {
-          groups: [{ name: 'vendor', test: /node_modules[\\/](three|@dimforge)[\\/]/ }],
+          groups: [
+            { name: 'vendor', test: /node_modules[\\/](three|@dimforge)[\\/]/ },
+            // Survival's world builder: only the survival map loads it (see loadMapAsync). Left
+            // to itself, Rolldown would merge it into the main bundle with the terrain code it
+            // shares with the physics; the terrain stays behind (no dependencies follow it).
+            {
+              name: 'survival-world',
+              test: SURVIVAL_WORLD,
+              includeDependenciesRecursively: false,
+            },
+          ],
         },
       },
     },

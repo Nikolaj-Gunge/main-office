@@ -273,6 +273,14 @@ export class SurvivalClient {
   }
 
   /**
+   * Builds the ground you start on before the first frame, so the shaders it needs can be
+   * compiled with the rest while loading (the chunks around it follow over the next frames).
+   */
+  prime(x: number, z: number): void {
+    this.wilds.update(x, z)
+  }
+
+  /**
    * Every frame. Returns true when the shadows want redrawing.
    * @param eyeYaw  where you look (the server's angles: 0 = north, + = left)
    */

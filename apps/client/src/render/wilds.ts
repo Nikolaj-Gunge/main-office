@@ -465,12 +465,13 @@ export class Wilds {
       }
     }
     work.sort((a, b) => a.d - b.d)
-    // Everything at once the first time and after a teleport; then a little per frame.
+    // The first time only the chunk you're in, so the first frame shows quickly (the rest follow
+    // over the next frames); everything at once after a teleport; otherwise a little per frame.
     const near = work.filter((m) => m.d < CHUNK * 1.6).length
     const hx = Math.floor(this.hole / CHUNKS)
     const hz = this.hole % CHUNKS
     const jumped = this.hole >= 0 && Math.max(Math.abs(hx - ccx), Math.abs(hz - ccz)) > 2
-    const budget = !this.primed || jumped ? work.length : near > 0 ? near : PER_FRAME
+    const budget = jumped ? work.length : !this.primed ? 1 : near > 0 ? near : PER_FRAME
     for (const m of work.slice(0, Math.max(budget, PER_FRAME))) {
       const chunk = this.chunks.get(m.key)
       if (chunk) this.setDetail(chunk, m.level)
@@ -490,7 +491,7 @@ export class Wilds {
         chunk.ground.visible = chunk.props.visible = chunk.shown
       }
     }
-    this.updateDetail(x, z, budget)
+    this.updateDetail(x, z, jumped)
     this.primed = true
     return changed
   }
@@ -509,8 +510,11 @@ export class Wilds {
     this.far.cull(fogFar, MID - CHUNK)
   }
 
-  /** Ground detail for the chunks right around (x, z); dropped again once you've walked on. */
-  private updateDetail(x: number, z: number, budget: number): void {
+  /**
+   * Ground detail for the chunks right around (x, z); dropped again once you've walked on. The
+   * chunk you stand in gets it at once, the others one a frame (all at once after a teleport).
+   */
+  private updateDetail(x: number, z: number, all: boolean): void {
     const wanted: { chunk: Chunk; cx: number; cz: number; d: number }[] = []
     for (const [key, chunk] of this.chunks) {
       const cx = Math.floor(key / CHUNKS)
@@ -520,8 +524,7 @@ export class Wilds {
       else if (!chunk.detail && d <= DETAIL_VIEW) wanted.push({ chunk, cx, cz, d })
     }
     wanted.sort((a, b) => a.d - b.d)
-    // The chunk you stand in at once; the rest a chunk a frame.
-    const now = Math.max(PER_FRAME, budget, wanted.filter((w) => w.d === 0).length)
+    const now = all ? wanted.length : Math.max(PER_FRAME, wanted.filter((w) => w.d === 0).length)
     for (const w of wanted.slice(0, now)) {
       const items = detailItems(this.def, this.roads, w.cx, w.cz)
       const { main, glow } = buildDetail(this.def.terrain, items)
