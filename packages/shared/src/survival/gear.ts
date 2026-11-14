@@ -25,6 +25,10 @@ export interface WearStats {
   stealth?: number
   /** Your footsteps carry this much less far. */
   quiet?: number
+  /** How warm it keeps you at night (see needs.ts: about 1 all told keeps a wet night out). */
+  warmth?: number
+  /** Keeps the rain off: you soak through this much slower (0.6 = 60 % slower). */
+  dry?: number
 }
 
 /** Head looks (bits 0–3 of the replicated gear value). */
@@ -56,28 +60,48 @@ export const BAREFOOT_NOISE = 0.1
 
 /** Item id → what wearing it does. */
 export const GEAR: Readonly<Record<string, WearStats>> = {
-  cap: { slot: 'head', look: HEAD_LOOKS.cap },
-  beanie: { slot: 'head', look: HEAD_LOOKS.beanie, stealth: 0.05 },
-  bandana: { slot: 'head', look: HEAD_LOOKS.bandana, quiet: 0.05 },
-  cowboyhat: { slot: 'head', look: HEAD_LOOKS.cowboy },
-  hardhat: { slot: 'head', look: HEAD_LOOKS.hardhat, armour: 0.25 },
-  helmet: { slot: 'head', look: HEAD_LOOKS.helmet, armour: 0.45 },
-  gasmask: { slot: 'head', look: HEAD_LOOKS.gasmask, armour: 0.1, quiet: 0.1 },
-  hoodie: { slot: 'body', look: BODY_LOOKS.hoodie, pockets: 3 },
-  flannel: { slot: 'body', look: BODY_LOOKS.flannel, pockets: 2 },
-  raincoat: { slot: 'body', look: BODY_LOOKS.raincoat, pockets: 4, quiet: -0.1 },
-  jacket: { slot: 'body', look: BODY_LOOKS.jacket, pockets: 6, armour: 0.08 },
-  camojacket: { slot: 'body', look: BODY_LOOKS.camo, pockets: 5, stealth: 0.25 },
-  policevest: { slot: 'body', look: BODY_LOOKS.police, armour: 0.25, pockets: 2 },
-  militaryvest: { slot: 'body', look: BODY_LOOKS.military, armour: 0.4, pockets: 6 },
-  jeans: { slot: 'legs', look: LEGS_LOOKS.jeans, pockets: 1, armour: 0.03 },
-  cargopants: { slot: 'legs', look: LEGS_LOOKS.cargo, pockets: 4 },
-  camopants: { slot: 'legs', look: LEGS_LOOKS.camo, pockets: 2, stealth: 0.1 },
-  worktrousers: { slot: 'legs', look: LEGS_LOOKS.work, pockets: 2, armour: 0.05 },
-  policetrousers: { slot: 'legs', look: LEGS_LOOKS.police, pockets: 2, armour: 0.04 },
-  sneakers: { slot: 'feet', look: FEET_LOOKS.sneakers, quiet: 0.15 },
-  boots: { slot: 'feet', look: FEET_LOOKS.boots, quiet: 0.3 },
-  militaryboots: { slot: 'feet', look: FEET_LOOKS.military, quiet: 0.2, armour: 0.02 },
+  cap: { slot: 'head', look: HEAD_LOOKS.cap, warmth: 0.05 },
+  beanie: { slot: 'head', look: HEAD_LOOKS.beanie, stealth: 0.05, warmth: 0.2 },
+  bandana: { slot: 'head', look: HEAD_LOOKS.bandana, quiet: 0.05, warmth: 0.05 },
+  cowboyhat: { slot: 'head', look: HEAD_LOOKS.cowboy, warmth: 0.05, dry: 0.15 },
+  hardhat: { slot: 'head', look: HEAD_LOOKS.hardhat, armour: 0.25, warmth: 0.05 },
+  helmet: { slot: 'head', look: HEAD_LOOKS.helmet, armour: 0.45, warmth: 0.1 },
+  gasmask: { slot: 'head', look: HEAD_LOOKS.gasmask, armour: 0.1, quiet: 0.1, warmth: 0.05 },
+  hoodie: { slot: 'body', look: BODY_LOOKS.hoodie, pockets: 3, warmth: 0.45 },
+  flannel: { slot: 'body', look: BODY_LOOKS.flannel, pockets: 2, warmth: 0.4 },
+  raincoat: {
+    slot: 'body',
+    look: BODY_LOOKS.raincoat,
+    pockets: 4,
+    quiet: -0.1,
+    warmth: 0.35,
+    dry: 0.6,
+  },
+  jacket: {
+    slot: 'body',
+    look: BODY_LOOKS.jacket,
+    pockets: 6,
+    armour: 0.08,
+    warmth: 0.75,
+    dry: 0.15,
+  },
+  camojacket: { slot: 'body', look: BODY_LOOKS.camo, pockets: 5, stealth: 0.25, warmth: 0.65 },
+  policevest: { slot: 'body', look: BODY_LOOKS.police, armour: 0.25, pockets: 2, warmth: 0.2 },
+  militaryvest: { slot: 'body', look: BODY_LOOKS.military, armour: 0.4, pockets: 6, warmth: 0.3 },
+  jeans: { slot: 'legs', look: LEGS_LOOKS.jeans, pockets: 1, armour: 0.03, warmth: 0.15 },
+  cargopants: { slot: 'legs', look: LEGS_LOOKS.cargo, pockets: 4, warmth: 0.15 },
+  camopants: { slot: 'legs', look: LEGS_LOOKS.camo, pockets: 2, stealth: 0.1, warmth: 0.15 },
+  worktrousers: { slot: 'legs', look: LEGS_LOOKS.work, pockets: 2, armour: 0.05, warmth: 0.2 },
+  policetrousers: { slot: 'legs', look: LEGS_LOOKS.police, pockets: 2, armour: 0.04, warmth: 0.15 },
+  sneakers: { slot: 'feet', look: FEET_LOOKS.sneakers, quiet: 0.15, warmth: 0.05 },
+  boots: { slot: 'feet', look: FEET_LOOKS.boots, quiet: 0.3, warmth: 0.15 },
+  militaryboots: {
+    slot: 'feet',
+    look: FEET_LOOKS.military,
+    quiet: 0.2,
+    armour: 0.02,
+    warmth: 0.15,
+  },
 }
 
 /**

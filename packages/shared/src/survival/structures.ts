@@ -113,6 +113,7 @@ export function stove(s: Site, x: number, z: number, h: number, lit: boolean): v
   if (lit) {
     s.deco(x, FLOOR + 0.25, z + 0.31, 0.3, 0.22, 0.02, 'lightpanel')
     s.light(x, FLOOR + 0.6, z + 0.8, { color: 0xff7a30, intensity: 9, distance: 8, flicker: 0.35 })
+    s.fire(x, FLOOR, z, 2.5)
   }
 }
 
@@ -135,6 +136,7 @@ export function campfire(s: Site, x: number, z: number, lit = true): void {
   if (lit) {
     s.deco(x, 0.16, z, 0.22, 0.3, 0.22, 'lightpanel')
     s.light(x, 1, z, { color: 0xff7a2a, intensity: 26, distance: 16, flicker: 0.45 })
+    s.fire(x, 0, z, 3.5)
   }
 }
 
@@ -160,6 +162,7 @@ export function bonfire(s: Site, x: number, z: number): void {
   s.deco(x, 0.15, z, 0.5, 0.55, 0.5, 'lantern')
   s.deco(x, 0.3, z, 0.26, 0.6, 0.26, 'lightpanel')
   s.light(x, 1.3, z, { color: 0xffa860, intensity: 42, distance: 26, flicker: 0.35 })
+  s.fire(x, 0, z, 5.5)
   // High above it, a soft glow over the whole camp (the fire's light on smoke and canvas).
   s.light(x, 14, z, { color: 0xffd6aa, intensity: 380, distance: 70 })
 }

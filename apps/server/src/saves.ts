@@ -34,6 +34,8 @@ export class MemoryStore implements SaveStore {
  * The saved schema's version. Raise it when the shape of CharacterSave or WorldSave changes and
  * add a step to MIGRATIONS that turns version N - 1 into N, so old saves still load.
  */
+// Additive fields with defaults (e.g. SurvivalSelf.needs, filled in by restoreSelf) need no new
+// version: older saves simply load without them.
 export const SAVE_VERSION = 1
 
 /** Upgrades one saved value from version `from` to `from + 1` (kind: 'character' | 'world'). */

@@ -4,6 +4,8 @@ import {
   countOf,
   DAY_SECONDS,
   daylight,
+  type EffectId,
+  effectsOf,
   gearLooks,
   heightAt,
   type Interactable,
@@ -50,6 +52,7 @@ import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
+import { Shiver } from './needs-feel.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import { VehiclesClient } from './vehicles-client.ts'
 
@@ -319,6 +322,24 @@ export class SurvivalClient {
       else if (what === 'hit') this.audio.play('bang', { at, volume: 1 })
       else this.audio.play('splinter', { at, volume: 1 })
     }
+  }
+
+  private readonly shivers = new Shiver()
+
+  /** Your buffs and statuses (see needs.ts): none until the server says. */
+  get effects(): readonly EffectId[] {
+    if (this.effectsOf !== this.self) {
+      this.effectsOf = this.self
+      this.effectsNow = this.self ? effectsOf(this.self) : []
+    }
+    return this.effectsNow
+  }
+  private effectsOf: SurvivalSelf | null = null
+  private effectsNow: readonly EffectId[] = []
+
+  /** Cold: how much the aim shivers this frame. */
+  shiver(dt: number): { yaw: number; pitch: number } {
+    return this.shivers.update(dt, this.effects)
   }
 
   /** Joined a (new) game: forget what the last one said. */

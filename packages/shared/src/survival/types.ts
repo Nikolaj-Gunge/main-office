@@ -198,4 +198,12 @@ export interface SurvivalDef {
   starter: Starter[]
   /** Road sign faces (their posts are map boxes); see road-dressing.ts. */
   signs?: RoadSign[]
+  /** Lit fires: warm, dry and rest whoever sits by them (see needs.ts). */
+  fires?: WarmSpot[]
+}
+
+/** Somewhere warm: a lit fire, and how close (m) you have to be to feel it. */
+export interface WarmSpot {
+  pos: Vec3
+  r: number
 }

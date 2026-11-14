@@ -285,6 +285,7 @@ export function buildDeadwood(): MapDef {
     rooms: build.rooms,
     spots: build.spots,
     starter: build.starter,
+    fires: build.fires,
     signs,
   }
   const start = pois[0] as Poi

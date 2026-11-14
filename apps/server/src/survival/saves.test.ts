@@ -205,6 +205,26 @@ describe('saves: characters', () => {
     expect(s.inv.some((h) => h.item === 'no_such_thing')).toBe(false)
     expect(s.wear.head).toBeUndefined()
   })
+  test('buffs and statuses are saved; a save from before them loads with none', async () => {
+    const store = new MemoryStore()
+    const one = await server(store)
+    const p = await one.join('Sam', 'acct')
+    one.run(0.5)
+    const s = one.self(p)
+    s.needs = { rested: 600, resting: 0, wet: 80, chill: 20, sprain: 90, sick: 0 }
+    await one.leave(p)
+    // The same character as an older server wrote it: no needs at all.
+    const raw = structuredClone(await store.get('char:acct'))
+    const old = raw as { data: { self: Partial<SurvivalSelf> } }
+    delete old.data.self.needs
+    await store.put('char:old', old)
+
+    const two = await server(store)
+    const r = two.self(await two.join('Sam', 'acct'))
+    expect(r.needs).toEqual({ rested: 600, resting: 0, wet: 80, chill: 20, sprain: 90, sick: 0 })
+    const o = two.self(await two.join('Old', 'old'))
+    expect(o.needs).toEqual({ rested: 0, resting: 0, wet: 0, chill: 0, sprain: 0, sick: 0 })
+  })
 })
 
 describe('saves: the world', () => {

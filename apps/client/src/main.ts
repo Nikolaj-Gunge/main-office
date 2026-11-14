@@ -381,7 +381,7 @@ const net = new Connection({
   onMessage: (msg) => {
     combat.onMessage(msg)
     if (msg.type === ServerMsg.Social) return social.onEvent(msg.social, performance.now())
-    if (survival?.onMessage(msg)) return
+    if (survival?.onMessage(msg)) return void player.setEffects(survival.effects)
     switch (msg.type) {
       case ServerMsg.Welcome:
         if (msg.mapId !== map.id && MAP_IDS.includes(msg.mapId)) {
@@ -401,6 +401,7 @@ const net = new Connection({
         menu.setStatus('')
         worldItems.clear()
         survival?.reset()
+        player.setEffects([])
         itemSoundsFrom = performance.now() + 500
         overlay.setBanner(null)
         everJoined = true
@@ -950,6 +951,9 @@ pixels.setAnimationLoop(() => {
     // Recoil moves the real aim; shake only the camera.
     const kick = recoil.update(dt)
     look.addRotation(kick.yaw, kick.pitch)
+    // Cold: the aim itself shivers (survival needs).
+    const shiver = survival?.shiver(dt)
+    if (shiver) look.addRotation(shiver.yaw, shiver.pitch)
     player.updateCamera(camera, accumulator / TICK_DT, look.yaw, look.pitch, dt)
     // In a car: the camera rides with it instead (and no gun sways in front of you).
     seated = survival?.drive(dt, accumulator / TICK_DT, remotes.renderTick, look) === true && joined
