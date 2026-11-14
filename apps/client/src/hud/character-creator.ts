@@ -131,7 +131,8 @@ class Preview {
       this.scene.remove(this.avatar.root)
       this.avatar.dispose()
     }
-    this.avatar = new Avatar('preview', 0, 'worker', appearance)
+    // Dressed as everyone starts out in survival: tank top, joggers, bare feet.
+    this.avatar = new Avatar('preview', 0, 'worker', appearance, 'survival')
     this.scene.add(this.avatar.root)
   }
 

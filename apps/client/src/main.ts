@@ -68,6 +68,7 @@ import { Effects } from './render/effects.ts'
 import { createGameRenderer, rendererChoice } from './render/game-renderer.ts'
 import { createLighting, gradeLighting } from './render/lighting.ts'
 import { buildMapObject, swingLamps } from './render/map-mesh.ts'
+import { setMapOutfit } from './render/person.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures } from './render/textures.ts'
@@ -107,6 +108,8 @@ const mapId = MAP_IDS.includes(requestedMap) ? requestedMap : DEFAULT_MAP_ID
 // Survival's code only loads for the survival map (it downloads alongside the world builder).
 const survivalCode = mapId === SURVIVAL_MAP ? import('./game/survival-client.ts') : null
 const map = await loadMapAsync(mapId)
+// People start in a tank top and joggers on the survival map, in office clothes elsewhere.
+setMapOutfit(map.survival ? 'survival' : 'office')
 
 // --- Rendering ------------------------------------------------------------------------
 // WebGL by default; `?renderer=webgpu` (or the setting) tries WebGPU and falls back by itself.
@@ -265,7 +268,7 @@ const PUSH_SPEED: Record<BaseWeaponId, number> = {
   [WeaponId.Claws]: 2,
 }
 const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()
-remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
+remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale, appearance) => {
   const kill = recentKills.get(id)
   recentKills.delete(id)
   const at = new THREE.Vector3(pose.x, pose.y, pose.z)
@@ -274,11 +277,16 @@ remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
   dir.normalize().setY(0.25).normalize()
   const speed = (kill ? PUSH_SPEED[weaponLook(kill.weapon)] : 2) + (kill?.headshot ? 1 : 0)
   const parts = bodyParts({ ...remotes.poseOf(id, pose), scale })
-  ragdolls.spawn(skin, colorIndex, parts, scale, velocity, {
-    dir,
-    speed,
-    headshot: kill?.headshot ?? false,
-  })
+  ragdolls.spawn(
+    skin,
+    colorIndex,
+    parts,
+    scale,
+    velocity,
+    { dir, speed, headshot: kill?.headshot ?? false },
+    appearance ? { appearance } : undefined,
+    pose.gear ?? 0,
+  )
 }
 
 // --- Networking -----------------------------------------------------------------------
