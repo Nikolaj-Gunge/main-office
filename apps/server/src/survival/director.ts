@@ -9,6 +9,8 @@ import {
   containerOf,
   countOf,
   createPlayerState,
+  CRUNCH_NOISE,
+  crunchAt,
   createWeaponState,
   DAY_SECONDS,
   type DayPhase,
@@ -89,6 +91,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { type RotHost, RotWorld } from './rot-world.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Vehicles } from './vehicles.ts'
 
@@ -275,12 +278,15 @@ export class SurvivalDirector {
   private readonly drops: Drops
   /** The cars parked about the woods, and who sits in them. */
   private readonly vehicles: Vehicles
+  /** The tension director, the night's mood, the birds and car alarms (rot-world.ts). */
+  private readonly rot: RotWorld
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
     this.random = random
     this.drops = new Drops(this.dropHost())
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
+    this.rot = new RotWorld(this.rotHost())
     this.story = new Story(this.storyHost())
   }
 
@@ -357,6 +363,8 @@ export class SurvivalDirector {
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
     this.drops.reset()
     this.vehicles.reset(def)
+    this.rot.reset()
+    if (dayPhase(this.time) === 'night') this.rot.midnight(this.weatherSeed)
     for (let i = 0; i < POOL; i++) {
       const zombie = this.game.addZombie(new Zed(this.random))
       if (zombie) this.pool.push(zombie)
@@ -416,6 +424,7 @@ export class SurvivalDirector {
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
+    this.rot.forget(player)
     this.story.left(player)
     this.save(sv)
     void this.game.saves.flush()
@@ -632,6 +641,7 @@ export class SurvivalDirector {
     const sv = this.survivors.get(player.id)
     if (!sv) return
     const noise = WEAPONS[player.state.weapon.id].noise
+    this.rot.shot(player)
     if (noise > sv.noise || this.now > sv.noiseUntil) sv.noise = noise
     sv.noiseUntil = this.now + 1.2
     if (noise < 20) return
@@ -649,6 +659,7 @@ export class SurvivalDirector {
     // Shot from the dark: it comes for whoever did it.
     if (zed && isPerson(attacker)) zed.alert(attacker.state.pos, this.now)
     const sv = this.survivors.get(victim.id)
+    if (sv && amount > 0) this.rot.hurt(victim, amount)
     // One bite that draws blood is all it takes (and more bites don't make it faster).
     if (sv && attacker.zombie && amount > 0 && victim.health > 0 && sv.self.infected === null) {
       sv.self.infected = INFECTION_SECONDS
@@ -819,11 +830,13 @@ export class SurvivalDirector {
       this.story.tick(alive)
       this.drops.step()
       this.tickDay(people)
+      this.rot.tick()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
+    if (tick % 15 === 11) this.rot.step()
     this.vehicles.step()
     this.story.step(TICK_DT)
     // Somebody walking with you is kept up to date often enough to look like walking.
@@ -851,6 +864,13 @@ export class SurvivalDirector {
     if (phase === 'dawn') this.rare = rollRareStock(this.random)
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
+    // What kind of night it will be: the Haven radio has an idea (rot.ts).
+    if (phase === 'dawn') this.rot.dawn()
+    if (phase === 'dusk') {
+      const news = this.rot.dusk(this.weatherSeed)
+      for (const sv of people) this.notice(sv.player, 'info', news)
+      this.game.match.broadcast()
+    }
   }
 
   /** Hunger, thirst, bleeding, the torch's battery — once a second. */
@@ -1758,7 +1778,10 @@ export class SurvivalDirector {
   private noiseOf(sv: Survivor, weather: Weather): number {
     const s = sv.player.state
     const speed = Math.hypot(s.vel.x, s.vel.z)
-    const steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
+    let steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
+    // Broken glass and dry branches underfoot carry much further (shared rot.ts).
+    if (speed > 1 && !s.prone && s.grounded && crunchAt(this.def, s.pos.x, s.pos.z))
+      steps = s.crouched ? CRUNCH_NOISE.crouch : speed > 6 ? CRUNCH_NOISE.sprint : CRUNCH_NOISE.walk
     return Math.max(
       steps * (1 - wornStats(sv.self).quiet) * hearingScale(weather),
       this.now < sv.noiseUntil ? sv.noise * hearingScale(weather, true) : 0,
@@ -1789,14 +1812,21 @@ export class SurvivalDirector {
       if (!prey) {
         prey = this.prey(alive)
         // Fog and rain close in; lightning lights everything up for a moment.
-        seeing = sightScale(
-          this.weather,
-          flashAt(this.weatherSeed, this.weatherClock, this.weatherPin ?? undefined),
-        )
+        seeing =
+          sightScale(
+            this.weather,
+            flashAt(this.weatherSeed, this.weatherClock, this.weatherPin ?? undefined),
+          ) * this.rot.director.moodDef.sight
       }
       if (stalker) zed.watch(z, prey, clear)
       if ((tick + z.id) % 15 >= 4 && stalker) continue
+      const was = zed.mood
       if (zed.sense(z, prey, this.now, this.light, clear, seeing) === 'scream') this.scream(z)
+      // Just seen by one of them: a sting in the music (the Rot).
+      if (was !== 'chase' && zed.mood === 'chase') {
+        const seen = this.survivors.get(zed.targetId)
+        if (seen) this.rot.spotted(seen.player)
+      }
     }
   }
 
@@ -1886,16 +1916,27 @@ export class SurvivalDirector {
       }
     })
 
-    // The woods are never quite empty.
-    for (const p of people) {
+    // The woods are never quite empty (but leave somebody getting their breath back alone).
+    const mood = this.rot.director.moodDef
+    for (const [n, p] of people.entries()) {
+      const who = alive[n]
+      if (who && this.rot.relaxing(who.player)) continue
       const around = active.filter((z) => dist(z.state.pos, p) < 150).length
-      const want = Math.round((dark ? 3.5 : 2) * scale)
+      const want = Math.round((dark ? 3.5 : 2) * scale * mood.wanderers)
       if (around >= want) continue
       const zombie = free()
       if (!zombie) return
       const pos = this.ringSpot(p, 70 + this.random() * 40, people)
       if (!pos) continue
-      this.place(zombie, kindFor(undefined, 0, this.random(), dark), -1, false, pos)
+      // Tonight's mood: more runners (Hunting Season), more screamers (the Choir).
+      const roll = this.random()
+      const kind =
+        roll < mood.runners
+          ? ZombieKind.Runner
+          : roll < mood.runners + mood.screamers
+            ? ZombieKind.Screamer
+            : kindFor(undefined, 0, this.random(), dark)
+      this.place(zombie, kind, -1, false, pos)
       active.push(zombie)
     }
   }
@@ -2004,6 +2045,49 @@ export class SurvivalDirector {
     }
   }
 
+  /** What the Rot (rot-world.ts) gets to do here. */
+  private rotHost(): RotHost {
+    return {
+      def: () => this.def,
+      random: this.random,
+      now: () => this.now,
+      light: () => this.light,
+      people: () =>
+        [...this.survivors.values()]
+          .filter((sv) => sv.player.state.alive)
+          .map((sv) => ({
+            player: sv.player,
+            self: sv.self,
+            safe: this.def.pois.some((p) => p.safe && dist(sv.player.state.pos, p) < p.r + 4),
+          })),
+      zombies: () => {
+        const out: { player: ServerPlayer; zed: Zed }[] = []
+        for (const z of this.pool) {
+          const zed = this.zeds.get(z.id)
+          if (zed && z.state.alive) out.push({ player: z, zed })
+        }
+        return out
+      },
+      clear: (a, b) => this.game.lineClear(a, b),
+      spawn: (at, kind, goal) => {
+        const zombie = this.pool.find((z) => !z.state.alive)
+        if (!zombie) return false
+        this.place(zombie, kind, -1, false, at)
+        if (goal) this.zeds.get(zombie.id)?.alert(goal, this.now)
+        return true
+      },
+      parked: () => this.vehicles.parked(),
+      send: (player, msg) => this.send(player, msg),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      broadcast: () => this.game.match.broadcast(),
+    }
+  }
+
+  /** The Rot, for tests and admin. */
+  get rotWorld(): RotWorld {
+    return this.rot
+  }
+
   /** What the supply drops (drops.ts) get to do here. */
   private dropHost(): DropHost {
     return {
@@ -2098,6 +2182,7 @@ export class SurvivalDirector {
         kind: this.weather.kind,
         ...(this.weatherPin ? { pin: this.weatherPin } : {}),
       },
+      rot: this.rot.shared(),
     }
   }
 
