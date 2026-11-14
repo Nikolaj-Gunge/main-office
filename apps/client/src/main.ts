@@ -709,6 +709,7 @@ function applySettings() {
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
   aim.toggle = settings.aimToggle
   if (!aim.toggle) aim.release()
+  if (survival) survival.onboarding.hintsOn = settings.hints
   stats.dom.style.display = settings.showStats ? '' : 'none'
   overlay.setDebugVisible(settings.showDebug)
   social.apply(settings)

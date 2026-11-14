@@ -2570,3 +2570,83 @@ body {
   border: 0;
   opacity: 0.8;
 }
+
+/* --- The first hour (game/onboarding.ts) --------------------------------------------------- */
+
+/* Somebody new: who they were, over black, fading into play. */
+.sv-card {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0d0c0a 0%, #000 75%);
+  pointer-events: none;
+}
+
+.sv-card-inner {
+  text-align: center;
+  color: #efe8d6;
+  text-shadow: 0 2px 0 #000;
+}
+
+.sv-card-name {
+  font-size: clamp(28px, 5vh, 52px);
+  letter-spacing: 4px;
+}
+
+.sv-card-past {
+  margin-top: 8px;
+  font-size: clamp(15px, 2.2vh, 22px);
+  color: #b8ae96;
+}
+
+.sv-card-death {
+  margin-top: 40px;
+  font-size: clamp(16px, 2.4vh, 24px);
+  font-style: italic;
+  color: #d8c49a;
+}
+
+.sv-card-skip {
+  position: absolute;
+  bottom: 28px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #6a644e;
+}
+
+/* A one-time tip: small, at the left, in the notices' place. */
+.sv-hint {
+  position: absolute;
+  left: 24px;
+  top: 38%;
+  max-width: min(360px, 40vw);
+  padding: 6px 10px 7px;
+  border-left: 3px solid #d8c49a;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.7), rgb(0 0 0 / 0.15));
+  font-size: 14px;
+  line-height: 1.35;
+  color: #efe8d6;
+  text-shadow: 0 1px 0 #000;
+  animation: sv-in 0.15s steps(3);
+}
+
+/* Nothing in the story to point at: what to do instead. */
+.sv-quest.next {
+  padding-right: 8px;
+  border-right: 2px solid rgb(216 196 154 / 0.7);
+  font-size: 12px;
+  color: #efe8d6;
+}
+
+.sv-quest.next i {
+  color: #d8c49a;
+  font-size: 9px;
+}
+
+.sv-journal-who {
+  letter-spacing: 1px;
+  color: #b8ae96;
+}

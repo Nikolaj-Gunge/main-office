@@ -20,6 +20,7 @@ import {
   walkerHideout,
 } from '@office-fps/shared'
 import { Game, type ServerPlayer } from '../game.ts'
+import { KEEP_LOOT_SECONDS } from './newcomer.ts'
 import type { Story } from './story.ts'
 
 beforeAll(async () => {
@@ -122,6 +123,7 @@ describe('quests: the journal is yours', () => {
 
     t.inside.story.unlocks.push('workshop')
     t.sv(0).self.journal.done.push('wake', 'keep')
+    t.sv(0).self.age = KEEP_LOOT_SECONDS
     t.game.killPlayer(t.sv(0).player.id, t.sv(0).player.id)
     t.run(0.2)
     const j = t.sv(0).self.journal

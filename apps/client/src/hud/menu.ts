@@ -186,6 +186,7 @@ export class Menu {
       'section',
       { class: 'menu-panel' },
       this.toggle('Toggle aim (click to scope in / out — good for trackpads)', 'aimToggle'),
+      this.toggle('Survival hints (a tip the first time something comes up)', 'hints'),
       h(
         'p',
         { class: 'menu-label' },
@@ -384,7 +385,8 @@ export class Menu {
       | 'smoothPixels'
       | 'chat'
       | 'chatFilter'
-      | 'chatBubbles',
+      | 'chatBubbles'
+      | 'hints',
   ): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })
     input.checked = this.settings[key]

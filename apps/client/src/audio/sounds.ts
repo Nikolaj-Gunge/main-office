@@ -73,6 +73,8 @@ export const SOUNDS = {
   heli: { variants: 2, recipe: rotor },
   /** A car's engine: one second, looped and pitched up with speed. */
   engine: { variants: 1, recipe: engine },
+  /** Haven's dusk horn: one long, low blast that carries across the woods. */
+  horn: { variants: 1, recipe: horn },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -849,4 +851,28 @@ function rotor(rate: number, v: number): Signal {
   }
   const out = mix(rate, ...parts).subarray(0, Math.round(seconds * rate))
   return fadeEdges(normalize(saturate(out, 1.3), 0.85), rate, 0.004)
+}
+
+/**
+ * A long, low horn (an old ship's or fire horn on a post at Haven): a reedy note with a slow
+ * swell, a slight sag in pitch as the air runs out, and a soft second voice a fifth above.
+ */
+function horn(rate: number, _v: number): Signal {
+  const seconds = 2.8
+  const out = silence(seconds, rate)
+  let phase = 0
+  let phase2 = 0
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate
+    const sag = 1 - 0.035 * Math.max(0, (t - 2.2) / 1)
+    const f = 98 * sag * (1 + 0.004 * Math.sin(2 * Math.PI * 4.5 * t))
+    phase = (phase + f / rate) % 1
+    phase2 = (phase2 + (f * 1.5) / rate) % 1
+    // A buzzy reed: a pulse wave, rounded off below.
+    const reed = (phase < 0.32 ? 1 : -0.45) + 0.35 * Math.sin(2 * Math.PI * phase)
+    const fifth = 0.22 * (phase2 < 0.5 ? 1 : -1)
+    const swell = Math.min(1, t / 0.45) * Math.min(1, (seconds - t) / 0.7)
+    out[i] = (reed + fifth) * swell
+  }
+  return fadeEdges(normalize(saturate(lowpass(out, rate, 850), 1.4), 0.85), rate, 0.02)
 }

@@ -23,6 +23,7 @@ import { accountOf } from '../identity.ts'
 import { MemoryStore, type Migration, SAVE_VERSION, type SaveStore, upgrade } from '../saves.ts'
 import { createSession } from '../session.ts'
 import type { SurvivalDirector } from './director.ts'
+import { KEEP_LOOT_SECONDS } from './newcomer.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -179,6 +180,7 @@ describe('saves: characters', () => {
     one.run(0.5)
     give(one.self(p), 'beans', 2)
     one.self(p).infected = 2
+    one.self(p).age = KEEP_LOOT_SECONDS
     one.run(3.5)
     expect(p.state.alive).toBe(false)
     await one.game.saves.flush()
