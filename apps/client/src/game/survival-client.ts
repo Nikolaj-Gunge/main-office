@@ -37,7 +37,9 @@ import { BarricadeView } from '../render/barricades.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
+import { updateMapLod } from '../render/map-mesh.ts'
 import { Night } from '../render/night.ts'
+import { fadeShadowEdges } from '../render/shadow-fade.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import { Infection, type InfectionFx } from './infection.ts'
@@ -93,6 +95,8 @@ export class SurvivalClient {
   private readonly send: (action: SurvivalAction) => void
   private readonly wilds: Wilds
   private readonly night: Night
+  /** The map's buildings (main.ts adds them first), for their level of detail. */
+  private readonly mapObject: THREE.Object3D | null
   private readonly loot: LootView
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
@@ -127,8 +131,10 @@ export class SurvivalClient {
     this.physics = o.physics
     this.audio = o.audio
     this.send = o.send
+    fadeShadowEdges()
     this.wilds = new Wilds(o.def)
     o.scene.add(this.wilds.root)
+    this.mapObject = o.scene.getObjectByName(`map:${o.map.id}`) ?? null
     this.night = new Night(o.map, o.scene, o.sky)
     this.loot = new LootView(o.scene)
     this.leaves = new Leaves(o.def.terrain)
@@ -299,6 +305,7 @@ export class SurvivalClient {
     )
     this.wilds.setWetness(this.weather.wet)
     this.night.update(dt, eye, time, built)
+    this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
     this.heli.update(dt, eye)
 
@@ -366,6 +373,15 @@ export class SurvivalClient {
     const dirty = this.night.shadowsDirty
     this.night.shadowsDirty = false
     return dirty
+  }
+
+  /**
+   * Level of detail: nothing past the fog is drawn (it closes in at night), far forest and
+   * buildings simplified (see wilds.ts, forest-lod.ts, map-mesh.ts).
+   */
+  cullDistant(x: number, z: number, fogFar: number): void {
+    this.wilds.cull(x, z, fogFar)
+    if (this.mapObject) updateMapLod(this.mapObject, x, z, fogFar + 8)
   }
 
   /** Wind, twigs snapping in the dark, and a sting when something close has its eyes on you. */
