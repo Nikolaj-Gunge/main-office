@@ -64,9 +64,9 @@ import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
 import { Effects } from './render/effects.ts'
+import { createGameRenderer, rendererChoice } from './render/game-renderer.ts'
 import { createLighting, gradeLighting } from './render/lighting.ts'
 import { buildMapObject, swingLamps } from './render/map-mesh.ts'
-import { PixelRenderer } from './render/pixel-renderer.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures } from './render/textures.ts'
@@ -86,7 +86,6 @@ function requireElement<T extends Element>(selector: string): T {
 /** Set before reloading into a new map so the next page load rejoins on its own. */
 const AUTOJOIN_KEY = 'office-fps:autojoin'
 
-const canvas = requireElement<HTMLCanvasElement>('#game')
 const hudRoot = requireElement<HTMLDivElement>('#hud')
 const settings = loadSettings()
 const hud = new CombatHud(hudRoot)
@@ -111,7 +110,12 @@ const survivalCode = map.survival ? import('./game/survival-client.ts') : null
 setSurvivalDress(map.survival !== undefined)
 
 // --- Rendering ------------------------------------------------------------------------
-const pixels = new PixelRenderer(canvas)
+// WebGL by default; `?renderer=webgpu` (or the setting) tries WebGPU and falls back by itself.
+const pixels = await createGameRenderer(
+  requireElement<HTMLCanvasElement>('#game'),
+  rendererChoice(settings),
+)
+const canvas = pixels.canvas
 const scene = new THREE.Scene()
 // Near plane 0.1 m (not closer): doubles depth precision, so far-away surfaces don't flicker.
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
@@ -128,8 +132,8 @@ if (!map.survival) createLighting(map, scene)
 if (map.survival) camera.far = 640
 // The map never moves: draw the sun's (big) shadow map once instead of every frame — the
 // single most expensive thing a laptop GPU was doing each frame.
-pixels.renderer.shadowMap.autoUpdate = false
-pixels.renderer.shadowMap.needsUpdate = true
+pixels.shadows.autoUpdate = false
+pixels.shadows.needsUpdate = true
 const graded = gradeLighting(map.lighting)
 const sky = createSky(graded.skyColor, graded.fogColor)
 scene.add(sky)
@@ -509,7 +513,7 @@ function syncCoop(next: MatchInfo) {
     for (const child of mapObject.children) {
       if (child.name.startsWith('gate:')) child.visible = !isOpen(Number(child.name.slice(5)))
     }
-    pixels.renderer.shadowMap.needsUpdate = true
+    pixels.shadows.needsUpdate = true
   }
   const goal = coop ? map.coop?.stages[coop.stage]?.goal : undefined
   // Activate goals: only the spots still to do.
@@ -598,10 +602,7 @@ function applySettings() {
     autoQuality.reset()
     pixels.setBias(0)
   }
-  setSmoothTextures(
-    settings.smoothPixels,
-    Math.min(8, pixels.renderer.capabilities.getMaxAnisotropy()),
-  )
+  setSmoothTextures(settings.smoothPixels, Math.min(8, pixels.maxAnisotropy()))
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
@@ -762,7 +763,7 @@ function warmShaders(): void {
     }
   })
   try {
-    pixels.renderer.compile(scene, camera)
+    pixels.compile(scene, camera)
   } finally {
     for (const o of hidden) o.visible = false
     for (const body of bodies) {
@@ -776,7 +777,7 @@ warmShaders()
 performance.mark('load:shaders')
 
 let firstFrame = true
-pixels.renderer.setAnimationLoop(() => {
+pixels.setAnimationLoop(() => {
   const now = performance.now()
   const dt = Math.min(0.25, (now - last) / 1000)
   last = now
@@ -864,7 +865,7 @@ pixels.renderer.setAnimationLoop(() => {
   remotes.update(now, camera.position)
   updateCorn(now / 1000, [...remotes.visiblePoses().values(), camera.position], camera.position)
   if (survival?.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
-    pixels.renderer.shadowMap.needsUpdate = true
+    pixels.shadows.needsUpdate = true
   }
   pixels.setInfection(survival?.infectionFx ?? null)
   ragdolls.update(dt)
@@ -906,7 +907,7 @@ pixels.renderer.setAnimationLoop(() => {
     const deg = 180 / Math.PI
     const kb = (b: number) => (b / 1024).toFixed(1)
     overlay.debug.textContent = [
-      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale.toFixed(2)}`,
+      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale.toFixed(2)} · ${pixels.backend}`,
       `worst frame ${Math.max(...frameTimes).toFixed(1)} ms (last 2 s)`,
       noclip
         ? `NOCLIP (V) · cam ${camera.position.x.toFixed(2)} ${camera.position.y.toFixed(2)} ${camera.position.z.toFixed(2)}`

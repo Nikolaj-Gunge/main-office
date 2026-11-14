@@ -46,8 +46,16 @@ export interface Settings {
   showDebug: boolean
   /** Aim key toggles scope on/off instead of hold-to-aim (trackpads, two-finger click). */
   aimToggle: boolean
+  /**
+   * Which renderer draws the game (takes effect on reload; `?renderer=` overrides it). WebGPU
+   * falls back to WebGL by itself when the browser has no WebGPU or it fails to start.
+   */
+  renderer: RendererSetting
   keybinds: Keybinds
 }
+
+export const RENDERERS = ['webgl', 'webgpu'] as const
+export type RendererSetting = (typeof RENDERERS)[number]
 
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
@@ -75,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // Off for players; developers turn it on with F3.
   showDebug: false,
   aimToggle: false,
+  renderer: 'webgl',
   keybinds: withDefaults(undefined),
 }
 
