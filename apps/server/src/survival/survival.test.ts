@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import {
+  BAREFOOT_NOISE,
   Button,
   capacityOf,
   countOf,
@@ -549,7 +550,8 @@ describe('survival: weather', () => {
     me.state.vel = { x: 7, y: 0, z: 0 }
     director.pinWeather('clear')
     const dry = director.heardFrom(me)
-    expect(dry).toBe(16)
+    // Running pace (16 m), barefoot (new characters have no shoes).
+    expect(dry).toBeCloseTo(16 * (1 + BAREFOOT_NOISE), 5)
     director.pinWeather('rain')
     const wet = director.heardFrom(me)
     director.pinWeather('storm')
