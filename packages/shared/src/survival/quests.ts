@@ -86,7 +86,7 @@ export const QUESTS: QuestDef[] = [
         item: 'bandage',
         n: 3,
         text: 'Bring Lena 3 bandages',
-        say: 'Clean ones. You just bought somebody a week.\n\nTake this pack — its owner has no more use for it. And sleep in the bunkhouse when you need to: if the night goes wrong, that is where you wake up.',
+        say: 'Clean ones. You just bought somebody a week.\n\nTake this pack — its owner has no more use for it. And sleep in the bunkhouse when you need to: the night goes quicker behind walls.\n\nOne more thing. If they bite you, you have twenty minutes. Find adrenaline, or pray for a cure.',
       },
     ],
     reward: { money: 60, items: [['pack_school', 1]] },
@@ -725,3 +725,19 @@ export const TRADER_STOCK: string[] = [
 ]
 /** Ammunition is sold in boxes of this many. */
 export const AMMO_BOX = 10
+
+/**
+ * What Gus has only now and then, and dear: each dawn he either has one or he doesn't (chance),
+ * at his own price. Once it's sold it's gone until he turns up another.
+ */
+export const RARE_STOCK: { item: string; chance: number; price: number }[] = [
+  { item: 'adrenaline', chance: 0.35, price: 650 },
+  { item: 'cure', chance: 0.05, price: 4000 },
+]
+
+/** Rolls what rare things Gus has today: item → how many (one each, if any). */
+export function rollRareStock(random: () => number): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const r of RARE_STOCK) if (random() < r.chance) out.set(r.item, 1)
+  return out
+}

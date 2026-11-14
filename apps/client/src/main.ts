@@ -344,9 +344,11 @@ const net = new Connection({
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
       case ServerMsg.PlayerJoined: {
-        // Zombies (zombies mode) are drawn and named as such, and stay off the scoreboard.
+        // Zombies (zombies mode) are drawn and named as such, and stay off the scoreboard;
+        // survival names the ones who were survivors ("Ray (turned)").
         const kind = msg.kind ?? 0
-        const name = kind === 0 ? msg.name : (ZOMBIE_NAMES[kind] ?? 'Zombie')
+        const name =
+          kind === 0 || msg.name !== 'Zombie' ? msg.name : (ZOMBIE_NAMES[kind] ?? 'Zombie')
         combat.setName(msg.id, name)
         if (kind === 0) roster.set(msg.id, { name: msg.name, color: msg.color })
         else roster.delete(msg.id)
@@ -855,6 +857,7 @@ pixels.renderer.setAnimationLoop(() => {
   if (survival?.update(dt, player.state, combat.health, look.yaw, look.pitch, remotes)) {
     pixels.renderer.shadowMap.needsUpdate = true
   }
+  pixels.setInfection(survival?.infectionFx ?? null)
   ragdolls.update(dt)
   damageNumbers.update(dt)
   coopZone.update(dt)

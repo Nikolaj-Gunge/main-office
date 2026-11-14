@@ -18,9 +18,11 @@ import {
   gearLooks,
   hearingScale,
   heightAt,
+  INFECTION_SECONDS,
   type InputCommand,
   type Interactable,
   ITEMS,
+  infectionStage,
   type LootItem,
   MAX_PLANKS,
   type MapSpawn,
@@ -34,12 +36,15 @@ import {
   type QuestDef,
   type QuestState,
   questById,
+  RARE_STOCK,
   rollLoot,
+  rollRareStock,
   roomFor,
   SELL_RATE,
   ServerMsg,
   SMALL_TALK,
   START_TIME,
+  type Stack,
   type SurvivalAction,
   type SurvivalDef,
   type SurvivalSelf,
@@ -49,6 +54,7 @@ import {
   spotBlock,
   spotCentre,
   syncForest,
+  TICK_DT,
   TICK_RATE,
   TRADER_STOCK,
   takeStack,
@@ -104,6 +110,16 @@ interface Survivor {
   warned: number
   /** When they may nail (or pull) the next plank. */
   boardAt: number
+  /** Died (or turned) at least once: they come back as somebody new, at Haven. */
+  reborn: boolean
+  /** Dying right now is turning: what they carried walks off with what's left of them. */
+  turning: boolean
+}
+
+/** One of the dead that was one of you: everything they had on them, and how they looked. */
+interface Turned {
+  stuff: Stack[]
+  look: number
 }
 
 interface Loot extends LootItem {
@@ -146,8 +162,18 @@ const freshSelf = (): SurvivalSelf => ({
   bleeding: false,
   battery: 100,
   light: false,
-  bed: null,
+  infected: null,
 })
+
+/** What you notice as the bite takes hold (by infection stage). */
+const SYMPTOMS: Record<number, string> = {
+  1: "You're burning up. The bite won't stop throbbing.",
+  2: "Your hands won't stop shaking. The colours are going out of everything.",
+  3: "You can't think straight. Something is whispering. You can't catch your breath.",
+  4: "You're turning. A minute, maybe less. Adrenaline — or a cure — now.",
+}
+/** Running out of breath faster as you turn: extra drain while sprinting, by stage (× normal). */
+const SHORT_OF_BREATH: Record<number, number> = { 3: 0.8, 4: 1.6 }
 
 /**
  * Survival mode: runs the night. Who carries what and how hungry they are, what lies where, the
@@ -160,12 +186,19 @@ export class SurvivalDirector {
   private readonly random: () => number
   private readonly survivors = new Map<number, Survivor>()
   /** What people had when they left, by name: they get it back if they return. */
-  private readonly profiles = new Map<string, { self: SurvivalSelf; kit: Survivor['kit'] }>()
+  private readonly profiles = new Map<
+    string,
+    { self: SurvivalSelf; kit: Survivor['kit']; reborn: boolean }
+  >()
   private readonly loot = new Map<number, Loot>()
   private readonly cells = new Map<number, Set<number>>()
   private nextLoot = 1
   private places: PlaceState[] = []
   private readonly zeds = new Map<number, Zed>()
+  /** The dead who were survivors, by zombie id: what drops when they're put down. */
+  private readonly turned = new Map<number, Turned>()
+  /** What Gus has today besides his usual stock (RARE_STOCK): item → how many. */
+  private rare = new Map<string, number>()
   private pool: ServerPlayer[] = []
   private quests: QuestState[] = []
   private done: string[] = []
@@ -249,6 +282,7 @@ export class SurvivalDirector {
     this.clearBoards()
     this.profiles.clear()
     this.survivors.clear()
+    this.rare = rollRareStock(this.random)
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
     this.drops.reset()
     this.begin('wake')
@@ -263,6 +297,7 @@ export class SurvivalDirector {
     for (const z of this.pool) this.game.leave(z.id)
     this.pool = []
     this.zeds.clear()
+    this.turned.clear()
     this.clearBoards()
   }
 
@@ -286,6 +321,8 @@ export class SurvivalDirector {
       talking: null,
       boardAt: 0,
       warned: 0,
+      reborn: saved?.reborn ?? false,
+      turning: false,
     })
   }
 
@@ -294,7 +331,7 @@ export class SurvivalDirector {
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
-    this.profiles.set(player.name, { self: sv.self, kit: sv.kit })
+    this.profiles.set(player.name, { self: sv.self, kit: sv.kit, reborn: sv.reborn })
     this.survivors.delete(player.id)
   }
 
@@ -303,9 +340,13 @@ export class SurvivalDirector {
   spawnFor(player: ServerPlayer): MapSpawn | null {
     const sv = this.survivors.get(player.id)
     if (!sv) return null
-    const bed = this.def.interactables.find((i) => i.key === sv.self.bed)
-    if (bed) return { pos: [bed.pos[0], bed.pos[1] + 0.2, bed.pos[2]], yaw: 0 }
-    return this.game.world.map.spawns[0] ?? null
+    const start = this.game.world.map.spawns[0] ?? null
+    if (!sv.reborn) return start
+    // Somebody new walks in at Haven: by the fire, facing it.
+    const haven = this.def.pois.find((p) => p.key === 'haven')
+    if (!haven) return start
+    const x = haven.x + (this.random() - 0.5) * 5
+    return { pos: [x, haven.y + 0.1, haven.z + 9], yaw: 0 }
   }
 
   /** What you wake up with: the weapons you carried, loaded as they were. */
@@ -389,6 +430,16 @@ export class SurvivalDirector {
     // Shot from the dark: it comes for whoever did it.
     if (zed && isPerson(attacker)) zed.alert(attacker.state.pos, this.now)
     const sv = this.survivors.get(victim.id)
+    // One bite that draws blood is all it takes (and more bites don't make it faster).
+    if (sv && attacker.zombie && amount > 0 && victim.health > 0 && sv.self.infected === null) {
+      sv.self.infected = INFECTION_SECONDS
+      sv.dirty = true
+      this.notice(
+        victim,
+        'story',
+        'Bitten.\n\nThe wound burns. You have maybe twenty minutes before you turn.\n\nAdrenaline holds it back. Only a cure stops it.',
+      )
+    }
     if (sv && attacker.zombie && amount >= 8 && !sv.self.bleeding && this.random() < 0.3) {
       sv.self.bleeding = true
       sv.dirty = true
@@ -400,6 +451,18 @@ export class SurvivalDirector {
     const zed = this.zeds.get(victim.id)
     if (zed) {
       victim.respawnAt = Number.POSITIVE_INFINITY
+      const was = this.turned.get(victim.id)
+      if (was) {
+        // One of you: everything they carried is still on them.
+        this.turned.delete(victim.id)
+        this.spill(was.stuff, victim.state.pos)
+        if (isPerson(killer))
+          this.notice(
+            killer,
+            'info',
+            `You put ${victim.name} down. Their things lie where they fell.`,
+          )
+      }
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -413,27 +476,96 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(victim.id)
     if (!sv) return
-    // You keep what was in your hands; the backpack's contents lie where you fell.
-    sv.kit = kitOf(victim.state)
-    for (const stack of sv.self.inv) {
-      if (ITEMS[stack.item]?.kind === 'quest') continue
-      this.dropAt(stack.item, stack.n, victim.state.pos, stack.ammo, true)
-    }
-    sv.self.inv = sv.self.inv.filter((s) => ITEMS[s.item]?.kind === 'quest')
-    sv.self.bleeding = false
-    sv.self.light = false
-    sv.self.hunger = Math.max(sv.self.hunger, 45)
-    sv.self.thirst = Math.max(sv.self.thirst, 45)
+    // Everything goes: backpack, guns, clothes, the pack, the money. Somebody new wakes at Haven.
+    const at = { ...victim.state.pos }
+    const stuff = belongings(sv.self, victim.state)
+    const look = gearOf(sv.self)
+    const turning = sv.turning
+    sv.self = freshSelf()
+    sv.kit = START_KIT.map((k) => ({ ...k }))
+    sv.reborn = true
+    sv.turning = false
+    sv.warned = 0
     sv.talking = null
     sv.dirty = true
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
+    if (turning) this.rise(victim, stuff, look, at)
+    else this.spill(stuff, at)
     this.notice(
       victim,
       'story',
-      sv.self.bed
-        ? 'You died.\nYour backpack lies where you fell.'
-        : 'You died.\nSleep in a bed and you wake up there instead.',
+      turning
+        ? 'You turned.\n\nWhat is left of you walks the woods with everything you carried.\n\nYou wake at Haven: somebody new.'
+        : 'You died.\n\nEverything you carried lies where you fell.\n\nYou wake at Haven: somebody new.',
     )
+  }
+
+  /** Everything somebody had, on the ground around `at` (quest things stay there for good). */
+  private spill(stuff: readonly Stack[], at: Point): void {
+    for (const s of stuff) {
+      const keep = ITEMS[s.item]?.kind === 'quest'
+      for (let left = s.n; left > 0; left -= 65535) {
+        this.dropAt(s.item, Math.min(left, 65535), at, s.ammo, true, keep)
+      }
+    }
+  }
+
+  /**
+   * The clock ran out: what's left of them gets up where they stood, wearing what they wore and
+   * carrying all they had. Inside Haven the guards see to it first.
+   */
+  private rise(victim: ServerPlayer, stuff: Stack[], look: number, at: Point): void {
+    const safe = this.def.pois.some((p) => p.safe && dist(at, p) < p.r + 6)
+    const zombie = safe ? null : this.freeZombie(at)
+    const who = victim.name
+    if (!zombie) {
+      this.spill(stuff, at)
+      for (const sv of this.survivors.values()) {
+        if (sv.player === victim) continue
+        this.notice(
+          sv.player,
+          'warn',
+          `${who} turned. The guards put them down before they got up.`,
+        )
+      }
+      return
+    }
+    this.place(zombie, ZombieKind.Walker, -1, false, at)
+    zombie.zombie?.face(victim.state.yaw)
+    this.turned.set(zombie.id, { stuff, look })
+    this.game.nameZombie(zombie, `${who} (turned)`)
+    for (const sv of this.survivors.values()) {
+      if (sv.player === victim) continue
+      const near = dist(sv.player.state.pos, at) < 150
+      this.notice(
+        sv.player,
+        near ? 'warn' : 'info',
+        near
+          ? `${who} turned, right here. Put them down: they still carry everything they had.`
+          : `${who} turned out there. Whatever they carried walks with them now.`,
+      )
+    }
+  }
+
+  /** A zombie to bring out: a free one, or else the one furthest from everybody (not one of you). */
+  private freeZombie(at: Point): ServerPlayer | null {
+    const free = this.pool.find((z) => !z.state.alive)
+    if (free) return free
+    let best: ServerPlayer | null = null
+    let far = -1
+    for (const z of this.pool) {
+      if (this.turned.has(z.id)) continue
+      const d = Math.min(
+        dist(z.state.pos, at),
+        ...[...this.survivors.values()].map((sv) => dist(z.state.pos, sv.player.state.pos)),
+      )
+      if (d > far) {
+        far = d
+        best = z
+      }
+    }
+    if (best) this.game.retireZombie(best)
+    return best
   }
 
   // --- Every tick ----------------------------------------------------------------------------
@@ -445,6 +577,7 @@ export class SurvivalDirector {
 
     // Reloads eat the ammunition in the backpack.
     for (const sv of alive) this.settleAmmo(sv)
+    for (const sv of alive) this.shortOfBreath(sv)
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
@@ -479,11 +612,12 @@ export class SurvivalDirector {
     }
   }
 
-  /** Dawn and dusk: everyone is told the light is changing. */
+  /** Dawn and dusk: everyone is told the light is changing. Gus restocks at dawn. */
   private tickDay(people: readonly Survivor[]): void {
     const phase = dayPhase(this.time)
     if (phase === this.phase) return
     this.phase = phase
+    if (phase === 'dawn') this.rare = rollRareStock(this.random)
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
   }
@@ -501,6 +635,15 @@ export class SurvivalDirector {
         self.light = false
         this.notice(player, 'warn', 'Your torch is dead. Find batteries.')
       }
+    }
+    if (self.infected !== null) {
+      const was = infectionStage(self.infected)
+      self.infected = Math.max(0, self.infected - 1)
+      if (self.infected === 0) return void this.turn(sv)
+      const stage = infectionStage(self.infected)
+      if (stage !== was && SYMPTOMS[stage]) this.notice(player, 'warn', SYMPTOMS[stage] as string)
+      // Told now and then (the client counts down in between).
+      if (stage !== was || self.infected % 5 === 0) sv.dirty = true
     }
     const second = Math.floor(this.now)
     let hurt = 0
@@ -531,6 +674,22 @@ export class SurvivalDirector {
     ) {
       sv.dirty = true
     }
+  }
+
+  /** The clock ran out. */
+  private turn(sv: Survivor): void {
+    sv.turning = true
+    this.game.killPlayer(sv.player.id, sv.player.id)
+    sv.turning = false
+  }
+
+  /** Late in the turn, sprinting runs you out of breath much sooner. */
+  private shortOfBreath(sv: Survivor): void {
+    const extra = SHORT_OF_BREATH[infectionStage(sv.self.infected)]
+    const s = sv.player.state
+    if (!extra || s.winded || Math.hypot(s.vel.x, s.vel.z) < 6.2) return
+    s.stamina = Math.max(0, s.stamina - (TICK_DT / 9) * extra)
+    if (s.stamina === 0) s.winded = true
   }
 
   // --- Ammunition ----------------------------------------------------------------------------
@@ -604,15 +763,23 @@ export class SurvivalDirector {
     for (const sv of this.survivors.values()) if (sv.cells.has(cell)) this.send(sv.player, msg)
   }
 
-  /** Drops something on the ground at (about) `at`. */
-  private dropAt(item: string, n: number, at: Point, ammo?: number, scatter = false): void {
+  /** Drops something on the ground at (about) `at` (`keep`: it never rots away). */
+  private dropAt(
+    item: string,
+    n: number,
+    at: Point,
+    ammo?: number,
+    scatter = false,
+    keep = false,
+  ): void {
     const a = this.random() * Math.PI * 2
     const r = scatter ? 0.3 + this.random() * 0.7 : 0.5
     const x = at.x + Math.cos(a) * r
     const z = at.z + Math.sin(a) * r
     // On the floor you're standing on, or the ground if it's higher.
     const y = Math.max(at.y, heightAt(this.def.terrain, x, z)) + 0.05
-    this.addLoot(item, n, { x, y, z }, -1, ammo, this.game.tick + DROPPED_SECONDS * TICK_RATE)
+    const until = keep ? 0 : this.game.tick + DROPPED_SECONDS * TICK_RATE
+    this.addLoot(item, n, { x, y, z }, -1, ammo, until)
   }
 
   /** Tells a client about the loot around it (its cell and the 8 around), and only that. */
@@ -971,7 +1138,6 @@ export class SurvivalDirector {
       this.notice(player, 'warn', "You can't sleep. Something is moving out there.")
       return
     }
-    sv.self.bed = bed.key
     sv.self.bleeding = false
     sv.self.hunger = Math.max(0, sv.self.hunger - 12)
     sv.self.thirst = Math.max(0, sv.self.thirst - 16)
@@ -983,7 +1149,7 @@ export class SurvivalDirector {
     this.slept += (wakeTime(t) - t) * DAY_SECONDS
     this.send(player, {
       type: ServerMsg.Notice,
-      notice: { kind: 'story', text: 'You sleep.\n\nIf you die, this is where you wake up.' },
+      notice: { kind: 'story', text: 'You sleep through the dark.\n\nYou wake at first light.' },
     })
     this.game.match.broadcast()
   }
@@ -1039,8 +1205,22 @@ export class SurvivalDirector {
           this.notice(player, 'info', `You put on the ${def.name}.`)
           return void this.touch(sv)
         }
+        if (def.infection === 'cure' && self.infected === null) {
+          return void this.notice(player, 'info', "You're not infected. Keep it: you will be.")
+        }
         if (def.battery) self.battery = Math.min(100, self.battery + def.battery)
         else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med') {
+          if (def.infection && self.infected !== null) {
+            const cure = def.infection === 'cure'
+            self.infected = cure ? null : INFECTION_SECONDS
+            this.notice(
+              player,
+              cure ? 'story' : 'info',
+              cure
+                ? 'The serum goes in cold.\n\nThe fever breaks. Your hands are your own again.\n\nYou are clean.'
+                : 'The adrenaline burns through you. The fever backs off. For now.',
+            )
+          }
           if (def.health)
             player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
           if (def.hunger) self.hunger = Math.max(0, Math.min(100, self.hunger + def.hunger))
@@ -1124,13 +1304,19 @@ export class SurvivalDirector {
         const gus = this.def.npcs.find((p) => p.role === 'trader')
         if (!def || !gus || dist(s.pos, { x: gus.pos[0], z: gus.pos[2] }) > 6) return
         if (action.a === 'buy') {
-          if (!TRADER_STOCK.includes(def.id)) return
+          const rare = RARE_STOCK.find((r) => r.item === def.id)
+          const inStock = TRADER_STOCK.includes(def.id) || (this.rare.get(def.id) ?? 0) >= n
+          if (!inStock) return
           const each = def.kind === 'ammo' ? AMMO_BOX : 1
-          const price = Math.ceil(def.value * each) * n
+          const price = (rare ? rare.price : Math.ceil(def.value * each)) * n
           if (self.money < price) return void this.notice(player, 'warn', "You can't afford that.")
           if (roomFor(self, def.id) < each * n)
             return void this.notice(player, 'warn', 'No room in your pack.')
           self.money -= price
+          if (rare && !TRADER_STOCK.includes(def.id)) {
+            this.rare.set(def.id, (this.rare.get(def.id) ?? 0) - n)
+            if ((this.rare.get(def.id) ?? 0) <= 0) this.rare.delete(def.id)
+          }
           addStack(
             self.inv,
             def.id,
@@ -1287,10 +1473,17 @@ export class SurvivalDirector {
         const def = ITEMS[id]
         return [id, Math.ceil((def?.value ?? 0) * (def?.kind === 'ammo' ? AMMO_BOX : 1))]
       })
+      // Today's rare things go first.
+      const rare = RARE_STOCK.filter((r) => (this.rare.get(r.item) ?? 0) > 0)
+      stock.unshift(...rare.map((r): [string, number] => [r.item, r.price]))
       this.say(
         sv,
         npc,
-        'Cash only. No refunds. No haunted merchandise, probably.',
+        rare.some((r) => r.item === 'cure')
+          ? "Got something special today. Came off a soldier from Site 7. Don't ask what it cost him."
+          : rare.length > 0
+            ? 'Cash only. And yes, that is adrenaline. No, I will not haggle.'
+            : 'Cash only. No refunds. No haunted merchandise, probably.',
         [{ id: 'bye', label: 'Goodbye.' }],
         stock,
       )
@@ -1498,9 +1691,16 @@ export class SurvivalDirector {
     for (const z of this.pool) {
       if (!z.state.alive) continue
       const zed = this.zeds.get(z.id)
-      const far = nearest(z.state.pos) > ZED_RANGE
+      const turned = this.turned.get(z.id)
+      // One of you who turned stays out there (with their things) until somebody finds them.
+      const far = !turned && nearest(z.state.pos) > ZED_RANGE
       const safe = this.def.pois.some((p) => p.safe && dist(z.state.pos, p) < p.r + 6)
-      if (far || safe || !zed) this.game.retireZombie(z)
+      if (!(far || safe || !zed)) continue
+      if (turned) {
+        this.turned.delete(z.id)
+        this.spill(turned.stuff, z.state.pos)
+      }
+      this.game.retireZombie(z)
     }
     if (people.length === 0) return
     const free = () => this.pool.find((z) => !z.state.alive)
@@ -1583,6 +1783,9 @@ export class SurvivalDirector {
     const zed = this.zeds.get(zombie.id)
     if (!zed) return
     zed.reset(kind, home, hunter)
+    // Somebody's turned body back in the pool is just one of the dead again.
+    this.turned.delete(zombie.id)
+    this.game.nameZombie(zombie, 'Zombie')
     const health = (KINDS[kind]?.health ?? 200) * (1 + 0.15 * Math.max(0, this.survivors.size - 1))
     this.game.placeZombie(
       zombie,
@@ -1656,7 +1859,7 @@ export class SurvivalDirector {
   /** What someone wears that shows (gear.ts looks, packed for the wire). */
   gearOf(player: ServerPlayer): number {
     const sv = this.survivors.get(player.id)
-    return sv ? gearLooks(Object.values(sv.self.wear)) : 0
+    return sv ? gearOf(sv.self) : (this.turned.get(player.id)?.look ?? 0)
   }
 
   /** Damage after what someone wears: helmets take head hits, vests and jackets the rest. */
@@ -1690,6 +1893,18 @@ const isPerson = (p: ServerPlayer) => !p.zombie && !p.dummy
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) =>
   Math.hypot(a.x - b.x, a.z - b.z)
+
+const gearOf = (self: SurvivalSelf) => gearLooks(Object.values(self.wear))
+
+/** Everything somebody has: the backpack, the guns in hand, what they wear, the pack and cash. */
+function belongings(self: SurvivalSelf, state: PlayerState): Stack[] {
+  const out: Stack[] = self.inv.map((s) => ({ ...s }))
+  for (const w of carried(state)) out.push({ item: weaponItem(w.id), n: 1, ammo: w.ammo })
+  for (const id of Object.values(self.wear)) if (id) out.push({ item: id, n: 1 })
+  if (self.pack) out.push({ item: self.pack, n: 1 })
+  if (self.money > 0) out.push({ item: 'cash', n: self.money })
+  return out
+}
 
 /** The weapons somebody carries, as what to give them back. */
 function kitOf(state: PlayerState): Survivor['kit'] {

@@ -51,6 +51,9 @@ export const SOUNDS = {
   heartbeat: { variants: 1, recipe: heartbeat },
   groan: { variants: 4, recipe: zombieGroan },
   claw: { variants: 2, recipe: clawHit },
+  // The bite taking hold (game/infection.ts): your own cough, and voices that aren't there.
+  cough: { variants: 3, recipe: cough },
+  whisper: { variants: 3, recipe: whisper },
   // Survival: the forest at night.
   scream: { variants: 2, recipe: scream },
   wind: { variants: 3, recipe: windGust },
@@ -627,6 +630,46 @@ function dread(rate: number, v: number): Signal {
     rate,
     0.01,
   )
+}
+
+/** A dry, rough cough: two or three hacks, each a burst of breath through a tight throat. */
+function cough(rate: number, v: number): Signal {
+  const r = rng(2100 + v)
+  const hacks: [Signal, number][] = []
+  let t = 0
+  for (let i = 0, n = 2 + (v % 2); i < n; i++) {
+    const len = 0.16 + r() * 0.08
+    const breath = bandpass(noise(len, rate, 2110 + v * 7 + i), rate, 600 + r() * 500, 0.9)
+    const chest = lowpass(noise(len, rate, 2120 + v * 7 + i), rate, 350)
+    const voice = gain(sweep(len, rate, 170 + r() * 40, 120), 0.35)
+    const hack = envelope(mix(rate, breath, gain(chest, 0.9), voice), rate, 0.006, 0.05)
+    hacks.push([gain(hack, 1 - i * 0.2), t])
+    t += len + 0.05 + r() * 0.08
+  }
+  return fadeEdges(normalize(saturate(mix(rate, ...hacks), 1.8), 0.8), rate)
+}
+
+/** Whispering just behind your ear: breathy syllables with no words in them. */
+function whisper(rate: number, v: number): Signal {
+  const r = rng(2200 + v)
+  const parts: [Signal, number][] = []
+  let t = 0
+  while (t < 1.4) {
+    const len = 0.09 + r() * 0.13
+    const hiss = noise(len, rate, 2210 + Math.round(t * 1000) + v * 31)
+    // Now and then an "s"; otherwise a breathy vowel.
+    const sound =
+      r() < 0.2
+        ? gain(highpass(hiss, rate, 5200), 0.6)
+        : mix(
+            rate,
+            bandpass(hiss.slice(), rate, 1300 + r() * 900, 3),
+            gain(bandpass(hiss, rate, 2600 + r() * 1200, 4), 0.7),
+          )
+    parts.push([envelope(sound, rate, 0.03, len * 0.45), t])
+    t += len + (r() < 0.25 ? 0.12 + r() * 0.1 : 0.01)
+  }
+  return fadeEdges(normalize(mix(rate, ...parts), 0.6), rate, 0.02)
 }
 
 /** A nail driven home: two quick knocks on wood with a metallic ring. */

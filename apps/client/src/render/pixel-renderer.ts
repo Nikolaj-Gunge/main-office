@@ -103,6 +103,10 @@ function createPostUniforms(
     vignette: { value: 0.4 },
     palette: { value: Array.from({ length: MAX_PALETTE_SIZE }, () => new THREE.Vector3()) },
     paletteSize: { value: 0 },
+    infection: { value: 0 },
+    infectPulse: { value: 0 },
+    infectTime: { value: 0 },
+    infectMotion: { value: 1 },
   }
 }
 
@@ -258,6 +262,15 @@ export class PixelRenderer {
       this.canvas.style.imageRendering = this.smooth ? 'auto' : 'pixelated'
       this.resize()
     }
+  }
+
+  /** Survival's bite on screen (see game/infection.ts); null: none. */
+  setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void {
+    const u = this.uniforms
+    u.infection.value = fx?.level ?? 0
+    u.infectPulse.value = fx?.pulse ?? 0
+    u.infectTime.value = fx?.time ?? 0
+    u.infectMotion.value = fx?.motion ?? 1
   }
 
   /** Coarser pixels by `bias` whole steps than the setting asks (automatic quality). */

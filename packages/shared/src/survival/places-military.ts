@@ -291,7 +291,7 @@ function site7(s: Site): void {
     s.deco(x, F + 2.45, z, 1.1, 0.2, 1.1, 'metal')
     s.light(x, F + 1.3, z, { color: 0x62ffa0, intensity: 5, distance: 5, flicker: 0.25 })
   }
-  desk(s, 0, -19.5, 1.4, 0.8, 'medical', 'metal')
+  desk(s, 0, -19.5, 1.4, 0.8, 'lab', 'metal')
   s.block(0, F, -25.2, 1, 1.2, 0.8, 'metal')
   s.deco(0, F + 0.6, -24.79, 0.25, 0.25, 0.03, 'screen')
   s.interact('site7_safe', 'search', 0, 1, -24.6, 'Open the specimen safe')

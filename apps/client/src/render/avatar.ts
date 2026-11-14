@@ -375,8 +375,7 @@ export class Avatar {
   private weapon: WeaponId = WeaponId.Rifle
   private readonly eyeGlows: THREE.Sprite[] = []
   private readonly glowSize: number = 0.2
-  /** People (not the dead) can wear survival gear; the value now shown and its meshes. */
-  private readonly wearsGear: boolean
+  /** Survival gear worn (people, and the dead who were survivors); the value shown and its meshes. */
   private gear = 0
   private gearMeshes: THREE.Mesh[] = []
   /** The pose last drawn (for the ragdoll when they die). */
@@ -395,7 +394,6 @@ export class Avatar {
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.parts = buildBody(skin, colorIndex, this.material)
     for (const group of Object.values(this.parts)) this.root.add(group)
-    this.wearsGear = !isZombie(skin)
     if (isZombie(skin)) {
       const eyes = EYES[skin]
       this.glowSize = eyes.glow
@@ -451,7 +449,8 @@ export class Avatar {
    */
   update(s: RemotePlayerState, pose: BodyPose, timeMs: number, viewer?: THREE.Vector3): void {
     if (s.weapon !== this.weapon) this.setWeapon(s.weapon)
-    if (this.wearsGear && (s.gear ?? 0) !== this.gear) this.setGear(s.gear ?? 0)
+    // The dead wear gear only if they were one of you (the server sends 0 for the rest).
+    if ((s.gear ?? 0) !== this.gear) this.setGear(s.gear ?? 0)
     this.root.visible = s.alive
     const size = pose.scale ?? 1
     const parts = bodyParts(pose)

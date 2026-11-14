@@ -19,6 +19,11 @@ uniform float saturation;   // 1 = as lit
 uniform float vignette;     // 0 = none, 1 = dark corners
 uniform vec3 palette[64];   // sRGB
 uniform int paletteSize;
+// Survival: the bite taking hold (game/infection.ts). 0 = clean … 1 = turning.
+uniform float infection;
+uniform float infectPulse;  // 0–1, peaks on each heartbeat
+uniform float infectTime;   // seconds, for the sway
+uniform float infectMotion; // 0 = hold still (reduced motion), 1 = sway and drift
 
 varying vec2 vUv;
 
@@ -64,10 +69,34 @@ vec3 nearestPaletteColor(vec3 c) {
   return best;
 }
 
+// The world, gun and glow at one point (linear, before tone mapping).
+vec3 sceneAt(vec2 uv) {
+  vec4 o = texture2D(tOverlay, uv);
+  return texture2D(tColor, uv).rgb * (1.0 - o.a) + o.rgb + texture2D(tBloom, uv).rgb * bloomStrength;
+}
+
+// Late in the turn: the picture sways, softens and doubles (a ghost drifting to one side).
+vec3 infectedScene() {
+  float late = smoothstep(0.45, 1.0, infection);
+  float t = infectTime;
+  vec2 sway = infectMotion * late * 0.006 *
+    vec2(sin(t * 0.9) + 0.5 * sin(t * 2.3), cos(t * 0.7) + 0.4 * sin(t * 1.7));
+  vec2 uv = vUv + sway;
+  vec3 c = sceneAt(uv);
+  if (late <= 0.0) return c;
+  vec2 texel = 1.0 / resolution;
+  vec2 r = texel * (0.8 + 2.2 * late);
+  vec3 soft = (sceneAt(uv + vec2(r.x, r.y)) + sceneAt(uv - vec2(r.x, r.y)) +
+               sceneAt(uv + vec2(r.x, -r.y)) + sceneAt(uv - vec2(r.x, -r.y))) * 0.25;
+  c = mix(c, soft, 0.35 + 0.4 * late);
+  float drift = mix(0.7, 0.6 + 0.4 * sin(t * 0.5), infectMotion);
+  vec2 ghost = vec2(0.006 + 0.004 * infectPulse, 0.0015) * late * drift;
+  return mix(c, sceneAt(uv + ghost), 0.3 * late);
+}
+
 void main() {
   vec4 overlay = texture2D(tOverlay, vUv);
-  vec3 color = texture2D(tColor, vUv).rgb * (1.0 - overlay.a) + overlay.rgb;
-  color += texture2D(tBloom, vUv).rgb * bloomStrength;
+  vec3 color = infection > 0.0 ? infectedScene() : sceneAt(vUv);
   color = linearToSRGB(acesFilm(color * exposure));
 
   // Grade: richer colours, then an S-curve that sinks the shadows and lifts the lights.
@@ -79,6 +108,17 @@ void main() {
   color = mix(color, mix(deep, curved, smoothstep(0.25, 0.75, color)), contrast);
   vec2 fromCentre = vUv - 0.5;
   color *= 1.0 - vignette * smoothstep(0.25, 0.95, dot(fromCentre, fromCentre) * 2.0);
+
+  // The bite: colour drains out, the edges throb red with the heart, the last minute goes red.
+  if (infection > 0.0) {
+    float grey = dot(color, vec3(0.299, 0.587, 0.114));
+    color = mix(color, vec3(grey), smoothstep(0.0, 0.45, infection) * 0.8);
+    float edge = smoothstep(0.1, 0.85, dot(fromCentre, fromCentre) * 2.0);
+    float throb = edge * min(1.0, infection * 2.5) * (0.5 + 0.5 * infectPulse);
+    color = mix(color, vec3(0.38, 0.0, 0.02), throb * 0.8);
+    float last = smoothstep(0.8, 1.0, infection) * (0.8 + 0.2 * infectPulse);
+    color = mix(color, color * vec3(1.3, 0.4, 0.35) + vec3(0.07, 0.0, 0.0), last * 0.75);
+  }
 
   // 1 px outline where this pixel sits in front of a much farther neighbour (silhouette edges).
   if (outlines > 0.0 && overlay.a < 0.5) {
