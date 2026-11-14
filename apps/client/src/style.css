@@ -2080,6 +2080,7 @@ body {
   background: #d8cfb4;
   border: 2px solid #8a7d5c;
   box-shadow: 6px 6px 0 rgb(0 0 0 / 0.75);
+  text-shadow: none;
 }
 
 .sv-story.paper div {
