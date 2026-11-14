@@ -44,7 +44,6 @@ import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { Spectator } from './game/spectator.ts'
-import { SurvivalClient } from './game/survival-client.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
@@ -56,6 +55,7 @@ import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
+import { serverMap, trackPhysicsDownload } from './loading.ts'
 import { Connection } from './net/connection.ts'
 import { AutoQuality } from './render/auto-quality.ts'
 import { Avatar } from './render/avatar.ts'
@@ -94,18 +94,19 @@ const overlay = new Overlay(hudRoot)
 const scoreboard = new Scoreboard(hudRoot)
 const menu = new Menu(hudRoot, settings, () => applySettings())
 
+document.getElementById('boot')?.remove()
+
 // --- World ----------------------------------------------------------------------------
-await initPhysics()
-// `?map=gym` loads another map (the server tells us which one it runs on join).
+// Rapier downloads and compiles while we find out which map to build and build it.
+trackPhysicsDownload((done) => menu.setStatus(`Loading… ${Math.round(done * 100)}%`))
+const physicsReady = initPhysics()
+// `?map=gym` loads another map; otherwise the one the server runs (it says so again on join).
 const params = new URLSearchParams(location.search)
-const requestedMap = params.get('map') ?? ''
+const requestedMap = params.get('map') ?? (await serverMap(1500)) ?? ''
 const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
 const map = loadMap(mapId)
-const physics = createPhysicsWorld(map)
-// Survival's world is far too big for the minimap: it has a compass and a real map instead.
-const minimap = map.survival ? null : new Minimap(hudRoot, map)
-if (map.survival)
-  syncForest(physics, [{ x: map.spawns[0]?.pos[0] ?? 0, z: map.spawns[0]?.pos[2] ?? 0 }])
+// Survival's code only loads for the survival map.
+const survivalCode = map.survival ? import('./game/survival-client.ts') : null
 
 // --- Rendering ------------------------------------------------------------------------
 const pixels = new PixelRenderer(canvas)
@@ -130,6 +131,16 @@ const graded = gradeLighting(map.lighting)
 const sky = createSky(graded.skyColor, graded.fogColor)
 scene.add(sky)
 if (map.skyline) scene.add(createSkyline())
+
+await physicsReady
+performance.mark('load:physics')
+menu.setStatus('')
+const physics = createPhysicsWorld(map)
+// Survival's world is far too big for the minimap: it has a compass and a real map instead.
+const minimap = map.survival ? null : new Minimap(hudRoot, map)
+if (map.survival)
+  syncForest(physics, [{ x: map.spawns[0]?.pos[0] ?? 0, z: map.spawns[0]?.pos[2] ?? 0 }])
+performance.mark('load:world')
 
 const stats = new Stats({ trackGPU: true, horizontal: false })
 stats.init(pixels.renderer)
@@ -186,19 +197,20 @@ const effects = new Effects(scene, (origin, dir, maxDistance) => {
     : null
 })
 effects.onCasingHit = (at) => audio.playNear('casing', at, 0.45, 15)
-const survival = map.survival
-  ? new SurvivalClient({
-      map,
-      def: map.survival,
-      scene,
-      camera,
-      physics,
-      sky,
-      hudRoot,
-      audio,
-      send: (action) => net.send({ type: ClientMsg.Action, action }),
-    })
-  : null
+const survival =
+  map.survival && survivalCode
+    ? new (await survivalCode).SurvivalClient({
+        map,
+        def: map.survival,
+        scene,
+        camera,
+        physics,
+        sky,
+        hudRoot,
+        audio,
+        send: (action) => net.send({ type: ClientMsg.Action, action }),
+      })
+    : null
 /** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
 let uiOpen = false
 if (survival) {
@@ -744,8 +756,11 @@ function warmShaders(): void {
     }
   }
 }
+performance.mark('load:scene')
 warmShaders()
+performance.mark('load:shaders')
 
+let firstFrame = true
 pixels.renderer.setAnimationLoop(() => {
   const now = performance.now()
   const dt = Math.min(0.25, (now - last) / 1000)
@@ -865,6 +880,10 @@ pixels.renderer.setAnimationLoop(() => {
   sky.position.copy(camera.position)
   pixels.render(scene, camera, noclip ? undefined : viewmodel)
   stats.update()
+  if (firstFrame) {
+    firstFrame = false
+    performance.mark('load:first-frame')
+  }
 
   if (settings.showDebug) {
     const s = player.state

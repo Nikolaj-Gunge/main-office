@@ -521,7 +521,7 @@ Built in 3 testable parts on `phase-11`:
 - Emotes, sprays, chat, spectator mode.
 - WebRTC/unreliable transport if remote players on bad connections complain.
 - Delta-compressed snapshots, interest management if > 32 players.
-- Smaller first load: swap `@dimforge/rapier3d-compat` (base64-inlined WASM, ~1.8 MB gzipped bundle) for `@dimforge/rapier3d` with a binary `.wasm` + Vite WASM plugin.
+- ~~Smaller first load~~ done (phase 16): the client build swaps Rapier's inlined base64 for its binary `.wasm` (vite.config.ts), preloaded and compiled while streaming; three.js + Rapier sit in a `vendor` chunk; survival client code is a lazy chunk; `/assets/*` are cached as immutable; the client asks `/healthz` which map the server runs so survival no longer loads the office first and reloads.
 
 ---
 

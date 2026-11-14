@@ -20,6 +20,19 @@ body {
   image-rendering: pixelated;
 }
 
+/* Until the game's script runs (main.ts removes it). */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fbb954;
+  font:
+    16px ui-monospace,
+    Menlo,
+    monospace;
+}
+
 #hud {
   position: fixed;
   inset: 0;
