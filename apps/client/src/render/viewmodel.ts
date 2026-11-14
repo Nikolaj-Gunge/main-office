@@ -1,9 +1,36 @@
 import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
-import { BASE_GUNS, shell } from './base-guns.ts'
-import { bake, cradle } from './gun-kit.ts'
 import { ALTERNATES, type MeleeOffset, meleePose, meleeReady, SWING_OF } from './melee-anim.ts'
 import { survivalGuns } from './survival-guns.ts'
+
+const STEEL = 0x2b2d33
+const FRAME = 0x3a3d45
+const WOOD = 0x6b4a2f
+const SKIN = 0xc68e6a
+const SLEEVE = 0x2e4057
+const SIGHT = 0xd8d8d8
+
+function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshLambertMaterial({ color }),
+  )
+  mesh.position.set(x, y, z)
+  return mesh
+}
+
+/** Height of the rifle's red dot above its bore line (the sight sits on a riser). */
+const RED_DOT_Y = 0.09
+
+/** The glowing aiming dot: unlit, so it stays bright red in any light. */
+function dot(size: number, x: number, y: number, z: number) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size, size, size / 2),
+    new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
+  )
+  mesh.position.set(x, y, z)
+  return mesh
+}
 
 /** One first-person weapon: its meshes plus where it sits and where things come out of it. */
 export interface GunModel {
@@ -77,6 +104,300 @@ export interface Action {
   lockOpen?: boolean
 }
 
+function action(part: THREE.Object3D, travel: number, time: number, lockOpen = false): Action {
+  return { part, travel, time, rest: part.position.z, lockOpen }
+}
+
+function marker(x: number, y: number, z: number): THREE.Object3D {
+  const o = new THREE.Object3D()
+  o.position.set(x, y, z)
+  return o
+}
+
+function handgun(): GunModel {
+  const group = new THREE.Group()
+  const grip = box(0.028, 0.095, 0.042, FRAME, 0, -0.06, 0.05)
+  grip.rotateX(0.18)
+  // The slide carries the sights, so they blow back with it.
+  const slide = new THREE.Group()
+  slide.add(
+    box(0.032, 0.03, 0.19, STEEL, 0, 0.012, -0.02),
+    box(0.006, 0.006, 0.006, SIGHT, 0, 0.03, -0.11), // front sight
+    box(0.022, 0.006, 0.006, SIGHT, 0, 0.03, 0.065), // rear sight
+  )
+  // Magazine inside the grip; only the base plate shows until it drops out.
+  const mag = new THREE.Group()
+  mag.position.set(0, -0.06, 0.05)
+  mag.rotation.x = 0.18
+  mag.add(box(0.022, 0.09, 0.032, STEEL), box(0.03, 0.012, 0.044, FRAME, 0, -0.051, 0))
+  group.add(
+    slide,
+    mag,
+    box(0.03, 0.022, 0.16, FRAME, 0, -0.012, -0.005), // frame
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.065, 0.055), // hand
+    box(0.06, 0.07, 0.25, SLEEVE, 0.02, -0.09, 0.2), // forearm
+  )
+  const muzzle = marker(0, 0.012, -0.125)
+  const ejectPort = marker(0.02, 0.02, -0.01)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.15, -0.15, -0.38),
+    ads: new THREE.Vector3(0, -0.071, -0.24),
+    // Snappy flip, back on target quickly.
+    recoil: { back: 0.03, climb: 0.2, roll: 0.06, side: 0.03, recover: 20 },
+    action: action(slide, 0.035, 0.09, true),
+    mag,
+    handRest: new THREE.Vector3(-0.05, -0.2, 0.12),
+    handle: new THREE.Vector3(0, 0.03, 0.05),
+    tilt: { roll: -0.4, pitch: 0.1 },
+  }
+}
+
+function rifle(): GunModel {
+  const group = new THREE.Group()
+  const mag = new THREE.Group()
+  mag.position.set(0, -0.08, -0.06)
+  mag.rotation.x = -0.25
+  mag.add(box(0.03, 0.11, 0.055, STEEL))
+  const grip = box(0.028, 0.08, 0.04, FRAME, 0, -0.065, 0.08)
+  grip.rotateX(0.3)
+  const handle = box(0.014, 0.014, 0.035, SIGHT, 0.03, 0.012, -0.02) // charging handle
+  const support = box(0.055, 0.04, 0.07, SKIN, -0.01, -0.045, -0.24)
+  group.add(
+    box(0.045, 0.06, 0.3, FRAME, 0, 0, 0), // receiver
+    handle,
+    box(0.05, 0.05, 0.2, STEEL, 0, -0.005, -0.24), // handguard
+    box(0.018, 0.018, 0.16, STEEL, 0, 0.005, -0.42), // barrel
+    // Red-dot sight on a tall riser: you look through an open frame over the gun, so aiming
+    // keeps most of the view clear (iron sights put the whole rifle in your face).
+    box(0.03, 0.035, 0.07, STEEL, 0, 0.045, -0.02), // riser
+    box(0.005, 0.05, 0.012, STEEL, -0.026, 0.09, -0.04), // frame: left
+    box(0.005, 0.05, 0.012, STEEL, 0.026, 0.09, -0.04), // frame: right
+    box(0.057, 0.006, 0.012, STEEL, 0, 0.118, -0.04), // frame: top
+    dot(0.007, 0, RED_DOT_Y, -0.045),
+    box(0.04, 0.07, 0.18, FRAME, 0, -0.02, 0.24), // stock
+    mag,
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    support,
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.25), // forearm
+  )
+  const muzzle = marker(0, 0.005, -0.5)
+  const ejectPort = marker(0.025, 0.02, -0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.16, -0.44),
+    // The dot sits on screen centre, ~0.3 m in front of the eye; the gun itself stays low.
+    ads: new THREE.Vector3(0, -RED_DOT_Y, -0.26),
+    recoil: { back: 0.018, climb: 0.05, roll: 0.03, side: 0.02, recover: 20 },
+    action: action(handle, 0.03, 0.07),
+    mag,
+    support,
+    handRest: support.position.clone(),
+    handle: handle.position.clone(),
+  }
+}
+
+function sniper(): GunModel {
+  const group = new THREE.Group()
+  const bolt = box(0.04, 0.012, 0.012, SIGHT, 0.035, 0.012, 0.04)
+  const mag = new THREE.Group()
+  mag.position.set(0, -0.065, 0.02)
+  mag.add(box(0.03, 0.05, 0.07, STEEL))
+  const support = box(0.055, 0.04, 0.07, SKIN, -0.01, -0.06, -0.22)
+  group.add(
+    mag,
+    box(0.04, 0.05, 0.32, STEEL, 0, 0, 0), // receiver
+    box(0.05, 0.055, 0.42, WOOD, 0, -0.03, -0.02), // stock body
+    box(0.02, 0.02, 0.38, STEEL, 0, 0.006, -0.42), // barrel
+    box(0.034, 0.034, 0.22, 0x15161a, 0, 0.055, -0.02), // scope tube
+    box(0.044, 0.044, 0.03, 0x15161a, 0, 0.055, -0.13), // front bell
+    box(0.04, 0.04, 0.03, 0x15161a, 0, 0.055, 0.09), // eyepiece
+    box(0.045, 0.08, 0.2, WOOD, 0, -0.02, 0.27), // butt stock
+    bolt,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    support,
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.11, 0.25), // forearm
+  )
+  const muzzle = marker(0, 0.006, -0.62)
+  const ejectPort = marker(0.03, 0.02, 0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.17, -0.44),
+    ads: new THREE.Vector3(0, -0.06, -0.12),
+    // A big slow heave.
+    recoil: { back: 0.06, climb: 0.28, roll: 0.12, side: 0.03, recover: 11 },
+    bolt,
+    mag,
+    support,
+    handRest: support.position.clone(),
+    handle: bolt.position.clone(),
+  }
+}
+
+function shotgun(): GunModel {
+  const group = new THREE.Group()
+  // The pump: forend + support hand, slides back along the tube magazine after each shot.
+  const pump = new THREE.Group()
+  const support = box(0.055, 0.04, 0.07, SKIN, -0.01, -0.06, -0.26)
+  pump.add(box(0.05, 0.045, 0.14, WOOD, 0, -0.035, -0.26), support) // forend, support hand
+  group.add(
+    box(0.05, 0.06, 0.26, STEEL, 0, 0, 0), // receiver
+    box(0.026, 0.026, 0.46, STEEL, 0, 0.012, -0.34), // barrel
+    box(0.022, 0.022, 0.4, FRAME, 0, -0.02, -0.3), // tube magazine
+    box(0.006, 0.01, 0.006, SIGHT, 0, 0.03, -0.55), // bead sight
+    box(0.05, 0.075, 0.24, WOOD, 0, -0.03, 0.24), // stock
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.075, 0.09), // trigger hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.25), // forearm
+    pump,
+  )
+  const muzzle = marker(0, 0.012, -0.58)
+  const ejectPort = marker(0.03, 0.015, -0.02)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.16, -0.17, -0.44),
+    // Bead sight on screen centre, gun held low and a little away from the eye.
+    ads: new THREE.Vector3(0, -0.05, -0.2),
+    // The hardest kick: a shove into the shoulder and a big flip.
+    recoil: { back: 0.075, climb: 0.32, roll: 0.1, side: 0.04, recover: 12 },
+    pump,
+    support,
+    handRest: support.position.clone(),
+    port: new THREE.Vector3(0, -0.04, 0.02),
+    tilt: { roll: -0.45, pitch: 0.2 },
+  }
+}
+
+function mp5(): GunModel {
+  const group = new THREE.Group()
+  const mag = new THREE.Group() // the MP5's curved magazine, raked forward
+  mag.position.set(0, -0.08, -0.1)
+  mag.rotation.x = -0.35
+  mag.add(box(0.025, 0.1, 0.035, STEEL))
+  const support = box(0.055, 0.04, 0.07, SKIN, -0.01, -0.045, -0.2)
+  const grip = box(0.026, 0.075, 0.035, FRAME, 0, -0.06, 0.07)
+  grip.rotateX(0.3)
+  const handle = box(0.03, 0.01, 0.01, SIGHT, -0.03, 0.018, -0.15) // cocking lever, front left
+  group.add(
+    box(0.04, 0.055, 0.26, STEEL, 0, 0, -0.02), // receiver
+    handle,
+    box(0.045, 0.045, 0.12, FRAME, 0, -0.01, -0.2), // handguard
+    box(0.016, 0.016, 0.06, STEEL, 0, 0.005, -0.29), // barrel
+    // Tall sights on posts: aiming, you look over the gun, not into it.
+    box(0.008, 0.06, 0.012, STEEL, 0, 0.055, -0.24), // front sight post
+    box(0.004, 0.012, 0.012, SIGHT, 0, 0.088, -0.24), // front sight tip
+    box(0.008, 0.06, 0.012, STEEL, -0.012, 0.055, 0.08), // rear sight, left ear
+    box(0.008, 0.06, 0.012, STEEL, 0.012, 0.055, 0.08), // rear sight, right ear
+    box(0.02, 0.05, 0.14, FRAME, 0, -0.005, 0.18), // collapsed stock
+    mag,
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.07, 0.08), // trigger hand
+    support,
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.24), // forearm
+  )
+  const muzzle = marker(0, 0.005, -0.33)
+  const ejectPort = marker(0.022, 0.015, -0.04)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.15, -0.15, -0.4),
+    // Sight tips on screen centre, held well out and low so the gun stays out of the view.
+    ads: new THREE.Vector3(0, -0.088, -0.3),
+    // Light and fast: a buzz more than a kick.
+    recoil: { back: 0.012, climb: 0.03, roll: 0.02, side: 0.025, recover: 26 },
+    action: action(handle, 0.02, 0.05),
+    mag,
+    support,
+    handRest: support.position.clone(),
+    handle: handle.position.clone(),
+  }
+}
+
+function lmg(): GunModel {
+  const group = new THREE.Group()
+  const grip = box(0.03, 0.08, 0.04, FRAME, 0, -0.07, 0.1)
+  grip.rotateX(0.3)
+  const handle = box(0.016, 0.016, 0.04, SIGHT, -0.038, 0.01, -0.1) // charging handle, left
+  const mag = new THREE.Group()
+  mag.position.set(0.02, -0.08, -0.04)
+  mag.add(box(0.09, 0.09, 0.1, FRAME), box(0.04, 0.02, 0.06, 0xb08a3a, 0.015, 0.08, 0))
+  const support = box(0.055, 0.04, 0.07, SKIN, -0.01, -0.05, -0.28)
+  group.add(
+    box(0.06, 0.07, 0.34, FRAME, 0, 0, 0), // receiver
+    handle,
+    box(0.05, 0.05, 0.24, STEEL, 0, 0, -0.28), // barrel shroud
+    box(0.022, 0.022, 0.2, STEEL, 0, 0, -0.5), // barrel
+    mag, // ammo box and belt
+    box(0.05, 0.08, 0.2, FRAME, 0, -0.02, 0.27), // stock
+    // Tall open sights (like the MP5): you aim over the gun.
+    box(0.008, 0.07, 0.012, STEEL, 0, 0.07, -0.36),
+    box(0.004, 0.012, 0.012, SIGHT, 0, 0.108, -0.36),
+    box(0.008, 0.07, 0.012, STEEL, -0.014, 0.07, 0.06),
+    box(0.008, 0.07, 0.012, STEEL, 0.014, 0.07, 0.06),
+    grip,
+    box(0.045, 0.06, 0.06, SKIN, 0.004, -0.08, 0.1), // trigger hand
+    support,
+    box(0.065, 0.075, 0.26, SLEEVE, 0.03, -0.1, 0.26), // forearm
+  )
+  const muzzle = marker(0, 0, -0.61)
+  const ejectPort = marker(0.035, 0.02, 0)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.17, -0.18, -0.46),
+    ads: new THREE.Vector3(0, -0.108, -0.34),
+    // Heavy: shudders side to side as the belt runs.
+    recoil: { back: 0.02, climb: 0.05, roll: 0.05, side: 0.04, recover: 16 },
+    action: action(handle, 0.035, 0.07),
+    mag,
+    support,
+    handRest: support.position.clone(),
+    handle: handle.position.clone(),
+    tilt: { roll: -0.35, pitch: 0.02 },
+  }
+}
+
+function knife(): GunModel {
+  const group = new THREE.Group()
+  group.add(
+    box(0.03, 0.035, 0.11, 0x1c1c20, 0, 0, 0.02), // handle
+    box(0.06, 0.012, 0.016, STEEL, 0, 0, -0.04), // guard
+    box(0.008, 0.032, 0.17, 0xc9ccd2, 0, 0.004, -0.13), // blade
+    box(0.006, 0.012, 0.05, 0xe8eaee, 0, 0.022, -0.19), // edge highlight near the tip
+    box(0.05, 0.06, 0.07, SKIN, 0.005, -0.01, 0.03), // hand
+    box(0.065, 0.075, 0.26, SLEEVE, 0.02, -0.03, 0.2), // forearm
+  )
+  const muzzle = marker(0, 0, -0.22)
+  const ejectPort = marker(0, 0, 0)
+  group.add(muzzle, ejectPort)
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.17, -0.17, -0.36),
+    ads: new THREE.Vector3(0.17, -0.17, -0.36),
+    recoil: { back: 0.01, climb: 0.03, roll: 0, side: 0, recover: 18 },
+    melee: true,
+  }
+}
+
 /** 0…1 → 0…1, easing in and out. */
 const ease = (t: number) => {
   const c = Math.min(1, Math.max(0, t))
@@ -107,17 +428,23 @@ function restoreReload(model: GunModel): void {
   if (model.support) model.support.visible = true
 }
 
-/** The left hand that fetches magazines and shells, holding them from below. */
+/** The left hand that fetches magazines and shells (a hand and a bit of sleeve). */
 function reloadHand(): THREE.Group {
-  const hand = cradle({ at: [0, 0.02, 0], w: 0.032, h: 0.028, elbow: [-0.06, -0.19, 0.24] })
-  bake(hand)
+  const hand = new THREE.Group()
+  const sleeve = box(0.065, 0.075, 0.26, SLEEVE, -0.02, -0.07, 0.13)
+  sleeve.rotation.x = 0.55
+  hand.add(box(0.055, 0.045, 0.07, SKIN), sleeve)
   return hand
 }
 
-/** Merges a model's static parts per material, keeping each moving part separate. */
-function bakeModel(m: GunModel): void {
-  bake(m.group, [m.action?.part, m.bolt, m.lever, m.pump, m.mag, m.support, m.hinge?.part])
-  if (m.round) bake(m.round)
+/** A shotgun shell: red hull, brass base. */
+function shell(): THREE.Group {
+  const g = new THREE.Group()
+  g.add(
+    box(0.017, 0.017, 0.045, 0xb3261e, 0, 0, -0.006),
+    box(0.019, 0.019, 0.012, 0xc9a24a, 0, 0, 0.022),
+  )
+  return g
 }
 
 function makeFlashTexture(): THREE.CanvasTexture {
@@ -153,15 +480,15 @@ export class Viewmodel {
 
   private readonly root = new THREE.Group()
   private readonly models: Record<WeaponId, GunModel> = {
-    [WeaponId.Handgun]: BASE_GUNS.handgun(),
-    [WeaponId.Rifle]: BASE_GUNS.rifle(),
-    [WeaponId.Sniper]: BASE_GUNS.sniper(),
-    [WeaponId.Shotgun]: BASE_GUNS.shotgun(),
-    [WeaponId.Knife]: BASE_GUNS.knife(),
-    [WeaponId.Smg]: BASE_GUNS.mp5(),
-    [WeaponId.Lmg]: BASE_GUNS.lmg(),
+    [WeaponId.Handgun]: handgun(),
+    [WeaponId.Rifle]: rifle(),
+    [WeaponId.Sniper]: sniper(),
+    [WeaponId.Shotgun]: shotgun(),
+    [WeaponId.Knife]: knife(),
+    [WeaponId.Smg]: mp5(),
+    [WeaponId.Lmg]: lmg(),
     // Only zombies have claws, and nobody plays one: no first-person model.
-    [WeaponId.Claws]: BASE_GUNS.knife(),
+    [WeaponId.Claws]: knife(),
     ...survivalGuns(),
   }
   private active: GunModel
@@ -190,11 +517,7 @@ export class Viewmodel {
   // Reload: the fetching hand, what it carries, and the reload being played.
   private readonly hand = reloadHand()
   private readonly carried = new THREE.Group()
-  private readonly shell = (() => {
-    const s = shell()
-    bake(s)
-    return s
-  })()
+  private readonly shell = shell()
   private readonly handAt = new THREE.Vector3()
   private reloadTotal = 0
   private reloadEmpty = false
@@ -204,7 +527,6 @@ export class Viewmodel {
 
   constructor() {
     for (const model of Object.values(this.models)) {
-      bakeModel(model)
       model.group.visible = false
       this.root.add(model.group)
       if (model.mag) {
@@ -229,13 +551,10 @@ export class Viewmodel {
     this.flash.visible = false
 
     this.scene.add(this.root)
-    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a3f35, 2))
-    const key = new THREE.DirectionalLight(0xfff1d6, 2)
+    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a3f35, 1.6))
+    const key = new THREE.DirectionalLight(0xfff1d6, 1.6)
     key.position.set(0.5, 1, 0.3)
-    // A cool fill from the front left, so the bevels on the near side catch some light too.
-    const fill = new THREE.DirectionalLight(0xc8d8ff, 0.55)
-    fill.position.set(-1, 0.3, -0.6)
-    this.scene.add(key, fill)
+    this.scene.add(key)
     this.setWeapon(WeaponId.Handgun)
   }
 
