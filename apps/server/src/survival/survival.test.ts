@@ -22,6 +22,7 @@ import {
   legsLook,
   loadMap,
   MAX_PLANKS,
+  MAX_PLAYERS,
   type MatchInfo,
   mergeRules,
   PLANK_HP,
@@ -47,7 +48,7 @@ import {
 import { CLAW_TIMING } from '../claw-attack.ts'
 import { Game, type ServerPlayer } from '../game.ts'
 import { openGround } from './drops.ts'
-import type { Zed } from './horde.ts'
+import { POOL, type Zed } from './horde.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -349,6 +350,7 @@ type Insides = {
   survivors: Map<number, { self: SurvivalSelf }>
   turned: Map<number, { stuff: { item: string; n: number }[]; look: number }>
   rare: Map<string, number>
+  pool: { id: number }[]
 }
 const insides = (t: ReturnType<typeof setup>) =>
   (t.game.match as unknown as { survival: Insides }).survival
@@ -1028,5 +1030,34 @@ describe('survival: dodging a blow', () => {
     react(d)
     for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
     expect(d.health()).toBeLessThan(before)
+  })
+})
+
+describe('a full camp', () => {
+  test('people joining a running world push the dead out cleanly; nothing throws', () => {
+    const t = setup(1)
+    t.run(2)
+    // Late arrivals: each one bumps one of the dead out of its slot.
+    for (let i = 0; i < 6; i++) {
+      t.game.join(`Late${i}`, { send: () => {} })
+      t.run(1)
+    }
+    // The dead die and get stood back up somewhere else, over and over.
+    for (let round = 0; round < 4; round++) {
+      for (const z of t.zombies()) t.game.killPlayer(z.id, z.id)
+      t.run(8)
+    }
+    const people = [...t.game.players.values()].filter((p) => !p.zombie)
+    expect(people.length).toBe(7)
+    expect(t.game.players.size).toBeLessThanOrEqual(MAX_PLAYERS)
+    // None of the dead the game let go of linger in the director.
+    expect(insides(t).pool.every((z) => t.game.players.has(z.id))).toBe(true)
+    // And as they leave again, the dead come back up to strength.
+    for (const p of people.slice(1)) t.game.leave(p.id)
+    t.run(10)
+    const pool = insides(t).pool
+    // Back to strength, bar the two places kept free for people.
+    expect(pool.length).toBeGreaterThanOrEqual(POOL - 2)
+    expect(pool.every((z) => t.game.players.has(z.id))).toBe(true)
   })
 })
