@@ -57,6 +57,12 @@ export interface Settings {
    * falls back to WebGL by itself when the browser has no WebGPU or it fails to start.
    */
   renderer: RendererSetting
+  /** Show the text chat (off: no log, no bubbles, the chat key does nothing). */
+  chat: boolean
+  /** Hide swear words in chat (on by default). */
+  chatFilter: boolean
+  /** Speech bubbles over people who talk or wave nearby. */
+  chatBubbles: boolean
   keybinds: Keybinds
 }
 
@@ -91,6 +97,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showDebug: false,
   aimToggle: false,
   renderer: 'webgl',
+  chat: true,
+  chatFilter: true,
+  chatBubbles: true,
   keybinds: withDefaults(undefined),
 }
 

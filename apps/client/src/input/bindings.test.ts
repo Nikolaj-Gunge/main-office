@@ -8,6 +8,14 @@ describe('keybinds', () => {
     expect(b.swap).toEqual(['KeyQ', 'Wheel'])
     expect(actionFor(b, 'Mouse0')).toBe('fire')
     expect(actionFor(b, 'KeyZ')).toBe('prone')
+    expect(actionFor(b, 'Enter')).toBe('chat')
+    expect(actionFor(b, 'Mouse1')).toBe('ping')
+    expect(actionFor(b, 'KeyB')).toBe('emote')
+  })
+
+  test('no key does two things by default', () => {
+    const codes = Object.values(defaultKeybinds()).flat()
+    expect(new Set(codes).size).toBe(codes.length)
   })
 
   test('rebinding moves a key off its old action and keeps one alternate', () => {

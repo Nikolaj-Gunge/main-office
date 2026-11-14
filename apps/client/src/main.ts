@@ -54,6 +54,7 @@ import { LocalPlayer } from './game/local-player.ts'
 import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
+import { SocialClient } from './game/social-client.ts'
 import { Spectator } from './game/spectator.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
@@ -359,6 +360,7 @@ const net = new Connection({
       joined = false
       outgoing.reset()
       if (code === CLOSE_RESTING) showRestingScreen()
+      social.reset()
       remotes.clear()
       roster.clear()
       worldItems.clear()
@@ -378,6 +380,7 @@ const net = new Connection({
   },
   onMessage: (msg) => {
     combat.onMessage(msg)
+    if (msg.type === ServerMsg.Social) return social.onEvent(msg.social, performance.now())
     if (survival?.onMessage(msg)) return
     switch (msg.type) {
       case ServerMsg.Welcome:
@@ -537,6 +540,7 @@ function onMatch(next: MatchInfo) {
   survival?.hud.setVisible(joined && next.mode === 'survival')
   document.body.classList.toggle('survival', next.mode === 'survival')
   menu.setMode(next.mode)
+  social.setMode(next.mode)
   matchHud.update(next, net.playerId, (id) => roster.get(id)?.name ?? `Player ${id}`)
   const teams = TEAMS[next.mode]
   const teamOf = new Map(next.players.map((p) => [p.id, p.team]))
@@ -571,6 +575,53 @@ function syncCoop(next: MatchInfo) {
   hud.outText = next.mode === 'zombies' ? 'Back at the next checkpoint' : 'Out until the next round'
 }
 const objective = new ObjectiveMarker(hudRoot)
+
+// --- Chat, pings and the wave (social/) -------------------------------------------------
+const pingRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
+const social = new SocialClient({
+  hudRoot,
+  send: (req) => net.send({ type: ClientMsg.Social, social: req }),
+  myId: () => net.playerId,
+  nameOf: (id) => roster.get(id)?.name ?? remotes.nameOf(id),
+  roster: () => roster,
+  headOf: (id) => remotes.headOf(id),
+  aimPoint: () => {
+    // What the crosshair is on (up to 300 m; open sky: a spot 60 m out).
+    const dir = camera.getWorldDirection(new THREE.Vector3())
+    pingRay.origin = camera.position
+    pingRay.dir = dir
+    const hit = physics.world.castRay(pingRay, 300, true, undefined, PLAYER_QUERY_GROUPS)
+    return camera.position.clone().addScaledVector(dir, hit ? hit.timeOfImpact : 60)
+  },
+  wave: (id) => remotes.wave(id, performance.now()),
+  onPing: (_kind, at) => minimap?.ping(at.x, at.z),
+  sound: (cue) =>
+    cue === 'ping'
+      ? audio.play('hit.head', { bus: 'ui', volume: 0.35, rate: 1.5 })
+      : audio.play('casing', { bus: 'ui', volume: 0.3, rate: 1.3 }),
+  onChatOpen: (open) => {
+    // Typing needs the keyboard (and a free mouse to click names); sending takes the game back.
+    if (open) document.exitPointerLock()
+    else closeMenu()
+  },
+})
+// Ping wheel and the other social keys on mouse buttons (the middle button by default).
+window.addEventListener('mousedown', (e) => {
+  if (!look.locked || !joined) return
+  const action = actionFor(settings.keybinds, `Mouse${e.button}`)
+  if (action === 'ping' || action === 'chat' || action === 'emote') {
+    e.preventDefault() // no autoscroll on a middle click
+    socialPress(action)
+  }
+})
+window.addEventListener('mouseup', (e) => {
+  if (actionFor(settings.keybinds, `Mouse${e.button}`) === 'ping') social.releasePing()
+})
+function socialPress(action: 'ping' | 'chat' | 'emote'): void {
+  if (action === 'ping') social.pressPing(performance.now())
+  else if (action === 'chat') social.openChat()
+  else social.emote()
+}
 // Dead with teammates still up: follow one of them (click for the next, right-click back).
 const spectator = new Spectator(hudRoot)
 const viewRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
@@ -609,7 +660,7 @@ menu.onCharacter((appearance) => {
 })
 // Esc releases the mouse: show the menu. Clicking Resume locks it again.
 look.onLockChange = (locked) => {
-  menu.setVisible(!locked && !resumeByClick && !uiOpen)
+  menu.setVisible(!locked && !resumeByClick && !uiOpen && !social.chat.isOpen)
   if (locked) {
     resumeByClick = false
     overlay.setBanner(null)
@@ -658,6 +709,7 @@ function applySettings() {
   if (!aim.toggle) aim.release()
   stats.dom.style.display = settings.showStats ? '' : 'none'
   overlay.setDebugVisible(settings.showDebug)
+  social.apply(settings)
   updateProjection()
   saveSettings(settings)
 }
@@ -673,7 +725,9 @@ gui.hide()
 
 let scoreboardHeld = false
 window.addEventListener('keyup', (e) => {
-  if (actionFor(settings.keybinds, e.code) === 'scoreboard') scoreboardHeld = false
+  const action = actionFor(settings.keybinds, e.code)
+  if (action === 'scoreboard') scoreboardHeld = false
+  if (action === 'ping') social.releasePing()
 })
 window.addEventListener('keydown', (e) => {
   if (menu.isCapturing) return // rebinding a key in the menu
@@ -697,6 +751,12 @@ window.addEventListener('keydown', (e) => {
       if (action === 'journal') return survival.hud.toggleJournal()
       if (action === 'light') return survival.toggleTorch()
     }
+  }
+  // Chat, ping wheel, wave (keys typed into the chat never get here: they stop at its input).
+  if ((action === 'chat' || action === 'ping' || action === 'emote') && joined && !menu.visible) {
+    e.preventDefault() // the T that opens the chat isn't typed into it
+    if (!e.repeat) socialPress(action)
+    return
   }
   if (action === 'scoreboard') {
     e.preventDefault() // Tab would move focus
@@ -855,7 +915,7 @@ pixels.setAnimationLoop(() => {
   while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
     const sampled = samplePlayerInput(keys, look, settings.keybinds, aim)
     // A survival screen is open: stand still. Talking: the digits answer, they don't draw guns.
-    if (uiOpen) sampled.buttons = 0
+    if (uiOpen || social.chat.isOpen) sampled.buttons = 0
     else if (survival?.hud.inDialog)
       sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
     const input = noclip ? { buttons: 0, yaw: look.yaw, pitch: look.pitch } : sampled
@@ -942,7 +1002,8 @@ pixels.setAnimationLoop(() => {
     updateProjection(zoom)
   }
   // A landed melee blow holds the frame for a moment (hit-stop): the aim drags with it.
-  look.sensitivityScale = (1 / zoom) * (viewmodel.hitStopping ? 0.35 : 1)
+  // The ping wheel takes the mouse while it's up: the view holds still.
+  look.sensitivityScale = social.wheelActive ? 0 : (1 / zoom) * (viewmodel.hitStopping ? 0.35 : 1)
   camera.updateMatrixWorld()
   audio.setListener(camera)
   audio.update(dt)
@@ -961,6 +1022,7 @@ pixels.setAnimationLoop(() => {
   coopZone.update(dt)
   matchHud.tick()
   const stage = match?.coop ? map.coop?.stages[match.coop.stage] : undefined
+  social.update(camera, now)
   objective.update(
     camera,
     joined && !noclip && match?.phase === 'playing'
@@ -1039,6 +1101,7 @@ if (import.meta.env.DEV) {
       ragdolls,
       damageNumbers,
       survival,
+      social,
     },
   })
 }

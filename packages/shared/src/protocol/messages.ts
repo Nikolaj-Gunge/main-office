@@ -6,6 +6,7 @@ import type { PlayerState } from '../sim/player.ts'
 import type { VehicleState } from '../sim/vehicle.ts'
 import type { WeaponState } from '../sim/weapon-sim.ts'
 import type { WeaponId } from '../sim/weapons.ts'
+import type { SocialEvent, SocialRequest } from '../social.ts'
 import { ITEM_LIST, itemIndex } from '../survival/items.ts'
 import type {
   Dialog,
@@ -25,6 +26,8 @@ export const ClientMsg = {
   SetDebug: 0x04,
   /** Survival: something done from the inventory, a shop or a conversation. */
   Action: 0x05,
+  /** Chat, a ping, a wave or muting someone (social.ts). */
+  Social: 0x06,
 } as const
 export type ClientMsg = (typeof ClientMsg)[keyof typeof ClientMsg]
 
@@ -50,6 +53,8 @@ export const ServerMsg = {
   Loot: 0x91,
   Notice: 0x92,
   Dialog: 0x93,
+  /** Somebody said something, pinged or waved (social.ts). */
+  Social: 0x94,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -167,6 +172,7 @@ export type ClientMessage =
   | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
   | { type: typeof ClientMsg.SetDebug; flags: number }
   | { type: typeof ClientMsg.Action; action: SurvivalAction }
+  | { type: typeof ClientMsg.Social; social: SocialRequest }
 
 export interface ScoreEntry {
   id: number
@@ -270,6 +276,7 @@ export type ServerMessage =
   | { type: typeof ServerMsg.Notice; notice: Notice }
   /** Survival: somebody talks to you (null closes the conversation). */
   | { type: typeof ServerMsg.Dialog; dialog: Dialog | null }
+  | { type: typeof ServerMsg.Social; social: SocialEvent }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -642,6 +649,9 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
     case ClientMsg.Action:
       w.str16(JSON.stringify(msg.action))
       break
+    case ClientMsg.Social:
+      w.str16(JSON.stringify(msg.social))
+      break
   }
   return w.finish()
 }
@@ -681,6 +691,9 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
       return { type, clientTime: r.f64(), rtt: r.u16() }
     case ClientMsg.Action:
       return { type, action: JSON.parse(r.str16()) as SurvivalAction }
+    case ClientMsg.Social:
+      // Checked field by field on the server (social.ts there): anything could be in here.
+      return { type, social: JSON.parse(r.str16()) as SocialRequest }
     default:
       throw new Error(`Unknown client message type 0x${type.toString(16)}`)
   }
@@ -764,6 +777,9 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
       break
     case ServerMsg.Dialog:
       w.str16(JSON.stringify(msg.dialog))
+      break
+    case ServerMsg.Social:
+      w.str16(JSON.stringify(msg.social))
       break
     case ServerMsg.Loot:
       w.u16(msg.add.length)
@@ -908,6 +924,8 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
       return { type, notice: JSON.parse(r.str16()) as Notice }
     case ServerMsg.Dialog:
       return { type, dialog: JSON.parse(r.str16()) as Dialog | null }
+    case ServerMsg.Social:
+      return { type, social: JSON.parse(r.str16()) as SocialEvent }
     case ServerMsg.Loot: {
       const add: LootItem[] = []
       for (let i = r.u16(); i > 0; i--) {

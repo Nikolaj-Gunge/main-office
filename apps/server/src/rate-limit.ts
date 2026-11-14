@@ -35,6 +35,8 @@ const LIMITS: Record<ClientMsg, { rate: number; burst: number }> = {
   [ClientMsg.Ping]: { rate: 4, burst: 8 },
   [ClientMsg.SetDebug]: { rate: 2, burst: 5 },
   [ClientMsg.Action]: { rate: 10, burst: 20 },
+  // Chat, pings and waves have their own, stricter limits in social.ts; this only stops floods.
+  [ClientMsg.Social]: { rate: 4, burst: 8 },
 }
 
 /** Log at most one line per connection this often, however hard it floods. */
