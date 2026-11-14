@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import {
+  ammoBeside,
   BAREFOOT_NOISE,
   Button,
   capacityOf,
@@ -745,6 +746,100 @@ describe('survival: clothes and gear', () => {
     }
     expect(TRADER_STOCK.some((id) => slotOf(id) === 'legs')).toBe(true)
     expect(tableItems('bedroom').some((id) => ITEMS[id]?.kind === 'weapon')).toBe(true)
+  })
+
+  test('most homes keep a gun, and only a cheap one', () => {
+    const def = loadMap('deadwood').survival
+    if (!def) throw new Error('no survival world')
+    // Every lone house, cabin and camper has a spot for it (and so do the homes in town).
+    const homes = def.pois.flatMap((p, i) =>
+      p.kind === 'house' || p.kind === 'cabin' || p.kind === 'camper' ? [i] : [],
+    )
+    expect(homes.length).toBeGreaterThan(50)
+    for (const i of homes)
+      expect(def.loot.some((l) => l.poi === i && l.table === 'homegun')).toBe(true)
+    expect(def.loot.filter((l) => l.table === 'homegun').length).toBeGreaterThan(75)
+    // Pistols and old shotguns: no rifles, nothing military.
+    for (const id of tableItems('homegun')) {
+      const weapon = ITEMS[id]?.weapon
+      expect(weapon).toBeDefined()
+      const ammo = WEAPONS[weapon as WeaponId].ammoType
+      expect(['9mm', '.22', '.45', '.357', '12ga']).toContain(ammo as string)
+      expect(ITEMS[id]?.value ?? 0).toBeLessThanOrEqual(400)
+    }
+    // About four homes in five still have it.
+    const random = seeded(5)
+    let found = 0
+    for (let i = 0; i < 20000; i++) if (rollLoot('homegun', random)) found++
+    expect(found / 20000).toBeGreaterThan(0.7)
+    expect(found / 20000).toBeLessThan(0.85)
+  })
+
+  test('a gun lies with a few of its own rounds beside it', () => {
+    const random = seeded(9)
+    for (const [id, def] of Object.entries(ITEMS)) {
+      if (def.kind !== 'weapon' || def.weapon === undefined) continue
+      const beside = ammoBeside(id, random)
+      const type = WEAPONS[def.weapon].ammoType
+      if (!type) {
+        expect(beside).toBeNull()
+        continue
+      }
+      expect(ITEMS[beside?.item ?? '']?.ammo).toBe(type)
+      expect(beside?.n).toBeGreaterThanOrEqual(2)
+      expect(beside?.n).toBeLessThanOrEqual(12)
+    }
+    expect(ammoBeside('beans', random)).toBeNull()
+
+    // In the world: walk past some houses and look at what was put out.
+    const t = setup()
+    const houses = t.def.pois.filter((p) => p.kind === 'house').slice(0, 8)
+    const seen = () =>
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    for (const h of houses) {
+      t.move(h.x, h.y + 0.14, h.z)
+      t.run(0.5)
+    }
+    const loot = seen()
+    const guns = loot.filter((l) => {
+      const weapon = ITEMS[l.item]?.weapon
+      const inHouse = houses.some((h) => Math.hypot(l.x - h.x, l.z - h.z) < h.r)
+      return weapon !== undefined && WEAPONS[weapon].ammoType !== undefined && inHouse
+    })
+    expect(guns.length).toBeGreaterThan(3)
+    for (const g of guns) {
+      const type = WEAPONS[ITEMS[g.item]?.weapon as WeaponId].ammoType
+      const near = loot.some(
+        (l) => ITEMS[l.item]?.ammo === type && l.n <= 12 && Math.hypot(l.x - g.x, l.z - g.z) < 0.35,
+      )
+      expect(near).toBe(true)
+    }
+  })
+
+  test('ammunition turns up a good deal more often in ordinary places', () => {
+    const ammoOdds = (table: (typeof LOOT_TABLES)[number]) => {
+      const random = seeded(4)
+      let n = 0
+      for (let i = 0; i < 20000; i++) {
+        const roll = rollLoot(table, random)
+        if (roll && ITEMS[roll.item]?.kind === 'ammo') n++
+      }
+      return n / 20000
+    }
+    // Before: kitchens ~1%, bedrooms ~12%, garages ~3%, shops none, camps ~8%.
+    expect(ammoOdds('kitchen')).toBeGreaterThan(0.04)
+    expect(ammoOdds('bedroom')).toBeGreaterThan(0.2)
+    expect(ammoOdds('garage')).toBeGreaterThan(0.07)
+    expect(ammoOdds('store')).toBeGreaterThan(0.04)
+    expect(ammoOdds('camp')).toBeGreaterThan(0.11)
+    // Still a handful at a time, so the trader's boxes are worth buying.
+    for (const table of ['kitchen', 'bedroom', 'garage', 'store', 'office', 'camp'] as const) {
+      const random = seeded(6)
+      for (let i = 0; i < 4000; i++) {
+        const roll = rollLoot(table, random)
+        if (roll && ITEMS[roll.item]?.kind === 'ammo') expect(roll.n).toBeLessThanOrEqual(16)
+      }
+    }
   })
 })
 
