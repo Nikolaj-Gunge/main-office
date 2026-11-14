@@ -41,6 +41,10 @@ describe('client messages', () => {
         { seq: 2, viewTick: 1001, ...quantizeInput({ buttons: 0, yaw: -7.5, pitch: 1.5 }) },
       ],
     },
+    { type: ClientMsg.Social, social: { kind: 'chat', text: 'Over here — æøå', channel: 'all' } },
+    { type: ClientMsg.Social, social: { kind: 'ping', ping: 'loot', x: 1.5, y: -2, z: 300.25 } },
+    { type: ClientMsg.Social, social: { kind: 'emote' } },
+    { type: ClientMsg.Social, social: { kind: 'mute', id: 12, muted: true } },
   ]
   for (const msg of cases) {
     test(`round-trips 0x${msg.type.toString(16)}`, () => {
@@ -117,6 +121,13 @@ describe('server messages', () => {
       appearance: packAppearance(DEFAULT_APPEARANCE),
     },
     { type: ServerMsg.PlayerLeft, id: 3 },
+    {
+      type: ServerMsg.Social,
+      social: { kind: 'chat', from: 3, name: 'Bo', text: 'Anyone at the mill?', channel: 'nearby' },
+    },
+    { type: ServerMsg.Social, social: { kind: 'ping', from: 3, ping: 'zombie', x: 1, y: 2, z: 3 } },
+    { type: ServerMsg.Social, social: { kind: 'emote', from: 9 } },
+    { type: ServerMsg.Social, social: { kind: 'system', text: 'Slow down.' } },
     {
       type: ServerMsg.Snapshot,
       tick: 10,

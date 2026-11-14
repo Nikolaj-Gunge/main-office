@@ -14,6 +14,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { Avatar, type BodyLook } from '../render/avatar.ts'
+import { WAVE_SECONDS, waving } from '../render/wave.ts'
 
 interface Remote {
   name: string
@@ -52,6 +53,8 @@ export class RemotePlayers {
   private readonly scene: THREE.Scene
   private lastUpdateMs = 0
   private readonly poses = new Map<number, HitPose>()
+  /** Who is waving (friendly emote) and since when (performance.now ms). */
+  private readonly waves = new Map<number, number>()
   /** Game rules: what everyone looks like and how big they are. */
   private skin: SkinId = 'worker'
   private scale = 1
@@ -115,6 +118,21 @@ export class RemotePlayers {
     this.scene.remove(p.avatar.root)
     p.avatar.dispose()
     this.players.delete(id)
+    this.waves.delete(id)
+  }
+
+  /** Player `id` waves (friendly emote): their left arm goes up for a couple of seconds. */
+  wave(id: number, nowMs: number): void {
+    if (this.players.has(id)) this.waves.set(id, nowMs)
+  }
+
+  /** Just over player `id`'s head as drawn, or null when they aren't drawn (dead, in a car). */
+  headOf(id: number): THREE.Vector3 | null {
+    const p = this.players.get(id)
+    const s = p?.shown
+    if (!p || !s?.alive || !p.avatar.root.visible) return null
+    const size = this.scale * zombieScale(p.kind)
+    return new THREE.Vector3(s.x, s.y + (2.05 - 0.6 * s.crouch - 1.3 * s.prone) * size, s.z)
   }
 
   /** Applies the server's skin and body size; rebuilds the models if the skin changed. */
@@ -162,6 +180,10 @@ export class RemotePlayers {
       const hidden = this.hidden(id)
       p.avatar.root.visible = (p.shown?.alive ?? false) && !hidden
       const size = this.scale * zombieScale(p.kind)
+      const waved = this.waves.get(id)
+      if (waved !== undefined && (nowMs - waved) / 1000 > WAVE_SECONDS) this.waves.delete(id)
+      p.avatar.adjust =
+        waved === undefined ? null : (parts, s) => waving(parts, (nowMs - waved) / 1000, s)
       if (p.shown) p.avatar.update(p.shown, this.poseOf(id, p.shown), nowMs, viewer)
       if (before && p.shown && dt > 0) {
         if (before.alive && p.shown.alive) {

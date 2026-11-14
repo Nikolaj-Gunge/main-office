@@ -45,6 +45,15 @@ export const ACTIONS = [
   { id: 'journal', label: 'Journal (survival)', button: 0, defaults: ['KeyJ'] },
   { id: 'light', label: 'Torch (survival)', button: 0, defaults: ['KeyF'] },
   { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyN'] },
+  // Talking without a microphone (social/).
+  { id: 'chat', label: 'Chat (Tab switches channel)', button: 0, defaults: ['Enter', 'KeyT'] },
+  {
+    id: 'ping',
+    label: 'Ping wheel (hold; tap = go here)',
+    button: 0,
+    defaults: ['Mouse1', 'KeyX'],
+  },
+  { id: 'emote', label: 'Wave (friendly)', button: 0, defaults: ['KeyB'] },
 ] as const
 
 export type ActionId = (typeof ACTIONS)[number]['id']
@@ -94,6 +103,7 @@ const NAMED: Record<string, string> = {
   Tab: 'Tab',
   CapsLock: 'Caps',
   Backquote: '`',
+  Enter: 'Enter',
 }
 
 /** Short, readable name for a key code: KeyW → W, Digit1 → 1, Mouse0 → LMB. */

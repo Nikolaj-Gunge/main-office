@@ -451,6 +451,8 @@ export class Avatar {
   lastParts: BodyPart[] = []
   /** Their own look (character creator: build, skin, hair, eyes, beard); none for zombies. */
   readonly appearance?: Appearance
+  /** Changes the drawn pose on top of the replicated one (a wave); looks only, not hitboxes. */
+  adjust: ((parts: BodyPart[], size: number) => BodyPart[]) | null = null
 
   /** @param outfit office clothes or survival's tank top (default: what this map wears) */
   constructor(
@@ -520,7 +522,8 @@ export class Avatar {
     if ((s.gear ?? 0) !== this.gear) this.setGear(s.gear ?? 0)
     this.root.visible = s.alive
     const size = pose.scale ?? 1
-    this.place(bodyParts(pose), size)
+    const parts = bodyParts(pose)
+    this.place(this.adjust ? this.adjust(parts, size) : parts, size)
     // Your eye inside their body (you stand where they stand: both woke at the same spot, or
     // walked into each other): their insides would fill the screen (the eyes as two huge boxes
     // in the sky), so they aren't drawn until you step apart.

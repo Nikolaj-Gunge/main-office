@@ -2306,3 +2306,229 @@ body {
 .survival .hud-minimap {
   display: none;
 }
+
+/* ── Chat, pings, bubbles (social) ────────────────────────────────────────────────────────── */
+.hud-chat {
+  position: absolute;
+  left: 24px;
+  /* Above the health bar; in survival it follows the top of the vitals (ChatBox.stayAbove). */
+  bottom: 72px;
+  width: min(440px, 42vw);
+  z-index: 5;
+  font-size: 13px;
+  color: #d9d4c4;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.hud-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 7.5em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.hud-chat-log .line {
+  padding: 1px 6px;
+  line-height: 1.25;
+  transition: opacity 0.6s steps(4);
+}
+
+.hud-chat-log .line.old {
+  opacity: 0;
+}
+
+.hud-chat-log .line b {
+  color: #fbb954;
+  font-weight: 700;
+}
+
+.hud-chat-log .line i {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.hud-chat-log .line.nearby i {
+  color: #a8c48a;
+}
+
+.hud-chat-log .line.team i {
+  color: #6cc6d8;
+}
+
+.hud-chat-log .line.quiet {
+  color: #a9a493;
+  font-style: italic;
+}
+
+/* Open: the whole log, scrollable, on a dark backing; names can be clicked to mute. */
+.hud-chat.open .hud-chat-log {
+  max-height: 34vh;
+  overflow-y: auto;
+  background: rgb(10 10 8 / 0.62);
+  pointer-events: auto;
+}
+
+.hud-chat.open .hud-chat-log .line.old {
+  opacity: 1;
+}
+
+.hud-chat.open .hud-chat-log .line b[data-id] {
+  cursor: pointer;
+}
+
+.hud-chat.open .hud-chat-log .line b[data-id]:hover {
+  text-decoration: underline;
+}
+
+.hud-chat-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  padding: 3px 6px;
+  background: rgb(10 10 8 / 0.8);
+  border: 2px solid #6a644e;
+  pointer-events: auto;
+}
+
+.hud-chat-entry[hidden] {
+  display: none;
+}
+
+.hud-chat-entry span {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #d9d4c4;
+  white-space: nowrap;
+}
+
+.hud-chat-entry span.nearby {
+  color: #a8c48a;
+}
+
+.hud-chat-entry span.team {
+  color: #6cc6d8;
+}
+
+.hud-chat-entry input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #f2efe4;
+  font: inherit;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.hud-social-tags {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud-ping {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ping);
+  font-size: 12px;
+  text-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+}
+
+.hud-ping b {
+  font-size: 20px;
+  line-height: 1;
+  animation: hud-ping-in 0.3s steps(3);
+}
+
+.hud-ping.off span {
+  opacity: 0.75;
+}
+
+.hud-ping.fading {
+  opacity: 0.4;
+}
+
+@keyframes hud-ping-in {
+  from {
+    transform: scale(2.2);
+  }
+}
+
+.hud-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  max-width: 220px;
+  padding: 3px 7px;
+  background: rgb(242 239 228 / 0.92);
+  color: #1d1b16;
+  border: 2px solid #1d1b16;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.hud-bubble[hidden] {
+  display: none;
+}
+
+.hud-bubble.fading {
+  opacity: 0.4;
+}
+
+.hud-pingwheel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  z-index: 4;
+}
+
+.hud-pingwheel[hidden] {
+  display: none;
+}
+
+.hud-pingwheel .slice,
+.hud-pingwheel .center {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 78px;
+  padding: 5px 6px;
+  background: rgb(10 10 8 / 0.72);
+  border: 2px solid #3a372c;
+  color: #a9a493;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 0 #000;
+  white-space: nowrap;
+}
+
+.hud-pingwheel .slice b {
+  font-size: 18px;
+  color: var(--ping);
+}
+
+.hud-pingwheel .slice.on {
+  border-color: var(--ping);
+  color: #f2efe4;
+  background: rgb(30 28 22 / 0.88);
+}
+
+.hud-pingwheel .center {
+  min-width: 0;
+  background: none;
+  border: 0;
+  opacity: 0.8;
+}

@@ -168,6 +168,9 @@ export class Menu {
       this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.toggle('Show FPS & network info', 'showDebug'),
+      this.toggle('Text chat', 'chat'),
+      this.toggle('Hide swear words in chat', 'chatFilter'),
+      this.toggle('Speech bubbles over people', 'chatBubbles'),
     )
 
     // --- Controls tab ---
@@ -373,7 +376,14 @@ export class Menu {
 
   private toggle(
     label: string,
-    key: 'showDebug' | 'aimToggle' | 'autoQuality' | 'smoothPixels',
+    key:
+      | 'showDebug'
+      | 'aimToggle'
+      | 'autoQuality'
+      | 'smoothPixels'
+      | 'chat'
+      | 'chatFilter'
+      | 'chatBubbles',
   ): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })
     input.checked = this.settings[key]

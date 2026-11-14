@@ -40,6 +40,7 @@ import {
   type ShotEvent,
   ShotResult,
   SNAPSHOT_RATE,
+  type SocialRequest,
   type SpawnWeapon,
   type SurvivalAction,
   seeded,
@@ -64,6 +65,7 @@ import { BOT_NAMES, BotBrain } from './bots.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
+import { SocialRelay } from './social.ts'
 import { SpawnPicker } from './spawning.ts'
 
 /** What runs a zombie (zombies mode's brain, or one of survival's dead). */
@@ -198,6 +200,8 @@ export class Game {
   readonly match: MatchRunner
   /** The zombie kind each zombie was last announced as (PlayerJoined). */
   private readonly zombieLooks = new Map<number, number>()
+  /** Chat, pings and waves. */
+  readonly social = new SocialRelay(this)
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
@@ -441,6 +445,7 @@ export class Game {
     player.body.free()
     this.players.delete(id)
     this.zombieLooks.delete(id)
+    this.social.forget(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
     if (!player.bot && !player.dummy && !player.zombie) this.syncBots()
@@ -483,6 +488,12 @@ export class Game {
   handleAction(id: number, action: SurvivalAction): void {
     const player = this.players.get(id)
     if (player) this.match.onAction(player, action)
+  }
+
+  /** Chat, a ping, a wave or a mute (checked and rate-limited in social.ts). */
+  handleSocial(id: number, req: SocialRequest): void {
+    const player = this.players.get(id)
+    if (player) this.social.handle(player, req)
   }
 
   /** One client. */

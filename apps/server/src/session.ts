@@ -80,6 +80,9 @@ export function createSession(
         case ClientMsg.Action:
           if (playerId) game.handleAction(playerId, msg.action)
           break
+        case ClientMsg.Social:
+          if (playerId) game.handleSocial(playerId, msg.social)
+          break
         case ClientMsg.Ping:
           if (playerId) game.reportPing(playerId, msg.rtt)
           socket.send(
