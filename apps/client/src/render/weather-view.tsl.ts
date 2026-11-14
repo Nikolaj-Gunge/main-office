@@ -95,9 +95,10 @@ function rain(from: THREE.ShaderMaterial): NodeMaterial {
   const fade = smoothstep(1.2, 3.5, d)
     .mul(smoothstep(box.x.mul(0.22), box.x.mul(0.5), d).oneMinus())
     .mul(end.mul(-0.7).add(1))
-  // Your torch catches the drops in front of you.
+  // Your torch catches the drops in front of you (not the ones right at your face).
   const lit = torch
     .mul(smoothstep(0.82, 0.97, dot(to.div(max(d, 0.001)), look)))
+    .mul(smoothstep(1.5, 4, d))
     .mul(smoothstep(3, 16, d).oneMinus())
   const vFade = varying(select(hidden, 0, fade))
   const vLit = varying(select(hidden, 0, lit))

@@ -147,6 +147,15 @@ function makeCardAtlas(colors: TreeColors): THREE.CanvasTexture {
   return texture
 }
 
+/** A geometry with no vertices yet, but these attributes (name: item size). */
+function emptyGeometry(attributes: Record<string, number>): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry()
+  for (const [name, size] of Object.entries(attributes)) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute([], size))
+  }
+  return geometry
+}
+
 /**
  * A band of distant forest, repeating sideways: a soft, rolling canopy behind (red 0.5) and
  * single pines of all heights standing out of it in front (red 1). Alpha is coverage; the red
@@ -345,7 +354,12 @@ export class FarForest {
     this.host = host
     this.root.name = 'far-forest'
 
-    this.ground = new THREE.Mesh(new THREE.BufferGeometry(), host.groundMaterial)
+    // Empty until the first rebuild, but with the attributes the shaders read: the start-up
+    // warm-up draws hidden things too, and WebGPU warns about any it can't find.
+    this.ground = new THREE.Mesh(
+      emptyGeometry({ position: 3, normal: 3, color: 3, uv: 2 }),
+      host.groundMaterial,
+    )
     this.ground.name = 'far-ground'
     // Past the shadows' reach: nothing to cast or catch.
     this.ground.receiveShadow = false
@@ -367,7 +381,7 @@ export class FarForest {
     // The cards are placed in the shader: the geometry's bounds mean nothing.
     this.cards.frustumCulled = false
 
-    this.wall = new THREE.Mesh(new THREE.BufferGeometry(), treelineMaterial())
+    this.wall = new THREE.Mesh(emptyGeometry({ position: 3, uv: 2 }), treelineMaterial())
     this.wall.name = 'treeline'
     this.wall.frustumCulled = false
     this.root.add(this.ground, this.cards, this.wall)

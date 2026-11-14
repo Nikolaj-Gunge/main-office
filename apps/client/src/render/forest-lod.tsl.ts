@@ -32,7 +32,7 @@ import { CARD_H, CARD_W, TILES } from './forest-lod.ts'
 
 /*
  * TSL twins of the far forest's patches (forest-lod.ts) for the WebGPU renderer: tree cards
- * that turn to face you, and the treeline's capped fog. Keep them in step with the GLSL.
+ * that turn to face you, and the treeline's alpha band and capped fog. Keep them in step with the GLSL.
  */
 
 /** cardMaterial: placed, turned and tiled from the instance's cardPos / cardLook. */
@@ -54,8 +54,15 @@ export function treeCard(m: MeshLambertNodeMaterial): void {
   m.colorNode = vec4(texel.rgb.mul(uniform(m.color)).mul(shade), texel.a)
 }
 
-/** treelineMaterial: through the day's haze a faint line of trees; at night nothing. */
+/**
+ * treelineMaterial: flat colour cut out by the band's alpha; through the day's haze a faint line
+ * of trees (pines in front, red 1, more than the canopy behind), its foot fogged; at night nothing.
+ */
 export function treeline(m: MeshBasicNodeMaterial): void {
+  const map = (m as MeshBasicNodeMaterial & { map: THREE.Texture | null }).map
+  if (!map) return
+  const texel = texture(map, uv())
+  m.colorNode = vec4(uniform(m.color), texel.a)
   m.setupFog = (builder: NodeBuilder, outputNode: Node<'vec4'>) => {
     const fog = (builder as NodeBuilder & { scene: THREE.Scene }).scene.fog as THREE.Fog | null
     if (!fog?.isFog) return outputNode
@@ -65,7 +72,12 @@ export function treeline(m: MeshBasicNodeMaterial): void {
     output.assign(outputNode)
     return Fn(() => {
       const treelineFog = smoothstep(near, far, positionView.z.negate())
-      const treelineCap = mix(1, 0.84, smoothstep(170, 380, far))
+      const treelineDay = smoothstep(170, 380, far)
+      const treelineCap = mix(
+        1,
+        mix(1, mix(0.93, 0.82, texel.r), treelineDay),
+        smoothstep(0.25, 0.55, uv().y),
+      )
       return vec4(mix(output.rgb, color, min(treelineFog, treelineCap)), output.a)
     })()
   }
