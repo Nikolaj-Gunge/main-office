@@ -143,10 +143,14 @@ node('east', 9, 9.2)
 node('bench', 21.4, 10.5)
 node('benchS', 22, 12.4)
 lane('ringSE', 'east', 'bench', 'benchS')
-node('southE', 8, 17)
-node('southW', -5, 16)
-lane('east', 'southE', 'southW', 'ringS')
-lane('southW', 'yard')
+// West of the lean-to by the south fence, then along the fence.
+node('eastS', 6, 11)
+node('southE', 6, 17)
+node('southW', -4.2, 17.5)
+// East of the scrap shack, then up to the yard.
+node('southWN', -4.2, 11)
+lane('east', 'eastS', 'southE', 'southW', 'ringS')
+lane('southW', 'southWN', 'yard')
 // The walkway over the gate (only the watch goes up there; no lane leads to it).
 node('walkW', -1.9, -30, 3.8)
 node('walkE', 1.9, -30, 3.8)
