@@ -2,9 +2,9 @@ import { DurableObject } from 'cloudflare:workers'
 import { addCounts, type BudgetCounts } from '@office-fps/server/budget'
 
 /**
- * Admin settings (game rules) and the day's request count, which outlive the game rooms. Rooms
- * are per protocol version, so every update starts a fresh room; this tiny object keeps both.
- *   GET  /rules  → the stored rules JSON (or null) · PUT /rules → store the body
+ * Admin settings (game rules, bans) and the day's request count, which outlive the game rooms.
+ * Rooms are per protocol version, so every update starts a fresh room; this tiny object keeps them.
+ *   GET  /rules or /bans → the stored JSON (or null) · PUT → store the body
  *   GET  /budget → today's total counts (or null)  · POST /budget → add a room's counts, returns
  *                                                     the new total
  */
@@ -18,10 +18,11 @@ export class Settings extends DurableObject {
       await this.ctx.storage.put('budget', total)
       return Response.json(total)
     }
+    const key = pathname === '/bans' ? 'bans' : 'rules'
     if (request.method === 'PUT') {
-      await this.ctx.storage.put('rules', await request.json())
+      await this.ctx.storage.put(key, await request.json())
       return new Response(null, { status: 204 })
     }
-    return Response.json((await this.ctx.storage.get('rules')) ?? null)
+    return Response.json((await this.ctx.storage.get(key)) ?? null)
   }
 }

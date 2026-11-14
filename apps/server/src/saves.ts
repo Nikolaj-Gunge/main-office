@@ -154,6 +154,13 @@ export class Saves {
     this.dirty.add(characterKey(account))
   }
 
+  /** Forgets an account's character (an admin's "start over"): the next one is fresh. */
+  forgetCharacter(account: string): void {
+    this.characters.delete(account)
+    this.dirty.delete(characterKey(account))
+    void this.store.delete(characterKey(account))
+  }
+
   putWorld(world: Omit<WorldSave, 'epoch'>): void {
     this.world = { ...world, epoch: this.world.epoch }
     this.dirty.add(WORLD_KEY)

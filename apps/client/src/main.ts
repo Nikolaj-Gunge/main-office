@@ -89,6 +89,9 @@ import { WorldItemsView } from './render/world-items.ts'
 import { loadSettings, saveSettings } from './settings.ts'
 import '@fontsource/pixelify-sans/400.css'
 import '@fontsource/pixelify-sans/700.css'
+import { installErrorReporter } from './error-reporter.ts'
+
+installErrorReporter()
 
 function requireElement<T extends Element>(selector: string): T {
   const el = document.querySelector<T>(selector)

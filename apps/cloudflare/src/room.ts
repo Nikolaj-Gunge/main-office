@@ -65,6 +65,11 @@ export class GameRoom extends DurableObject {
           })
         },
         budget: () => this.budget.snapshot(),
+        onBansChanged: (bans) =>
+          void settings.fetch('https://settings/bans', {
+            method: 'PUT',
+            body: JSON.stringify(bans),
+          }),
       })
       this.budget.http(2) // the two reads below
       const [saved, counted] = await Promise.all([
@@ -79,6 +84,11 @@ export class GameRoom extends DurableObject {
       ])
       this.budget.synced(counted)
       if (saved) this.admin.apply(mergeRules(DEFAULT_RULES, saved))
+      const bans = await settings
+        .fetch('https://settings/bans')
+        .then((r) => r.json())
+        .catch(() => null)
+      this.admin.moderation.loadBans(bans)
       // Characters and the world live in the vault (after the rules: a mode or map change
       // starts a new world, which must not wipe the saved one at boot).
       await this.game.useSaves(vaultStore(env))
@@ -132,6 +142,7 @@ export class GameRoom extends DurableObject {
           if (!loop.running) loop.start()
         },
         budget: this.budget,
+        ip: request.headers.get('CF-Connecting-IP') ?? undefined,
       },
     )
     server.addEventListener('message', (event) => {

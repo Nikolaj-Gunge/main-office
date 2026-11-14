@@ -213,3 +213,98 @@ th.num {
     grid-row: 2;
   }
 }
+
+.card h3 {
+  font-size: 15px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin: 14px 0 8px;
+}
+
+button.small,
+select.small {
+  padding: 2px 8px;
+  font-size: 14px;
+}
+
+button.danger {
+  border-color: #ff7a6e;
+  color: #ff7a6e;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.give {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.give input.count {
+  width: 72px;
+  background: #0e0f15;
+  border: 2px solid #f2f2f2;
+  padding: 6px 8px;
+}
+
+.list {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.list > li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #333849;
+  padding: 4px 0;
+}
+
+.meta {
+  opacity: 0.55;
+  font-size: 13px;
+}
+
+.errors summary {
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.errors details {
+  width: 100%;
+}
+
+.errors pre {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  opacity: 0.75;
+  margin-top: 6px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: 13px;
+  background: #2b2e3f;
+  border: 1px solid #f2f2f2;
+}
+
+.tag.client {
+  border-color: #f5c542;
+  color: #f5c542;
+}
+
+.tag.tick,
+.tag.process,
+.tag.session {
+  border-color: #ff7a6e;
+  color: #ff7a6e;
+}

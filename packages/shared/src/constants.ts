@@ -22,7 +22,7 @@ export const WS_PATH = '/ws'
  * WebSocket close code for "today's free allowance is nearly spent, come back later": the
  * client shows a full-screen notice instead of reconnecting (server budget.ts).
  */
-export const CLOSE_RESTING = 4002
+export const CLOSE_RESTING = 4010
 
 /** Bumped whenever the binary protocol changes incompatibly. */
 export const PROTOCOL_VERSION = 32

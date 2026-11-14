@@ -146,6 +146,11 @@ export class MatchRunner {
     this.survival?.saveAll()
   }
 
+  /** Survival's director while surviving, else null (admin tools and checks reach in here). */
+  get survivalDirector(): SurvivalDirector | null {
+    return this.survival
+  }
+
   /** Survival: holds the weather at one kind (null: as it comes). False when not surviving. */
   pinWeather(kind: WeatherKind | null): boolean {
     if (!this.survival) return false

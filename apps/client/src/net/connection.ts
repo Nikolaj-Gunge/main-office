@@ -21,8 +21,8 @@ export interface ConnectionEvents {
 }
 
 const RECONNECT_DELAY_MS = 2000
-/** Close codes where reconnecting won't help (see server session.ts). */
-const FATAL_CODES = new Set([4000, 4001, CLOSE_RESTING])
+/** Close codes where reconnecting won't help: old version, full, kicked, banned, resting (server). */
+const FATAL_CODES = new Set([4000, 4001, 4002, 4003, CLOSE_RESTING])
 /** Time between pings. Each is a metered message on Cloudflare, so not too often. */
 const PING_INTERVAL_MS = 2000
 

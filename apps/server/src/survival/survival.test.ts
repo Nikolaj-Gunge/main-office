@@ -294,12 +294,17 @@ describe('survival: the night', () => {
   test("Hollis' pistol and knife: everyone gets their own pair, and only once", () => {
     const t = setup(2)
     t.run(1)
+    // Only what's on Hollis' table (a house nearby may have a gun of its own lying about).
+    const note = t.def.interactables.find((i) => i.key === 'start_note')
+    if (!note) throw new Error('no note')
+    const onTable = (l: { x: number; z: number }) =>
+      Math.hypot(l.x - note.pos[0], l.z - note.pos[2]) < 3
     const told = (i: number) => {
       const shown = new Map<number, string>()
       for (const m of t.clients[i]?.inbox ?? []) {
         if (m.type !== ServerMsg.Loot) continue
         for (const id of m.remove) shown.delete(id)
-        for (const l of m.add) shown.set(l.id, l.item)
+        for (const l of m.add) if (onTable(l)) shown.set(l.id, l.item)
       }
       return shown
     }

@@ -23,6 +23,7 @@ interface AdminState {
     deaths: number
     ping: number
     bot: boolean
+    alive: boolean
   }[]
   /** Today's Cloudflare request use (server budget.ts); null on servers without it. */
   budget: {
@@ -34,7 +35,35 @@ interface AdminState {
     pct: number
     resting: boolean
   } | null
+  bans: { name: string; ip?: string; reason: string; at: number }[]
+  /** Survival's named places (teleport targets). */
+  places: { key: string; name: string }[]
+  survival: {
+    time: number
+    weather: string | null
+    pinned: string | null
+    weathers: string[]
+    items: { id: string; name: string }[]
+  } | null
+  errorCount: number
 }
+
+interface ReportedError {
+  at: number
+  source: string
+  message: string
+  stack?: string
+  context?: string
+  count: number
+}
+
+/** Survival times of day to jump to (the day's clock, 0–1: see shared daytime.ts). */
+const TIMES: { label: string; t: number }[] = [
+  { label: 'Midnight', t: 0.15 },
+  { label: 'Dawn', t: 0.41 },
+  { label: 'Noon', t: 0.62 },
+  { label: 'Dusk', t: 0.89 },
+]
 
 type NumericKey =
   | 'gravity'
@@ -138,8 +167,52 @@ async function api(path: string, body?: unknown): Promise<AdminState> {
     body: body === undefined ? null : JSON.stringify(body),
   })
   const data = (await response.json().catch(() => ({}))) as AdminState & { error?: string }
-  if (!response.ok) throw new Error(data.error ?? `Error ${response.status}`)
+  if (!response.ok) {
+    throw Object.assign(new Error(data.error ?? `Error ${response.status}`), {
+      status: response.status,
+    })
+  }
   return data
+}
+
+/** A moderation / survival tool: redraws on success, says what went wrong otherwise. */
+async function act(path: string, body: unknown): Promise<void> {
+  try {
+    state = await api(path, body)
+    flashSaved()
+    render()
+  } catch (err) {
+    const status = (err as { status?: number }).status
+    if (status === 401 || status === 429) showLogin((err as Error).message)
+    else alert((err as Error).message)
+  }
+}
+
+let errors: ReportedError[] = []
+
+async function loadErrors(): Promise<void> {
+  try {
+    const data = (await api('errors')) as unknown as { errors: ReportedError[] }
+    errors = data.errors
+    render()
+  } catch {
+    // The state request reports login trouble; this one stays quiet.
+  }
+}
+
+/** "3 min ago" for an error's time. */
+function ago(at: number): string {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (s < 60) return `${s} s ago`
+  if (s < 3600) return `${Math.round(s / 60)} min ago`
+  return `${Math.round(s / 3600)} h ago`
+}
+
+/** Night, dawn, day or dusk for the day's clock (thresholds as in shared daytime.ts). */
+function phaseText(t: number): string {
+  if (t < 0.4 || t >= 0.96) return 'Night'
+  if (t < 0.48) return 'Dawn'
+  return t < 0.88 ? 'Day' : 'Dusk'
 }
 
 function flashSaved(): void {
@@ -187,6 +260,7 @@ function showLogin(error = ''): void {
       state = await api('state')
       sessionStorage.setItem(PASSWORD_KEY, password)
       render()
+      void loadErrors()
     } catch (err) {
       status.className = 'status error'
       status.textContent = (err as Error).message
@@ -231,7 +305,7 @@ function card(title: string, hint: string | null, ...body: Node[]): HTMLElement 
 
 function render(): void {
   if (!state || !root) return
-  const { rules, choices, players } = state
+  const { rules, choices, players, places } = state
 
   const mapCard = card(
     'Map',
@@ -425,6 +499,51 @@ function render(): void {
     jingle,
   )
 
+  const people = players.filter((p) => !p.bot)
+  /** Per-person tools: kick, ban, teleport, start over (survival). Bots get none. */
+  const actions = (p: AdminState['players'][number]) => {
+    if (p.bot) return h('td', {})
+    const kick = h('button', { type: 'button', class: 'small' }, 'Kick')
+    kick.addEventListener('click', () => {
+      const reason = prompt(`Kick ${p.name}? Reason (shown to them):`, '')
+      if (reason !== null) void act('kick', { id: p.id, reason })
+    })
+    const ban = h('button', { type: 'button', class: 'small danger' }, 'Ban')
+    ban.addEventListener('click', () => {
+      const reason = prompt(`Ban ${p.name}? Reason (shown to them):`, '')
+      if (reason !== null) void act('ban', { id: p.id, reason })
+    })
+    const go = h('select', { class: 'small', 'aria-label': `Teleport ${p.name}` })
+    go.append(h('option', { value: '' }, 'Teleport…'))
+    if (places.length) {
+      const group = h('optgroup', { label: 'Places' })
+      for (const place of places)
+        group.append(h('option', { value: `place:${place.key}` }, place.name))
+      go.append(group)
+    }
+    const others = players.filter((o) => o.id !== p.id && o.alive)
+    if (others.length) {
+      const group = h('optgroup', { label: 'To player' })
+      for (const o of others) group.append(h('option', { value: `to:${o.id}` }, o.name))
+      go.append(group)
+    }
+    go.disabled = !p.alive
+    go.addEventListener('change', () => {
+      const [kind, target] = go.value.split(':')
+      if (kind === 'place') void act('teleport', { id: p.id, place: target })
+      if (kind === 'to') void act('teleport', { id: p.id, to: Number(target) })
+    })
+    const tools: Node[] = [kick, ban, go]
+    if (state?.survival) {
+      const reset = h('button', { type: 'button', class: 'small' }, 'Start over')
+      reset.addEventListener('click', () => {
+        if (confirm(`Wipe ${p.name}'s character (pockets, kit, journal) and start them over?`))
+          void act('reset-character', { id: p.id })
+      })
+      tools.push(reset)
+    }
+    return h('td', {}, h('div', { class: 'actions' }, ...tools))
+  }
   const table = h(
     'table',
     {},
@@ -438,6 +557,7 @@ function render(): void {
         h('th', { class: 'num' }, 'Kills'),
         h('th', { class: 'num' }, 'Deaths'),
         h('th', { class: 'num' }, 'Ping'),
+        h('th', {}, ''),
       ),
     ),
     h(
@@ -447,10 +567,11 @@ function render(): void {
         h(
           'tr',
           {},
-          h('td', {}, p.bot ? `${p.name} (bot)` : p.name),
+          h('td', {}, p.bot ? `${p.name} (bot)` : p.alive ? p.name : `${p.name} (dead)`),
           h('td', { class: 'num' }, String(p.kills)),
           h('td', { class: 'num' }, String(p.deaths)),
           h('td', { class: 'num' }, p.bot ? '—' : `${p.ping} ms`),
+          actions(p),
         ),
       ),
     ),
@@ -465,16 +586,149 @@ function render(): void {
   const refresh = h('button', { type: 'button' }, 'Refresh')
   refresh.addEventListener('click', async () => {
     state = await api('state')
+    void loadErrors()
     render()
   })
   const playersCard = card(
     `Players online (${players.length})`,
-    null,
+    'Kick and ban show the reason to the player. A ban keeps the name (and their address, where known) out until lifted.',
     h('div', { class: 'row' }, h('span', {}, ''), h('span', { class: 'choices' }, refresh, reset)),
     players.length ? table : h('p', { class: 'hint' }, 'Nobody is playing right now.'),
   )
 
   const budgetCard = state.budget ? renderBudget(state.budget) : null
+  const message = h('input', {
+    type: 'text',
+    maxlength: '200',
+    placeholder: 'Server restarting in 5 minutes',
+    'aria-label': 'Message to everyone',
+  })
+  const messageForm = h(
+    'form',
+    { class: 'login' },
+    message,
+    h('button', { type: 'submit' }, 'Send to all'),
+  )
+  messageForm.addEventListener('submit', (e) => {
+    e.preventDefault()
+    if (message.value.trim()) void act('broadcast', { text: message.value })
+  })
+  const messageCard = card(
+    'Message everyone',
+    'Shows as a line in the survival notice feed ("Server: …").',
+    messageForm,
+  )
+
+  const cards: Node[] = []
+  const sv = state.survival
+  if (sv) {
+    const times = h('div', { class: 'choices' })
+    for (const { label, t } of TIMES) {
+      const button = h('button', { type: 'button' }, label)
+      button.addEventListener('click', () => void act('time', { time: t }))
+      times.append(button)
+    }
+    const weather = choiceGroup(
+      'Weather',
+      [
+        { id: '', name: 'As it comes' },
+        ...sv.weathers.map((w) => ({ id: w, name: w[0]?.toUpperCase() + w.slice(1) })),
+      ],
+      sv.pinned ?? '',
+      (id) => void act('weather', { kind: id || null }),
+    )
+    const who = h('select', { 'aria-label': 'Give to' })
+    for (const p of people) who.append(h('option', { value: String(p.id) }, p.name))
+    const item = h('select', { 'aria-label': 'Item' })
+    for (const i of sv.items) item.append(h('option', { value: i.id }, i.name))
+    const count = h('input', {
+      type: 'number',
+      min: '1',
+      max: '999',
+      value: '1',
+      class: 'count',
+      'aria-label': 'How many',
+    })
+    const give = h(
+      'form',
+      { class: 'give' },
+      who,
+      item,
+      count,
+      h('button', { type: 'submit' }, 'Give'),
+    )
+    give.addEventListener('submit', (e) => {
+      e.preventDefault()
+      if (!who.value) return alert('Nobody to give it to.')
+      void act('give', { id: Number(who.value), item: item.value, n: Number(count.value) })
+    })
+    cards.push(
+      card(
+        'Survival tools',
+        `Now: ${phaseText(sv.time)} (${sv.time.toFixed(2)}), ${sv.weather ?? 'clear'}${sv.pinned ? ' (held)' : ''}. Time only winds forward; the weather clock moves with it.`,
+        h('h3', {}, 'Time of day'),
+        times,
+        h('h3', {}, 'Weather'),
+        weather,
+        h('h3', {}, 'Give'),
+        people.length ? give : h('p', { class: 'hint' }, 'Nobody to give anything to.'),
+      ),
+    )
+  }
+
+  if (state.bans.length) {
+    const list = h('ul', { class: 'list' })
+    for (const b of state.bans) {
+      const lift = h('button', { type: 'button', class: 'small' }, 'Unban')
+      lift.addEventListener('click', () => void act('unban', { name: b.name }))
+      list.append(
+        h(
+          'li',
+          {},
+          h(
+            'span',
+            {},
+            h('strong', {}, b.name),
+            ` — ${b.reason}`,
+            h('span', { class: 'meta' }, ` ${b.ip ?? ''} ${ago(b.at)}`),
+          ),
+          lift,
+        ),
+      )
+    }
+    cards.push(card(`Bans (${state.bans.length})`, null, list))
+  }
+
+  const errorList = h('ul', { class: 'list errors' })
+  for (const e of errors) {
+    errorList.append(
+      h(
+        'li',
+        {},
+        h(
+          'details',
+          {},
+          h(
+            'summary',
+            {},
+            h('span', { class: `tag ${e.source}` }, e.source),
+            ` ${e.message}`,
+            h('span', { class: 'meta' }, ` ×${e.count} · ${ago(e.at)}`),
+          ),
+          ...(e.context ? [h('p', { class: 'meta' }, e.context)] : []),
+          ...(e.stack ? [h('pre', {}, e.stack)] : []),
+        ),
+      ),
+    )
+  }
+  const reload = h('button', { type: 'button' }, 'Reload')
+  reload.addEventListener('click', () => void loadErrors())
+  const errorsCard = card(
+    `Errors (${errors.length})`,
+    'The last 50 from the server and players’ browsers, newest first. Repeats are counted.',
+    h('div', { class: 'row' }, h('span', {}, ''), reload),
+    errors.length ? errorList : h('p', { class: 'hint' }, 'Nothing has gone wrong. Yet.'),
+  )
 
   const logout = h('button', { type: 'button' }, 'Log out')
   logout.addEventListener('click', () => {
@@ -497,6 +751,9 @@ function render(): void {
     jingleCard,
     playersCard,
     ...(budgetCard ? [budgetCard] : []),
+    ...cards,
+    messageCard,
+    errorsCard,
   )
 }
 
@@ -533,6 +790,7 @@ if (password) {
     .then((s) => {
       state = s
       render()
+      void loadErrors()
     })
     .catch((err: Error) => showLogin(err.message))
 } else {

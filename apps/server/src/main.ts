@@ -10,6 +10,7 @@ import {
 import { AdminApi } from './admin.ts'
 import { limitFromEnv, RequestBudget } from './budget.ts'
 import { createConnections, type SocketData } from './connections.ts'
+import { errorLog } from './errors.ts'
 import { FileStore } from './file-store.ts'
 import { Game } from './game.ts'
 import { GameLoop } from './loop.ts'
@@ -75,7 +76,8 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === '/admin') return serveStatic(clientDist, '/admin.html')
 
     if (url.pathname === WS_PATH) {
-      const upgraded = server.upgrade(req, { data: { session: null } })
+      const ip = server.requestIP(req)?.address
+      const upgraded = server.upgrade(req, { data: { session: null, ...(ip ? { ip } : {}) } })
       return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 400 })
     }
 
@@ -96,6 +98,16 @@ setInterval(() => {
     `[game] ${game.players.size} players · tick avg ${loop.tickMs.toFixed(2)} ms · max ${loop.takeMaxTickMs().toFixed(2)} ms`,
   )
 }, 10_000)
+
+// Anything that escapes is logged where the admin page can see it (and the server keeps going).
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaught:', err)
+  errorLog.add('process', err)
+})
+process.on('unhandledRejection', (err) => {
+  console.error('[server] unhandled rejection:', err)
+  errorLog.add('process', err)
+})
 
 async function shutdown() {
   console.log('[server] shutting down')

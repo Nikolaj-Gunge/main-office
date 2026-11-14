@@ -7,8 +7,10 @@ import {
   ServerMsg,
 } from '@office-fps/shared'
 import type { RequestBudget } from './budget.ts'
+import { errorLog } from './errors.ts'
 import type { Game } from './game.ts'
 import { accountOf } from './identity.ts'
+import { CLOSE_BANNED, moderationOf } from './moderation.ts'
 import { MessageLimiter } from './rate-limit.ts'
 
 /** The bit of a WebSocket a session needs; Bun's and Cloudflare's both fit. */
@@ -22,6 +24,8 @@ export interface SessionOptions {
   onInput?: () => void
   /** Counts incoming messages; once it is resting, Hello is answered with CLOSE_RESTING. */
   budget?: RequestBudget | undefined
+  /** The client's address (bans), if the host knows it. */
+  ip?: string | undefined
 }
 
 export interface Session {
@@ -41,8 +45,9 @@ export function createSession(
   getTickMs: () => number,
   options: SessionOptions = {},
 ): Session {
-  const { onInput, budget } = options
+  const { onInput, budget, ip } = options
   let playerId = 0
+  const moderation = moderationOf(game)
   /** Hello arrived and their save is being read. */
   let joining = false
   let closed = false
@@ -66,6 +71,7 @@ export function createSession(
       return
     }
     playerId = id
+    moderation.connected(id, { ip, close: (code, reason) => socket.close(code, reason) })
     const joined = game.players.get(id)?.name
     console.log(`[ws] #${id} "${joined}" joined (${game.players.size} online)`)
   }
@@ -87,47 +93,59 @@ export function createSession(
       }
       if (!limiter.allow(msg.type, () => (playerId ? `#${playerId}` : 'a new connection'))) return
 
-      switch (msg.type) {
-        case ClientMsg.Hello: {
-          if (playerId || joining) return
-          if (msg.protocolVersion !== PROTOCOL_VERSION) {
-            socket.close(4000, 'Protocol version mismatch — reload the page')
-            return
+      try {
+        switch (msg.type) {
+          case ClientMsg.Hello: {
+            if (playerId || joining) return
+            if (msg.protocolVersion !== PROTOCOL_VERSION) {
+              socket.close(4000, 'Protocol version mismatch — reload the page')
+              return
+            }
+            // People already playing keep going; only new arrivals are turned away.
+            if (budget?.resting) {
+              socket.close(CLOSE_RESTING, 'The servers are resting')
+              return
+            }
+            const ban = moderation.banned(msg.name, ip)
+            if (ban) {
+              socket.close(CLOSE_BANNED, `Banned: ${ban.reason}`.slice(0, 100))
+              return
+            }
+            joining = true
+            join(msg.name, msg.appearance, msg.token).catch((err) => {
+              console.warn('[ws] join failed:', (err as Error).message)
+              socket.close(1011, 'Could not join')
+            })
+            break
           }
-          // People already playing keep going; only new arrivals are turned away.
-          if (budget?.resting) {
-            socket.close(CLOSE_RESTING, 'The servers are resting')
-            return
-          }
-          joining = true
-          join(msg.name, msg.appearance, msg.token).catch((err) => {
-            console.warn('[ws] join failed:', (err as Error).message)
-            socket.close(1011, 'Could not join')
-          })
-          break
+          case ClientMsg.Input:
+            if (!playerId) break
+            game.handleInput(playerId, msg.commands)
+            onInput?.()
+            break
+          case ClientMsg.SetDebug:
+            if (playerId) game.setDebug(playerId, msg.flags)
+            break
+          case ClientMsg.Action:
+            if (playerId) game.handleAction(playerId, msg.action)
+            break
+          case ClientMsg.Ping:
+            if (playerId) game.reportPing(playerId, msg.rtt)
+            socket.send(
+              encodeServerMessage({
+                type: ServerMsg.Pong,
+                clientTime: msg.clientTime,
+                serverTime: Date.now(),
+                tickMs: getTickMs(),
+              }),
+            )
+            break
         }
-        case ClientMsg.Input:
-          if (!playerId) break
-          game.handleInput(playerId, msg.commands)
-          onInput?.()
-          break
-        case ClientMsg.SetDebug:
-          if (playerId) game.setDebug(playerId, msg.flags)
-          break
-        case ClientMsg.Action:
-          if (playerId) game.handleAction(playerId, msg.action)
-          break
-        case ClientMsg.Ping:
-          if (playerId) game.reportPing(playerId, msg.rtt)
-          socket.send(
-            encodeServerMessage({
-              type: ServerMsg.Pong,
-              clientTime: msg.clientTime,
-              serverTime: Date.now(),
-              tickMs: getTickMs(),
-            }),
-          )
-          break
+      } catch (err) {
+        // A message that breaks the game is logged (admin page) and dropped, not fatal.
+        const name = game.players.get(playerId)?.name ?? '?'
+        console.error(`[ws] message from #${playerId} failed:`, err)
+        errorLog.add('session', err, `player #${playerId} "${name}"`)
       }
     },
 
@@ -136,6 +154,7 @@ export function createSession(
       if (!playerId) return
       const id = playerId
       playerId = 0
+      moderation.disconnected(id)
       game.leave(id)
       console.log(`[ws] #${id} left (${code}, ${game.players.size} online)`)
     },
