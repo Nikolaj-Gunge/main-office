@@ -40,7 +40,7 @@ export interface ItemDef {
   stopsBleeding?: boolean
   /** The bite (infection.ts): 'delay' winds the clock back to the start, 'cure' ends it. */
   infection?: 'delay' | 'cure'
-  /** Backpacks: how much you can carry with it on (kg). */
+  /** Backpacks: roughly what it carries (kg); its pocket grid is in grid.ts. */
   capacity?: number
   /** Batteries: recharges the torch (0–100). */
   battery?: number
@@ -50,8 +50,6 @@ export interface ItemDef {
 
 /** The trader pays this share of an item's value. */
 export const SELL_RATE = 0.4
-/** What your pockets hold without a backpack (kg). */
-export const POCKETS_KG = 9
 
 const defs: ItemDef[] = []
 const add = (def: ItemDef) => {
@@ -211,9 +209,9 @@ const pack = (
   value: number,
   desc: string,
 ) => add({ id, name, kind: 'pack', capacity, weight, value, desc })
-pack('pack_school', 'School backpack', 18, 0.4, 120, 'Has a name written inside. Carries 18 kg.')
-pack('pack_hiking', 'Hiking backpack', 30, 0.9, 380, 'Frame and hip belt. Carries 30 kg.')
-pack('pack_military', 'Military rucksack', 45, 1.6, 900, 'Built to carry a war. Carries 45 kg.')
+pack('pack_school', 'School backpack', 18, 0.4, 120, 'Has a name written inside.')
+pack('pack_hiking', 'Hiking backpack', 30, 0.9, 380, 'Frame and hip belt. Room for a rifle.')
+pack('pack_military', 'Military rucksack', 45, 1.6, 900, 'Built to carry a war.')
 
 // ── Clothes and gear (what they do: gear.ts) ──
 const wear = (id: string, name: string, weight: number, value: number, desc: string) =>

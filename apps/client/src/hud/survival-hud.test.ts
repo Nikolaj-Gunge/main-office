@@ -46,7 +46,7 @@ describe('backpack text', () => {
     expect(effectText(item('water'))).toContain('water')
     expect(effectText(item('bandage'))).toContain('stops bleeding')
     expect(effectText(item('glock'))).toContain('9mm')
-    expect(effectText(item('pack_hiking'))).toContain('kg')
+    expect(effectText(item('pack_hiking'))).toContain('6×6 pack')
   })
 })
 

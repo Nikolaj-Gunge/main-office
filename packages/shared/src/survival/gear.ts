@@ -19,7 +19,7 @@ export interface WearStats {
   look: number
   /** Share of damage it stops where it covers you (head hits for head gear, the rest otherwise). */
   armour?: number
-  /** Extra carrying room (kg). */
+  /** How much its pockets hold, roughly (kg); the pocket grid itself is in grid.ts. */
   pockets?: number
   /** The dead see you this much less far (0.2 = 20 % less). */
   stealth?: number

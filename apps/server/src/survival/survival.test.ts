@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import {
   BAREFOOT_NOISE,
   Button,
-  capacityOf,
+  carried,
   countOf,
   createPhysicsWorld,
   DEFAULT_RULES,
@@ -12,6 +12,8 @@ import {
   feetLook,
   GEAR,
   gearLooks,
+  give,
+  gridOf,
   heightAt,
   INFECTION_SECONDS,
   ITEMS,
@@ -24,7 +26,6 @@ import {
   type MatchInfo,
   mergeRules,
   PLANK_HP,
-  POCKETS_KG,
   planksFor,
   QUESTS,
   RARE_STOCK,
@@ -33,6 +34,7 @@ import {
   ServerMsg,
   type SurvivalSelf,
   seeded,
+  sizeOf,
   spotCentre,
   TICK_RATE,
   TRADER_STOCK,
@@ -49,6 +51,17 @@ import type { Zed } from './horde.ts'
 beforeAll(async () => {
   await initPhysics()
 })
+
+/** What's carried, without where it lies. */
+const plain = (inv: readonly { item: string; n: number }[]) =>
+  inv.map(({ item, n }) => ({ item, n }))
+
+/** Where the first stack of an item lies (to point an action at it). */
+function cellOf(self: SurvivalSelf, item: string) {
+  const s = self.inv.find((st) => st.item === item)
+  if (!s) throw new Error(`no ${item}`)
+  return { c: s.c, x: s.x, y: s.y }
+}
 
 function setup(n = 1) {
   const map = loadMap('deadwood')
@@ -176,7 +189,7 @@ describe('survival: the night', () => {
     expect(s.weapon.ammo).toBe(12)
     expect(s.weapon.reserve).toBe(0)
     expect(s.holstered?.id).toBe(WeaponId.Knife)
-    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(plain(t.self().inv)).toEqual([{ item: 'water', n: 1 }])
     expect(t.match().survival?.quests[0]?.id).toBe('wake')
     // Standing on the cabin floor, not fallen through the world.
     const start = t.def.pois[0]
@@ -235,19 +248,20 @@ describe('survival: the night', () => {
     ).survival
     const sv = d.survivors.get(t.ids[0] ?? 0)
     if (!sv) throw new Error('no survivor')
-    sv.self.inv.push(
-      { item: 'beans', n: 2 },
-      { item: 'pack_hiking', n: 1 },
-      { item: 'ammo9', n: 30 },
-    )
+    sv.self.pack = 'pack_school'
+    give(sv.self, 'beans', 2)
+    give(sv.self, 'pack_hiking', 1)
+    give(sv.self, 'ammo9', 30)
     sv.self.hunger = 40
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'beans' })
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'pack_hiking' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(sv.self, 'beans') })
+    // The bigger pack goes on; the old one, and everything that was in it, goes in it.
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(sv.self, 'pack_hiking') })
     t.run(0.1)
     const self = t.self()
     expect(self.hunger).toBeGreaterThan(65)
     expect(self.pack).toBe('pack_hiking')
-    expect(self.inv.find((s) => s.item === 'beans')?.n).toBe(1)
+    expect(countOf(self.inv, 'beans')).toBe(1)
+    expect(countOf(self.inv, 'pack_school')).toBe(1)
     // The Glock sees the 9mm in the pack, and a reload uses it up.
     expect(t.player().state.weapon.reserve).toBe(30)
     t.player().state.weapon.ammo = 2
@@ -294,16 +308,17 @@ describe('survival: the night', () => {
     const t = setup()
     t.run(1)
     const sv = survivorOf(t)
-    sv.self.inv.push({ item: 'beans', n: 3 }, { item: 'radio_tube', n: 1 })
-    sv.self.wear.body = 'policevest'
     sv.self.pack = 'pack_school'
+    give(sv.self, 'beans', 3)
+    give(sv.self, 'radio_tube', 1)
+    sv.self.wear.body = 'policevest'
     sv.self.money = 75
     sv.self.infected = 400
     const look = t.player().appearance
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
     // A new character: the start kit, fresh, clean.
-    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(plain(t.self().inv)).toEqual([{ item: 'water', n: 1 }])
     expect(t.self().money).toBe(0)
     expect(t.self().pack).toBeNull()
     expect(t.self().wear).toEqual({})
@@ -386,16 +401,17 @@ describe('survival: the bite', () => {
     t.run(1)
     const sv = survivorOf(t)
     const id = t.ids[0] ?? 0
-    sv.self.inv.push({ item: 'adrenaline', n: 1 }, { item: 'cure', n: 1 })
+    give(sv.self, 'adrenaline', 1)
+    give(sv.self, 'cure', 1)
     // Not infected: the cure isn't wasted.
-    t.game.handleAction(id, { a: 'use', item: 'cure' })
+    t.game.handleAction(id, { a: 'use', from: cellOf(sv.self, 'cure') })
     expect(countOf(sv.self.inv, 'cure')).toBe(1)
     sv.self.infected = 90
-    t.game.handleAction(id, { a: 'use', item: 'adrenaline' })
+    t.game.handleAction(id, { a: 'use', from: cellOf(sv.self, 'adrenaline') })
     expect(sv.self.infected).toBe(INFECTION_SECONDS)
     expect(countOf(sv.self.inv, 'adrenaline')).toBe(0)
     sv.self.infected = 30
-    t.game.handleAction(id, { a: 'use', item: 'cure' })
+    t.game.handleAction(id, { a: 'use', from: cellOf(sv.self, 'cure') })
     expect(sv.self.infected).toBeNull()
     expect(countOf(sv.self.inv, 'cure')).toBe(0)
     t.run(0.1)
@@ -443,7 +459,8 @@ describe('survival: the bite', () => {
     const t = setup(2)
     t.run(1)
     const sv = survivorOf(t)
-    sv.self.inv.push({ item: 'beans', n: 3 })
+    sv.self.pack = 'pack_school'
+    give(sv.self, 'beans', 3)
     sv.self.wear.body = 'policevest'
     sv.self.money = 120
     sv.self.infected = 3
@@ -471,7 +488,7 @@ describe('survival: the bite', () => {
       (m) => m.type === ServerMsg.Notice && m.notice.text.includes('P0 turned'),
     )
     expect(told).toBe(true)
-    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(plain(t.self().inv)).toEqual([{ item: 'water', n: 1 }])
     expect(t.self().infected).toBeNull()
     // Put it down: everything spills out where it falls.
     t.game.killPlayer(risen.id, t.ids[1] ?? 0)
@@ -525,7 +542,7 @@ describe('survival: the bite', () => {
     if (!haven) throw new Error('no haven')
     t.move(haven.x + 3, haven.y + 0.1, haven.z + 9)
     const sv = survivorOf(t)
-    sv.self.inv.push({ item: 'beans', n: 2 })
+    give(sv.self, 'beans', 2)
     sv.self.infected = 2
     t.run(2.5)
     expect(t.player().state.alive).toBe(false)
@@ -533,6 +550,153 @@ describe('survival: the bite', () => {
     const loot =
       t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     expect(loot.some((l) => l.item === 'beans' && l.n === 2)).toBe(true)
+  })
+})
+
+describe('survival: the inventory grid', () => {
+  /** The newest thing of this kind lying about that player 0 was told of. */
+  const groundOf = (t: ReturnType<typeof setup>, item: string) =>
+    t.clients[0]?.inbox
+      .filter((m) => m.type === ServerMsg.Loot)
+      .flatMap((m) => m.add)
+      .findLast((l) => l.item === item)
+
+  test('moving, turning, splitting and merging stacks; bad moves change nothing', () => {
+    const t = setup()
+    t.run(1)
+    const id = t.ids[0] ?? 0
+    const me = survivorOf(t).self
+    me.pack = 'pack_school' // 5 × 4
+    give(me, 'ammo9', 30)
+    const act = (from: object, to: object, n?: number) =>
+      t.game.handleAction(id, {
+        a: 'move',
+        from,
+        to,
+        ...(n !== undefined ? { n } : {}),
+      } as Parameters<typeof t.game.handleAction>[1])
+    act(cellOf(me, 'ammo9'), { c: 'pack', x: 2, y: 1 })
+    expect(me.inv.find((s) => s.item === 'ammo9')).toMatchObject({ c: 'pack', x: 2, y: 1, n: 30 })
+    // Ten of them into a stack of their own, then back onto the first.
+    act({ c: 'pack', x: 2, y: 1 }, { c: 'pack', x: 0, y: 0 }, 10)
+    expect(me.inv.filter((s) => s.item === 'ammo9').map((s) => s.n)).toEqual([20, 10])
+    act({ c: 'pack', x: 0, y: 0 }, { c: 'pack', x: 2, y: 1 })
+    expect(me.inv.filter((s) => s.item === 'ammo9').map((s) => s.n)).toEqual([30])
+    // A can of beans (1 × 2) won't stand up in the bottom row, but lies down there.
+    give(me, 'beans', 1)
+    const beans = () => me.inv.find((s) => s.item === 'beans')
+    const was = { ...cellOf(me, 'beans') }
+    act(was, { c: 'pack', x: 4, y: 3 })
+    expect(beans()).toMatchObject(was)
+    act(was, { c: 'pack', x: 3, y: 3, r: 1 })
+    expect(beans()).toMatchObject({ c: 'pack', x: 3, y: 3, r: 1 })
+    // Not onto something else, not outside, not without a pack, not with nonsense.
+    act({ c: 'pack', x: 3, y: 3 }, { c: 'pack', x: 2, y: 1 })
+    act({ c: 'pack', x: 3, y: 3 }, { c: 'pack', x: 5, y: 0 })
+    act({ c: 'pack', x: 3, y: 3 }, { c: 'pack', x: -1, y: 0 })
+    act({ c: 'pack', x: 3, y: 3 }, { c: 'hat', x: 0, y: 0 })
+    act({ c: 'pack', x: 2, y: 1 }, { c: 'pack', x: 0, y: 0 }, -5)
+    act({ c: 'pack', x: 2, y: 1 }, { c: 'pack', x: 0.5, y: 0 })
+    expect(beans()).toMatchObject({ c: 'pack', x: 3, y: 3, r: 1 })
+    expect(me.inv.filter((s) => s.item === 'ammo9').map((s) => [s.x, s.y, s.n])).toEqual([
+      [2, 1, 30],
+    ])
+    // Nothing overlaps anything, anywhere.
+    for (const a of me.inv)
+      for (const b of me.inv) {
+        if (a === b || a.c !== b.c) continue
+        const [aw, ah] = [
+          a.r ? sizeOf(a.item)[1] : sizeOf(a.item)[0],
+          a.r ? sizeOf(a.item)[0] : sizeOf(a.item)[1],
+        ]
+        const [bw, bh] = [
+          b.r ? sizeOf(b.item)[1] : sizeOf(b.item)[0],
+          b.r ? sizeOf(b.item)[0] : sizeOf(b.item)[1],
+        ]
+        expect(a.x < b.x + bw && b.x < a.x + aw && a.y < b.y + bh && b.y < a.y + ah).toBe(false)
+      }
+    // The Glock sees its rounds wherever they are.
+    t.run(0.1)
+    expect(t.player().state.weapon.reserve).toBe(30)
+  })
+
+  test('dropping to the ground and taking from the vicinity; out of reach is out of reach', () => {
+    const t = setup()
+    t.run(1)
+    const id = t.ids[0] ?? 0
+    const me = survivorOf(t).self
+    give(me, 'ammo9', 20)
+    t.game.handleAction(id, { a: 'move', from: cellOf(me, 'ammo9'), to: { ground: true }, n: 5 })
+    expect(countOf(me.inv, 'ammo9')).toBe(15)
+    const pile = groundOf(t, 'ammo9')
+    if (!pile) throw new Error('nothing dropped')
+    expect(pile.n).toBe(5)
+    // Back into a pocket, at a cell of your choosing.
+    const free = me.inv.some((s) => s.c === 'legs' && s.x === 1 && s.y === 1)
+    expect(free).toBe(false)
+    t.game.handleAction(id, { a: 'move', from: { g: pile.id }, to: { c: 'legs', x: 1, y: 1 } })
+    expect(countOf(me.inv, 'ammo9')).toBe(20)
+    expect(
+      t.clients[0]?.inbox.some((m) => m.type === ServerMsg.Loot && m.remove.includes(pile.id)),
+    ).toBe(true)
+    // Dropped again, then walked away from: it can't be taken from over there.
+    t.game.handleAction(id, { a: 'move', from: cellOf(me, 'ammo9'), to: { ground: true } })
+    const far = groundOf(t, 'ammo9')
+    if (!far) throw new Error('nothing dropped')
+    const p = t.player().state.pos
+    t.move(p.x + 15, p.y, p.z)
+    t.game.handleAction(id, { a: 'move', from: { g: far.id }, to: { auto: true } })
+    t.game.handleAction(id, { a: 'use', from: { g: far.id } })
+    expect(countOf(me.inv, 'ammo9')).toBe(5)
+  })
+
+  test('weapons move between the hands and the pockets; the last one stays in hand', () => {
+    const t = setup()
+    t.run(1)
+    const id = t.ids[0] ?? 0
+    const me = survivorOf(t).self
+    me.pack = 'pack_hiking'
+    const slots = () => carried(t.player().state).map((w) => w.id)
+    t.game.handleAction(id, { a: 'move', from: { slot: 'melee' }, to: { auto: true } })
+    expect(slots()).toEqual([WeaponId.Handgun])
+    expect(countOf(me.inv, 'knife')).toBe(1)
+    // The Glock is all you hold now: it can't be put away.
+    t.game.handleAction(id, { a: 'move', from: { slot: 'sidearm' }, to: { ground: true } })
+    expect(slots()).toEqual([WeaponId.Handgun])
+    // A knife into the sidearm slot? No.
+    t.game.handleAction(id, { a: 'move', from: cellOf(me, 'knife'), to: { slot: 'sidearm' } })
+    expect(countOf(me.inv, 'knife')).toBe(1)
+    t.game.handleAction(id, { a: 'use', from: cellOf(me, 'knife') })
+    expect(slots()).toContain(WeaponId.Knife)
+    // A rifle from the pack into the primary slot keeps its rounds.
+    give(me, 'm4', 1, 17)
+    t.game.handleAction(id, { a: 'move', from: cellOf(me, 'm4'), to: { slot: 'primary' } })
+    const rifle = carried(t.player().state).find((w) => w.id === WeaponId.Rifle)
+    expect(rifle?.ammo).toBe(17)
+    expect(countOf(me.inv, 'm4')).toBe(0)
+  })
+
+  test('clothes: full pockets keep them on, dropped they take it all along, bare slots fill', () => {
+    const t = setup()
+    t.run(1)
+    const id = t.ids[0] ?? 0
+    const me = survivorOf(t).self
+    me.wear.body = 'jacket'
+    give(me, 'ammo22', 10_000)
+    const rounds = countOf(me.inv, 'ammo22')
+    // Nowhere for what's in the jacket: it stays on.
+    t.game.handleAction(id, { a: 'move', from: { slot: 'body' }, to: { auto: true } })
+    expect(me.wear.body).toBe('jacket')
+    expect(countOf(me.inv, 'ammo22')).toBe(rounds)
+    // Thrown on the ground, its pockets go with it.
+    t.game.handleAction(id, { a: 'move', from: { slot: 'body' }, to: { ground: true } })
+    expect(me.wear.body).toBeUndefined()
+    expect(countOf(me.inv, 'ammo22')).toBeLessThan(rounds)
+    const jacket = groundOf(t, 'jacket')
+    if (!jacket) throw new Error('no jacket on the ground')
+    // Picked up again with nothing on your body, it goes straight on.
+    t.game.handleAction(id, { a: 'use', from: { g: jacket.id } })
+    expect(me.wear.body).toBe('jacket')
   })
 })
 
@@ -553,7 +717,10 @@ describe('survival: barricades', () => {
         survival: { survivors: Map<number, { self: SurvivalSelf }> }
       }
     ).survival
-    director.survivors.get(t.ids[0] ?? 0)?.self.inv.push({ item: 'planks', n: 5 })
+    const me = director.survivors.get(t.ids[0] ?? 0)?.self
+    if (!me) throw new Error('no survivor')
+    me.pack = 'pack_school'
+    give(me, 'planks', 5)
     const c = spotCentre(spot)
     for (let k = 0; k < MAX_PLANKS + 1; k++) {
       t.useAt(c.x, c.y, c.z)
@@ -649,7 +816,8 @@ describe('survival: supply drops', () => {
     expect(loot.some((l) => ITEMS[l.item]?.kind === 'weapon')).toBe(true)
 
     // E takes from it, and then it's been opened.
-    const item = loot.find((l) => ITEMS[l.item]?.kind !== 'weapon')
+    // (Not something worn: clothes and packs go straight on when that slot is bare.)
+    const item = loot.find((l) => !['weapon', 'wear', 'pack'].includes(ITEMS[l.item]?.kind ?? ''))
     if (!item) throw new Error('nothing to take')
     director.survivors.get(t.ids[0] ?? 0)?.self.inv.splice(0)
     t.move(item.x + 0.9, item.y + 0.05, item.z)
@@ -671,12 +839,15 @@ describe('survival: clothes and gear', () => {
     ).survival
     const me = director.survivors.get(t.ids[0] ?? 0)?.self
     if (!me) throw new Error('no survivor')
-    me.inv.push({ item: 'militaryvest', n: 1 }, { item: 'helmet', n: 1 })
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'militaryvest' })
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'helmet' })
+    me.pack = 'pack_military'
+    give(me, 'militaryvest', 1)
+    give(me, 'helmet', 1)
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(me, 'militaryvest') })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(me, 'helmet') })
     expect(me.wear.body).toBe('militaryvest')
     expect(me.wear.head).toBe('helmet')
-    expect(capacityOf(me)).toBe(POCKETS_KG + 6)
+    // Its pouches are a much bigger pocket grid than the tank top's.
+    expect(gridOf(me, 'body')).toEqual([4, 3])
     // Armour: a helmet takes 45 % off a head hit, the vest 40 % off a body hit.
     expect(t.game.match.armour(t.player(), true, 100)).toBe(55)
     expect(t.game.match.armour(t.player(), false, 100)).toBe(60)
@@ -685,7 +856,7 @@ describe('survival: clothes and gear', () => {
     const snap = t.last(ServerMsg.Snapshot, 1)
     const seen = snap?.players.find((p) => p.id === t.ids[0])
     expect(seen?.gear).toBe(gearLooks(['helmet', 'militaryvest']))
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'unwear', slot: 'head' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: { slot: 'head' } })
     expect(me.wear.head).toBeUndefined()
     expect(countOf(me.inv, 'helmet')).toBe(1)
   })
@@ -705,14 +876,17 @@ describe('survival: clothes and gear', () => {
     t.run(0.2)
     const seenBefore = t.last(ServerMsg.Snapshot, 1)?.players.find((p) => p.id === t.ids[0])
     expect(seenBefore?.gear ?? 0).toBe(0)
-    me.inv.push({ item: 'cargopants', n: 1 }, { item: 'jeans', n: 1 }, { item: 'boots', n: 1 })
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'cargopants' })
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'boots' })
+    me.pack = 'pack_military'
+    give(me, 'cargopants', 1)
+    give(me, 'jeans', 1)
+    give(me, 'boots', 1)
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(me, 'cargopants') })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(me, 'boots') })
     expect(me.wear.legs).toBe('cargopants')
     expect(me.wear.feet).toBe('boots')
-    expect(capacityOf(me)).toBe(POCKETS_KG + 4)
+    expect(gridOf(me, 'legs')).toEqual([4, 2])
     // Swapping trousers puts the old pair in the pack.
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'jeans' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(me, 'jeans') })
     expect(me.wear.legs).toBe('jeans')
     expect(countOf(me.inv, 'cargopants')).toBe(1)
     t.run(0.2)
@@ -720,7 +894,7 @@ describe('survival: clothes and gear', () => {
     expect(seen?.gear).toBe(gearLooks(['jeans', 'boots']))
     expect(legsLook(seen?.gear ?? 0)).toBe(LEGS_LOOKS.jeans)
     expect(feetLook(seen?.gear ?? 0)).toBe(FEET_LOOKS.boots)
-    t.game.handleAction(t.ids[0] ?? 0, { a: 'unwear', slot: 'legs' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'move', from: { slot: 'legs' }, to: { auto: true } })
     expect(me.wear.legs).toBeUndefined()
     expect(countOf(me.inv, 'jeans')).toBe(1)
   })
