@@ -41,7 +41,9 @@ import {
   WeaponId,
   type WeatherKind,
   weatherAt,
+  ZombieKind,
 } from '@office-fps/shared'
+import { CLAW_TIMING } from '../claw-attack.ts'
 import { Game, type ServerPlayer } from '../game.ts'
 import { openGround } from './drops.ts'
 import type { Zed } from './horde.ts'
@@ -794,5 +796,140 @@ describe('survival: weather', () => {
     director.pinWeather('clear')
     expect(director.heardFrom(me)).toBeGreaterThan(shotInStorm)
     expect(shotInStorm).toBeGreaterThan(storm)
+  })
+})
+
+describe('survival: dodging a blow', () => {
+  /**
+   * Player 0 in the open woods, facing a walker that stands 1.4 m in front of them and is coming
+   * for them (every other zombie put away). `step(buttons)` is one tick of player 0's input.
+   */
+  const duel = (kind: ZombieKind = ZombieKind.Walker) => {
+    const t = setup()
+    t.run(1)
+    let spot: { x: number; y: number; z: number } | null = null
+    for (let i = 0; i < 4000 && !spot; i++) {
+      const x = ((i * 137) % 2400) - 1200
+      const z = ((i * 211) % 2400) - 1200
+      if (!openGround(t.def, x, z, 0.5)) continue
+      if (t.def.pois.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + 60)) continue
+      const y = heightAt(t.def.terrain, x, z)
+      const flat = [-3, 3].every(
+        (d) =>
+          Math.abs(heightAt(t.def.terrain, x + d, z) - y) < 0.25 &&
+          Math.abs(heightAt(t.def.terrain, x, z + d) - y) < 0.25,
+      )
+      if (flat) spot = { x, y, z }
+    }
+    if (!spot) throw new Error('no open ground')
+    for (const z of t.zombies()) t.game.retireZombie(z)
+    t.move(spot.x, spot.y + 0.05, spot.z)
+    const me = t.player()
+    me.protectedUntil = 0
+    me.state.yaw = 0 // facing -z, at the zombie
+    const zombie = [...t.game.players.values()].find((p) => p.zombie) as ServerPlayer
+    const zed = zombie.zombie as Zed
+    zed.reset(kind, -1, false)
+    t.game.placeZombie(zombie, { pos: [spot.x, spot.y + 0.05, spot.z - 1.4], yaw: Math.PI }, 5000)
+    zed.speedChanged()
+    t.game.applyRules(zombie)
+    zed.mood = 'chase'
+    zed.targetId = me.id
+    zed.lastKnown = { ...me.state.pos }
+    const health = () => t.game.players.get(me.id)?.health ?? 0
+    const step = (buttons = 0) => {
+      // Keep it one on one: nothing else wanders in.
+      for (const z of t.zombies()) if (z !== zombie) t.game.retireZombie(z)
+      t.input(buttons, me.state.yaw, 0)
+    }
+    /** Ticks until the zombie starts winding up (fails after 2 s). */
+    const untilWindup = () => {
+      for (let i = 0; i < 2 * TICK_RATE; i++) {
+        if (zed.windup > 0) return i
+        step()
+      }
+      throw new Error('it never wound up')
+    }
+    return { t, me, zombie, zed, health, step, untilWindup }
+  }
+  const WALKER = CLAW_TIMING[ZombieKind.Walker]?.windup ?? 0
+  const ticks = (seconds: number) => Math.round(seconds * TICK_RATE)
+  /** A person sees the wind-up this late: reaction time plus a fair ping (s). */
+  const REACTION = 0.3
+  const react = (d: ReturnType<typeof duel>) => {
+    for (let i = 0; i < ticks(REACTION); i++) d.step()
+  }
+
+  test('standing in front of it: the blow lands once the wind-up is done', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    // All through the wind-up nothing happens…
+    for (let i = 0; i < ticks(WALKER) - 3; i++) d.step()
+    expect(d.zed.windup).toBeGreaterThan(0.8)
+    expect(d.health()).toBe(before)
+    // …then the claws come down, and draw blood: bitten.
+    for (let i = 0; i < 6; i++) d.step()
+    expect(d.health()).toBeLessThan(before)
+    expect(survivorOf(d.t).self.infected).toBe(INFECTION_SECONDS)
+  })
+
+  test('backing off during the wind-up: it claws at air', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    for (let i = 0; i < ticks(WALKER); i++) d.step()
+    expect(d.health()).toBe(before)
+    expect(survivorOf(d.t).self.infected).toBeNull()
+  })
+
+  test('sidestepping during the wind-up: it claws at air', () => {
+    const d = duel()
+    d.untilWindup()
+    const before = d.health()
+    react(d)
+    for (let i = 0; i < ticks(0.35); i++) d.step(Button.Left)
+    for (let i = 0; i < ticks(WALKER); i++) d.step()
+    expect(d.health()).toBe(before)
+    expect(survivorOf(d.t).self.infected).toBeNull()
+  })
+
+  test('after a miss it stands there, open to the knife, then comes again', () => {
+    const d = duel()
+    d.untilWindup()
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    // Wait for the strike (the wind-up runs out), then step right back in front of it.
+    while (d.zed.windup > 0) d.step()
+    d.step()
+    const at = { ...d.zombie.state.pos }
+    const yaw = d.zombie.state.yaw
+    const before = d.health()
+    for (let i = 0; i < ticks(0.15); i++) d.step(Button.Forward)
+    const recover = CLAW_TIMING[ZombieKind.Walker]?.recover ?? 0
+    for (let i = 0; i < ticks(recover - 0.3); i++) {
+      d.step()
+      expect(d.zed.windup).toBe(0)
+    }
+    // Off balance: it hasn't moved, turned or touched you.
+    expect(Math.hypot(d.zombie.state.pos.x - at.x, d.zombie.state.pos.z - at.z)).toBeLessThan(0.05)
+    expect(d.zombie.state.yaw).toBeCloseTo(yaw, 5)
+    expect(d.health()).toBe(before)
+    // Once it has its balance back it comes at you again.
+    for (let i = 0; i < ticks(1) && d.zed.windup === 0; i++) d.step()
+    expect(d.zed.windup).toBeGreaterThan(0)
+  })
+
+  test('a runner hardly winds up at all', () => {
+    expect(CLAW_TIMING[ZombieKind.Runner]?.windup ?? 1).toBeLessThan(WALKER / 1.5)
+    const d = duel(ZombieKind.Runner)
+    d.untilWindup()
+    const before = d.health()
+    // The same back-off that beats a walker is too late for it.
+    react(d)
+    for (let i = 0; i < ticks(0.3); i++) d.step(Button.Back)
+    expect(d.health()).toBeLessThan(before)
   })
 })

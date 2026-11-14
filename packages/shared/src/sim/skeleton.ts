@@ -74,6 +74,8 @@ export interface BodyPose {
   /** Climbing onto a ledge: progress 0–1 (0 = not climbing), the ledge's height above the feet. */
   mantle?: number
   ledge?: number
+  /** A zombie winding up a blow: 0 = not … 1 = arms high, about to strike (see shotAge). */
+  windup?: number
 }
 
 export type PartName =
@@ -693,6 +695,9 @@ function upright(pose: BodyPose): ModelPart[] {
   // Claws: how far into the strike (0 → 1 → 0), for the lunge.
   const strike =
     hold === 'hands' && swinging ? Math.sin(Math.PI * clamp01((swingU - 0.05) / 0.6)) : 0
+  // Claws: winding up a blow (rears back, arms up over the head, then holds there trembling):
+  // the tell to get out of the way.
+  const rear = hold === 'hands' ? smooth(clamp01((pose.windup ?? 0) / 0.35)) : 0
   const recoil = gun && shotAge < 0.14 ? (1 - shotAge / 0.14) ** 2 : 0
   const kick = clamp(0.5 + (def?.kickPitch ?? 1) * 0.15, 0.5, 1.5) * recoil
 
@@ -712,6 +717,7 @@ function upright(pose: BodyPose): ModelPart[] {
     air * clamp(-vy * 0.02, -0.06, 0.08) +
     0.6 * zombieSway * Math.sin(time * 0.53 + seed * 1.7) +
     0.22 * strike -
+    0.3 * rear -
     0.04 * kick -
     0.55 * slid +
     0.45 * climbing * Math.sin(Math.PI * climb)
@@ -729,7 +735,8 @@ function upright(pose: BodyPose): ModelPart[] {
     -0.6 * hipSwing * armsFree + // shoulders swing against the hips
     -0.22 * ads * (hold === 'rifle' ? 1 : 0) + // bladed behind a long gun
     swing.turn +
-    0.3 * strike
+    0.3 * strike -
+    0.1 * rear
   const stomachRot = qMul(torso, ry(stomachYaw))
   const chestRot = qMul(torso, ry(chestYaw))
   const up = (h: number) => add(pelvis, qRotate(torso, v(0, h, 0)))
@@ -756,7 +763,8 @@ function upright(pose: BodyPose): ModelPart[] {
     clamp(pitch + g.droop, -0.75, 0.75) -
     0.07 * ads * (hold === 'rifle' ? 1 : 0.4) -
     0.15 * land +
-    0.5 * scream
+    0.5 * scream +
+    0.35 * rear
   const headRoll =
     -0.18 * ads * (hold === 'rifle' ? 1 : 0.25) +
     g.loll * Math.sin(time * 1.1 + seed) +
@@ -876,6 +884,11 @@ function upright(pose: BodyPose): ModelPart[] {
         }
         default:
           return freeHand(s)
+      }
+      // Winding up: both arms raised high and wide, shaking with the effort.
+      if (rear > 0) {
+        const shake = 0.025 * Math.sin(time * 37 + seed + s * 2)
+        at = lerpV(at, v(s * 0.36, 0.3 + shake, -0.1 - shake), rear)
       }
       // Claws: cocked up and back, then raked forward and down across (the left a beat later).
       if (swinging) {

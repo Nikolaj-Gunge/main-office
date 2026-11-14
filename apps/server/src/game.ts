@@ -70,6 +70,10 @@ import { SpawnPicker } from './spawning.ts'
 export interface ZombieMind {
   kind: number
   face(yaw: number): void
+  /** How far through winding up a blow (0–1), or 0: drawn as arms going up, and replicated. */
+  readonly windup?: number
+  /** Told after each of its swings whether it hit anyone (a miss leaves it open). */
+  struck?(landed: boolean): void
 }
 
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
@@ -720,6 +724,7 @@ export class Game {
       result: best ? ShotResult.Player : ShotResult.Nothing,
     })
     for (const p of this.players.values()) if (p !== shooter) p.client.send(swingMsg)
+    shooter.zombie?.struck?.(best !== null)
     if (!best) return
 
     // Behind them: the attacker is on the side their back faces.
@@ -1220,6 +1225,7 @@ function animationOf(p: ServerPlayer, tick: number) {
     // Never 0 while climbing (0 means not climbing), even on the tick it starts.
     mantle: s.mantle ? Math.max(0.005, s.mantle.time / s.mantle.duration) : 0,
     ledge: s.mantle ? s.mantle.to.y - s.pos.y : 0,
+    windup: s.alive ? (p.zombie?.windup ?? 0) : 0,
   }
 }
 
