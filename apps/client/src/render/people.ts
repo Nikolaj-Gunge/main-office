@@ -29,6 +29,7 @@ import {
   skullPoint,
   TORSO_SEG,
   torso,
+  torsoPoint as torsoPointCached,
 } from './figure.ts'
 import { type Dress, dressFor, wearHead } from './gear-looks.ts'
 
@@ -101,7 +102,6 @@ function torsoRing(fig: Figure, ring: number, inflate: number): THREE.Vector3[] 
     torsoPointCached(fig, (i / TORSO_SEG) * Math.PI * 2, ring, inflate),
   )
 }
-import { torsoPoint as torsoPointCached } from './figure.ts'
 
 /** A tie down the front of the shirt, from the collar to the belt. */
 export function tieOn(k: Kit, fig: Figure, color: number): void {
@@ -126,7 +126,14 @@ export function tieOn(k: Kit, fig: Figure, color: number): void {
     rings.push([y, w, 0.006, 0, front(y) - 0.014])
   }
   k.on('torso').tube(color, rings, 6, { caps: [false, false], square: 3 })
-  k.blob(shade(color, 0.85), [0.022, 0.02, 0.012], [0, 1.475, front(1.475) - 0.016], [0, 0, 0], 6, 4)
+  k.blob(
+    shade(color, 0.85),
+    [0.022, 0.02, 0.012],
+    [0, 1.475, front(1.475) - 0.016],
+    [0, 0, 0],
+    6,
+    4,
+  )
 }
 
 /** A belt with a buckle at the trouser waist. */
@@ -135,18 +142,13 @@ export function belt(k: Kit, fig: Figure, color: number, buckle: number): void {
   const high = torsoRing(fig, 3, 0.01)
   const y0 = 0.9
   const y1 = 0.935
-  k.on('torso').surface(
-    color,
-    TORSO_SEG,
-    2,
-    (u, v) => {
-      const i = Math.round(u * TORSO_SEG) % TORSO_SEG
-      const a = low[i] as THREE.Vector3
-      const b = high[i] as THREE.Vector3
-      const t = (y0 + (y1 - y0) * v - a.y) / (b.y - a.y)
-      return [a.x + (b.x - a.x) * t, y0 + (y1 - y0) * v, a.z + (b.z - a.z) * t]
-    },
-  )
+  k.on('torso').surface(color, TORSO_SEG, 2, (u, v) => {
+    const i = Math.round(u * TORSO_SEG) % TORSO_SEG
+    const a = low[i] as THREE.Vector3
+    const b = high[i] as THREE.Vector3
+    const t = (y0 + (y1 - y0) * v - a.y) / (b.y - a.y)
+    return [a.x + (b.x - a.x) * t, y0 + (y1 - y0) * v, a.z + (b.z - a.z) * t]
+  })
   const fz = (low[Math.round(TORSO_SEG * 0.75)] as THREE.Vector3).z
   k.box(buckle, [0.04, 0.03, 0.008], [0, (y0 + y1) / 2, fz - 0.004])
 }
@@ -168,7 +170,6 @@ export function shoe(upper: number, sole: number, laces?: number): Dress['feet']
 function hair(k: Kit, h: HeadShape, style: string, color: number, hatted: boolean): void {
   const dark = shade(color, 0.8)
   const streaky = (q: THREE.Vector3) => mix(color, dark, noise3(q.x * 40, q.y * 25, q.z * 40))
-  const none = () => 0
   switch (style) {
     case 'bald':
     case 'buzz':
@@ -177,11 +178,17 @@ function hair(k: Kit, h: HeadShape, style: string, color: number, hatted: boolea
       hairCap(k, h, streaky, { front: 0.3, side: 0.42, back: 0.6 }, (t) => 0.012 * Math.cos(t))
       return
     case 'side part':
-      hairCap(k, h, (q) => (Math.abs(q.x + 0.035) < 0.006 && q.y > 0.07 ? shade(color, 0.6) : streaky(q)), {
-        front: 0.27,
-        side: 0.42,
-        back: 0.6,
-      }, (t, phi) => 0.016 * Math.cos(t) + 0.012 * Math.max(0, Math.cos(phi)) * Math.sin(t * 2))
+      hairCap(
+        k,
+        h,
+        (q) => (Math.abs(q.x + 0.035) < 0.006 && q.y > 0.07 ? shade(color, 0.6) : streaky(q)),
+        {
+          front: 0.27,
+          side: 0.42,
+          back: 0.6,
+        },
+        (t, phi) => 0.016 * Math.cos(t) + 0.012 * Math.max(0, Math.cos(phi)) * Math.sin(t * 2),
+      )
       return
     case 'messy':
       hairCap(k, h, streaky, { front: 0.3, side: 0.44, back: 0.62 }, (t, phi) =>
@@ -192,12 +199,29 @@ function hair(k: Kit, h: HeadShape, style: string, color: number, hatted: boolea
       if (hatted) return
       for (let i = 0; i < 6; i++) {
         const theta = -0.1 + i * 0.15
-        const q = skullPoint(h, Math.abs(theta) * Math.PI, theta < 0 ? Math.PI * 1.5 : Math.PI * 0.5)
-        k.on('head').blob(color, [0.016, 0.05 - i * 0.003, 0.032], [0, q.y + 0.02, q.z], [theta * 2.2, 0, 0], 6, 4)
+        const q = skullPoint(
+          h,
+          Math.abs(theta) * Math.PI,
+          theta < 0 ? Math.PI * 1.5 : Math.PI * 0.5,
+        )
+        k.on('head').blob(
+          color,
+          [0.016, 0.05 - i * 0.003, 0.032],
+          [0, q.y + 0.02, q.z],
+          [theta * 2.2, 0, 0],
+          6,
+          4,
+        )
       }
       return
     case 'bob':
-      hairCap(k, h, streaky, { front: 0.25, side: 0.72, back: 0.72 }, (t) => 0.012 + 0.03 * step(0.3, 0.7, t / Math.PI))
+      hairCap(
+        k,
+        h,
+        streaky,
+        { front: 0.25, side: 0.72, back: 0.72 },
+        (t) => 0.012 + 0.03 * step(0.3, 0.7, t / Math.PI),
+      )
       return
     case 'ponytail': {
       hairCap(k, h, streaky, { front: 0.3, side: 0.45, back: 0.62 }, () => 0.006)
@@ -235,10 +259,9 @@ function hair(k: Kit, h: HeadShape, style: string, color: number, hatted: boolea
     }
     case 'bun':
       hairCap(k, h, streaky, { front: 0.3, side: 0.45, back: 0.6 }, () => 0.006)
-      if (!hatted) k.on('head').blob(color, [0.045, 0.04, 0.045], [0, 0.135, 0.06], [0, 0, 0], 8, 6, streaky)
+      if (!hatted)
+        k.on('head').blob(color, [0.045, 0.04, 0.045], [0, 0.135, 0.06], [0, 0, 0], 8, 6, streaky)
       return
-    default:
-      void none
   }
 }
 
@@ -255,13 +278,16 @@ function skullPaint(h: HeadShape, skin: number, hairColor: number, style: string
       Math.hypot(q.x + 0.037, q.y - 0.024, q.z - eyeZ),
     )
     c = shade(c, 0.88 + 0.12 * step(0.012, 0.035, dEye))
-    if (q.z < 0 && q.y < 0 && q.y > -0.06) c = mix(c, 0xd06050, 0.06 * step(0.03, 0.06, Math.abs(q.x)))
+    if (q.z < 0 && q.y < 0 && q.y > -0.06)
+      c = mix(c, 0xd06050, 0.06 * step(0.03, 0.06, Math.abs(q.x)))
     // Hairline for a buzz cut.
     const front = -q.z
-    const hairline = front > 0 ? 0.075 - front * 0.0 : 0.02 - 0.5 * q.z
     if (buzz && q.y > (front > 0.05 ? 0.07 : -0.03)) c = mix(c, hairColor, sides ? 0.35 : 0.65)
-    void hairline
-    if ((beard === 'stubble' || beard === 'full' || beard === 'goatee') && q.y < -0.025 && q.z < 0.05) {
+    if (
+      (beard === 'stubble' || beard === 'full' || beard === 'goatee') &&
+      q.y < -0.025 &&
+      q.z < 0.05
+    ) {
       const lips = Math.abs(q.x) < 0.03 && q.y > -0.075 && q.y < -0.045 && q.z < -0.07
       if (!lips) c = mix(c, hairColor, beard === 'stubble' ? 0.32 : 0.5)
     }
@@ -291,8 +317,7 @@ export function personMesh(spec: PersonSpec, own: number): BodyMesh {
   const style = robot || slime ? 'bald' : pickOf(HAIR_STYLES, a.hair)
   const beard = robot || slime ? 'none' : pickOf(BEARDS, a.beard)
   const headLook = spec.gear === null ? 0 : spec.gear & 15
-  const dress: Dress =
-    spec.gear === null ? officeDress(spec.colorIndex) : dressFor(spec.gear, fig)
+  const dress: Dress = spec.gear === null ? officeDress(spec.colorIndex) : dressFor(spec.gear, fig)
 
   // Torso: the top (or skin), trousers over the hips.
   const legColor = dress.legColor
@@ -311,7 +336,9 @@ export function personMesh(spec: PersonSpec, own: number): BodyMesh {
   )
   fists(k, skin, 1, robot ? 0x5a606a : undefined)
   const wear: Legwear = dress.legs ?? BARE_LEGS
-  legs(k, fig, wear, (q) => (q.y >= wear.hem ? fold(dress.legPaint?.(q) ?? legColor, q, 0.1) : skin))
+  legs(k, fig, wear, (q) =>
+    q.y >= wear.hem ? fold(dress.legPaint?.(q) ?? legColor, q, 0.1) : skin,
+  )
   if (dress.feet) feet(k, dress.feet.paint, dress.feet.size)
   else feet(k, (q) => (q.z < -0.13 && q.y > -0.215 ? shade(skin, 0.94) : skin))
   dress.extras?.(k, fig)
@@ -319,12 +346,27 @@ export function personMesh(spec: PersonSpec, own: number): BodyMesh {
   // Head.
   skull(k, h, robot || slime ? () => skin : skullPaint(h, skin, hairColor, style, beard))
   if (robot) {
-    k.on('head').blob(0x5ff2ff, [0.075, 0.022, 0.03], [0, 0.02, faceZ(h, 0, 0.02) + 0.018], [0, 0, 0], 10, 4)
+    k.on('head').blob(
+      0x5ff2ff,
+      [0.075, 0.022, 0.03],
+      [0, 0.02, faceZ(h, 0, 0.02) + 0.018],
+      [0, 0, 0],
+      10,
+      4,
+    )
     k.box(0x3c424c, [0.012, 0.12, 0.012], [0.06, 0.17, 0])
     k.blob(OWN | 0xffffff, [0.03, 0.03, 0.03], [0.06, 0.24, 0], [0, 0, 0], 8, 6)
-    for (const s of [-1, 1]) k.blob(0x3c424c, [0.02, 0.04, 0.04], [s * 0.098, 0, 0.01], [0, 0, 0], 6, 4)
+    for (const s of [-1, 1])
+      k.blob(0x3c424c, [0.02, 0.04, 0.04], [s * 0.098, 0, 0.01], [0, 0, 0], 6, 4)
   } else if (slime) {
-    k.on('head').blob(0x1b1d2a, [0.08, 0.026, 0.03], [0, 0.02, faceZ(h, 0, 0.02) + 0.016], [0, 0, 0], 10, 4)
+    k.on('head').blob(
+      0x1b1d2a,
+      [0.08, 0.026, 0.03],
+      [0, 0.02, faceZ(h, 0, 0.02) + 0.016],
+      [0, 0, 0],
+      10,
+      4,
+    )
     if (headLook === 0) slimeHat(k, h, spec.colorIndex)
   } else {
     const iris = pickOf(EYE_COLORS, a.eyes)
@@ -356,7 +398,14 @@ function slimeHat(k: Kit, h: HeadShape, colorIndex: number): void {
   const color = pickOf(HAT_COLORS, colorIndex)
   const top = h.cy + h.ry
   k.on('head').rigid()
-  k.tube(color, [[top - 0.03, 0.2, 0.2], [top - 0.02, 0.2, 0.2]], 14)
+  k.tube(
+    color,
+    [
+      [top - 0.03, 0.2, 0.2],
+      [top - 0.02, 0.2, 0.2],
+    ],
+    14,
+  )
   if (colorIndex % 2 === 0) {
     k.tube(
       color,
@@ -367,7 +416,15 @@ function slimeHat(k: Kit, h: HeadShape, colorIndex: number): void {
       ],
       12,
     )
-    k.tube(0x111111, [[top - 0.015, 0.118, 0.128], [top + 0.01, 0.116, 0.126]], 12, { caps: [false, false] })
+    k.tube(
+      0x111111,
+      [
+        [top - 0.015, 0.118, 0.128],
+        [top + 0.01, 0.116, 0.126],
+      ],
+      12,
+      { caps: [false, false] },
+    )
   } else {
     k.blob(color, [0.125, 0.1, 0.13], [0, top - 0.02, 0], [0, 0, 0], 12, 6)
   }

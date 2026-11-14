@@ -52,18 +52,24 @@ const tint = new THREE.Color()
 const p = new THREE.Vector3()
 
 export interface SurfaceOptions {
-  colorFn?: ColorFn
+  colorFn?: ColorFn | undefined
   /** Close the first / last ring to a single point (poles). */
-  poles?: readonly [boolean, boolean]
+  poles?: readonly [boolean, boolean] | undefined
   /** An open sheet: u runs 0 → 1 inclusive and doesn't wrap round. */
-  open?: boolean
-  at?: Vec
-  rot?: Vec
-  stretch?: Vec
+  open?: boolean | undefined
+  at?: Vec | undefined
+  rot?: Vec | undefined
+  stretch?: Vec | undefined
 }
 
 /** One ring of a tube: height, half-width (x), half-depth (z), centre offset (x, z). */
-export type Ring = readonly [y: number, rx: number, rz: number, x?: number, z?: number]
+export type Ring = readonly [
+  y: number,
+  rx: number,
+  rz: number,
+  x?: number | undefined,
+  z?: number | undefined,
+]
 
 export class Kit {
   private readonly pieces: Piece[] = []
@@ -95,7 +101,14 @@ export class Kit {
 
   /** A smooth lump (tumours, sacks, muscle). */
   lump(look: Look, radius: number, at: Vec, stretch: Vec = ONE, rot: Vec = ZERO): this {
-    return this.blob(look, [radius * stretch[0], radius * stretch[1], radius * stretch[2]], at, rot)
+    return this.blob(
+      look,
+      [radius * stretch[0], radius * stretch[1], radius * stretch[2]],
+      at,
+      rot,
+      10,
+      7,
+    )
   }
 
   /** A smooth ellipsoid with half-axes `r`. */
@@ -138,8 +151,10 @@ export class Kit {
     const last = rings[rings.length - 1] as Ring
     // A cap is a point just beyond the end ring (a rounded end, not a flat lid).
     const dir = Math.sign(last[0] - first[0]) || 1
-    if (caps[0]) all.unshift([first[0] - dir * Math.min(first[1], first[2]) * 0.5, 0, 0, first[3], first[4]])
-    if (caps[1]) all.push([last[0] + dir * Math.min(last[1], last[2]) * 0.5, 0, 0, last[3], last[4]])
+    if (caps[0])
+      all.unshift([first[0] - dir * Math.min(first[1], first[2]) * 0.5, 0, 0, first[3], first[4]])
+    if (caps[1])
+      all.push([last[0] + dir * Math.min(last[1], last[2]) * 0.5, 0, 0, last[3], last[4]])
     const e = 2 / (opts.square ?? 2)
     return this.surface(
       look,
@@ -251,7 +266,8 @@ export class Kit {
     if (typeof look !== 'number') slot = look
     // The 4th channel flags the wearer's own colour (resolved at build).
     g.setAttribute('color', new THREE.BufferAttribute(colors, 4))
-    if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2))
+    if (!g.getAttribute('uv'))
+      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2))
     matrix.compose(
       position.set(at[0], at[1], at[2]),
       rotation.setFromEuler(euler.set(rot[0], rot[1], rot[2])),
@@ -289,7 +305,10 @@ export class Kit {
       for (const piece of this.pieces) {
         if (piece.slot !== slot) continue
         const g = piece.geometry
-        const rest = typeof piece.place === 'string' && piece.place in REST ? REST[piece.place as RigBone] : null
+        const rest =
+          typeof piece.place === 'string' && piece.place in REST
+            ? REST[piece.place as RigBone]
+            : null
         if (rest) normal.getNormalMatrix(rest)
         const pos = g.getAttribute('position')
         const nor = g.getAttribute('normal')
@@ -364,7 +383,12 @@ export function recolor(mesh: BodyMesh, color: number): void {
   const { index, mult } = mesh.own
   for (let i = 0; i < index.length; i++) {
     const at = index[i] as number
-    attr.setXYZ(at, (mult[i * 3] as number) * c.r, (mult[i * 3 + 1] as number) * c.g, (mult[i * 3 + 2] as number) * c.b)
+    attr.setXYZ(
+      at,
+      (mult[i * 3] as number) * c.r,
+      (mult[i * 3 + 1] as number) * c.g,
+      (mult[i * 3 + 2] as number) * c.b,
+    )
   }
   attr.needsUpdate = true
 }

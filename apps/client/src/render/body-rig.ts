@@ -88,7 +88,13 @@ export const REST: Record<RigBone, THREE.Matrix4> = (() => {
 export const REST_INVERSE = BONES.map((b) => REST[b].clone().invert())
 
 /** Model-space heights of the joints (for modelling across them). */
-export const JOINTS = { hip: HIP_Y, waist: WAIST_Y, neck: NECK_Y, knee: KNEE_Y, shoulder: SHOULDER_Y }
+export const JOINTS = {
+  hip: HIP_Y,
+  waist: WAIST_Y,
+  neck: NECK_Y,
+  knee: KNEE_Y,
+  shoulder: SHOULDER_Y,
+}
 
 const smooth = (t: number) => {
   const x = Math.max(0, Math.min(1, t))

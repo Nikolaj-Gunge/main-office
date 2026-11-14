@@ -48,8 +48,8 @@ const TORSO_Y = [
   1.53, 1.6,
 ]
 const TORSO_M: readonly (readonly [number, number, number])[] = [
-  [0.1, 0.07, 0.0],
-  [0.15, 0.095, 0.004],
+  [0.05, 0.05, 0.0],
+  [0.13, 0.09, 0.004],
   [0.163, 0.104, 0.008],
   [0.168, 0.108, 0.01],
   [0.161, 0.104, 0.004],
@@ -68,8 +68,8 @@ const TORSO_M: readonly (readonly [number, number, number])[] = [
   [0.052, 0.05, -0.004],
 ]
 const TORSO_F: readonly (readonly [number, number, number])[] = [
-  [0.11, 0.075, 0.0],
-  [0.165, 0.1, 0.006],
+  [0.055, 0.05, 0.0],
+  [0.145, 0.095, 0.006],
   [0.178, 0.108, 0.012],
   [0.18, 0.11, 0.014],
   [0.162, 0.1, 0.006],
@@ -103,7 +103,7 @@ export function torsoPoint(fig: Figure, a: number, i: number, inflate = 0): THRE
   // Shoulders, girth and waist only below the neck.
   const body = 1 - step(1.47, 1.52, y)
   const shoulder = step(1.3, 1.42, y) * (1 - step(1.46, 1.5, y))
-  hw *= 1 + body * ((fig.girth - 1) + shoulder * (fig.shoulders - 1))
+  hw *= 1 + body * (fig.girth - 1 + shoulder * (fig.shoulders - 1))
   hd *= 1 + body * (fig.depth - 1)
   const waistBand = Math.exp(-(((y - 1.08) / 0.1) ** 2))
   hw *= 1 - (1 - fig.waist) * waistBand
@@ -233,8 +233,8 @@ export function legs(k: Kit, fig: Figure, wear: Legwear, paint: Paint): void {
 
 /** Arm shape (arm space: shoulder at y = -0.28, wrist at +0.28). */
 const ARM_RINGS: readonly Ring[] = [
-  [-0.32, 0.04, 0.042],
-  [-0.27, 0.056, 0.058],
+  [-0.3, 0.034, 0.036],
+  [-0.26, 0.052, 0.054],
   [-0.19, 0.052, 0.054],
   [-0.09, 0.047, 0.049],
   [0.0, 0.041, 0.043],
@@ -275,11 +275,16 @@ export function fists(k: Kit, color: number, scale = 1, nails?: number): void {
       [0.3, 0, 0],
       8,
       5,
-      nails === undefined
-        ? undefined
-        : (q) => (q.z < -z(0.012) && q.y > z(0.005) ? nails : color),
+      nails === undefined ? undefined : (q) => (q.z < -z(0.012) && q.y > z(0.005) ? nails : color),
     )
-    k.blob(color, [z(0.012), z(0.03), z(0.013)], [s * z(0.028), z(0.06), z(-0.022)], [-0.5, 0, s * 0.5], 6, 4)
+    k.blob(
+      color,
+      [z(0.012), z(0.03), z(0.013)],
+      [s * z(0.028), z(0.06), z(-0.022)],
+      [-0.5, 0, s * 0.5],
+      6,
+      4,
+    )
   }
 }
 
@@ -287,32 +292,38 @@ export function fists(k: Kit, color: number, scale = 1, nails?: number): void {
 export function feet(
   k: Kit,
   paint: (q: THREE.Vector3) => number,
-  size: { length: number; width: number; height: number } = { length: 0.12, width: 0.045, height: 0.04 },
+  size: { length: number; width: number; height: number } = {
+    length: 0.12,
+    width: 0.045,
+    height: 0.04,
+  },
 ): void {
   const { length, width, height } = size
   const sole = -0.23
   for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin).rigid().surface(
-      0xffffff,
-      12,
-      8,
-      (u, v) => {
-        const theta = v * Math.PI
-        const phi = u * Math.PI * 2
-        const dx = Math.sin(theta) * Math.cos(phi)
-        const dy = Math.cos(theta)
-        const dz = Math.sin(theta) * Math.sin(phi)
-        // Toes wider than the heel, a flat sole, an instep rising to the ankle.
-        const toe = Math.max(0, -dz)
-        const x = dx * width * (0.85 + 0.25 * toe)
-        let y = dy * height
-        if (y < -height * 0.55) y = -height * 0.55
-        y += height * 0.4 * Math.max(0, dz) * Math.max(0, dy) // heel up into the ankle
-        const z = dz * length
-        return [x, sole + height * 0.55 + y, z - length * 0.38]
-      },
-      { colorFn: (q) => paint(q), poles: [true, true] },
-    )
+    k.on(shin)
+      .rigid()
+      .surface(
+        0xffffff,
+        12,
+        8,
+        (u, v) => {
+          const theta = v * Math.PI
+          const phi = u * Math.PI * 2
+          const dx = Math.sin(theta) * Math.cos(phi)
+          const dy = Math.cos(theta)
+          const dz = Math.sin(theta) * Math.sin(phi)
+          // Toes wider than the heel, a flat sole, an instep rising to the ankle.
+          const toe = Math.max(0, -dz)
+          const x = dx * width * (0.85 + 0.25 * toe)
+          let y = dy * height
+          if (y < -height * 0.55) y = -height * 0.55
+          y += height * 0.4 * Math.max(0, dz) * Math.max(0, dy) // heel up into the ankle
+          const z = dz * length
+          return [x, sole + height * 0.55 + y, z - length * 0.38]
+        },
+        { colorFn: (q) => paint(q), poles: [true, true] },
+      )
     k.rigid(false)
   }
 }
@@ -466,7 +477,14 @@ export function face(
   const n = o.noseSize ?? 1
   const nz = faceZ(h, 0, -0.005)
   k.blob(o.skin, [0.012 * n, 0.03 * n, 0.016 * n], [0, -0.002, nz - 0.004], [-0.3, 0, 0], 6, 5)
-  k.blob(mix(o.skin, 0xb05040, 0.12), [0.017 * n, 0.013 * n, 0.015 * n], [0, -0.03, nz - 0.012], [0, 0, 0], 6, 4)
+  k.blob(
+    mix(o.skin, 0xb05040, 0.12),
+    [0.017 * n, 0.013 * n, 0.015 * n],
+    [0, -0.03, nz - 0.012],
+    [0, 0, 0],
+    6,
+    4,
+  )
   const mz = faceZ(h, 0, -0.06)
   k.blob(o.lips, [0.024, 0.0065, 0.008], [0, -0.058, mz + 0.002], [0, 0, 0], 6, 4)
 }
