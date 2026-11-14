@@ -891,10 +891,15 @@ export class Game {
     zombie.zombie?.face(spawn.yaw)
   }
 
-  /** Renames a pooled zombie (survival: someone who turned), telling every client. */
-  nameZombie(zombie: ServerPlayer, name: string): void {
-    if (zombie.name === name) return
+  /**
+   * Renames a pooled zombie (survival: someone who turned, drawn with their `appearance`; none
+   * for a plain zombie), telling every client.
+   */
+  nameZombie(zombie: ServerPlayer, name: string, appearance?: number): void {
+    if (zombie.name === name && zombie.appearance === appearance) return
     zombie.name = name
+    if (appearance === undefined) delete zombie.appearance
+    else zombie.appearance = appearance
     this.broadcast(joinedMessage(zombie))
   }
 

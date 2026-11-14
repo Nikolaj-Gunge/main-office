@@ -457,6 +457,12 @@ describe('survival: the bite', () => {
     expect(risen.name).toBe('P0 (turned)')
     expect(Math.hypot(risen.state.pos.x - where.x, risen.state.pos.z - where.z)).toBeLessThan(1)
     expect(t.game.match.gearOf(risen)).toBe(gearLooks(['policevest']))
+    // Drawn as you (your face and build, dead): everyone is sent your look with the new name.
+    expect(risen.appearance).toBe(t.player().appearance)
+    const joined = t.clients[1]?.inbox.findLast(
+      (m) => m.type === ServerMsg.PlayerJoined && m.id === risen.id,
+    )
+    expect(joined).toMatchObject({ name: 'P0 (turned)', appearance: t.player().appearance })
     const stuff = insides(t).turned.get(risen.id)?.stuff ?? []
     for (const item of ['beans', 'policevest', 'cash', 'glock', 'knife'])
       expect(stuff.some((s) => s.item === item)).toBe(true)
@@ -489,6 +495,27 @@ describe('survival: the bite', () => {
     expect(s.weapon.id).toBe(WeaponId.Handgun)
     const haven = t.def.pois.find((p) => p.key === 'haven')
     expect(Math.hypot(s.pos.x - (haven?.x ?? 0), s.pos.z - (haven?.z ?? 0))).toBeLessThan(15)
+  })
+
+  test('people who die wake at Haven apart, not inside each other', () => {
+    const t = setup(2)
+    t.run(1)
+    for (let round = 0; round < 6; round++) {
+      for (const id of t.ids) t.game.killPlayer(id, id)
+      t.run(7)
+      const people = t.ids.map((id) => t.game.players.get(id)?.state)
+      for (const [i, a] of people.entries()) {
+        expect(a?.alive).toBe(true)
+        for (const b of people.slice(i + 1)) {
+          if (!a || !b) throw new Error('nobody')
+          expect(Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z)).toBeGreaterThan(1)
+        }
+        for (const npc of t.def.npcs) {
+          if (!a) continue
+          expect(Math.hypot(a.pos.x - npc.pos[0], a.pos.z - npc.pos[2])).toBeGreaterThan(1)
+        }
+      }
+    }
   })
 
   test('turning inside Haven: the guards see to it, and your things stay there', () => {

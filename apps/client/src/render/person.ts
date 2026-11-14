@@ -58,6 +58,7 @@ const TIE_COLORS = [0x1f2a44, 0x7a1f2b, 0x2d4a3a, 0x3b2d4f, 0x8a6a1f, 0x1c1c1c]
 const TROUSERS = 0x2f3440
 const SHOES = 0x1a1a1a
 const TANK_TOP = 0xeeeeea
+const BLOOD = 0x5a1212
 
 /** Narrower shoulders and waist, wider hips for the feminine build (looks only). */
 export function build(body: number): { chest: number; waist: number; hips: number } {
@@ -71,26 +72,39 @@ const mix = (a: number, b: number, t: number): number =>
 
 const cache = new Map<string, PersonBody>()
 
-/** The baked body of a person in an outfit (`colorIndex` picks the office tie). */
-export function personBody(look: Appearance, outfit: Outfit, colorIndex: number): PersonBody {
+/** A skin tone gone grey-green and dead (survivors who turned). */
+export const undeadSkin = (skin: number): number => mix(mix(skin, 0x7c8a66, 0.6), 0x000000, 0.12)
+
+/**
+ * The baked body of a person in an outfit (`colorIndex` picks the office tie). `undead`: the same
+ * person after they turned: dead skin, glowing eyes ('eyes' slot), a bloody mouth and a filthy,
+ * bloodied top.
+ */
+export function personBody(
+  look: Appearance,
+  outfit: Outfit,
+  colorIndex: number,
+  undead = false,
+): PersonBody {
   const tie = outfit === 'office' ? ((colorIndex % 6) + 6) % 6 : 0
-  const key = `${outfit}:${packAppearance(look)}:${tie}`
+  const key = `${outfit}:${packAppearance(look)}:${tie}:${undead ? 'u' : ''}`
   let body = cache.get(key)
   if (!body) {
-    body = bakePerson(look, outfit, pickOf(TIE_COLORS, tie))
+    body = bakePerson(look, outfit, pickOf(TIE_COLORS, tie), undead)
     cache.set(key, body)
   }
   return body
 }
 
-function bakePerson(a: Appearance, outfit: Outfit, tie: number): PersonBody {
-  const skin = pickOf(SKIN_TONES, a.skin)
+function bakePerson(a: Appearance, outfit: Outfit, tie: number, undead: boolean): PersonBody {
+  const own = pickOf(SKIN_TONES, a.skin)
+  const skin = undead ? undeadSkin(own) : own
   const hairColor = pickOf(HAIR_COLORS, a.hairColor)
   const shape = build(a.body)
   const base = new Kit()
   const crown = new Kit()
   const beard = new Kit()
-  face(base, a, skin, hairColor)
+  face(base, a, skin, hairColor, undead)
   const style = HAIR_STYLES[a.hair] ?? 'bald'
   HAIR[style](crown.on('head'), base.on('head'), hairColor, skin)
   if (a.beard > 0) BEARD[a.beard]?.(beard.on('head'), hairColor, skin)
@@ -133,6 +147,13 @@ function bakePerson(a: Appearance, outfit: Outfit, tie: number): PersonBody {
       base.box(skin, [0.105, L * 0.5, 0.115], [0, L / 4, 0]) // forearm and hand
     }
   }
+  if (undead) {
+    // Blood down the front and a bitten forearm.
+    base.on('chest').box(BLOOD, [0.16, 0.12, 0.012], [0.03, 0.06, -C.z - 0.01])
+    base.box(BLOOD, [0.06, 0.2, 0.012], [-0.06, -0.04, -C.z - 0.01])
+    base.on('stomach').box(BLOOD, [0.1, 0.12, 0.012], [-0.04, 0.03, -S.z - 0.01])
+    base.on('armL').box(BLOOD, [0.11, 0.08, 0.12], [0, L / 4 + 0.04, 0])
+  }
 
   const baked = (k: Kit) => {
     const b = k.bake()
@@ -146,8 +167,8 @@ function bakePerson(a: Appearance, outfit: Outfit, tie: number): PersonBody {
   }
 }
 
-/** Head, neck, ears, eyes, brows, nose and mouth. */
-function face(k: Kit, a: Appearance, skin: number, hair: number): void {
+/** Head, neck, ears, eyes, brows, nose and mouth (`undead`: glowing eyes, a bloody mouth). */
+function face(k: Kit, a: Appearance, skin: number, hair: number, undead = false): void {
   const shade = mix(skin, 0x000000, 0.18)
   k.on('head').box(skin, [H.x * 2, H.y * 2, H.z * 2])
   k.box(skin, [0.13, 0.07, 0.13], [0, -H.y - 0.03, 0.01]) // neck
@@ -155,9 +176,12 @@ function face(k: Kit, a: Appearance, skin: number, hair: number): void {
   // Eyes: a white, the iris in the chosen colour, a dark pupil; brows in the hair colour.
   const iris = pickOf(EYE_COLORS, a.eyes)
   for (const s of SIDES) {
-    k.box(0xf4f1ea, [0.056, 0.036, 0.01], [s * 0.066, 0.025, FZ - 0.003])
-    k.box(iris, [0.03, 0.036, 0.012], [s * 0.062, 0.025, FZ - 0.004])
-    k.box(0x0c0c0e, [0.014, 0.018, 0.013], [s * 0.062, 0.025, FZ - 0.005])
+    if (undead) k.box('eyes', [0.056, 0.036, 0.01], [s * 0.066, 0.025, FZ - 0.003])
+    else {
+      k.box(0xf4f1ea, [0.056, 0.036, 0.01], [s * 0.066, 0.025, FZ - 0.003])
+      k.box(iris, [0.03, 0.036, 0.012], [s * 0.062, 0.025, FZ - 0.004])
+      k.box(0x0c0c0e, [0.014, 0.018, 0.013], [s * 0.062, 0.025, FZ - 0.005])
+    }
     k.box(hair, [0.072, 0.016, 0.012], [s * 0.066, 0.063, FZ - 0.003])
   }
   if (a.body === 1)
@@ -165,6 +189,10 @@ function face(k: Kit, a: Appearance, skin: number, hair: number): void {
   k.box(shade, [0.04, 0.055, 0.03], [0, -0.022, FZ - 0.012]) // nose
   const lips = a.body === 1 ? mix(skin, 0xa83a44, 0.45) : mix(skin, 0x5a2a22, 0.45)
   k.box(lips, [0.085, 0.016, 0.01], [0, -0.088, FZ - 0.004])
+  if (undead) {
+    k.box(0x1a0606, [0.09, 0.03, 0.012], [0, -0.09, FZ - 0.005]) // hanging open
+    k.box(BLOOD, [0.03, 0.06, 0.012], [0.03, -0.12, FZ - 0.005]) // and dripping
+  }
 }
 
 type Hair = (crown: Kit, rest: Kit, color: number, skin: number) => void

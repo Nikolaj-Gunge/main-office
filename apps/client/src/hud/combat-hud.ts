@@ -40,6 +40,8 @@ export class CombatHud {
   private readonly death: HTMLDivElement
   private readonly prompt: HTMLDivElement
   private lastGap = -1
+  /** In a game (see setJoined). */
+  private joined = false
   private readonly slots: HTMLDivElement
   private readonly scope: HTMLDivElement
   private readonly breathFill: HTMLDivElement
@@ -97,6 +99,17 @@ export class CombatHud {
     this.death.hidden = true
 
     this.setHealth(100)
+    this.setJoined(false)
+  }
+
+  /**
+   * Out of a game (the menu before you join, or after the connection drops) the weapon readout
+   * is hidden: until the server says, what's in hand is only the local default (the arena's
+   * handgun, even on a survival map).
+   */
+  setJoined(joined: boolean): void {
+    this.joined = joined
+    this.ammo.hidden = !joined
   }
 
   setHealth(health: number): void {
@@ -242,7 +255,8 @@ export class CombatHud {
   }
 
   setVisible(visible: boolean): void {
-    for (const node of [this.healthBox, this.ammo, this.crosshair]) node.hidden = !visible
+    for (const node of [this.healthBox, this.crosshair]) node.hidden = !visible
+    this.ammo.hidden = !visible || !this.joined
   }
 
   /** Re-aims the damage arcs as you turn, and fades them. */

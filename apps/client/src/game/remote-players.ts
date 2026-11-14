@@ -20,7 +20,7 @@ interface Remote {
   color: number
   /** 0 = a person or bot; a ZombieKind for zombies (they keep their own look). */
   kind: number
-  /** Their character (creator look); undefined for zombies. */
+  /** Their character (creator look); undefined for zombies, except survivors who turned. */
   appearance?: Appearance
   avatar: Avatar
   buffer: InterpolationBuffer
@@ -81,10 +81,13 @@ export class RemotePlayers {
     return this.players.size
   }
 
-  /** @param appearance their packed look (PlayerJoined), absent for zombies */
+  /**
+   * @param appearance their packed look (PlayerJoined); absent for zombies, except survivors who
+   *                   turned (drawn as themselves, dead)
+   */
   add(id: number, name: string, color: number, kind = 0, appearance?: number): void {
     this.remove(id)
-    const look = kind === 0 && appearance !== undefined ? unpackAppearance(appearance) : undefined
+    const look = appearance !== undefined ? unpackAppearance(appearance) : undefined
     const avatar = new Avatar(name, bodyColor(id, color, kind), lookOf(kind, this.skin), look)
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)

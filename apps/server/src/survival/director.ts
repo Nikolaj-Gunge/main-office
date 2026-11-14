@@ -2,6 +2,7 @@ import {
   AMMO_BOX,
   addStack,
   ammoItem,
+  BITTEN_STORY,
   BOARD_REACH,
   capacityOf,
   carried,
@@ -349,8 +350,19 @@ export class SurvivalDirector {
     // Somebody new walks in at Haven: by the fire, facing it.
     const haven = this.def.pois.find((p) => p.key === 'haven')
     if (!haven) return start
-    const x = haven.x + (this.random() - 0.5) * 5
-    return { pos: [x, haven.y + 0.1, haven.z + 9], yaw: 0 }
+    // Not inside somebody already standing there (people pass through each other): of a few
+    // spots along the fire's south side, the one furthest from anyone, NPCs included.
+    const others: Point[] = this.def.npcs.map((n) => ({ x: n.pos[0], y: n.pos[1], z: n.pos[2] }))
+    for (const p of this.game.players.values())
+      if (p !== player && p.state.alive) others.push(p.state.pos)
+    let best = { x: haven.x, z: haven.z + 9, room: -1 }
+    for (let i = 0; i < 8 && best.room < 1.5; i++) {
+      const x = haven.x + (this.random() - 0.5) * 8
+      const z = haven.z + 8 + this.random() * 2
+      const room = Math.min(Infinity, ...others.map((o) => Math.hypot(o.x - x, o.z - z)))
+      if (room > best.room) best = { x, z, room }
+    }
+    return { pos: [best.x, haven.y + 0.1, best.z], yaw: 0 }
   }
 
   /** What you wake up with: the weapons you carried, loaded as they were. */
@@ -438,11 +450,7 @@ export class SurvivalDirector {
     if (sv && attacker.zombie && amount > 0 && victim.health > 0 && sv.self.infected === null) {
       sv.self.infected = INFECTION_SECONDS
       sv.dirty = true
-      this.notice(
-        victim,
-        'story',
-        'Bitten.\n\nThe wound burns. You have maybe twenty minutes before you turn.\n\nAdrenaline holds it back. Only a cure stops it.',
-      )
+      this.notice(victim, 'story', BITTEN_STORY)
     }
     if (sv && attacker.zombie && amount >= 8 && !sv.self.bleeding && this.random() < 0.3) {
       sv.self.bleeding = true
@@ -537,7 +545,7 @@ export class SurvivalDirector {
     this.place(zombie, ZombieKind.Walker, -1, false, at)
     zombie.zombie?.face(victim.state.yaw)
     this.turned.set(zombie.id, { stuff, look })
-    this.game.nameZombie(zombie, `${who} (turned)`)
+    this.game.nameZombie(zombie, `${who} (turned)`, victim.appearance)
     for (const sv of this.survivors.values()) {
       if (sv.player === victim) continue
       const near = dist(sv.player.state.pos, at) < 150
