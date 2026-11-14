@@ -1097,6 +1097,30 @@ function held(tool: THREE.Group, hold: Hold): GunModel {
   }
 }
 
+/** Bare fists: a balled right hand up in front of you, thrown forward like the knife. */
+function fists(): GunModel {
+  const group = new THREE.Group()
+  const muzzle = marker(0, 0, -0.12)
+  const ejectPort = marker(0, 0, 0)
+  group.add(
+    hand(0.06, 0.06, 0.07, 0, 0, -0.01), // the fist
+    hand(0.056, 0.018, 0.02, 0, 0.022, -0.05), // knuckles
+    hand(0.02, 0.03, 0.045, -0.037, -0.008, -0.02), // thumb across
+    sleeve(0.065, 0.075, 0.26, 0.01, -0.02, 0.15),
+    muzzle,
+    ejectPort,
+  )
+  return {
+    group,
+    muzzle,
+    ejectPort,
+    hip: new THREE.Vector3(0.18, -0.2, -0.4),
+    ads: new THREE.Vector3(0.18, -0.2, -0.4),
+    recoil: light,
+    melee: true,
+  }
+}
+
 /** The melee weapons as they lie (no hand, flat), for the world. */
 const TOOLS: Partial<Record<WeaponId, () => THREE.Group>> = {
   [WeaponId.Bat]: bat,
@@ -1184,6 +1208,7 @@ const BUILDERS: Record<SurvivalWeaponId, () => GunModel> = {
   [WeaponId.Svd]: svd,
   [WeaponId.Barrett]: barrett,
   [WeaponId.Crossbow]: crossbow,
+  [WeaponId.Fists]: fists,
 }
 
 /** A first-person model of every survival weapon, by weapon id. */

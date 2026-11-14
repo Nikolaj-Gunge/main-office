@@ -236,8 +236,11 @@ export function startCabin(s: Site): void {
     FLOOR + 0.85,
     -0.3,
     'Read the note',
-    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nThere are planks by the door. If they come, nail them across it and keep quiet. It holds a while. Not forever.\n\nDon't sleep outside the walls.\n— Hollis",
+    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol and the knife. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nThere are planks by the door. If they come, nail them across it and keep quiet. It holds a while. Not forever.\n\nDon't sleep outside the walls.\n— Hollis",
   )
+  // Hollis' pistol and knife beside the note: everybody who wakes here finds their own.
+  s.starter(-0.3, FLOOR + 0.79, -0.35, 'glock', 12)
+  s.starter(-0.55, FLOOR + 0.79, -0.05, 'knife')
   shelf(s, -3.05, -1.2, false, ['kitchen', 'kitchen'])
   crate(s, 2.7, -1.7, 0.7, 'medical')
   // Hollis left planks by the door: the first thing to learn is to board yourself in.

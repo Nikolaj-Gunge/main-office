@@ -92,6 +92,7 @@ const GUN_LENGTH: Record<WeaponId, number> = {
   [WeaponId.Svd]: 1.05,
   [WeaponId.Barrett]: 1.15,
   [WeaponId.Crossbow]: 0.7,
+  [WeaponId.Fists]: 0.01,
 }
 /** Width and height of those boxes, where a weapon is slimmer or fatter than most guns. */
 const GUN_THICKNESS: Partial<Record<WeaponId, [number, number]>> = {
@@ -494,7 +495,8 @@ export class Avatar {
     this.weapon = id
     const length = GUN_LENGTH[id]
     this.gun.geometry = gunGeometry[id] as THREE.BoxGeometry
-    this.gun.visible = id !== WeaponId.Claws // zombies hold nothing
+    // Zombies hold nothing, and nor does a survivor with bare fists.
+    this.gun.visible = id !== WeaponId.Claws && id !== WeaponId.Fists
     // Gun part centre sits 0.12 m ahead of the grip; the gun's back end ~0.1 m behind the grip.
     this.gun.position.set(0, 0, 0.22 - length / 2)
     this.muzzle.position.set(0, 0, 0.22 - length)

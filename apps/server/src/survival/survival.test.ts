@@ -43,6 +43,7 @@ import {
   weatherAt,
 } from '@office-fps/shared'
 import { Game, type ServerPlayer } from '../game.ts'
+import { START_MONEY } from './director.ts'
 import { openGround } from './drops.ts'
 import type { Zed } from './horde.ts'
 
@@ -110,7 +111,32 @@ function setup(n = 1) {
     input(0, yaw, pitch)
   }
   const zombies = () => [...game.players.values()].filter((p) => p.zombie && p.state.alive)
-  return { game, def, clients, ids, player, last, self, match, run, input, move, useAt, zombies }
+  /** Player 0 takes Hollis' pistol and knife off the cabin table (and stays where they were). */
+  const arm = () => {
+    const was = { ...player().state.pos }
+    const floor = (def.pois[0]?.y ?? 0) + 0.14
+    for (const thing of def.starter) {
+      move(thing.pos[0] + 0.9, floor, thing.pos[2])
+      useAt(...thing.pos)
+    }
+    move(was.x, was.y, was.z)
+  }
+  return {
+    game,
+    def,
+    clients,
+    ids,
+    player,
+    last,
+    self,
+    match,
+    run,
+    input,
+    move,
+    useAt,
+    zombies,
+    arm,
+  }
 }
 
 describe('survival: the catalogue', () => {
@@ -132,7 +158,7 @@ describe('survival: the catalogue', () => {
 
   test('every survival gun has ammunition, and every weapon an item', () => {
     for (const def of Object.values(WEAPONS)) {
-      if (def.id === WeaponId.Claws) continue
+      if (def.id === WeaponId.Claws || def.id === WeaponId.Fists) continue
       if (def.slot !== 'melee') expect(def.ammoType).toBeDefined()
       expect(Object.values(ITEMS).some((i) => i.weapon === def.id)).toBe(true)
     }
@@ -167,20 +193,115 @@ describe('survival: the catalogue', () => {
 })
 
 describe('survival: the night', () => {
-  test('you wake in the cabin with a Glock, twelve rounds and a knife', () => {
+  test('you wake in the cabin with bare fists, a little cash, and a Glock and knife on the table', () => {
     const t = setup()
     t.run(1)
     const s = t.player().state
     expect(s.alive).toBe(true)
+    expect(s.weapon.id).toBe(WeaponId.Fists)
+    expect(s.holstered).toBeNull()
+    expect(s.pocket).toBeNull()
+    expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
+    expect(t.self().money).toBe(START_MONEY)
+    // Enough for a box of 9mm and a bottle of water at Gus's, not for a gun.
+    const price = (id: string) => (ITEMS[id]?.value ?? 0) * (ITEMS[id]?.kind === 'ammo' ? 10 : 1)
+    expect(START_MONEY).toBeGreaterThanOrEqual(price('ammo9') + price('water'))
+    expect(START_MONEY).toBeLessThan(price('m1911'))
+    // Taking them off the table: the Glock (twelve rounds) in hand, the knife in place of fists.
+    t.arm()
     expect(s.weapon.id).toBe(WeaponId.Handgun)
     expect(s.weapon.ammo).toBe(12)
     expect(s.weapon.reserve).toBe(0)
     expect(s.holstered?.id).toBe(WeaponId.Knife)
+    expect([s.weapon, s.holstered, s.pocket].some((w) => w?.id === WeaponId.Fists)).toBe(false)
     expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
     expect(t.match().survival?.quests[0]?.id).toBe('wake')
     // Standing on the cabin floor, not fallen through the world.
     const start = t.def.pois[0]
     expect(Math.abs(s.pos.y - ((start?.y ?? 0) + 0.12))).toBeLessThan(0.1)
+  })
+
+  test("Hollis' pistol and knife: everyone gets their own pair, and only once", () => {
+    const t = setup(2)
+    t.run(1)
+    const told = (i: number) => {
+      const shown = new Map<number, string>()
+      for (const m of t.clients[i]?.inbox ?? []) {
+        if (m.type !== ServerMsg.Loot) continue
+        for (const id of m.remove) shown.delete(id)
+        for (const l of m.add) shown.set(l.id, l.item)
+      }
+      return shown
+    }
+    const starters = (i: number) =>
+      [...told(i).entries()].filter(([, item]) => item === 'glock' || item === 'knife')
+    // Each sees a Glock and a knife on the table: their own, not the other's.
+    expect(
+      starters(0)
+        .map(([, item]) => item)
+        .sort(),
+    ).toEqual(['glock', 'knife'])
+    expect(
+      starters(1)
+        .map(([, item]) => item)
+        .sort(),
+    ).toEqual(['glock', 'knife'])
+    const mine = starters(0).map(([id]) => id)
+    expect(starters(1).some(([id]) => mine.includes(id))).toBe(false)
+    // Player 0 takes theirs: gone for them, still there for player 1.
+    t.arm()
+    t.run(0.6)
+    expect(starters(0)).toEqual([])
+    expect(starters(1).length).toBe(2)
+    const p0 = t.player(0).state
+    expect(p0.weapon.id).toBe(WeaponId.Handgun)
+    expect(p0.holstered?.id).toBe(WeaponId.Knife)
+    // Trying again finds nothing more to take (no second Glock or knife in the pack).
+    t.arm()
+    t.run(0.6)
+    expect(t.self(0).inv.some((st) => st.item === 'glock' || st.item === 'knife')).toBe(false)
+    expect(p0.pocket).toBeNull()
+    // Player 1 takes theirs (E, looking at each).
+    const p1 = t.player(1)
+    const floor = (t.def.pois[0]?.y ?? 0) + 0.14
+    let seq = 1
+    for (const thing of t.def.starter) {
+      p1.state.pos = { x: thing.pos[0] + 0.9, y: floor, z: thing.pos[2] }
+      p1.state.vel = { x: 0, y: 0, z: 0 }
+      const dx = thing.pos[0] - p1.state.pos.x
+      const dy = thing.pos[1] - (p1.state.pos.y + 1.6)
+      const dz = thing.pos[2] - p1.state.pos.z
+      const yaw = Math.atan2(-dx, -dz)
+      const pitch = Math.atan2(dy, Math.hypot(dx, dz))
+      for (const buttons of [0, Button.Use, 0]) {
+        t.game.handleInput(t.ids[1] ?? 0, [
+          { seq: seq++, buttons, yaw, pitch, viewTick: t.game.tick },
+        ])
+        t.game.step()
+      }
+    }
+    t.run(0.6)
+    expect(p1.state.weapon.id).toBe(WeaponId.Handgun)
+    expect(p1.state.weapon.ammo).toBe(12)
+    expect(p1.state.holstered?.id).toBe(WeaponId.Knife)
+    expect(starters(1)).toEqual([])
+  })
+
+  test('leaving and coming back: what you took stays taken', () => {
+    const t = setup()
+    t.run(1)
+    t.arm()
+    const director = t.game.match as unknown as {
+      survival: { onLeave(p: ServerPlayer): void; onJoin(p: ServerPlayer): void }
+    }
+    const p = t.player()
+    director.survival.onLeave(p)
+    t.clients[0]?.inbox.splice(0)
+    director.survival.onJoin(p)
+    t.run(1)
+    const again =
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    expect(again.some((l) => l.item === 'glock' || l.item === 'knife')).toBe(false)
   })
 
   test('loot is put out near you, told to you, and E takes it', () => {
@@ -230,6 +351,7 @@ describe('survival: the night', () => {
   test('eating, bandaging and wearing a pack work from the backpack', () => {
     const t = setup()
     t.run(1)
+    t.arm()
     const d = (
       t.game.match as unknown as { survival: { survivors: Map<number, { self: SurvivalSelf }> } }
     ).survival
@@ -293,6 +415,7 @@ describe('survival: the night', () => {
   test('dying drops everything where you fell; somebody new wakes at Haven', () => {
     const t = setup()
     t.run(1)
+    t.arm()
     const sv = survivorOf(t)
     sv.self.inv.push({ item: 'beans', n: 3 }, { item: 'radio_tube', n: 1 })
     sv.self.wear.body = 'policevest'
@@ -302,9 +425,9 @@ describe('survival: the night', () => {
     const look = t.player().appearance
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
-    // A new character: the start kit, fresh, clean.
+    // A new character: the start kit, fresh, clean, and the start money again.
     expect(t.self().inv).toEqual([{ item: 'water', n: 1 }])
-    expect(t.self().money).toBe(0)
+    expect(t.self().money).toBe(START_MONEY)
     expect(t.self().pack).toBeNull()
     expect(t.self().wear).toEqual({})
     expect(t.self().infected).toBeNull()
@@ -324,9 +447,17 @@ describe('survival: the night', () => {
     t.run(7)
     const s = t.player().state
     expect(s.alive).toBe(true)
-    expect(s.weapon.id).toBe(WeaponId.Handgun)
-    expect(s.weapon.ammo).toBe(12)
-    expect(s.holstered?.id).toBe(WeaponId.Knife)
+    // Haven spares somebody new a knife; Hollis' pistol is back on the cabin table for them.
+    expect(s.weapon.id).toBe(WeaponId.Knife)
+    expect(s.holstered).toBeNull()
+    const relaid =
+      t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
+    const table = t.def.starter.find((x) => x.item === 'glock')?.pos ?? [0, 0, 0]
+    const onTable = relaid.filter(
+      (l) => l.item === 'glock' && Math.hypot(l.x - table[0], l.z - table[2]) < 0.01,
+    )
+    // Once when they woke, and again for the new them.
+    expect(onTable.length).toBe(2)
     const haven = t.def.pois.find((p) => p.key === 'haven')
     if (!haven) throw new Error('no haven')
     expect(Math.hypot(s.pos.x - haven.x, s.pos.z - haven.z)).toBeLessThan(15)
@@ -442,6 +573,7 @@ describe('survival: the bite', () => {
   test('when the clock runs out you turn: one of the dead walks off with all you had', () => {
     const t = setup(2)
     t.run(1)
+    t.arm()
     const sv = survivorOf(t)
     sv.self.inv.push({ item: 'beans', n: 3 })
     sv.self.wear.body = 'policevest'
@@ -488,11 +620,12 @@ describe('survival: the bite', () => {
       expect(loot.some((l) => l.item === item && l.n === n)).toBe(true)
     }
     expect(insides(t).turned.size).toBe(0)
-    // And you wake at Haven with the start kit.
+    // And you wake at Haven with the start kit (a knife from the camp) and the start money.
     t.run(7)
     const s = t.player().state
     expect(s.alive).toBe(true)
-    expect(s.weapon.id).toBe(WeaponId.Handgun)
+    expect(s.weapon.id).toBe(WeaponId.Knife)
+    expect(t.self().money).toBe(START_MONEY)
     const haven = t.def.pois.find((p) => p.key === 'haven')
     expect(Math.hypot(s.pos.x - (haven?.x ?? 0), s.pos.z - (haven?.z ?? 0))).toBeLessThan(15)
   })
@@ -771,6 +904,7 @@ describe('survival: weather', () => {
   test('rain drowns out footsteps and shots: the dead hear you from less far', () => {
     const t = setup()
     t.run(1)
+    t.arm()
     const director = (
       t.game.match as unknown as {
         survival: { heardFrom(p: ServerPlayer): number; pinWeather(k: WeatherKind | null): void }

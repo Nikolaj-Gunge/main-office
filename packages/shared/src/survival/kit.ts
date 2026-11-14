@@ -11,6 +11,7 @@ import type {
   NpcRole,
   Poi,
   Room,
+  Starter,
 } from './types.ts'
 
 /** Everything the places of the world add up to. */
@@ -24,6 +25,7 @@ export interface WorldBuild {
   interactables: Interactable[]
   rooms: Room[]
   spots: BoardSpot[]
+  starter: Starter[]
 }
 
 export function emptyBuild(): WorldBuild {
@@ -37,6 +39,7 @@ export function emptyBuild(): WorldBuild {
     interactables: [],
     rooms: [],
     spots: [],
+    starter: [],
   }
 }
 
@@ -290,6 +293,16 @@ export class Site {
   /** Something to find here (lying at this height: on the floor, a table, a shelf). */
   loot(x: number, y: number, z: number, table: LootTable): this {
     this.build.loot.push({ pos: this.world(x, y, z), table, poi: this.index })
+    return this
+  }
+
+  /** Something every newcomer finds here, each their own (see Starter). */
+  starter(x: number, y: number, z: number, item: string, ammo?: number): this {
+    this.build.starter.push({
+      item,
+      pos: this.world(x, y, z),
+      ...(ammo !== undefined ? { ammo } : {}),
+    })
     return this
   }
 

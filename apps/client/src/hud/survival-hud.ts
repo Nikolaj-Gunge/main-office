@@ -29,7 +29,7 @@ import {
   stepTargets,
   WEAPONS,
   WEAR_SLOTS,
-  type WeaponId,
+  WeaponId,
   type WearSlot,
   WORLD_HALF,
   WORLD_SIZE,
@@ -834,7 +834,14 @@ export class SurvivalHud {
             ? ''
             : `${w.ammo}/${def.magSize} · ${self.inv ? this.spare(def.ammoType) : 0} spare`,
         )
-        this.button(row, 'Stow', () => this.send({ a: 'stow', slot }), carried.length > 1)
+        // Bare fists can't be put away; a blade can (it leaves your fists).
+        if (w.id === WeaponId.Fists) continue
+        this.button(
+          row,
+          'Stow',
+          () => this.send({ a: 'stow', slot }),
+          carried.length > 1 || slot === 'melee',
+        )
       }
       el('div', 'sv-group', left, 'Carrying')
       const weight = weightOf(self.inv)

@@ -106,6 +106,17 @@ export type NpcRole =
   | 'radio'
   | 'priest'
 
+/**
+ * Something left out for every newcomer (Hollis' pistol and knife): each player sees their own
+ * copy and can take it once per character, so taking yours leaves everybody else's.
+ */
+export interface Starter {
+  item: string
+  pos: Vec3
+  /** Rounds in it (guns). */
+  ammo?: number
+}
+
 /** Someone to talk to (they never move, and nothing hurts them). */
 export interface Npc {
   key: string
@@ -183,6 +194,8 @@ export interface SurvivalDef {
   rooms: Room[]
   /** Doorways and windows people can board up. */
   spots: BoardSpot[]
+  /** What lies out for each newcomer (see Starter). */
+  starter: Starter[]
   /** Road sign faces (their posts are map boxes); see road-dressing.ts. */
   signs?: RoadSign[]
 }

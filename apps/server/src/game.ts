@@ -728,7 +728,8 @@ export class Game {
     const ax = shooter.state.pos.x - best.pose.x
     const az = shooter.state.pos.z - best.pose.z
     const backstab =
-      (weapon.id === WeaponId.Knife || (weapon.slot === 'melee' && !shooter.zombie)) &&
+      (weapon.id === WeaponId.Knife ||
+        (weapon.slot === 'melee' && !shooter.zombie && weapon.id !== WeaponId.Fists)) &&
       (fx * ax + fz * az) / (Math.hypot(ax, az) || 1) < -0.3 &&
       this.match.backstabKills(best.victim)
     const rules = this.rulesValue

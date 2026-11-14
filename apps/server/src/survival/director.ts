@@ -119,6 +119,8 @@ interface Survivor {
   reborn: boolean
   /** Dying right now is turning: what they carried walks off with what's left of them. */
   turning: boolean
+  /** Which of the cabin's starter things (def.starter) this character hasn't taken yet. */
+  waiting: number[]
 }
 
 /** One of the dead that was one of you: everything they had on them, and how they looked. */
@@ -133,6 +135,9 @@ interface Loot extends LootItem {
   spot: number
   /** Tick it disappears (dropped things), or 0 to stay. */
   until: number
+  /** Only this player sees it (and can take it): their own starter thing, def.starter[starter]. */
+  owner?: number
+  starter?: number
 }
 
 interface PlaceState {
@@ -152,16 +157,18 @@ const DAY_NEWS: Record<DayPhase, string> = {
   night: 'Night. Keep the torch off unless you have to.',
 }
 
-const START_KIT = [
-  { id: WeaponId.Handgun, ammo: 12 },
-  { id: WeaponId.Knife, ammo: 0 },
-]
+/** You wake with nothing in your hands: Hollis' pistol and knife lie on the cabin table. */
+const START_KIT: Survivor['kit'] = []
+/** Somebody new at Haven is a long walk from the cabin: the camp spares them a knife. */
+const REBORN_KIT: Survivor['kit'] = [{ id: WeaponId.Knife, ammo: 0 }]
+/** Cash in a new character's pocket: a box of rounds and a bottle of water at Gus's, no more. */
+export const START_MONEY = 50
 
 const freshSelf = (): SurvivalSelf => ({
   inv: [{ item: 'water', n: 1 }],
   pack: null,
   wear: {},
-  money: 0,
+  money: START_MONEY,
   hunger: 70,
   thirst: 70,
   bleeding: false,
@@ -193,7 +200,7 @@ export class SurvivalDirector {
   /** What people had when they left, by name: they get it back if they return. */
   private readonly profiles = new Map<
     string,
-    { self: SurvivalSelf; kit: Survivor['kit']; reborn: boolean }
+    { self: SurvivalSelf; kit: Survivor['kit']; reborn: boolean; waiting: number[] }
   >()
   private readonly loot = new Map<number, Loot>()
   private readonly cells = new Map<number, Set<number>>()
@@ -315,7 +322,7 @@ export class SurvivalDirector {
     if (!isPerson(player)) return
     player.team = 1
     const saved = this.profiles.get(player.name)
-    this.survivors.set(player.id, {
+    const sv: Survivor = {
       player,
       self: saved ? saved.self : freshSelf(),
       dirty: true,
@@ -328,7 +335,10 @@ export class SurvivalDirector {
       warned: 0,
       reborn: saved?.reborn ?? false,
       turning: false,
-    })
+      waiting: saved ? saved.waiting : this.allStarters(),
+    }
+    this.survivors.set(player.id, sv)
+    this.layOut(sv)
   }
 
   onLeave(player: ServerPlayer): void {
@@ -336,8 +346,38 @@ export class SurvivalDirector {
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
-    this.profiles.set(player.name, { self: sv.self, kit: sv.kit, reborn: sv.reborn })
+    this.profiles.set(player.name, {
+      self: sv.self,
+      kit: sv.kit,
+      reborn: sv.reborn,
+      waiting: sv.waiting,
+    })
+    this.clearStarters(sv)
     this.survivors.delete(player.id)
+  }
+
+  /** Every starter thing (indices into def.starter). */
+  private allStarters(): number[] {
+    return (this.def?.starter ?? []).map((_, i) => i)
+  }
+
+  /** Puts out this character's own copies of the starter things they haven't taken yet. */
+  private layOut(sv: Survivor): void {
+    if (!this.def) return
+    for (const i of sv.waiting) {
+      const thing = this.def.starter[i]
+      if (!thing) continue
+      const [x, y, z] = thing.pos
+      this.addLoot(thing.item, 1, { x, y, z }, -1, thing.ammo, 0, {
+        owner: sv.player.id,
+        starter: i,
+      })
+    }
+  }
+
+  /** Takes this player's own starter things off the table (they left, or start over). */
+  private clearStarters(sv: Survivor): void {
+    for (const l of [...this.loot.values()]) if (l.owner === sv.player.id) this.removeLoot(l)
   }
 
   // --- What the game asks -------------------------------------------------------------------
@@ -376,11 +416,12 @@ export class SurvivalDirector {
       return w
     })
     const bySlot = (slot: string) => weapons.find((w) => WEAPONS[w.id].slot === slot)
-    const order = [bySlot('sidearm'), bySlot('primary'), bySlot('melee')].filter(
+    // No blade: bare fists in the melee slot (they never drop, and give way to the first blade).
+    const melee = bySlot('melee') ?? createWeaponState(WeaponId.Fists)
+    const order = [bySlot('sidearm'), bySlot('primary'), melee].filter(
       (w): w is WeaponState => w !== undefined,
     )
-    const hand = order[0] ?? createWeaponState(WeaponId.Knife)
-    const state = createPlayerState(spawn, hand, order[1] ?? null, order[2] ?? null)
+    const state = createPlayerState(spawn, order[0] ?? melee, order[1] ?? null, order[2] ?? null)
     this.syncReserves(sv, state)
     return state
   }
@@ -494,8 +535,12 @@ export class SurvivalDirector {
     const look = gearOf(sv.self)
     const turning = sv.turning
     sv.self = freshSelf()
-    sv.kit = START_KIT.map((k) => ({ ...k }))
+    sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
+    // Hollis' pistol and knife are on the cabin table again, for somebody new.
+    this.clearStarters(sv)
+    sv.waiting = this.allStarters()
+    this.layOut(sv)
     sv.turning = false
     sv.warned = 0
     sv.talking = null
@@ -745,6 +790,7 @@ export class SurvivalDirector {
     spot: number,
     ammo?: number,
     until = 0,
+    mine?: { owner: number; starter: number },
   ): void {
     const id = this.nextLoot++
     const loot: Loot = {
@@ -757,14 +803,16 @@ export class SurvivalDirector {
       spot,
       until,
       ...(ammo !== undefined ? { ammo } : {}),
+      ...mine,
     }
     this.loot.set(id, loot)
     const cell = this.cellOf(pos.x, pos.z)
     const set = this.cells.get(cell) ?? new Set()
     set.add(id)
     this.cells.set(cell, set)
-    const msg = { type: ServerMsg.Loot, add: [loot as LootItem], remove: [] as number[] }
-    for (const sv of this.survivors.values()) if (sv.cells.has(cell)) this.send(sv.player, msg)
+    const msg = { type: ServerMsg.Loot, add: [lootItem(loot)], remove: [] as number[] }
+    for (const sv of this.survivors.values())
+      if (sv.cells.has(cell) && sees(sv, loot)) this.send(sv.player, msg)
   }
 
   private removeLoot(loot: Loot): void {
@@ -772,7 +820,8 @@ export class SurvivalDirector {
     const cell = this.cellOf(loot.x, loot.z)
     this.cells.get(cell)?.delete(loot.id)
     const msg = { type: ServerMsg.Loot, add: [] as LootItem[], remove: [loot.id] }
-    for (const sv of this.survivors.values()) if (sv.cells.has(cell)) this.send(sv.player, msg)
+    for (const sv of this.survivors.values())
+      if (sv.cells.has(cell) && sees(sv, loot)) this.send(sv.player, msg)
   }
 
   /** Drops something on the ground at (about) `at` (`keep`: it never rots away). */
@@ -807,12 +856,15 @@ export class SurvivalDirector {
       if (sv.cells.has(cell)) continue
       for (const id of this.cells.get(cell) ?? []) {
         const loot = this.loot.get(id)
-        if (loot) add.push(loot)
+        if (loot && sees(sv, loot)) add.push(lootItem(loot))
       }
     }
     for (const cell of sv.cells) {
       if (want.has(cell)) continue
-      for (const id of this.cells.get(cell) ?? []) remove.push(id)
+      for (const id of this.cells.get(cell) ?? []) {
+        const loot = this.loot.get(id)
+        if (loot && sees(sv, loot)) remove.push(id)
+      }
     }
     sv.cells = want
     if (add.length > 0 || remove.length > 0)
@@ -905,7 +957,7 @@ export class SurvivalDirector {
     for (const cell of sv.cells) {
       for (const id of this.cells.get(cell) ?? []) {
         const l = this.loot.get(id)
-        if (!l) continue
+        if (!l || !sees(sv, l)) continue
         const score = aimAt(l.x, l.y, l.z, REACH)
         if (score > lootScore) {
           lootScore = score
@@ -1043,6 +1095,27 @@ export class SurvivalDirector {
     const def = ITEMS[loot.item]
     if (!def) return
     const player = sv.player
+    // Your own starter thing: once it's off the table it's yours, and it isn't put out again.
+    if (loot.starter !== undefined) {
+      const starter = loot.starter
+      const taken = () => {
+        sv.waiting = sv.waiting.filter((i) => i !== starter)
+      }
+      if (def.weapon !== undefined && this.holdNew(sv, def.weapon, loot.ammo ?? 0)) {
+        taken()
+        this.removeLoot(loot)
+        this.notice(player, 'loot', `+ ${def.name}`)
+        return void this.touch(sv)
+      }
+      if (roomFor(sv.self, loot.item) < 1) {
+        return void this.notice(player, 'warn', `No room for ${def.name}. Your pack is full.`)
+      }
+      taken()
+      this.removeLoot(loot)
+      addStack(sv.self.inv, loot.item, 1, loot.ammo)
+      this.notice(player, 'loot', `+ ${def.name}`)
+      return void this.touch(sv)
+    }
     if (def.kind === 'money') {
       sv.self.money += loot.n * (def.cash ?? 1)
       this.removeLoot(loot)
@@ -1073,16 +1146,27 @@ export class SurvivalDirector {
     this.touch(sv)
   }
 
-  /** Puts a weapon in the player's hands if nothing is in its slot yet. */
+  /**
+   * Puts a weapon in the player's hands if nothing is in its slot yet (bare fists give way to a
+   * blade). Somebody holding up only their fists takes it straight in hand.
+   */
   private holdNew(sv: Survivor, id: WeaponId, ammo: number): boolean {
     const s = sv.player.state
     const slot = WEAPONS[id].slot
-    if (carried(s).some((w) => WEAPONS[w.id].slot === slot)) return false
+    const fists = carried(s).find((w) => w.id === WeaponId.Fists)
+    if (carried(s).some((w) => WEAPONS[w.id].slot === slot && w !== fists)) return false
     const w = createWeaponState(id, (this.random() * 0xffffffff) >>> 0)
     w.ammo = Math.min(ammo, WEAPONS[id].magSize)
-    if (!s.holstered) s.holstered = w
+    if (fists && slot === 'melee') replaceCarried(s, fists, w)
+    else if (s.weapon === fists) {
+      // Fists up: the new weapon goes in your hand, the fists to "last used".
+      s.pocket = s.holstered
+      s.holstered = s.weapon
+      s.weapon = w
+    } else if (!s.holstered) s.holstered = w
     else if (!s.pocket) s.pocket = w
     else return false
+    if (s.weapon === w) w.draw = WEAPONS[id].drawTime
     return true
   }
 
@@ -1261,7 +1345,8 @@ export class SurvivalDirector {
         const slot = WEAPONS[weapon].slot
         const old = carried(s).find((w) => WEAPONS[w.id].slot === slot)
         self.inv.splice(self.inv.indexOf(stack), 1)
-        if (old) {
+        // Bare fists aren't put away anywhere: the blade simply takes their place.
+        if (old && old.id !== WeaponId.Fists) {
           addStack(self.inv, weaponItem(old.id), 1, old.ammo)
           if (weightOf(self.inv) > capacityOf(self) + 1e-6) {
             // The one in your hands is too heavy for the pack: swap it onto the ground.
@@ -1295,11 +1380,20 @@ export class SurvivalDirector {
       case 'stow': {
         const all = carried(s)
         const w = all.find((c) => WEAPONS[c.id].slot === action.slot)
-        if (!w || all.length < 2) return
+        if (!w || w.id === WeaponId.Fists) return
+        // A blade put away leaves your fists; anything else needs something left in hand.
+        const bare = WEAPONS[w.id].slot === 'melee'
+        if (!bare && all.length < 2) return
         const item = weaponItem(w.id)
         if (roomFor(self, item) < 1)
           return void this.notice(player, 'warn', 'No room in your pack.')
         addStack(self.inv, item, 1, w.ammo)
+        if (bare) {
+          const fists = createWeaponState(WeaponId.Fists)
+          replaceCarried(s, w, fists)
+          if (s.weapon === fists) fists.draw = WEAPONS[WeaponId.Fists].drawTime
+          return void this.touch(sv)
+        }
         const rest = all.filter((c) => c !== w)
         const hand = s.weapon === w ? (rest[0] as WeaponState) : s.weapon
         if (hand !== s.weapon) hand.draw = WEAPONS[hand.id].drawTime
@@ -1911,7 +2005,8 @@ const gearOf = (self: SurvivalSelf) => gearLooks(Object.values(self.wear))
 /** Everything somebody has: the backpack, the guns in hand, what they wear, the pack and cash. */
 function belongings(self: SurvivalSelf, state: PlayerState): Stack[] {
   const out: Stack[] = self.inv.map((s) => ({ ...s }))
-  for (const w of carried(state)) out.push({ item: weaponItem(w.id), n: 1, ammo: w.ammo })
+  for (const w of carried(state))
+    if (w.id !== WeaponId.Fists) out.push({ item: weaponItem(w.id), n: 1, ammo: w.ammo })
   for (const id of Object.values(self.wear)) if (id) out.push({ item: id, n: 1 })
   if (self.pack) out.push({ item: self.pack, n: 1 })
   if (self.money > 0) out.push({ item: 'cash', n: self.money })
@@ -1920,5 +2015,24 @@ function belongings(self: SurvivalSelf, state: PlayerState): Stack[] {
 
 /** The weapons somebody carries, as what to give them back. */
 function kitOf(state: PlayerState): Survivor['kit'] {
-  return carried(state).map((w) => ({ id: w.id, ammo: w.ammo }))
+  return carried(state)
+    .filter((w) => w.id !== WeaponId.Fists)
+    .map((w) => ({ id: w.id, ammo: w.ammo }))
+}
+
+/** Whether a client is told about (and may take) a thing: everybody's, or their very own. */
+function sees(sv: Survivor, loot: Loot): boolean {
+  return loot.owner === undefined || loot.owner === sv.player.id
+}
+
+/** What a client is told about a thing on the ground (not whose it is). */
+function lootItem(loot: Loot): LootItem {
+  return { id: loot.id, item: loot.item, n: loot.n, x: loot.x, y: loot.y, z: loot.z }
+}
+
+/** Swaps one carried weapon for another in the same place (hand, holster or pocket). */
+function replaceCarried(s: PlayerState, old: WeaponState, w: WeaponState): void {
+  if (s.weapon === old) s.weapon = w
+  else if (s.holstered === old) s.holstered = w
+  else if (s.pocket === old) s.pocket = w
 }
