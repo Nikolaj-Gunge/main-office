@@ -1,4 +1,4 @@
-import { COOP_MAPS, DEFAULT_MAP_ID, MAPS, SURVIVAL_MAP } from './maps/index.ts'
+import { COOP_MAPS, DEFAULT_MAP_ID, MAP_IDS, SURVIVAL_MAP } from './maps/index.ts'
 import { MODES, type ModeId } from './modes.ts'
 import { DEFAULT_MOVEMENT, type MovementConfig } from './sim/movement-config.ts'
 import type { WeaponRules } from './sim/weapon-sim.ts'
@@ -118,7 +118,7 @@ export function mergeRules(base: GameRules, update: unknown): GameRules {
   const next = { ...base }
   if (typeof update !== 'object' || update === null) return next
   const u = update as Record<string, unknown>
-  if (typeof u.map === 'string' && u.map in MAPS) next.map = u.map
+  if (typeof u.map === 'string' && MAP_IDS.includes(u.map)) next.map = u.map
   if (typeof u.mode === 'string' && (MODES as readonly string[]).includes(u.mode)) {
     next.mode = u.mode as ModeId
   }

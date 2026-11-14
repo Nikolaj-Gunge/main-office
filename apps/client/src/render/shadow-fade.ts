@@ -5,6 +5,9 @@ const SHADOW_CALL =
 
 let installed = false
 
+/** Whether fadeShadowEdges has patched the shaders (the WebGPU renderer follows suit). */
+export const shadowEdgesFaded = (): boolean => installed
+
 /**
  * Survival's one shadow map covers ±80 m around you; with the haze lifted by day its square
  * edge would show as a line across the forest. This fades directional shadows out over the

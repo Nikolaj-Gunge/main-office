@@ -26,12 +26,12 @@ const STEP = 8
 /** The treeline ring stands this far out (m). */
 const WALL = 560
 /** Card atlas: one cell per kind of tree, CARD_W × CARD_H metres at CARD_PX texels a metre. */
-const CARD_W = 4.8
-const CARD_H = 7.2
+export const CARD_W = 4.8
+export const CARD_H = 7.2
 const CARD_PX = 10
 /** The tree stands this far above the bottom of its card (its roots sink a little). */
 const CARD_FOOT = 0.4
-const TILES = 4
+export const TILES = 4
 /** Room for every tree in every chunk out to FAR (TREE_GRID² candidate spots a chunk). */
 const MAX_CARDS = (Math.ceil(FAR / CHUNK) * 2 + 1) ** 2 * 100
 

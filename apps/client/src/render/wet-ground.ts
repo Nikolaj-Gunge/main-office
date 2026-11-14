@@ -13,7 +13,7 @@ export const wetUniforms = {
 }
 
 /** How dark soaked ground gets, and how it shines. */
-const DARKEN = 0.4
+export const DARKEN = 0.4
 const SHEEN = new THREE.Color(0x4a525c)
 
 export function wetGroundMaterial(map: THREE.Texture): THREE.MeshPhongMaterial {
