@@ -1,7 +1,9 @@
 import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
 import { PLACES } from './places.ts'
+import { camperName, houseName, shedName } from './places-homes.ts'
 import { dressRoads } from './road-dressing.ts'
+import { type ScatterKind, scatterPlaces } from './scatter.ts'
 import { cabin, haven, startCabin } from './structures.ts'
 import { buildTerrain, heightAt, type RoadPlan } from './terrain.ts'
 import type { Poi, PoiKind, SurvivalDef } from './types.ts'
@@ -178,6 +180,41 @@ const ROADS: RoadPlan[] = [
 
 const LAKES = [{ x: 420, z: 110, r: 85 }]
 
+const SCATTER_NAMES: Record<ScatterKind, (variant: number) => string> = {
+  house: houseName,
+  camper: camperName,
+  shed: shedName,
+  treehouse: () => 'Treehouse',
+  stand: () => 'Hunting stand',
+}
+const SCATTER_DANGER: Record<ScatterKind, number> = {
+  house: 2,
+  camper: 1,
+  shed: 1,
+  treehouse: 1,
+  stand: 0,
+}
+
+/** Every place: the planned ones, then the small ones scattered between them (see scatter.ts). */
+const ALL_PLANS: Plan[] = (() => {
+  const counts = new Map<ScatterKind, number>()
+  const scattered = scatterPlaces(SEED, PLANS, ROADS, LAKES).map((p) => {
+    const variant = counts.get(p.kind) ?? 0
+    counts.set(p.kind, variant + 1)
+    return place(
+      `${p.kind}_${variant + 1}`,
+      p.kind,
+      SCATTER_NAMES[p.kind](variant),
+      p.x,
+      p.z,
+      p.r,
+      SCATTER_DANGER[p.kind] + (p.kind === 'house' ? variant % 2 : 0),
+      { turn: p.turn, wooded: p.wooded, hidden: true },
+    )
+  })
+  return [...PLANS, ...scattered]
+})()
+
 /**
  * Night under a thin moon: enough to make out the trees around you and the shape of the ground,
  * never enough to see what is standing between them. (The client uses these as they are, without
@@ -200,8 +237,8 @@ let cached: MapDef | null = null
 /** The survival map: the whole world, built once per process (it's the same every time). */
 export function buildDeadwood(): MapDef {
   if (cached) return cached
-  const { terrain, heights, roads, lakes } = buildTerrain(SEED, PLANS, ROADS, LAKES)
-  const pois: Poi[] = PLANS.map((p, i) => ({
+  const { terrain, heights, roads, lakes } = buildTerrain(SEED, ALL_PLANS, ROADS, LAKES)
+  const pois: Poi[] = ALL_PLANS.map((p, i) => ({
     key: p.key,
     kind: p.kind,
     name: p.name,
@@ -220,7 +257,7 @@ export function buildDeadwood(): MapDef {
   pois.forEach((poi, i) => {
     const variant = counts.get(poi.kind) ?? 0
     counts.set(poi.kind, variant + 1)
-    const site = new Site(build, poi, i, 0, 0, PLANS[i]?.turn ?? 0)
+    const site = new Site(build, poi, i, 0, 0, ALL_PLANS[i]?.turn ?? 0)
     if (poi.kind === 'start') startCabin(site)
     else if (poi.kind === 'cabin') cabin(site, variant)
     else if (poi.kind === 'camp') haven(site)
@@ -255,6 +292,11 @@ export function buildDeadwood(): MapDef {
     survival,
   }
   return cached
+}
+
+/** How many quarter turns a place is built turned by (tests: to find their way round it). */
+export function placeTurn(key: string): number {
+  return ALL_PLANS.find((p) => p.key === key)?.turn ?? 0
 }
 
 /** A place by its key. */
