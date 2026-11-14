@@ -85,8 +85,8 @@ const RAIN_VERTEX = /* glsl */ `
     vec3 to = p - uCenter;
     float d = length(to);
     vFade = smoothstep(1.2, 3.5, d) * (1.0 - smoothstep(uBox.x * 0.22, uBox.x * 0.5, d)) * (1.0 - aEnd * 0.7);
-    // Your torch catches the drops in front of you.
-    vLit = uTorch * smoothstep(0.82, 0.97, dot(to / max(d, 0.001), uLook)) * (1.0 - smoothstep(3.0, 16.0, d));
+    // Your torch catches the drops in front of you (not the ones right at your face).
+    vLit = uTorch * smoothstep(0.82, 0.97, dot(to / max(d, 0.001), uLook)) * smoothstep(1.5, 4.0, d) * (1.0 - smoothstep(3.0, 16.0, d));
   }
 `
 
@@ -526,9 +526,10 @@ export class WeatherView {
     this.splashes.visible = w.rain > 0.02 && outside > 0.05
     if (!this.splashes.visible) return
     ;(u.uColor as THREE.IUniform<THREE.Color>).value.setScalar(
-      0.35 + daylight * 0.35 + this.flash * 0.6,
+      // By night only a faint glint: bright specks on black ground look like snow.
+      0.18 + daylight * 0.52 + this.flash * 0.6,
     )
-    ;(u.uAlpha as { value: number }).value = (0.35 + 0.3 * daylight) * outside
+    ;(u.uAlpha as { value: number }).value = (0.25 + 0.4 * daylight) * outside
     // As many land per second as the rain is heavy.
     this.splashOwed += dt * w.rain * 1500
     let n = Math.min(SPLASHES, Math.floor(this.splashOwed))
@@ -568,7 +569,8 @@ export class WeatherView {
       (night * (0.35 + 0.65 * w.fog) + daylight * w.fog * 0.6) * (1 - w.rain * 0.8),
     )
     const u = this.wisps.material.uniforms
-    ;(u.uOpacity as { value: number }).value = amount * 0.22
+    // Thicker in fog weather, where it shows against the pale fog beyond.
+    ;(u.uOpacity as { value: number }).value = amount * (0.22 + w.fog * night * 0.18)
     this.wisps.visible = amount > 0.02
     if (!this.wisps.visible) return
     ;(u.uColor as THREE.IUniform<THREE.Color>).value

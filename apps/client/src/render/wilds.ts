@@ -507,7 +507,7 @@ export class Wilds {
       const seen = chunk.shown && chunkDistance(cx, cz, x, z) < fogFar + 4
       chunk.ground.visible = chunk.props.visible = seen
     }
-    this.far.cull(fogFar, MID - CHUNK)
+    this.far.cull(fogFar, MID - CHUNK, x, z)
   }
 
   /**

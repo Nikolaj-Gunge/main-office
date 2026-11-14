@@ -7,6 +7,7 @@ import {
   type Prop,
   PropKind,
   type Terrain,
+  valueNoise,
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
@@ -22,7 +23,7 @@ import * as THREE from 'three'
 /** Tree cards and the coarse ground reach this far from the chunk you're in (m). */
 export const FAR = 450
 /** The coarse ground has a vertex every this many metres (a multiple of CELL). */
-const STEP = 8
+const STEP = 16
 /** The treeline ring stands this far out (m). */
 const WALL = 560
 /** Card atlas: one cell per kind of tree, CARD_W × CARD_H metres at CARD_PX texels a metre. */
@@ -146,35 +147,81 @@ function makeCardAtlas(colors: TreeColors): THREE.CanvasTexture {
   return texture
 }
 
-/** A jagged band of treetops, white on clear (tinted by the material), repeating sideways. */
+/**
+ * A band of distant forest, repeating sideways: a soft, rolling canopy behind (red 0.5) and
+ * single pines of all heights standing out of it in front (red 1). Alpha is coverage; the red
+ * channel says how near a tree stands, for the fog (see treelineMaterial).
+ */
 function makeTreelineTexture(): THREE.CanvasTexture {
-  const w = 256
-  const h = 32
+  const w = 512
+  const h = 64
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('2D canvas unavailable')
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, h * 0.55, w, h)
-  for (let x = -6; x < w + 6; ) {
-    const top = h * (0.12 + 0.35 * hash2(x, 1, 77) + 0.15 * Math.sin(x / 40))
-    const half = 2 + hash2(x, 2, 77) * 4
-    ctx.beginPath()
+  // Canopy height (0 = bottom, 1 = top) along the band: slow swells and dips, wrapping round.
+  const canopy = (x: number) =>
+    0.5 +
+    0.07 * Math.sin((x / w) * Math.PI * 2 * 3 + 1.3) +
+    0.05 * Math.sin((x / w) * Math.PI * 2 * 7 + 0.4)
+  const at = (x: number, draw: (x: number) => void) => {
     // Wrap around so the band joins up with itself.
-    for (const shift of [0, w, -w]) {
-      ctx.moveTo(x + shift - half, h * 0.6)
-      ctx.lineTo(x + shift, top)
-      ctx.lineTo(x + shift + half, h * 0.6)
-    }
-    ctx.fill()
-    x += 2 + Math.floor(hash2(x, 3, 77) * 5)
+    for (const shift of [0, w, -w]) draw(x + shift)
+  }
+  // Behind: overlapping round crowns, a blur of forest further on.
+  ctx.fillStyle = 'rgb(128, 0, 0)'
+  ctx.fillRect(0, h * 0.62, w, h)
+  for (let x = 0; x < w; x += 3) {
+    const r = 3 + hash2(x, 4, 77) * 4
+    const y = h * (1 - canopy(x) + 0.06) + hash2(x, 5, 77) * 3
+    at(x, (cx) => {
+      ctx.beginPath()
+      ctx.ellipse(cx, y, r, r * 1.3, 0, 0, Math.PI * 2)
+      ctx.fill()
+    })
+  }
+  // In front: pines, mostly in loose clumps, some well above the canopy.
+  ctx.fillStyle = 'rgb(255, 0, 0)'
+  ctx.fillRect(0, h * 0.78, w, h)
+  for (let x = 0; x < w; ) {
+    const clump = 0.5 + 0.5 * Math.sin((x / w) * Math.PI * 2 * 11 + hash2(x >> 5, 6, 77) * 3)
+    const tall = canopy(x) - 0.12 + clump * 0.16 + hash2(x, 1, 77) * 0.12
+    const top = h * (1 - tall)
+    const half = 2 + hash2(x, 2, 77) * 2.5
+    const base = h * 0.82
+    at(x, (cx) => {
+      // A spire with a ragged edge: three tiers stepping out as they go down.
+      ctx.beginPath()
+      ctx.moveTo(cx, top)
+      for (const [k, out] of [
+        [0.3, 0.45],
+        [0.55, 0.75],
+        [1, 1],
+      ] as const) {
+        const y = top + (base - top) * k
+        ctx.lineTo(cx + half * out, y)
+        ctx.lineTo(cx + half * out * 0.55, y - 1)
+      }
+      for (const [k, out] of [
+        [1, 1],
+        [0.55, 0.75],
+        [0.3, 0.45],
+      ] as const) {
+        const y = top + (base - top) * k
+        ctx.lineTo(cx - half * out * 0.55, y - 1)
+        ctx.lineTo(cx - half * out, y)
+      }
+      ctx.closePath()
+      ctx.fill()
+    })
+    x += 3 + Math.floor(hash2(x, 3, 77) * 5 * (1.4 - clump))
   }
   const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
+  // Data, not colour: the red channel is read as is.
+  texture.colorSpace = THREE.NoColorSpace
   texture.wrapS = THREE.RepeatWrapping
-  texture.magFilter = THREE.NearestFilter
-  texture.minFilter = THREE.NearestMipmapNearestFilter
+  texture.anisotropy = 4
   return texture
 }
 
@@ -219,24 +266,39 @@ vCardShade = abs(cardLook.y);`,
   return material
 }
 
-/** Basic material whose fog stops short of hiding it all by day (fog far ≥ ~380 m). */
+/**
+ * Basic material, blended at its soft edges, whose fog stops short of hiding it all by day (fog
+ * far ≥ ~380 m): the pines in front show a little through the haze, the canopy behind less,
+ * and the foot of the band (where it meets the ground beyond the far forest) not at all.
+ */
 function treelineMaterial(): THREE.MeshBasicMaterial {
   const material = new THREE.MeshBasicMaterial({
     map: makeTreelineTexture(),
-    color: 0x26321f,
-    alphaTest: 0.5,
+    color: 0x1e2a1c,
+    transparent: true,
+    alphaTest: 0.02,
+    depthWrite: false,
     side: THREE.DoubleSide,
   })
   material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <fog_fragment>',
-      `#ifdef USE_FOG
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <map_fragment>',
+        `vec4 treelineTexel = texture2D(map, vMapUv);
+  diffuseColor.a *= treelineTexel.a;
+  float treelineNear = treelineTexel.r;`,
+      )
+      .replace(
+        '#include <fog_fragment>',
+        `#ifdef USE_FOG
   float treelineFog = smoothstep(fogNear, fogFar, vFogDepth);
   // Through the day's haze a faint line of trees; at night (short fog) nothing.
-  float treelineCap = mix(1.0, 0.84, smoothstep(170.0, 380.0, fogFar));
+  float treelineDay = smoothstep(170.0, 380.0, fogFar);
+  float treelineCap = mix(1.0, mix(0.93, 0.82, treelineNear), treelineDay);
+  treelineCap = mix(1.0, treelineCap, smoothstep(0.25, 0.55, vMapUv.y));
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, min(treelineFog, treelineCap));
 #endif`,
-    )
+      )
   }
   material.customProgramCacheKey = () => 'treeline'
   return material
@@ -270,6 +332,14 @@ export class FarForest {
   private readonly wall: THREE.Mesh
   /** Cards per far chunk: (x, y, z, scale) and (tile, ±shade), 6 floats a tree. */
   private readonly cache = new Map<number, Float32Array>()
+  /** The far chunks' cards (row by row), and how near each chunk comes to `centre`. */
+  private farChunks: { cards: Float32Array; near: number }[] = []
+  /** The same nearnesses, sorted. */
+  private nears = new Float32Array(0)
+  /** The point the far forest was last laid out around. */
+  private readonly centre = new THREE.Vector2()
+  /** How many of the nearest far chunks have their cards drawn (-1: refill). */
+  private shownChunks = -1
 
   constructor(host: FarHost, colors: TreeColors) {
     this.host = host
@@ -303,10 +373,24 @@ export class FarForest {
     this.root.add(this.ground, this.cards, this.wall)
   }
 
-  /** Cards and treeline beyond `fogFar` would only be fog: skip them (night). */
-  cull(fogFar: number, holeEdge: number): void {
+  /**
+   * Cards and treeline beyond `fogFar` would only be fog: skip them (all of it at night; in rain
+   * or fog by day the cards past the fog). (x, z): where you are.
+   */
+  cull(fogFar: number, holeEdge: number, x: number, z: number): void {
     this.root.visible = fogFar > holeEdge
     this.wall.visible = fogFar > 200
+    // Draw the chunks that come nearer than the fog's far end (refilled when that changes).
+    const reach = fogFar + Math.hypot(x - this.centre.x, z - this.centre.y)
+    const nears = this.nears
+    let lo = 0
+    let hi = nears.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if ((nears[mid] as number) < reach) lo = mid + 1
+      else hi = mid
+    }
+    if (lo !== this.shownChunks) this.fillCards(lo)
   }
 
   /**
@@ -316,6 +400,7 @@ export class FarForest {
   rebuild(ccx: number, ccz: number, inner: (cx: number, cz: number) => boolean): void {
     const ox = (ccx + 0.5) * CHUNK - WORLD_HALF
     const oz = (ccz + 0.5) * CHUNK - WORLD_HALF
+    this.centre.set(ox, oz)
     this.buildGround(ox, oz, inner)
     this.buildCards(ccx, ccz, inner)
     this.buildWall(ox, oz)
@@ -417,29 +502,46 @@ export class FarForest {
 
   private buildCards(ccx: number, ccz: number, inner: (cx: number, cz: number) => boolean): void {
     const reach = Math.ceil(FAR / CHUNK)
-    const pos = this.cardPos.array as Float32Array
-    const look = this.cardLook.array as Float32Array
-    let count = 0
     const keep = new Set<number>()
+    this.farChunks = []
     for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
       for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
         if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR || inner(cx, cz)) continue
         keep.add(CHUNK_KEY(cx, cz))
-        const cards = this.chunkCards(cx, cz)
-        for (let k = 0; k < cards.length && count < MAX_CARDS; k += 6) {
-          pos.set(cards.subarray(k, k + 4), count * 4)
-          look[count * 2] = cards[k + 4] as number
-          look[count * 2 + 1] = cards[k + 5] as number
-          count++
-        }
+        // How near the chunk comes to the centre (its middle, less half its diagonal).
+        const near = Math.hypot(cx - ccx, cz - ccz) * CHUNK - CHUNK * Math.SQRT1_2
+        this.farChunks.push({ cards: this.chunkCards(cx, cz), near })
       }
     }
+    this.nears = Float32Array.from(this.farChunks, (c) => c.near).sort()
+    this.fillCards(this.nears.length)
     // Forget chunks well behind (a few chunks' slack, so walking back and forth costs nothing).
     for (const key of this.cache.keys()) {
       if (keep.has(key)) continue
       const cx = Math.floor(key / CHUNKS)
       const cz = key % CHUNKS
       if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR + CHUNK * 3) this.cache.delete(key)
+    }
+  }
+
+  /**
+   * Cards for the `chunks` nearest far chunks. They go in row by row, not nearest first: trees
+   * drawn in order of distance hop all over the screen, and take a fifth longer to rasterise.
+   */
+  private fillCards(chunks: number): void {
+    this.shownChunks = chunks
+    const cut = chunks > 0 ? (this.nears[chunks - 1] as number) : -Infinity
+    const pos = this.cardPos.array as Float32Array
+    const look = this.cardLook.array as Float32Array
+    let count = 0
+    for (const { cards, near } of this.farChunks) {
+      if (near > cut) continue
+      for (let k = 0; k < cards.length && count < MAX_CARDS; k += 6) {
+        pos.set(cards.subarray(k, k + 4), count * 4)
+        look[count * 2] = cards[k + 4] as number
+        look[count * 2 + 1] = cards[k + 5] as number
+        count++
+      }
     }
     this.cardGeometry.instanceCount = count
     this.cardPos.clearUpdateRanges()
@@ -453,7 +555,7 @@ export class FarForest {
   /** A ring of treetops on the ground WALL metres out, seen faintly through the day's haze. */
   private buildWall(ox: number, oz: number): void {
     const segments = 160
-    const repeats = 14
+    const repeats = 9
     const position: number[] = []
     const uv: number[] = []
     const index: number[] = []
@@ -464,7 +566,11 @@ export class FarForest {
       const i = Math.round((x + WORLD_HALF) / STEP)
       const j = Math.round((z + WORLD_HALF) / STEP)
       const y = this.height(i, j)
-      position.push(x, y - 14, z, x, y + 16, z)
+      // The band's top rises and falls a little (no two repeats of the texture alike).
+      const ca = Math.cos(a)
+      const sa = Math.sin(a)
+      const rise = 3 * valueNoise(ca * 4, sa * 4, 41) + 2 * valueNoise(ca * 13, sa * 13, 42)
+      position.push(x, y - 14, z, x, y + 14 + rise, z)
       const u = (s / segments) * repeats
       uv.push(u, 0, u, 1)
       if (s > 0) {
