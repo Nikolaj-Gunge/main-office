@@ -135,6 +135,20 @@ export class RemotePlayers {
     return new THREE.Vector3(s.x, s.y + (2.05 - 0.6 * s.crouch - 1.3 * s.prone) * size, s.z)
   }
 
+  /**
+   * They left your area of interest: hide them and drop what we had, so they reappear where
+   * they are when they come back (not gliding over from where they were last seen).
+   */
+  forget(id: number): void {
+    const p = this.players.get(id)
+    if (!p) return
+    p.buffer = new InterpolationBuffer()
+    p.shown = null
+    p.avatar.root.visible = false
+    p.stride = 0
+    p.velocity.set(0, 0, 0)
+  }
+
   /** Applies the server's skin and body size; rebuilds the models if the skin changed. */
   setLook(skin: SkinId, scale: number): void {
     this.scale = scale

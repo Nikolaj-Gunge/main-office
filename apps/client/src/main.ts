@@ -425,6 +425,8 @@ const net = new Connection({
         break
       case ServerMsg.Snapshot:
         if (msg.self) player.onServerState(msg.self, msg.ackSeq)
+        // Out of range now (survival): hidden until they come back, and then placed afresh.
+        for (const id of msg.removed ?? []) remotes.forget(id)
         remotes.onSnapshot(msg.tick, msg.players, performance.now())
         break
       case ServerMsg.Scoreboard:
@@ -942,7 +944,7 @@ pixels.setAnimationLoop(() => {
   }
   if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0
   if (outgoing.ready) {
-    net.send({ type: ClientMsg.Input, commands: outgoing.take() })
+    net.send({ type: ClientMsg.Input, commands: outgoing.take(), snapAck: net.snapshotAck })
   }
 
   if (noclip) fly.update(dt)
