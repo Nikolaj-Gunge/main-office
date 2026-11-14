@@ -1,6 +1,6 @@
 import type { WeaponSlot } from '../sim/weapons.ts'
 import type { SupplyDrop } from './drops.ts'
-import { GEAR, type WearSlot } from './gear.ts'
+import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import { ITEMS, POCKETS_KG } from './items.ts'
 
 /** Some of one item in a backpack. Weapons never stack (n = 1) and remember what's loaded. */
@@ -109,7 +109,10 @@ export function capacityOf(self: Pick<SurvivalSelf, 'pack' | 'wear'>): number {
   return kg
 }
 
-/** What everything worn adds up to (armour by where it covers, how hidden and how quiet). */
+/**
+ * What everything worn adds up to (armour by where it covers, how hidden and how quiet).
+ * Barefoot is a little louder than nothing at all.
+ */
 export function wornStats(self: Pick<SurvivalSelf, 'wear'>): {
   headArmour: number
   bodyArmour: number
@@ -125,6 +128,7 @@ export function wornStats(self: Pick<SurvivalSelf, 'wear'>): {
     out.stealth += g.stealth ?? 0
     out.quiet += g.quiet ?? 0
   }
+  if (!self.wear?.feet) out.quiet -= BAREFOOT_NOISE
   return out
 }
 

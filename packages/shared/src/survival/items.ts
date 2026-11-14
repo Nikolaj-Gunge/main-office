@@ -230,8 +230,20 @@ wear(
   700,
   'Ceramic plates and pouches. Stops a lot, carries a lot.',
 )
+wear('jeans', 'Jeans', 0.7, 30, 'Blue denim. Thicker than joggers, and real pockets.')
+wear('cargopants', 'Cargo pants', 0.8, 55, 'Pockets on the pockets.')
+wear('camopants', 'Camo pants', 0.7, 80, 'Hunting camo. Half of you disappears into the brush.')
+wear('worktrousers', 'Work trousers', 0.9, 45, 'Canvas with knee pads. Built to kneel in.')
+wear('policetrousers', 'Police trousers', 0.7, 60, 'Navy, with a stripe down the side.')
 wear('sneakers', 'Sneakers', 0.6, 40, 'Soft soles: quieter steps.')
 wear('boots', 'Hiking boots', 1.2, 90, 'Good boots. You barely hear yourself walk.')
+wear(
+  'militaryboots',
+  'Military boots',
+  1.4,
+  140,
+  'Laced to the shin. Quiet, and nothing gets through.',
+)
 
 // ── Tools ──
 add({
@@ -405,6 +417,8 @@ const TABLES: Record<LootTable, TableDef> = {
     entries: [
       ['hardhat', 3],
       ['boots', 2],
+      ['worktrousers', 2.5],
+      ['jeans', 1.5],
       ['flannel', 1.5],
       ['bandana', 1.5],
       ['doublebarrel', 0.6],
@@ -433,6 +447,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['raincoat', 1],
       ['sneakers', 2],
       ['boots', 1],
+      ['jeans', 3],
+      ['cargopants', 1.5],
       ['cowboyhat', 0.5],
       ['glock', 0.8],
       ['revolver', 0.5],
@@ -461,6 +477,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['beanie', 2],
       ['hoodie', 2],
       ['sneakers', 2],
+      ['jeans', 2],
+      ['cargopants', 1],
       ['raincoat', 2],
       ['bandana', 2],
       ['chips', 9],
@@ -512,6 +530,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['policevest', 3],
       ['helmet', 0.6],
       ['boots', 1.5],
+      ['policetrousers', 3],
+      ['militaryboots', 0.5],
       ['gasmask', 0.5],
       ['ump', 0.8],
       ['ammo9', 10, 10, 24],
@@ -535,6 +555,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['helmet', 2.5],
       ['gasmask', 1.5],
       ['boots', 2],
+      ['militaryboots', 2.5],
+      ['camopants', 2],
+      ['cargopants', 1.5],
       ['camojacket', 1],
       ['sks', 0.6],
       ['ammo556', 10, 12, 30],
@@ -566,6 +589,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['camojacket', 3],
       ['beanie', 2],
       ['boots', 2.5],
+      ['camopants', 2.5],
+      ['cargopants', 1.5],
       ['cap', 1.5],
       ['sks', 0.5],
       ['ammo308', 8, 3, 8],
@@ -593,6 +618,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['hoodie', 1.5],
       ['boots', 1],
       ['sneakers', 1],
+      ['jeans', 1.5],
+      ['cargopants', 1],
+      ['worktrousers', 1],
       ['ruger', 0.5],
       ['carbine22', 0.4],
       ['beans', 7],
@@ -619,6 +647,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['militaryvest', 1],
       ['helmet', 1],
       ['camojacket', 1.5],
+      ['militaryboots', 1],
+      ['camopants', 1],
       ['uzi', 0.5],
       ['medkit', 5],
       ['ammo556', 5, 20, 40],
@@ -646,6 +676,7 @@ const TABLES: Record<LootTable, TableDef> = {
     entries: [
       ['hoodie', 1],
       ['raincoat', 1],
+      ['jeans', 1],
       ['pack_school', 6],
       ['pack_hiking', 3],
       ['pack_military', 0.7],
@@ -695,6 +726,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['militaryvest', 2],
       ['helmet', 2],
       ['gasmask', 1],
+      ['militaryboots', 1.5],
       ['ammo556', 10, 30, 60],
       ['ammo762', 9, 30, 60],
       ['ammo9', 6, 24, 48],

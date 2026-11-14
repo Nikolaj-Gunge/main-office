@@ -1,16 +1,23 @@
 /**
  * Clothes and gear you wear in survival: one thing on your head, one on your body, one on your
- * feet. Each does a little (armour, pockets, staying unseen or unheard) and the head and body
- * pieces show on you, so other people see the helmet and the vest.
+ * legs and one on your feet. Each does a little (armour, pockets, staying unseen or unheard) and
+ * all four show on you, so other people see the helmet, the vest, the jeans and the boots.
+ * Nothing worn still shows: a new character starts in a white tank top and grey joggers,
+ * barefoot (look 0 of the body, legs and feet).
  */
 
-export type WearSlot = 'head' | 'body' | 'feet'
+import { FEET_LOOKS, LEGS_LOOKS } from '../appearance.ts'
+
+export type WearSlot = 'head' | 'body' | 'legs' | 'feet'
+
+/** Every slot, head to toe (the backpack's "Wearing" list goes in this order). */
+export const WEAR_SLOTS: readonly WearSlot[] = ['head', 'body', 'legs', 'feet']
 
 export interface WearStats {
   slot: WearSlot
-  /** What it looks like on a body (see GEAR_LOOKS; 0 = nothing shown). */
+  /** What it looks like on a body (see the *_LOOKS tables; 0 = the slot's default look). */
   look: number
-  /** Share of damage it stops where it covers you (head hits for head gear, the rest for body). */
+  /** Share of damage it stops where it covers you (head hits for head gear, the rest otherwise). */
   armour?: number
   /** Extra carrying room (kg). */
   pockets?: number
@@ -32,7 +39,7 @@ export const HEAD_LOOKS = {
   gasmask: 7,
 } as const
 
-/** Body looks (bits 4–7). */
+/** Body looks (bits 4–7). 0 = the starting white tank top. */
 export const BODY_LOOKS = {
   none: 0,
   hoodie: 1,
@@ -43,6 +50,9 @@ export const BODY_LOOKS = {
   raincoat: 6,
   flannel: 7,
 } as const
+
+/** Footsteps carry this much further barefoot (no shoes: slapping feet, crunching gravel). */
+export const BAREFOOT_NOISE = 0.1
 
 /** Item id → what wearing it does. */
 export const GEAR: Readonly<Record<string, WearStats>> = {
@@ -60,21 +70,30 @@ export const GEAR: Readonly<Record<string, WearStats>> = {
   camojacket: { slot: 'body', look: BODY_LOOKS.camo, pockets: 5, stealth: 0.25 },
   policevest: { slot: 'body', look: BODY_LOOKS.police, armour: 0.25, pockets: 2 },
   militaryvest: { slot: 'body', look: BODY_LOOKS.military, armour: 0.4, pockets: 6 },
-  sneakers: { slot: 'feet', look: 0, quiet: 0.15 },
-  boots: { slot: 'feet', look: 0, quiet: 0.3, armour: 0 },
+  jeans: { slot: 'legs', look: LEGS_LOOKS.jeans, pockets: 1, armour: 0.03 },
+  cargopants: { slot: 'legs', look: LEGS_LOOKS.cargo, pockets: 4 },
+  camopants: { slot: 'legs', look: LEGS_LOOKS.camo, pockets: 2, stealth: 0.1 },
+  worktrousers: { slot: 'legs', look: LEGS_LOOKS.work, pockets: 2, armour: 0.05 },
+  policetrousers: { slot: 'legs', look: LEGS_LOOKS.police, pockets: 2, armour: 0.04 },
+  sneakers: { slot: 'feet', look: FEET_LOOKS.sneakers, quiet: 0.15 },
+  boots: { slot: 'feet', look: FEET_LOOKS.boots, quiet: 0.3 },
+  militaryboots: { slot: 'feet', look: FEET_LOOKS.military, quiet: 0.2, armour: 0.02 },
 }
 
-/** What a set of worn items looks like, packed for the wire: head look | body look << 4. */
+/**
+ * What a set of worn items looks like, packed for the wire (u16):
+ * head | body << 4 | legs << 8 | feet << 12.
+ */
 export function gearLooks(worn: readonly (string | null | undefined)[]): number {
-  let head = 0
-  let body = 0
+  const looks = { head: 0, body: 0, legs: 0, feet: 0 }
   for (const id of worn) {
     const g = id ? GEAR[id] : undefined
-    if (g?.slot === 'head') head = g.look
-    if (g?.slot === 'body') body = g.look
+    if (g) looks[g.slot] = g.look & 15
   }
-  return (head & 15) | ((body & 15) << 4)
+  return looks.head | (looks.body << 4) | (looks.legs << 8) | (looks.feet << 12)
 }
 
 export const headLook = (gear: number): number => gear & 15
 export const bodyLook = (gear: number): number => (gear >> 4) & 15
+export const legsLook = (gear: number): number => (gear >> 8) & 15
+export const feetLook = (gear: number): number => (gear >> 12) & 15

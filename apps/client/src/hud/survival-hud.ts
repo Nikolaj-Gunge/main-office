@@ -24,7 +24,9 @@ import {
   type SurvivalShared,
   stepTargets,
   WEAPONS,
+  WEAR_SLOTS,
   type WeaponId,
+  type WearSlot,
   WORLD_HALF,
   WORLD_SIZE,
   weightOf,
@@ -116,6 +118,14 @@ export function bearingTo(from: { x: number; z: number }, to: { x: number; z: nu
 /** Smallest signed difference a − b in degrees (−180…180). */
 export function turnBetween(a: number, b: number): number {
   return ((((a - b + 180) % 360) + 360) % 360) - 180
+}
+
+/** What shows in an empty slot of the "Wearing" list: what everyone starts out in. */
+const STARTING_CLOTHES: Record<WearSlot, string> = {
+  head: '—',
+  body: 'Tank top',
+  legs: 'Joggers',
+  feet: 'Barefoot',
 }
 
 /** What using an item does, in a few words. */
@@ -820,7 +830,7 @@ export class SurvivalHud {
       fill.style.width = `${Math.min(100, (weight / cap) * 100)}%`
       el('div', 'sv-weight-text', left, `${kg(weight)} / ${kg(cap)} kg`)
       el('div', 'sv-group', left, 'Wearing')
-      for (const slot of ['head', 'body', 'feet'] as const) {
+      for (const slot of WEAR_SLOTS) {
         const id = self.wear?.[slot]
         const row = el('div', 'sv-worn', left)
         el('span', 'sv-worn-slot', row, slot.toUpperCase())
@@ -828,7 +838,7 @@ export class SurvivalHud {
           'span',
           id ? 'sv-worn-name' : 'sv-worn-name empty',
           row,
-          id ? (ITEMS[id]?.name ?? id) : '—',
+          id ? (ITEMS[id]?.name ?? id) : STARTING_CLOTHES[slot],
         )
         if (id) this.button(row, 'Take off', () => this.send({ a: 'unwear', slot }))
       }

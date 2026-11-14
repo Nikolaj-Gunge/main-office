@@ -53,7 +53,13 @@ export function createSession(
             socket.close(4000, 'Protocol version mismatch — reload the page')
             return
           }
-          const id = game.join(msg.name, { send: (bytes) => socket.send(bytes) })
+          const id = game.join(
+            msg.name,
+            { send: (bytes) => socket.send(bytes) },
+            undefined,
+            undefined,
+            msg.appearance,
+          )
           if (id === null) {
             socket.close(4001, 'Server full')
             return
