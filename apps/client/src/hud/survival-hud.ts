@@ -13,6 +13,7 @@ import {
   infectionStage,
   infectionWord,
   type Notice,
+  PEOPLE,
   type Poi,
   poiAt,
   QUESTS,
@@ -26,7 +27,7 @@ import {
   type SurvivalDef,
   type SurvivalSelf,
   type SurvivalShared,
-  stepTargets,
+  stepGoal,
   WEAPONS,
   WEAR_SLOTS,
   type WeaponId,
@@ -36,6 +37,7 @@ import {
   weightOf,
 } from '@office-fps/shared'
 import { markerSpot } from './objective-marker.ts'
+import { QuestJournal } from './quest-journal.ts'
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -224,8 +226,11 @@ export class SurvivalHud {
   private readonly feedLines: { node: HTMLElement; until: number }[] = []
   private readonly story: HTMLDivElement
   private readonly storyText: HTMLDivElement
-  private readonly storyQueue: string[] = []
+  private readonly storyTitle: HTMLDivElement
+  private readonly storyQueue: { text: string; title?: string }[] = []
   private storyNow: { text: string; shown: number; age: number } | null = null
+  /** A siege on: the camp's bar under the compass. */
+  private readonly siege: HTMLDivElement
   // Compass
   private readonly compass: HTMLDivElement
   private readonly points: { node: HTMLElement; bearing: number }[] = []
@@ -249,7 +254,10 @@ export class SurvivalHud {
   private talkShown = 0
   // Screens
   private readonly panel: HTMLDivElement
-  private screen: 'none' | 'pack' | 'shop' = 'none'
+  private screen: 'none' | 'pack' | 'shop' | 'journal' = 'none'
+  private readonly journal: QuestJournal
+  /** Your player id (whom the people walking with somebody follow). */
+  me: () => number = () => 0
   private shop: Dialog | null = null
   private selected = 0
   private rows: { stack: Stack; index: number }[] = []
@@ -285,8 +293,12 @@ export class SurvivalHud {
     this.tracker = el('div', 'sv-tracker', this.root)
     this.feed = el('div', 'sv-feed', this.root)
     this.story = el('div', 'sv-story', this.root)
+    this.storyTitle = el('div', 'sv-story-title', this.story)
     this.storyText = el('div', '', this.story)
     this.story.hidden = true
+    this.siege = el('div', 'sv-siege', this.root)
+    this.siege.hidden = true
+    this.journal = new QuestJournal(def)
 
     this.compass = el('div', 'sv-compass', this.root)
     for (const [i, name] of ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].entries()) {
@@ -359,7 +371,7 @@ export class SurvivalHud {
   /** Takes a story card down, showing or still waiting (the bite's, once you're clean or dead). */
   dropStory(text: string): void {
     for (let i = this.storyQueue.length - 1; i >= 0; i--)
-      if (this.storyQueue[i] === text) this.storyQueue.splice(i, 1)
+      if (this.storyQueue[i]?.text === text) this.storyQueue.splice(i, 1)
     if (this.storyNow?.text === text) {
       this.storyNow = null
       this.story.hidden = true
@@ -368,8 +380,11 @@ export class SurvivalHud {
 
   notice(n: Notice): void {
     if (n.kind === 'scream') return
-    if (n.kind === 'story') {
-      this.storyQueue.push(n.text)
+    if (n.kind === 'story' || n.kind === 'note') {
+      this.storyQueue.push({
+        text: n.text,
+        ...(n.kind === 'note' ? { title: n.title ?? 'A note' } : {}),
+      })
       return
     }
     const node = el('div', `sv-note ${n.kind}`, this.feed, n.text)
@@ -394,7 +409,9 @@ export class SurvivalHud {
     this.talk.hidden = d === null
     this.talk.replaceChildren()
     if (!d) return
-    el('div', 'sv-talk-name', this.talk, d.name)
+    const head = el('div', 'sv-talk-name', this.talk, d.name)
+    const full = PEOPLE[d.npc]?.name
+    if (full && full !== d.name) el('span', 'sv-talk-who', head, full)
     el('div', 'sv-talk-text', this.talk)
     const list = el('div', 'sv-talk-options', this.talk)
     d.options.forEach((o, i) => {
@@ -406,6 +423,12 @@ export class SurvivalHud {
     if (!this.visible) return
     this.selected = 0
     this.setScreen(this.screen === 'pack' ? 'none' : 'pack')
+  }
+
+  /** J: the journal (quests, notes read, the people of Haven). */
+  toggleJournal(): void {
+    if (!this.visible) return
+    this.setScreen(this.screen === 'journal' ? 'none' : 'journal')
   }
 
   toggleMap(): void {
@@ -457,6 +480,11 @@ export class SurvivalHud {
       return true
     }
     if (this.screen === 'none') return false
+    if (this.screen === 'journal') {
+      if (code === 'KeyJ') this.setScreen('none')
+      else if (this.journal.key(code)) this.drawScreen()
+      return true
+    }
     const n = this.rows.length
     if (code === 'ArrowDown' || code === 'KeyS') this.selected = Math.min(n - 1, this.selected + 1)
     else if (code === 'ArrowUp' || code === 'KeyW') this.selected = Math.max(0, this.selected - 1)
@@ -499,7 +527,12 @@ export class SurvivalHud {
     while (this.feedLines[0] && this.feedLines[0].until < this.clock)
       this.feedLines.shift()?.node.remove()
     if (!this.storyNow && this.storyQueue.length > 0) {
-      this.storyNow = { text: this.storyQueue.shift() ?? '', shown: 0, age: 0 }
+      const next = this.storyQueue.shift() ?? { text: '' }
+      this.storyNow = { text: next.text, shown: 0, age: 0 }
+      // A note is read on paper, with what it is over it.
+      this.story.classList.toggle('paper', next.title !== undefined)
+      this.storyTitle.hidden = next.title === undefined
+      this.storyTitle.textContent = next.title ?? ''
       this.story.hidden = false
       this.onSound?.('story')
     }
@@ -519,7 +552,7 @@ export class SurvivalHud {
       }
     }
     if (this.talking) {
-      const text = this.talk.children[1]
+      const text = this.talk.querySelector('.sv-talk-text')
       const shown = Math.min(this.talking.text.length, this.talkShown + Math.ceil(dt * 90))
       if (text && shown !== this.talkShown) {
         this.talkShown = shown
@@ -534,6 +567,7 @@ export class SurvivalHud {
     this.hour.hidden = label === ''
     if (this.hour.textContent !== label) this.hour.textContent = label
     this.hour.classList.toggle('dusk', phase === 'dusk')
+    this.drawSiege()
     if (this.mapOpen) {
       this.sinceMap += dt
       if (this.sinceMap > 0.2) {
@@ -545,6 +579,28 @@ export class SurvivalHud {
 
   // --- Pieces --------------------------------------------------------------------------------
 
+  /** A place under attack: its name, how much it can still take, and how long to hold. */
+  private drawSiege(): void {
+    const s = this.shared?.siege
+    this.siege.hidden = !s
+    if (!s) return
+    const name = this.def.pois.find((p) => p.key === s.poi)?.name ?? 'The camp'
+    const key = `${name}|${s.hp}|${s.left}`
+    if (this.siege.dataset.key === key) return
+    this.siege.dataset.key = key
+    this.siege.replaceChildren()
+    el('b', 'sv-siege-name', this.siege, `${name.toUpperCase()} UNDER ATTACK`)
+    const bar = el('div', 'sv-siege-bar', this.siege)
+    const fill = el('i', s.hp < 35 ? 'sv-siege-fill low' : 'sv-siege-fill', bar)
+    fill.style.width = `${s.hp}%`
+    el(
+      'span',
+      '',
+      this.siege,
+      `Hold ${Math.floor(s.left / 60)}:${String(s.left % 60).padStart(2, '0')}`,
+    )
+  }
+
   private setBar(fill: HTMLElement, value: number, bad = false): void {
     const width = `${Math.round(Math.max(0, Math.min(100, value)))}%`
     if (fill.style.width !== width) fill.style.width = width
@@ -554,7 +610,7 @@ export class SurvivalHud {
 
   /** The story chapter first, then side jobs. */
   private quests(): { state: QuestState; story: boolean }[] {
-    const all = (this.shared?.quests ?? []).map((state) => ({
+    const all = (this.self?.journal?.quests ?? []).map((state) => ({
       state,
       story: questById(state.id)?.story === true,
     }))
@@ -595,29 +651,59 @@ export class SurvivalHud {
     }
   }
 
-  /** The nearest target of a quest's current step, or null. */
+  /**
+   * The nearest target of a quest's current step, or null: `area` > 0 when it's only a search
+   * area (you're inside it once within that), `hidden` when there's no clue to it yet.
+   */
   private targetOf(
     state: QuestState,
     pos: { x: number; z: number },
-  ): { x: number; y: number; z: number } | null {
-    const step = questById(state.id)?.steps[state.step]
-    if (!step) return null
-    let best: { x: number; y: number; z: number } | null = null
+  ): { x: number; y: number; z: number; area: number } | null {
+    const goal = this.goalOf(state)
+    if (!goal) return null
+    let best: { x: number; y: number; z: number; area: number } | null = null
     let bestD = Number.POSITIVE_INFINITY
-    for (const [x, y, z] of stepTargets(this.def, step, state.count)) {
+    for (const [x, y, z] of goal.points) {
       const d = Math.hypot(x - pos.x, z - pos.z)
       if (d < bestD) {
         bestD = d
-        best = { x, y, z }
+        best = { x, y, z, area: goal.area }
       }
     }
     return best
   }
 
+  private goalOf(state: QuestState) {
+    const step = questById(state.id)?.steps[state.step]
+    const journal = this.self?.journal
+    if (!step || !journal) return null
+    return stepGoal(this.def, step, state, journal, this.shared?.walkers ?? [], this.me())
+  }
+
   /** Where the story wants you now: the nearest target of its current step. */
-  private goal(pos: { x: number; z: number }): { x: number; y: number; z: number } | null {
+  private goal(pos: {
+    x: number
+    z: number
+  }): { x: number; y: number; z: number; area: number } | null {
     const story = this.quests().find((q) => q.story)
     return story ? this.targetOf(story.state, pos) : null
+  }
+
+  /** Under a quest in the tracker: where its target is, a search area, or no lead yet. */
+  private whereLine(
+    state: QuestState,
+    target: { x: number; y: number; z: number; area: number } | null,
+    pos: { x: number; z: number },
+  ): string {
+    if (this.goalOf(state)?.hidden) return 'No marker · find a lead'
+    if (!target) return ''
+    if (target.area > 0) {
+      const d = Math.hypot(target.x - pos.x, target.z - pos.z)
+      return d < target.area
+        ? 'Search the area'
+        : `Search area · ${whereText(this.def, pos, target)}`
+    }
+    return whereText(this.def, pos, target)
   }
 
   private drawCompass(ctx: SurvivalHudContext): void {
@@ -630,27 +716,39 @@ export class SurvivalHud {
       if (!node.hidden) node.style.left = `${(0.5 + turn / 180) * width}px`
     }
     for (const p of this.points) place(p.node, p.bearing, false)
-    const goal = this.goal(ctx.pos)
+    let goal = this.goal(ctx.pos)
+    const story = this.quests().find((q) => q.story)
+    // Inside a search area there's nothing more to point at: look around.
+    const searching =
+      goal !== null &&
+      goal.area > 0 &&
+      Math.hypot(goal.x - ctx.pos.x, goal.z - ctx.pos.z) < goal.area
+    const main = story ? this.whereLine(story.state, goal, ctx.pos) : ''
+    if (this.mainDistance && this.mainDistance.textContent !== main)
+      this.mainDistance.textContent = main
+    if (searching) goal = null
     this.marker.hidden = goal === null
     if (goal) {
       place(this.marker, bearingTo(ctx.pos, goal), true)
       const text = `${Math.round(Math.hypot(goal.x - ctx.pos.x, goal.z - ctx.pos.z))} m`
       if (this.marker.textContent !== text) this.marker.textContent = text
-      const where = whereText(this.def, ctx.pos, goal)
-      if (this.mainDistance && this.mainDistance.textContent !== where) {
-        this.mainDistance.textContent = where
-      }
     }
     const sides = this.quests().filter((q) => !q.story)
-    const targets = [goal]
+    const targets: ({ x: number; y: number; z: number } | null)[] = [goal]
     this.sideMarkers.forEach((node, i) => {
       const side = sides[i]
-      const target = side ? this.targetOf(side.state, ctx.pos) : null
+      let target = side ? this.targetOf(side.state, ctx.pos) : null
+      const where = side ? this.whereLine(side.state, target, ctx.pos) : ''
+      if (
+        target &&
+        target.area > 0 &&
+        Math.hypot(target.x - ctx.pos.x, target.z - ctx.pos.z) < target.area
+      )
+        target = null
       targets.push(target)
       node.hidden = target === null
       if (target) place(node, bearingTo(ctx.pos, target), true)
       const line = this.sideWhere[i]
-      const where = target ? whereText(this.def, ctx.pos, target) : ''
       if (line && line.textContent !== where) line.textContent = where
     })
     this.drawWaypoints(ctx, targets)
@@ -708,7 +806,7 @@ export class SurvivalHud {
     })
   }
 
-  private setScreen(screen: 'none' | 'pack' | 'shop'): void {
+  private setScreen(screen: 'none' | 'pack' | 'shop' | 'journal'): void {
     const was = this.modal
     if (this.screen === 'shop' && screen !== 'shop' && this.shop) {
       this.send({ a: 'choose', npc: this.shop.npc, option: 'bye' })
@@ -788,6 +886,12 @@ export class SurvivalHud {
   private drawScreen(): void {
     const self = this.self
     if (!self) return
+    if (this.screen === 'journal') {
+      this.journal.draw(this.panel, self.journal, this.shared?.unlocks ?? [], () =>
+        this.drawScreen(),
+      )
+      return
+    }
     const scroll = this.panel.querySelector('.sv-list')?.scrollTop ?? 0
     this.panel.replaceChildren()
     const shop = this.screen === 'shop' ? this.shop : null
@@ -1010,12 +1114,20 @@ export class SurvivalHud {
     }
     // Where the story (gold rings) and the jobs (teal) want you.
     for (const { state, story } of this.quests()) {
-      const step = questById(state.id)?.steps[state.step]
-      if (!step) continue
-      for (const [x, , z] of stepTargets(this.def, step, state.count)) {
+      const goal = this.goalOf(state)
+      if (!goal) continue
+      for (const [x, , z] of goal.points) {
         g.strokeStyle = story ? '#ffb030' : '#6cc6d8'
         g.lineWidth = 2
         g.beginPath()
+        if (goal.area > 0) {
+          // A search area: a dashed circle as big as the place.
+          g.setLineDash([4, 4])
+          g.arc(at(x), at(z), Math.max(8, goal.area * s), 0, Math.PI * 2)
+          g.stroke()
+          g.setLineDash([])
+          continue
+        }
         g.arc(at(x), at(z), story ? 9 + 2 * Math.sin(this.clock * 4) : 5, 0, Math.PI * 2)
         g.stroke()
       }

@@ -28,6 +28,8 @@ import {
   setBarricades,
   spotCentre,
   syncForest,
+  WALKERS,
+  type WalkerState,
   WeaponId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
@@ -108,6 +110,11 @@ export class SurvivalClient {
   /** When the server last said what time it is (ms). */
   private clockAt = 0
   private readonly npcs: { def: Npc; avatar: Avatar; state: RemotePlayerState }[] = []
+  /** People walking with somebody (or waiting to be found), by key: drawn where the server says. */
+  private readonly walkers = new Map<
+    string,
+    { avatar: Avatar; state: RemotePlayerState; to: WalkerState }
+  >()
   private readonly torch = torch()
   private readonly others: THREE.SpotLight[] = []
   private torchLevel = 0
@@ -125,6 +132,8 @@ export class SurvivalClient {
     hudRoot: HTMLElement
     audio: AudioEngine
     send: (action: SurvivalAction) => void
+    /** Your player id. */
+    me?: () => number
   }) {
     this.def = o.def
     this.scene = o.scene
@@ -146,6 +155,7 @@ export class SurvivalClient {
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
+    if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
@@ -167,35 +177,66 @@ export class SurvivalClient {
       this.npcs.push({
         def: npc,
         avatar,
-        state: {
-          id: 60000 + i,
-          x: npc.pos[0],
-          y: npc.pos[1],
-          z: npc.pos[2],
-          yaw: npc.yaw,
-          pitch: 0,
-          crouch: 0,
-          grounded: true,
-          alive: true,
-          protected: false,
-          // Empty hands.
-          weapon: WeaponId.Claws,
-          aiming: false,
-          stride: 0,
-          speed: 0,
-          moveDir: 0,
-          vy: 0,
-          land: 0,
-          ads: 0,
-          shotAge: 1,
-          prone: 0,
-          slide: 0,
-          mantle: 0,
-          ledge: 0,
-          gear: gearLooks(NPC_GEAR[npc.role] ?? []),
-        },
+        state: standing(60000 + i, npc.pos, npc.yaw, gearLooks(NPC_GEAR[npc.role] ?? [])),
       })
     })
+  }
+
+  /** The people walking with somebody: new ones appear, gone ones go, the rest walk on. */
+  private applyWalkers(list: readonly WalkerState[]): void {
+    const seen = new Set<string>()
+    for (const w of list) {
+      seen.add(w.key)
+      const have = this.walkers.get(w.key)
+      if (have) {
+        have.to = w
+        continue
+      }
+      const def = WALKERS[w.who]
+      const look = randomAppearance(seeded(0x5eed + w.who.length * 104729))
+      const avatar = new Avatar(def?.name ?? w.who, def?.color ?? 0, 'worker', look)
+      this.scene.add(avatar.root)
+      const state = standing(
+        61000 + this.walkers.size,
+        [w.x, w.y, w.z],
+        w.yaw,
+        gearLooks(def?.gear ?? []),
+      )
+      this.walkers.set(w.key, { avatar, state, to: w })
+    }
+    for (const [key, w] of this.walkers) {
+      if (seen.has(key)) continue
+      this.scene.remove(w.avatar.root)
+      this.walkers.delete(key)
+    }
+  }
+
+  /** Walkers ease to where the server last had them, and walk while they do. */
+  private moveWalkers(dt: number, eye: THREE.Vector3): void {
+    const now = performance.now()
+    for (const w of this.walkers.values()) {
+      const s = w.state
+      const dx = w.to.x - s.x
+      const dz = w.to.z - s.z
+      const d = Math.hypot(dx, dz)
+      // Far behind (just appeared, or a long gap): there at once.
+      const k = d > 12 ? 1 : Math.min(1, dt * 6)
+      s.x += dx * k
+      s.z += dz * k
+      s.y += (w.to.y - s.y) * k
+      const moved = d * k
+      const speed = dt > 0 ? moved / dt : 0
+      s.speed += (speed - s.speed) * Math.min(1, dt * 8)
+      s.stride = (s.stride + moved / 2.2) % 1
+      s.moveDir = 0
+      if (moved > 0.01) s.yaw = Math.atan2(-dx, -dz)
+      else if (w.to.follow === 0)
+        s.yaw +=
+          (((w.to.yaw - s.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 3)
+      const far = Math.hypot(s.x - eye.x, s.z - eye.z) > 90
+      w.avatar.root.visible = !far
+      if (!far) w.avatar.update(s, remotePose(s, { time: now / 1000 }), now, eye)
+    }
   }
 
   /** Survival's own messages; returns true if it was one. */
@@ -236,6 +277,7 @@ export class SurvivalClient {
     this.applyBoards(shared.boards ?? [])
     this.heli.apply(shared.drops)
     this.weather.setShared(shared.weather)
+    this.applyWalkers(shared.walkers ?? [])
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -253,6 +295,7 @@ export class SurvivalClient {
 
   /** Joined a (new) game: forget what the last one said. */
   reset(): void {
+    this.applyWalkers([])
     this.loot.clear()
     this.heli.clear()
     this.self = null
@@ -360,6 +403,7 @@ export class SurvivalClient {
       npc.avatar.update(npc.state, remotePose(npc.state, { time: now / 1000 }), now, eye)
     }
 
+    this.moveWalkers(dt, eye)
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
     this.infectionFx = this.infection.update(dt, state.alive)
@@ -442,15 +486,22 @@ export class SurvivalClient {
       return (dx * fx + dy * fy + dz * fz) / Math.max(d, 0.2) + (reach - d) * 0.05
     }
     let best = 0.3
-    let npc: Npc | null = null
+    let npc: string | null = null
     for (const n of this.def.npcs) {
       const score = aim(n.pos[0], n.pos[1] + 1.4, n.pos[2], TALK_REACH)
       if (score > best) {
         best = score
-        npc = n
+        npc = n.name
       }
     }
-    if (npc) return `Talk to ${npc.name}`
+    for (const w of this.walkers.values()) {
+      const score = aim(w.to.x, w.to.y + 1.4, w.to.z, TALK_REACH)
+      if (score > best) {
+        best = score
+        npc = WALKERS[w.to.who]?.name ?? w.to.who
+      }
+    }
+    if (npc) return `Talk to ${npc}`
     let thing: Interactable | null = null
     best = 0.2
     for (const t of this.def.interactables) {
@@ -505,5 +556,41 @@ export class SurvivalClient {
         return 'Drink'
     }
     return null
+  }
+}
+
+/** Somebody standing still with empty hands (the people of Haven, and those who walk). */
+function standing(
+  id: number,
+  pos: readonly [number, number, number],
+  yaw: number,
+  gear: number,
+): RemotePlayerState {
+  return {
+    id,
+    x: pos[0],
+    y: pos[1],
+    z: pos[2],
+    yaw,
+    pitch: 0,
+    crouch: 0,
+    grounded: true,
+    alive: true,
+    protected: false,
+    // Empty hands.
+    weapon: WeaponId.Claws,
+    aiming: false,
+    stride: 0,
+    speed: 0,
+    moveDir: 0,
+    vy: 0,
+    land: 0,
+    ads: 0,
+    shotAge: 1,
+    prone: 0,
+    slide: 0,
+    mantle: 0,
+    ledge: 0,
+    gear,
   }
 }

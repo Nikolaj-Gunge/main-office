@@ -11,10 +11,10 @@ import {
   createWeaponState,
   DAY_SECONDS,
   type DayPhase,
-  type Dialog,
   daylight,
   dayPhase,
   flashAt,
+  freshJournal,
   GEAR,
   gearLooks,
   hearingScale,
@@ -28,23 +28,16 @@ import {
   MAX_PLANKS,
   type MapSpawn,
   type Notice,
-  type Npc,
   PLANK_HP,
   PLANK_ITEM,
   type PlayerState,
   type PoiKind,
   planksFor,
-  QUESTS,
-  type QuestDef,
-  type QuestState,
-  questById,
-  RARE_STOCK,
   rollLoot,
   rollRareStock,
   roomFor,
   SELL_RATE,
   ServerMsg,
-  SMALL_TALK,
   START_TIME,
   type Stack,
   type SurvivalAction,
@@ -58,7 +51,6 @@ import {
   syncForest,
   TICK_DT,
   TICK_RATE,
-  TRADER_STOCK,
   takeStack,
   WEAPONS,
   WEAR_SLOTS,
@@ -77,6 +69,7 @@ import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { Story, type StoryHost } from './story.ts'
 
 /** Small places that go on the map without a "Found:" for everyone. */
 const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', 'stand']
@@ -110,8 +103,6 @@ interface Survivor {
   /** How far their noise carries (m) until `noiseUntil`. */
   noise: number
   noiseUntil: number
-  /** Who they're talking to, and the quest on offer. */
-  talking: string | null
   warned: number
   /** When they may nail (or pull) the next plank. */
   boardAt: number
@@ -168,6 +159,7 @@ const freshSelf = (): SurvivalSelf => ({
   battery: 100,
   light: false,
   infected: null,
+  journal: freshJournal(),
 })
 
 /** What you notice as the bite takes hold (by infection stage). */
@@ -205,8 +197,6 @@ export class SurvivalDirector {
   /** What Gus has today besides his usual stock (RARE_STOCK): item → how many. */
   private rare = new Map<string, number>()
   private pool: ServerPlayer[] = []
-  private quests: QuestState[] = []
-  private done: string[] = []
   private found = new Set<number>()
   private gates = 0
   private phase: DayPhase = 'night'
@@ -221,7 +211,6 @@ export class SurvivalDirector {
   private weatherSeed = 1
   /** Weather held at one kind (admin, tests), or null: as the seed has it. */
   private weatherPin: WeatherKind | null = null
-  won = false
   /** Helicopter supply drops (once the story has the radio working). */
   private readonly drops: Drops
 
@@ -229,6 +218,20 @@ export class SurvivalDirector {
     this.game = game
     this.random = random
     this.drops = new Drops(this.dropHost())
+    this.story = new Story(this.storyHost())
+  }
+
+  /** The story and everybody's quests (see story.ts). */
+  readonly story: Story
+
+  /** Everybody here has seen the story through. */
+  get won(): boolean {
+    return this.story.won
+  }
+
+  /** How it ended (the round's headline). */
+  get headline(): string {
+    return this.story.headline ?? 'You made it out of Deadwood'
   }
 
   private get now(): number {
@@ -271,7 +274,6 @@ export class SurvivalDirector {
     if (!def) return
     this.def = def
     this.dispose()
-    this.won = false
     this.startTick = this.game.tick
     this.slept = 0
     this.weatherSeed = Math.floor(this.random() * 0x7fffffff)
@@ -279,8 +281,7 @@ export class SurvivalDirector {
     this.loot.clear()
     this.cells.clear()
     this.places = def.pois.map(() => ({ stocked: -1, kills: [], woken: 0 }))
-    this.quests = []
-    this.done = []
+    this.story.reset()
     this.found = new Set()
     this.gates = 0
     this.game.setGates(0)
@@ -290,7 +291,6 @@ export class SurvivalDirector {
     this.rare = rollRareStock(this.random)
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
     this.drops.reset()
-    this.begin('wake')
     for (let i = 0; i < POOL; i++) {
       const zombie = this.game.addZombie(new Zed(this.random))
       if (zombie) this.pool.push(zombie)
@@ -323,12 +323,13 @@ export class SurvivalDirector {
       cells: new Set(),
       noise: 0,
       noiseUntil: 0,
-      talking: null,
       boardAt: 0,
       warned: 0,
       reborn: saved?.reborn ?? false,
       turning: false,
     })
+    const sv = this.survivors.get(player.id)
+    if (sv) this.story.join(sv, sv.reborn)
   }
 
   onLeave(player: ServerPlayer): void {
@@ -336,6 +337,7 @@ export class SurvivalDirector {
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
+    this.story.left(player)
     this.profiles.set(player.name, { self: sv.self, kit: sv.kit, reborn: sv.reborn })
     this.survivors.delete(player.id)
   }
@@ -478,7 +480,7 @@ export class SurvivalDirector {
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
-      this.countKill(zed, victim.state.pos, killer)
+      this.story.killed(victim, zed.kind, victim.state.pos, killer)
       // Now and then one of them was carrying something.
       if (this.random() < 0.14) {
         const drop = rollLoot(this.random() < 0.5 ? 'bedroom' : 'medical', this.random)
@@ -498,8 +500,8 @@ export class SurvivalDirector {
     sv.reborn = true
     sv.turning = false
     sv.warned = 0
-    sv.talking = null
     sv.dirty = true
+    this.story.died(sv)
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
     if (turning) this.rise(victim, stuff, look, at)
     else this.spill(stuff, at)
@@ -603,12 +605,15 @@ export class SurvivalDirector {
       this.discover(alive)
       this.stockPlaces(alive)
       this.expireLoot()
-      this.tickQuests(alive)
+      this.story.tick(alive)
       this.drops.step()
       this.tickDay(people)
     }
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
+    this.story.step(TICK_DT)
+    // Somebody walking with you is kept up to date often enough to look like walking.
+    if (this.story.moving && tick % 12 === 3) this.game.match.broadcast()
     this.senses(alive)
     this.batter()
     if (this.boardsDirty && this.now - this.boardsSentAt > 0.2) {
@@ -880,16 +885,17 @@ export class SurvivalDirector {
       return (dx * fx + dy * fy + dz * fz) / Math.max(d, 0.2) + (reach - d) * 0.05
     }
 
-    let npc: Npc | null = null
+    // Somebody to talk to: the people of Haven, or someone walking with you.
+    let npc: string | null = null
     let best = 0.3
-    for (const n of this.def.npcs) {
+    for (const n of [...this.def.npcs, ...this.story.talkables()]) {
       const score = aimAt(n.pos[0], n.pos[1] + 1.4, n.pos[2], TALK_REACH)
       if (score > best) {
         best = score
-        npc = n
+        npc = n.key
       }
     }
-    if (npc) return void this.talk(sv, npc)
+    if (npc) return void this.story.talk(sv, npc)
 
     let thing: Interactable | null = null
     best = 0.2
@@ -1095,49 +1101,8 @@ export class SurvivalDirector {
       this.notice(player, 'info', 'Clean water. You drink your fill.')
       return
     }
-    // Everything else belongs to a quest: it does something only when a step asks for it.
-    for (const q of this.quests) {
-      const step = questById(q.id)?.steps[q.step]
-      if (!step) continue
-      if (step.kind === 'use' && step.target === thing.key) {
-        const missing = (step.needs ?? []).find(([item, n]) => countOf(sv.self.inv, item) < n)
-        if (missing) {
-          this.notice(
-            player,
-            'warn',
-            `You need ${ITEMS[missing[0]]?.name ?? missing[0]}${missing[1] > 1 ? ` ×${missing[1]}` : ''}.`,
-          )
-          return
-        }
-        if (!step.keeps) for (const [item, n] of step.needs ?? []) takeStack(sv.self.inv, item, n)
-        for (const [item, n] of step.gives ?? []) addStack(sv.self.inv, item, n)
-        if (step.opens !== undefined) {
-          this.gates |= 1 << step.opens
-          this.game.setGates(this.gates)
-        }
-        if (step.wakes) this.wake(step.wakes)
-        if (step.say) this.noticeAll('story', step.say)
-        this.touch(sv)
-        this.advance(q, sv)
-        return
-      }
-      if (step.kind === 'collect') {
-        const i = step.targets.indexOf(thing.key)
-        if (i < 0 || q.count & (1 << i)) continue
-        q.count |= 1 << i
-        for (const [item, n] of step.gives) addStack(sv.self.inv, item, n)
-        this.touch(sv)
-        this.notice(
-          player,
-          'loot',
-          `+ ${step.gives.map(([item]) => ITEMS[item]?.name ?? item).join(', ')}`,
-        )
-        if (q.count === (1 << step.targets.length) - 1) this.advance(q, sv)
-        else this.game.match.broadcast()
-        return
-      }
-    }
-    if (thing.kind === 'note' && thing.text) return void this.notice(player, 'story', thing.text)
+    // Everything else belongs to a quest (or is a note to read).
+    if (this.story.use(sv, thing)) return
     this.notice(player, 'info', 'Nothing here you need right now.')
   }
 
@@ -1313,19 +1278,18 @@ export class SurvivalDirector {
       case 'sell': {
         const def = ITEMS[action.item]
         const n = Math.max(1, Math.min(99, Math.floor(Number(action.n)) || 1))
-        const gus = this.def.npcs.find((p) => p.role === 'trader')
-        if (!def || !gus || dist(s.pos, { x: gus.pos[0], z: gus.pos[2] }) > 6) return
+        if (!def) return
         if (action.a === 'buy') {
-          const rare = RARE_STOCK.find((r) => r.item === def.id)
-          const inStock = TRADER_STOCK.includes(def.id) || (this.rare.get(def.id) ?? 0) >= n
-          if (!inStock) return
+          // Whoever within reach sells it (Gus, or Ray and Lena once they do), at your price.
+          const quote = this.story.quote(sv, def.id)
+          if (!quote || (quote.rare && (this.rare.get(def.id) ?? 0) < n)) return
           const each = def.kind === 'ammo' ? AMMO_BOX : 1
-          const price = (rare ? rare.price : Math.ceil(def.value * each)) * n
+          const price = quote.price * n
           if (self.money < price) return void this.notice(player, 'warn', "You can't afford that.")
           if (roomFor(self, def.id) < each * n)
             return void this.notice(player, 'warn', 'No room in your pack.')
           self.money -= price
-          if (rare && !TRADER_STOCK.includes(def.id)) {
+          if (quote.rare) {
             this.rare.set(def.id, (this.rare.get(def.id) ?? 0) - n)
             if ((this.rare.get(def.id) ?? 0) <= 0) this.rare.delete(def.id)
           }
@@ -1336,6 +1300,8 @@ export class SurvivalDirector {
             def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined,
           )
         } else {
+          const gus = this.def.npcs.find((p) => p.role === 'trader')
+          if (!gus || dist(s.pos, { x: gus.pos[0], z: gus.pos[2] }) > 6) return
           if (def.kind === 'quest' || def.kind === 'money') return
           const stack = [...self.inv].reverse().find((st) => st.item === def.id)
           if (!stack) return
@@ -1345,198 +1311,11 @@ export class SurvivalDirector {
         return void this.touch(sv)
       }
       case 'choose':
-        return void this.choose(sv, String(action.npc), String(action.option))
+        return void this.story.choose(sv, String(action.npc), String(action.option))
     }
   }
 
   // --- People and the story ---------------------------------------------------------------
-
-  private begin(id: string): void {
-    if (this.done.includes(id) || this.quests.some((q) => q.id === id)) return
-    const def = questById(id)
-    if (!def) return
-    this.quests.push({ id, step: 0, count: 0 })
-    this.noticeAll('quest', `${def.story ? 'Chapter' : 'New job'}: ${def.title}`)
-  }
-
-  /** Is this quest there to be offered: not begun, not done, and what it follows is done? */
-  private open(def: QuestDef): boolean {
-    if (this.done.includes(def.id) || this.quests.some((q) => q.id === def.id)) return false
-    return !def.after || this.done.includes(def.after)
-  }
-
-  /** The step is done: on to the next, or the quest is finished (rewards go to whoever did it). */
-  private advance(q: QuestState, by: Survivor | null): void {
-    const def = questById(q.id)
-    if (!def) return
-    q.step++
-    q.count = 0
-    if (q.step < def.steps.length) {
-      this.game.match.broadcast()
-      return
-    }
-    this.quests = this.quests.filter((x) => x !== q)
-    this.done.push(def.id)
-    const reward = def.reward
-    if (reward?.money) {
-      for (const sv of this.survivors.values()) {
-        sv.self.money += reward.money
-        sv.dirty = true
-      }
-    }
-    const to = by ?? [...this.survivors.values()][0]
-    if (to) {
-      for (const [item, n] of reward?.items ?? []) {
-        const weapon = ITEMS[item]?.weapon
-        const ammo = weapon === undefined ? undefined : WEAPONS[weapon].magSize
-        if (roomFor(to.self, item) >= n) addStack(to.self.inv, item, n, ammo)
-        else this.dropAt(item, n, to.player.state.pos, ammo)
-      }
-      this.touch(to)
-    }
-    if (reward?.reveals) {
-      this.def.pois.forEach((p, i) => {
-        if (p.hidden) this.found.add(i)
-      })
-    }
-    const got = [
-      ...(reward?.money ? [`$${reward.money}`] : []),
-      ...(reward?.items ?? []).map(
-        ([item, n]) => `${ITEMS[item]?.name ?? item}${n > 1 ? ` ×${n}` : ''}`,
-      ),
-    ]
-    this.noticeAll('story', `${def.done}${got.length > 0 ? `\n\n+ ${got.join(', ')}` : ''}`)
-    this.noticeAll('quest', `Done: ${def.title}`)
-    // The story goes on by itself.
-    const next = QUESTS.find((n) => n.story && n.after === def.id)
-    if (next) this.begin(next.id)
-    else if (def.story) this.won = true
-    this.game.match.broadcast()
-  }
-
-  private talk(sv: Survivor, npc: Npc): void {
-    sv.talking = npc.key
-    // Somebody a step is waiting on: they say their piece, and the story moves.
-    for (const q of [...this.quests]) {
-      const step = questById(q.id)?.steps[q.step]
-      if (!step || (step.kind !== 'talk' && step.kind !== 'fetch') || step.npc !== npc.key) continue
-      if (step.kind === 'fetch') {
-        const have = countOf(sv.self.inv, step.item)
-        if (have < step.n) {
-          const name = ITEMS[step.item]?.name ?? step.item
-          this.say(
-            sv,
-            npc,
-            `I still need ${name}${step.n > 1 ? ` — ${step.n} of them. You have ${have}.` : '.'}`,
-            this.options(sv, npc),
-          )
-          return
-        }
-        takeStack(sv.self.inv, step.item, step.n)
-        this.touch(sv)
-      }
-      this.say(sv, npc, step.say, this.options(sv, npc))
-      this.advance(q, sv)
-      return
-    }
-    const lines = SMALL_TALK[npc.key] ?? ['…']
-    const offer = QUESTS.find((d) => d.giver === npc.key && this.open(d))
-    const line = lines[Math.floor(this.random() * lines.length)] ?? '…'
-    this.say(sv, npc, offer ? `${line}` : line, this.options(sv, npc))
-  }
-
-  private options(sv: Survivor, npc: Npc): Dialog['options'] {
-    const out: Dialog['options'] = []
-    const offer = QUESTS.find((d) => d.giver === npc.key && !d.story && this.open(d))
-    if (offer) out.push({ id: `ask:${offer.id}`, label: 'Need a hand with anything?' })
-    if (npc.role === 'trader') out.push({ id: 'shop', label: "Show me what you've got." })
-    if (npc.role === 'medic' && sv.player.health < sv.player.maxHealth) {
-      out.push({ id: 'heal', label: 'Patch me up. ($40)' })
-    }
-    out.push({ id: 'bye', label: 'Goodbye.' })
-    return out
-  }
-
-  private say(
-    sv: Survivor,
-    npc: Npc,
-    text: string,
-    options: Dialog['options'],
-    shop?: Dialog['shop'],
-  ): void {
-    this.send(sv.player, {
-      type: ServerMsg.Dialog,
-      dialog: { npc: npc.key, name: npc.name, text, options, ...(shop ? { shop } : {}) },
-    })
-  }
-
-  private choose(sv: Survivor, npcKey: string, option: string): void {
-    const npc = this.def.npcs.find((n) => n.key === npcKey)
-    if (!npc || sv.talking !== npc.key) return
-    const pos = sv.player.state.pos
-    if (dist(pos, { x: npc.pos[0], z: npc.pos[2] }) > TALK_REACH + 3) return
-    if (option === 'bye') {
-      sv.talking = null
-      this.send(sv.player, { type: ServerMsg.Dialog, dialog: null })
-      return
-    }
-    if (option === 'shop' && npc.role === 'trader') {
-      const stock = TRADER_STOCK.map((id): [string, number] => {
-        const def = ITEMS[id]
-        return [id, Math.ceil((def?.value ?? 0) * (def?.kind === 'ammo' ? AMMO_BOX : 1))]
-      })
-      // Today's rare things go first.
-      const rare = RARE_STOCK.filter((r) => (this.rare.get(r.item) ?? 0) > 0)
-      stock.unshift(...rare.map((r): [string, number] => [r.item, r.price]))
-      this.say(
-        sv,
-        npc,
-        rare.some((r) => r.item === 'cure')
-          ? "Got something special today. Came off a soldier from Site 7. Don't ask what it cost him."
-          : rare.length > 0
-            ? 'Cash only. And yes, that is adrenaline. No, I will not haggle.'
-            : 'Cash only. No refunds. No haunted merchandise, probably.',
-        [{ id: 'bye', label: 'Goodbye.' }],
-        stock,
-      )
-      return
-    }
-    if (option === 'heal' && npc.role === 'medic') {
-      if (sv.self.money < 40)
-        return void this.say(
-          sv,
-          npc,
-          "I can't work for nothing. Not any more.",
-          this.options(sv, npc),
-        )
-      sv.self.money -= 40
-      sv.self.bleeding = false
-      sv.player.health = sv.player.maxHealth
-      sv.dirty = true
-      return void this.say(
-        sv,
-        npc,
-        'Hold still… There. Try to keep the rest of your blood inside.',
-        this.options(sv, npc),
-      )
-    }
-    if (option.startsWith('ask:')) {
-      const def = questById(option.slice(4))
-      if (!def || def.giver !== npc.key || !this.open(def)) return
-      this.say(sv, npc, def.offer ?? def.title, [
-        { id: `take:${def.id}`, label: "I'll do it." },
-        { id: 'bye', label: 'Not now.' },
-      ])
-      return
-    }
-    if (option.startsWith('take:')) {
-      const def = questById(option.slice(5))
-      if (!def || def.giver !== npc.key || !this.open(def)) return
-      this.begin(def.id)
-      this.game.match.broadcast()
-      this.say(sv, npc, 'Good. Come back in one piece.', this.options(sv, npc))
-    }
-  }
 
   /** Places somebody walks into go on everyone's map. */
   private discover(alive: readonly Survivor[]): void {
@@ -1549,45 +1328,6 @@ export class SurvivalDirector {
       }
       this.game.match.broadcast()
     })
-  }
-
-  /** Reach and hold steps, once a second. */
-  private tickQuests(alive: readonly Survivor[]): void {
-    for (const q of [...this.quests]) {
-      const step = questById(q.id)?.steps[q.step]
-      if (!step) continue
-      if (step.kind !== 'reach' && step.kind !== 'hold') continue
-      const poi = this.def.pois.find((p) => p.key === step.poi)
-      if (!poi) continue
-      const there = alive.filter(
-        (sv) => dist(sv.player.state.pos, poi) < poi.r + (step.kind === 'hold' ? 14 : 4),
-      )
-      if (there.length === 0) continue
-      if (step.kind === 'reach') {
-        this.advance(q, there[0] ?? null)
-        continue
-      }
-      q.count++
-      // They keep coming for as long as it takes.
-      const place = this.places[this.def.pois.indexOf(poi)]
-      if (place) place.woken = Math.max(place.woken, step.horde)
-      if (q.count >= step.seconds) {
-        if (place) place.woken = 0
-        this.advance(q, there[0] ?? null)
-      }
-    }
-  }
-
-  private countKill(zed: Zed, at: Point, killer: ServerPlayer): void {
-    for (const q of [...this.quests]) {
-      const step = questById(q.id)?.steps[q.step]
-      if (step?.kind !== 'kill') continue
-      if (step.zombie !== undefined && step.zombie !== zed.kind) continue
-      const poi = this.def.pois.find((p) => p.key === step.poi)
-      if (poi && dist(at, poi) > poi.r + 45) continue
-      q.count++
-      if (q.count >= step.n) this.advance(q, this.survivors.get(killer.id) ?? null)
-    }
   }
 
   /** The story stirs a place up: its dead are back, and more, and they know where you are. */
@@ -1609,7 +1349,8 @@ export class SurvivalDirector {
     for (const sv of alive) {
       const s = sv.player.state
       // Nobody is hunted inside a safe place.
-      if (this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 4)) continue
+      if (this.def.pois.some((p) => p.safe && !this.story.besieged(p) && dist(s.pos, p) < p.r + 4))
+        continue
       const worn = wornStats(sv.self)
       out.push({
         id: sv.player.id,
@@ -1707,7 +1448,7 @@ export class SurvivalDirector {
       // One of you who turned stays out there (with their things) until somebody finds them.
       const far = !turned && nearest(z.state.pos) > ZED_RANGE
       const safe = this.def.pois.some((p) => p.safe && dist(z.state.pos, p) < p.r + 6)
-      if (!(far || safe || !zed)) continue
+      if (!(far || (safe && !zed?.siege) || !zed)) continue
       if (turned) {
         this.turned.delete(z.id)
         this.spill(turned.stuff, z.state.pos)
@@ -1808,13 +1549,82 @@ export class SurvivalDirector {
     this.game.applyRules(zombie)
   }
 
+  /** What the story (story.ts) gets to do here. Items go through count/take/give alone. */
+  private storyHost(): StoryHost {
+    const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
+    return {
+      def: () => this.def,
+      now: () => this.now,
+      random: this.random,
+      people: () => [...this.survivors.values()],
+      count: (p, item) => countOf(p.self.inv, item),
+      take: (p, item, n) => {
+        takeStack(p.self.inv, item, n)
+      },
+      give: (p, item, n) => {
+        const weapon = ITEMS[item]?.weapon
+        const ammo = weapon === undefined ? undefined : WEAPONS[weapon].magSize
+        if (roomFor(p.self, item) >= n) addStack(p.self.inv, item, n, ammo)
+        else {
+          this.dropAt(item, n, p.player.state.pos, ammo)
+          this.notice(
+            p.player,
+            'warn',
+            `No room for ${ITEMS[item]?.name ?? item}: it's at your feet.`,
+          )
+        }
+      },
+      touch: (p) => {
+        const s = sv(p)
+        if (s) this.touch(s)
+      },
+      notice: (player, kind, text, title) =>
+        this.send(player, {
+          type: ServerMsg.Notice,
+          notice: { kind, text, ...(title ? { title } : {}) },
+        }),
+      dialog: (player, dialog) => this.send(player, { type: ServerMsg.Dialog, dialog }),
+      broadcast: () => this.game.match.broadcast(),
+      wake: (key) => this.wake(key),
+      openGate: (i) => {
+        this.gates |= 1 << i
+        this.game.setGates(this.gates)
+      },
+      reveal: () => {
+        this.def.pois.forEach((p, i) => {
+          if (p.hidden) this.found.add(i)
+        })
+      },
+      horde: (key, n) => {
+        const place = this.places[this.def.pois.findIndex((p) => p.key === key)]
+        if (place) place.woken = n > 0 ? Math.max(place.woken, n) : 0
+      },
+      spawnZed: (at, kind, o) => {
+        const zombie = this.freeZombie(at)
+        const zed = zombie && this.zeds.get(zombie.id)
+        if (!zombie || !zed) return null
+        this.place(zombie, kind as ZombieKind, -1, o.hunter === true, at)
+        zed.siege = o.siege === true
+        if (o.name) this.game.nameZombie(zombie, o.name)
+        return zombie
+      },
+      steer: (zombie, goal) => this.zeds.get(zombie.id)?.alert(goal, this.now),
+      unsiege: (zombie) => {
+        const zed = this.zeds.get(zombie.id)
+        if (zed) zed.siege = false
+      },
+      zombies: () => this.pool.filter((z) => z.state.alive),
+      rare: () => this.rare,
+    }
+  }
+
   /** What the supply drops (drops.ts) get to do here. */
   private dropHost(): DropHost {
     return {
       def: () => this.def,
       random: this.random,
       now: () => this.now,
-      done: () => this.done,
+      done: () => this.story.done,
       people: () =>
         [...this.survivors.values()]
           .filter((sv) => sv.player.state.alive)
@@ -1853,8 +1663,7 @@ export class SurvivalDirector {
     return {
       time: this.time,
       gates: this.gates,
-      quests: this.quests,
-      done: this.done,
+      ...this.story.shared(),
       found: [...this.found],
       won: this.won,
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),

@@ -29,14 +29,55 @@ export interface SurvivalSelf {
   light: boolean
   /** Bitten: seconds until you turn (see infection.ts), or null when you're clean. */
   infected: number | null
+  /** Your story and jobs (yours alone: a new character starts a new one). */
+  journal: Journal
 }
 
 export interface QuestState {
   id: string
-  /** Index of the step the team is on. */
+  /** Index of the step you are on. */
   step: number
-  /** Kill and hold steps: how far along (kills, or seconds). */
+  /** Kill and hold steps: how far along (kills, or seconds); collect steps: bits of what's done. */
   count: number
+  /** What you chose, on a quest that makes you choose (see QuestStep 'choose'). */
+  pick?: string
+}
+
+/** One survivor's quests: what they're doing, what they've done, read and decided. */
+export interface Journal {
+  quests: QuestState[]
+  /** Ids of finished quests, in the order they were finished. */
+  done: string[]
+  /** Notes, letters and clues read (interactable or LORE keys), in the order found. */
+  notes: string[]
+  /** What you chose ("quest:option") and what people do for you (e.g. 'gus_discount'). */
+  flags: string[]
+}
+
+/** Somebody who walks with you (see WALKERS): where they are, and who they follow. */
+export interface WalkerState {
+  /** This one's key (a walker's key, or key@player for one being rescued). */
+  key: string
+  /** Which walker (WALKERS). */
+  who: string
+  x: number
+  y: number
+  z: number
+  yaw: number
+  /** Id of the player they follow, or 0 to stand where they are. */
+  follow: number
+  /** 0–100. */
+  hp: number
+}
+
+/** The dead are at a place's gate (a 'defend' step): everyone near is in it. */
+export interface SiegeState {
+  /** The place under attack (Poi key). */
+  poi: string
+  /** Seconds left to hold. */
+  left: number
+  /** How much the place can take before they're through, 0–100. */
+  hp: number
 }
 
 /** The state of the world everybody shares (part of MatchInfo, once a second). */
@@ -45,9 +86,14 @@ export interface SurvivalShared {
   time: number
   /** Bit i set = gate i is open (story doors). */
   gates: number
-  quests: QuestState[]
-  /** Ids of finished quests. */
+  /** Ids of quests somebody in this world has finished (what the world remembers). */
   done: string[]
+  /** What the world has gained for good (see UNLOCKS): it outlives whoever earned it. */
+  unlocks?: string[]
+  /** A place under attack right now, or none. */
+  siege?: SiegeState
+  /** People walking with somebody, or waiting to be found. */
+  walkers?: WalkerState[]
   /** Indices of the places somebody has been to (shown on the map). */
   found: number[]
   /** The story is over: everyone got out. */
@@ -87,9 +133,11 @@ export interface Dialog {
 }
 
 export interface Notice {
-  /** `story` is shown big in the middle; the others as a line at the side. */
-  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream'
+  /** `story` (and `note`, on paper) is shown big in the middle; the others as a line at the side. */
+  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note'
   text: string
+  /** `note`: what it is ("Hollis' letter"), shown as its heading. */
+  title?: string
   /** `scream`: where it came from (it is heard, not shown). */
   at?: { x: number; y: number; z: number }
 }

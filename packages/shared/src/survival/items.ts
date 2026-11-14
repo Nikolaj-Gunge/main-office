@@ -324,6 +324,9 @@ quest('insulin', 'Insulin', 0.1, 'Keep cold. Keep hidden.')
 quest('seeds', 'Seed packets', 0.1, 'Tomatoes, beans, squash. A future.')
 quest('toolbox', "Mechanic's toolbox", 5, 'Heavy. Everything a generator needs.')
 quest('map_piece', 'Ranger map', 0.05, 'Marked with circles in red pen.')
+quest('cashbox', "Gus's cash box", 2, 'Locked. Heavier than money ought to be.')
+quest('recipes', "Dot's recipe tin", 0.4, 'Thirty years of index cards, in pencil.')
+quest('vial', 'Penicillin', 0.05, 'One vial. Maybe the last in the county.')
 
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),

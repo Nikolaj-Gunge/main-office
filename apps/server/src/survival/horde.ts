@@ -75,6 +75,8 @@ export class Zed {
   home = -1
   /** Part of a story horde: knows where everyone is and never gives up. */
   hunter = false
+  /** Part of a siege (story.ts): goes where it's sent, safe places or not. */
+  siege = false
   mood: Mood = 'idle'
   /** Who it's chasing, and where it last knew them to be. */
   targetId = 0
@@ -111,6 +113,7 @@ export class Zed {
     this.kind = kind
     this.home = home
     this.hunter = hunter
+    this.siege = false
     this.mood = 'idle'
     this.targetId = 0
     this.lastKnown = null
@@ -279,7 +282,7 @@ export class Zed {
     }
 
     // Never into a safe place: turn round at its edge and forget.
-    if (goal) {
+    if (goal && !this.siege) {
       for (const p of def.pois) {
         if (!p.safe) continue
         const edge = p.r + SAFE_MARGIN

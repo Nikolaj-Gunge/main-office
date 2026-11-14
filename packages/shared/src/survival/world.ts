@@ -2,6 +2,7 @@ import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
 import { PLACES } from './places.ts'
 import { camperName, houseName, shedName } from './places-homes.ts'
+import { placeLore } from './places-lore.ts'
 import { dressRoads } from './road-dressing.ts'
 import { type ScatterKind, scatterPlaces } from './scatter.ts'
 import { cabin, haven, startCabin } from './structures.ts'
@@ -263,6 +264,8 @@ export function buildDeadwood(): MapDef {
     else if (poi.kind === 'camp') haven(site)
     else PLACES[poi.kind](site, poi, variant, world)
   })
+  // What the quests leave lying about (after the places: it sits on their furniture).
+  placeLore(build, pois)
   // Along the roads: streetlamps, power lines, signs (after the places, to keep out of them).
   const signs = dressRoads(build, { roads, pois, lakes, groundAt: world.groundAt }, SEED)
 

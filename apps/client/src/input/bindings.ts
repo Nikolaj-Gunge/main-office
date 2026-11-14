@@ -42,6 +42,7 @@ export const ACTIONS = [
   // Survival mode (the map key mutes in the other modes, where there is no map).
   { id: 'inventory', label: 'Backpack (survival)', button: 0, defaults: ['KeyI'] },
   { id: 'map', label: 'Map (survival)', button: 0, defaults: ['KeyM'] },
+  { id: 'journal', label: 'Journal (survival)', button: 0, defaults: ['KeyJ'] },
   { id: 'light', label: 'Torch (survival)', button: 0, defaults: ['KeyF'] },
   { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyN'] },
 ] as const
