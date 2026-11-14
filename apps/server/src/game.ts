@@ -501,6 +501,12 @@ export class Game {
       for (const command of commands) {
         const usePressed =
           hasButton(command.buttons, Button.Use) && !hasButton(player.state.prevButtons, Button.Use)
+        // Sitting in a car (survival): the car carries them; the driver's input drives it.
+        if (this.match.ride(player, command)) {
+          player.ackSeq = command.seq
+          if (usePressed) this.match.onUse(player)
+          continue
+        }
         const bx = player.state.pos.x
         const bz = player.state.pos.z
         const wasGrounded = player.state.grounded
@@ -815,6 +821,12 @@ export class Game {
     if (killed) this.kill(victim, attacker, headshot)
   }
 
+  /** Damage from something other than a weapon (a car running someone down), as `attacker`'s. */
+  hurt(victim: ServerPlayer, attacker: ServerPlayer, amount: number): void {
+    if (!victim.state.alive || amount <= 0) return
+    this.damage(victim, attacker, HitZone.Chest, Math.round(amount), false)
+  }
+
   /** How big someone is: the rules' body size, times a zombie kind's own. */
   private sizeOf(player: ServerPlayer): number {
     return this.rulesValue.playerScale * zombieScale(player.zombie?.kind ?? 0)
@@ -1088,6 +1100,7 @@ export class Game {
       ),
     )
     for (const player of this.players.values()) {
+      const vehicles = player.client === NO_CLIENT ? [] : this.match.vehiclesFor(player)
       send(player.client, {
         type: ServerMsg.Snapshot,
         tick: this.tick,
@@ -1097,6 +1110,7 @@ export class Game {
         respawnIn: player.state.alive ? 0 : Math.max(0, player.respawnAt - this.tick) / TICK_RATE,
         protected: this.tick < player.protectedUntil,
         players: everyone.filter((p) => p.id !== player.id),
+        ...(vehicles.length > 0 ? { vehicles } : {}),
       })
     }
   }

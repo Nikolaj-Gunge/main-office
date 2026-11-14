@@ -55,6 +55,8 @@ export class RemotePlayers {
   /** Game rules: what everyone looks like and how big they are. */
   private skin: SkinId = 'worker'
   private scale = 1
+  /** People not drawn (or heard) at all: sitting in a car (survival). */
+  hidden: (id: number) => boolean = () => false
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
   onLand?: (at: THREE.Vector3) => void
@@ -157,7 +159,8 @@ export class RemotePlayers {
     for (const [id, p] of this.players) {
       const before = p.shown
       p.shown = p.buffer.sample(this.renderTick)
-      p.avatar.root.visible = p.shown?.alive ?? false
+      const hidden = this.hidden(id)
+      p.avatar.root.visible = (p.shown?.alive ?? false) && !hidden
       const size = this.scale * zombieScale(p.kind)
       if (p.shown) p.avatar.update(p.shown, this.poseOf(id, p.shown), nowMs, viewer)
       if (before && p.shown && dt > 0) {
@@ -172,7 +175,7 @@ export class RemotePlayers {
           const color = bodyColor(id, p.color, p.kind)
           this.onDeath?.(id, before, p.velocity, color, look, size, p.appearance)
         }
-        this.detectSteps(p, before, p.shown, dt)
+        if (!hidden) this.detectSteps(p, before, p.shown, dt)
         if (p.kind !== 0 && p.shown.alive && (p.shown.windup ?? 0) > 0 && !before.windup) {
           this.onWindup?.(new THREE.Vector3(p.shown.x, p.shown.y + 1.6, p.shown.z))
         } else if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
@@ -183,7 +186,7 @@ export class RemotePlayers {
     this.poses.clear()
     for (const [id, p] of this.players) {
       const s = p.shown
-      if (s?.alive) this.poses.set(id, this.poseOf(id, s))
+      if (s?.alive && !this.hidden(id)) this.poses.set(id, this.poseOf(id, s))
     }
   }
 

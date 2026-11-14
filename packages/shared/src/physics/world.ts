@@ -57,6 +57,8 @@ export interface PhysicsWorld {
   barricades: Map<number, RAPIER.Collider>
   /** Survival: the forest's trees and rocks, solid only around the players (see syncForest). */
   forest?: { def: SurvivalDef; chunks: Map<number, RAPIER.Collider[]> }
+  /** Survival: the terrain's heightfield (cars ride on it rather than bump into it). */
+  ground?: RAPIER.Collider
 }
 
 /**
@@ -86,7 +88,7 @@ export function createPhysicsWorld(map: MapDef): PhysicsWorld {
   if (map.survival) {
     // The ground, and walls around the edge of the world behind the rim of hills.
     const t = map.survival.terrain
-    world.createCollider(
+    physics.ground = world.createCollider(
       RAPIER.ColliderDesc.heightfield(GRID, GRID, t.heights, {
         x: WORLD_SIZE,
         y: 1,

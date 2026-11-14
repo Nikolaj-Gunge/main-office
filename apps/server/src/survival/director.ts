@@ -76,6 +76,7 @@ import {
   TICK_RATE,
   TRADER_STOCK,
   takeStack,
+  type VehicleNet,
   VICINITY,
   VICINITY_UP,
   WEAPONS,
@@ -95,6 +96,7 @@ import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { Vehicles } from './vehicles.ts'
 
 /** Small places that go on the map without a "Found:" for everyone. */
 const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', 'stand']
@@ -263,11 +265,14 @@ export class SurvivalDirector {
   won = false
   /** Helicopter supply drops (once the story has the radio working). */
   private readonly drops: Drops
+  /** The cars parked about the woods, and who sits in them. */
+  private readonly vehicles: Vehicles
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
     this.random = random
     this.drops = new Drops(this.dropHost())
+    this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
   }
 
   private get now(): number {
@@ -329,6 +334,7 @@ export class SurvivalDirector {
     this.rare = rollRareStock(this.random)
     for (const p of this.game.players.values()) if (isPerson(p)) this.onJoin(p)
     this.drops.reset()
+    this.vehicles.reset(def)
     this.begin('wake')
     for (let i = 0; i < POOL; i++) {
       const zombie = this.game.addZombie(new Zed(this.random))
@@ -343,6 +349,7 @@ export class SurvivalDirector {
     this.zeds.clear()
     this.turned.clear()
     this.clearBoards()
+    this.vehicles.dispose()
   }
 
   private clearBoards(): void {
@@ -374,6 +381,7 @@ export class SurvivalDirector {
   }
 
   onLeave(player: ServerPlayer): void {
+    this.vehicles.leave(player)
     if (player.zombie) {
       // One of the dead gave up its place to somebody joining: forget it (its body is gone).
       this.pool = this.pool.filter((z) => z !== player)
@@ -465,6 +473,15 @@ export class SurvivalDirector {
     return state
   }
 
+  /** One input of someone sitting in a car (see Vehicles.ride). */
+  ride(player: ServerPlayer, command: InputCommand): boolean {
+    return this.vehicles.ride(player, command)
+  }
+
+  vehiclesFor(player: ServerPlayer): VehicleNet[] {
+    return this.vehicles.statesFor(player)
+  }
+
   respawnSeconds(): number {
     return RESPAWN_SECONDS
   }
@@ -540,6 +557,7 @@ export class SurvivalDirector {
   }
 
   onKill(victim: ServerPlayer, killer: ServerPlayer): void {
+    this.vehicles.leave(victim)
     const zed = this.zeds.get(victim.id)
     if (zed) {
       victim.respawnAt = Number.POSITIVE_INFINITY
@@ -695,6 +713,7 @@ export class SurvivalDirector {
     }
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
+    this.vehicles.step()
     this.senses(alive)
     this.batter()
     if (this.boardsDirty && this.now - this.boardsSentAt > 0.2) {
@@ -966,6 +985,8 @@ export class SurvivalDirector {
   onUse(player: ServerPlayer): void {
     const sv = this.survivors.get(player.id)
     if (!sv || !player.state.alive) return
+    // In a car, E gets you out.
+    if (this.vehicles.seatOf(player)) return void this.vehicles.use(player)
     const s = player.state
     const eye = { x: s.pos.x, y: s.pos.y + 1.6, z: s.pos.z }
     const fx = -Math.sin(s.yaw) * Math.cos(s.pitch)
@@ -1030,6 +1051,8 @@ export class SurvivalDirector {
     }
     if (spot >= 0 && (!thing || spotScore >= best)) return void this.board(sv, spot)
     if (thing) return void this.useThing(sv, thing)
+    // Beside a car: get in.
+    if (this.vehicles.use(player)) return
 
     // Standing in the lake: drink.
     for (const lake of this.def.lakes) {
@@ -1879,6 +1902,8 @@ export class SurvivalDirector {
     return Math.max(
       steps * (1 - wornStats(sv.self).quiet) * hearingScale(weather),
       this.now < sv.noiseUntil ? sv.noise * hearingScale(weather, true) : 0,
+      // A running engine carries.
+      this.vehicles.noiseOf(sv.player) * hearingScale(weather, true),
     )
   }
 

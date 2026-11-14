@@ -18,7 +18,7 @@ export const DEFAULT_SERVER_PORT = 3000
 export const WS_PATH = '/ws'
 
 /** Bumped whenever the binary protocol changes incompatibly. */
-export const PROTOCOL_VERSION = 30
+export const PROTOCOL_VERSION = 31
 
 /** Hard cap on simultaneous players (ids and counts are encoded in a u8/u16). */
 export const MAX_PLAYERS = 32

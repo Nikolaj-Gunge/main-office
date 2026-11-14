@@ -48,6 +48,7 @@ import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import type { RemotePlayers } from './remote-players.ts'
+import { VehiclesClient } from './vehicles-client.ts'
 
 /** How far you reach for things, and how close you stand to talk (m): the server's numbers. */
 const REACH = 2.4
@@ -90,6 +91,9 @@ export class SurvivalClient {
   /** The bite on screen this frame (for the post pass), or null when you're clean. */
   infectionFx: InfectionFx | null = null
   private readonly infection: Infection
+  /** The cars: drawn, driven, ridden in. */
+  readonly vehicles: VehiclesClient
+  private readonly myId: () => number
 
   private readonly def: SurvivalDef
   private readonly scene: THREE.Scene
@@ -130,8 +134,11 @@ export class SurvivalClient {
     hudRoot: HTMLElement
     audio: AudioEngine
     send: (action: SurvivalAction) => void
+    /** Your player id (0 before joining). */
+    myId: () => number
   }) {
     this.def = o.def
+    this.myId = o.myId
     this.scene = o.scene
     this.camera = o.camera
     this.physics = o.physics
@@ -154,6 +161,13 @@ export class SurvivalClient {
     o.scene.add(this.weather.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
     this.infection = new Infection(o.audio)
+    this.vehicles = new VehiclesClient({
+      scene: o.scene,
+      physics: o.physics,
+      terrain: o.def.terrain,
+      audio: o.audio,
+      hudRoot: o.hudRoot,
+    })
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
     o.scene.add(o.camera)
@@ -231,6 +245,10 @@ export class SurvivalClient {
       case ServerMsg.Dialog:
         this.hud.dialog(msg.dialog)
         return true
+      case ServerMsg.Snapshot:
+        // The cars; the rest of the snapshot is the game's.
+        this.vehicles.onSnapshot(msg.tick, msg.vehicles ?? [], msg.ackSeq, this.myId())
+        return false
     }
     return false
   }
@@ -263,6 +281,7 @@ export class SurvivalClient {
     this.loot.clear()
     this.heli.clear()
     this.self = null
+    this.vehicles.clear()
     this.infection.set(null)
     this.applyBoards([])
   }
@@ -434,6 +453,21 @@ export class SurvivalClient {
     }
   }
 
+  /**
+   * The cars, every frame: drawn where they are, and the camera put behind yours if you sit in
+   * one (returns true then). `alpha`: how far real time is into the current tick.
+   */
+  drive(
+    dt: number,
+    alpha: number,
+    renderTick: number,
+    look: { yaw: number; pitch: number },
+  ): boolean {
+    const night = 1 - daylight(this.time)
+    this.vehicles.update(dt, alpha, renderTick, night, this.camera.position)
+    return this.vehicles.camera(this.camera, look, dt)
+  }
+
   /** What lies within reach of the inventory screen (the server checks the same distances). */
   private nearby(state: PlayerState): LootItem[] {
     const out: LootItem[] = []
@@ -447,6 +481,7 @@ export class SurvivalClient {
 
   /** The same choice the server makes when E is pressed: who or what you're looking at. */
   private findPrompt(state: PlayerState, yaw: number, pitch: number): string | null {
+    if (this.vehicles.seated) return this.vehicles.prompt(state.pos)
     const ex = state.pos.x
     const ey = state.pos.y + 1.6
     const ez = state.pos.z
@@ -521,6 +556,8 @@ export class SurvivalClient {
       return `Take ${name}`
     }
     if (thing) return thing.label
+    const car = this.vehicles.prompt(state.pos)
+    if (car) return car
     for (const lake of this.def.lakes) {
       if (Math.hypot(ex - lake.x, ez - lake.z) < lake.r && state.pos.y < lake.y + 0.1)
         return 'Drink'
