@@ -322,6 +322,7 @@ const net = new Connection({
       roster.clear()
       worldItems.clear()
       menu.setJoined(false)
+      hud.setJoined(false)
       survival?.hud.setVisible(false)
       const fatal = reason?.includes('Protocol') ?? false
       const text = reason
@@ -352,6 +353,7 @@ const net = new Connection({
         remotes.clear()
         player.resetPrediction()
         menu.setJoined(true)
+        hud.setJoined(true)
         menu.setStatus('')
         worldItems.clear()
         survival?.reset()

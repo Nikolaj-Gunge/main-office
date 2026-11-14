@@ -35,6 +35,7 @@ import {
   WORLD_SIZE,
   weightOf,
 } from '@office-fps/shared'
+import { markerSpot } from './objective-marker.ts'
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -355,6 +356,16 @@ export class SurvivalHud {
     this.refreshTracker()
   }
 
+  /** Takes a story card down, showing or still waiting (the bite's, once you're clean or dead). */
+  dropStory(text: string): void {
+    for (let i = this.storyQueue.length - 1; i >= 0; i--)
+      if (this.storyQueue[i] === text) this.storyQueue.splice(i, 1)
+    if (this.storyNow?.text === text) {
+      this.storyNow = null
+      this.story.hidden = true
+    }
+  }
+
   notice(n: Notice): void {
     if (n.kind === 'scream') return
     if (n.kind === 'story') {
@@ -663,8 +674,7 @@ export class SurvivalHud {
     if (drop && p) {
       const w = window.innerWidth
       const h = window.innerHeight
-      const x = Math.max(40, Math.min(w - 40, p.behind ? w - p.x : p.x))
-      const y = p.behind ? h - 40 : Math.max(40, Math.min(h - 40, p.y))
+      const { x, y } = markerSpot(p.x, p.y, p.behind, w, h)
       way.node.style.transform = `translate(${x}px, ${y}px)`
       const d = Math.round(Math.hypot(drop.x - ctx.pos.x, drop.z - ctx.pos.z))
       const label = drop.landed ? `SUPPLY DROP ${d} m` : `INCOMING ${d} m`
@@ -682,7 +692,6 @@ export class SurvivalHud {
   ): void {
     const w = window.innerWidth
     const h = window.innerHeight
-    const margin = 40
     this.waypoints.forEach(({ node, text }, i) => {
       const t = targets[i] ?? null
       const d = t ? Math.hypot(t.x - ctx.pos.x, t.y - ctx.pos.y, t.z - ctx.pos.z) : 0
@@ -690,16 +699,8 @@ export class SurvivalHud {
       node.hidden = !shown
       if (!shown || !t || !ctx.project) return
       const p = ctx.project(t.x, t.y + 2.2, t.z)
-      let x = p.x
-      let y = p.y
-      // Behind you: mirror it to the bottom edge on the side it's on.
-      if (p.behind) {
-        x = w - x
-        y = h - margin
-      }
-      const off = p.behind || x < margin || x > w - margin || y < margin || y > h - margin
-      x = Math.max(margin, Math.min(w - margin, x))
-      y = Math.max(margin, Math.min(h - margin, y))
+      // Off screen: pinned to the edge (to the side when behind you), clear of the bottom HUD.
+      const { x, y, off } = markerSpot(p.x, p.y, p.behind, w, h)
       node.style.transform = `translate(${x}px, ${y}px)`
       node.classList.toggle('off', off)
       const label = `${Math.round(d)} m`

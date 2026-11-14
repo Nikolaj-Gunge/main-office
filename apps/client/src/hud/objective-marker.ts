@@ -2,10 +2,38 @@ import * as THREE from 'three'
 
 /** Margin (px) the marker keeps from the screen edge when the goal is off screen. */
 const EDGE = 40
+/** Room (px) kept clear at the bottom for the HUD (health, money, weapon, hotbar). */
+const BOTTOM = 170
+
+/**
+ * Where an edge-pinned marker goes on a `width` x `height` screen (CSS px), from where its target
+ * projects to (`x`, `y` px; a point behind you projects mirrored). In front of you it sits over
+ * the target, kept inside the edges and above the bottom HUD; behind you it is pinned to the left
+ * or right edge (whichever way is the shorter turn), halfway up, so it never lands on the health
+ * bar or money. `off`: not over the target itself (pointing the way).
+ */
+export function markerSpot(
+  x: number,
+  y: number,
+  behind: boolean,
+  width: number,
+  height: number,
+): { x: number; y: number; off: boolean } {
+  if (behind) {
+    x = width - x < width / 2 ? 0 : width
+    y = height / 2
+  }
+  const off = behind || x < EDGE || x > width - EDGE || y < EDGE || y > height - BOTTOM
+  return {
+    x: Math.min(width - EDGE, Math.max(EDGE, x)),
+    y: Math.min(height - BOTTOM, Math.max(EDGE, y)),
+    off,
+  }
+}
 
 /**
  * Co-op waypoint: a diamond with a label and distance over the current goal, pinned to the
- * screen edge when the goal is behind you or off to the side.
+ * screen edge when the goal is behind you or off to the side (never over the bottom HUD).
  */
 export class ObjectiveMarker {
   private readonly root: HTMLDivElement
@@ -36,17 +64,11 @@ export class ObjectiveMarker {
     camera.getWorldDirection(this.forward)
     const behind = this.forward.dot(this.toGoal) < 0
     this.projected.copy(goal).project(camera)
-    let x = this.projected.x
-    let y = this.projected.y
-    if (behind) {
-      // Behind you: mirror it and push it to the bottom edge.
-      x = -x
-      y = -1
-    }
-    const sx = Math.min(width - EDGE, Math.max(EDGE, ((x + 1) / 2) * width))
-    const sy = Math.min(height - EDGE, Math.max(EDGE, ((1 - y) / 2) * height))
-    this.root.style.left = `${sx}px`
-    this.root.style.top = `${sy}px`
+    const px = ((this.projected.x + 1) / 2) * width
+    const py = ((1 - this.projected.y) / 2) * height
+    const spot = markerSpot(px, py, behind, width, height)
+    this.root.style.left = `${spot.x}px`
+    this.root.style.top = `${spot.y}px`
     this.label.textContent = `${text} · ${Math.round(distance)} m`
   }
 }

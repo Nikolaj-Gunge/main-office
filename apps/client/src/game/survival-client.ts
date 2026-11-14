@@ -1,4 +1,5 @@
 import {
+  BITTEN_STORY,
   BOARD_REACH,
   countOf,
   DAY_SECONDS,
@@ -201,6 +202,9 @@ export class SurvivalClient {
   onMessage(msg: ServerMessage): boolean {
     switch (msg.type) {
       case ServerMsg.Survival:
+        // Clean again (cured, dead or turned): the bite's story card goes, even mid-way.
+        if ((this.self?.infected ?? null) !== null && (msg.self.infected ?? null) === null)
+          this.hud.dropStory(BITTEN_STORY)
         this.self = msg.self
         this.infection.set(msg.self.infected ?? null)
         this.hud.setSelf(msg.self)

@@ -152,3 +152,18 @@ export const glossyVertexColored = new THREE.MeshPhongMaterial({
   shininess: 40,
   specular: 0x3a4050,
 })
+
+/** Whether `eye` is inside the body of someone standing at `s` (`size`: their scale). */
+export function insideBody(
+  eye: { x: number; y: number; z: number },
+  s: { x: number; y: number; z: number },
+  size: number,
+): boolean {
+  const reach = 0.4 * size
+  return (
+    Math.abs(eye.x - s.x) < reach &&
+    Math.abs(eye.z - s.z) < reach &&
+    eye.y > s.y - 0.1 &&
+    eye.y < s.y + 2 * size
+  )
+}

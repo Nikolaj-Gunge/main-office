@@ -8,6 +8,10 @@
 /** Seconds from the bite to turning. */
 export const INFECTION_SECONDS = 20 * 60
 
+/** The story card you get when bitten (the client takes it down once you're clean or dead). */
+export const BITTEN_STORY =
+  'Bitten.\n\nThe wound burns. You have maybe twenty minutes before you turn.\n\nAdrenaline holds it back. Only a cure stops it.'
+
 /**
  * How far along: 0 bitten (first five minutes), 1 feverish (heartbeat, coughing), 2 the shakes
  * (the colour drains, red at the edges), 3 turning (blurred, doubled, whispers, short of breath),

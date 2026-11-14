@@ -20,12 +20,13 @@ import {
   attachBaked,
   type Baked,
   glossyVertexColored,
+  insideBody,
   pickOf,
   type Slot,
   vertexColored,
 } from './body-kit.ts'
 import { gearBodies, lowerBody, showsUnder } from './gear-looks.ts'
-import { build, defaultOutfit, lookFor, type Outfit, personBody } from './person.ts'
+import { build, defaultOutfit, lookFor, type Outfit, personBody, undeadSkin } from './person.ts'
 import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zombie-bodies.ts'
 
 /**
@@ -140,12 +141,19 @@ export interface Lower {
   skin: number
 }
 
-/** The legs and feet looks apply to people in survival clothes only (null for everyone else). */
+/**
+ * The legs and feet looks apply to people in survival clothes, and to survivors who turned (a
+ * zombie with an appearance); null for everyone else.
+ */
 export function lowerOf(
   skin: BodyLook,
   colorIndex: number,
   person: PersonLook | undefined,
 ): Lower | null {
+  if (isZombie(skin) && person?.appearance) {
+    const look = person.appearance
+    return { hips: build(look.body).hips, skin: undeadSkin(pickOf(SKIN_TONES, look.skin)) }
+  }
   if (skin !== 'worker' || (person?.outfit ?? defaultOutfit()) !== 'survival') return null
   const look = lookFor(person?.appearance, colorIndex)
   return { hips: build(look.body).hips, skin: pickOf(SKIN_TONES, look.skin) }
@@ -274,6 +282,21 @@ export function buildBody(
     for (const leg of [body.thighL, body.thighR, body.shinL, body.shinR]) {
       leg.add(part(box(...W(s.thighL)), material))
     }
+    return body
+  }
+
+  if (isZombie(skin) && person?.appearance) {
+    // One of you who turned: still their own face and build, in survival clothes, but dead.
+    const eyes = dead ? deadEyes : ZOMBIE_EYES[skin]
+    const look = personBody(person.appearance, 'survival', colorIndex, true)
+    const resolve = (slot: Slot) =>
+      slot === 'eyes' ? eyes : slot === 'own' ? material : slot === 'vc' ? vertexColored : slot
+    const named = (baked: Baked | null, name: string) => {
+      for (const mesh of baked ? attachBaked(baked, body, resolve) : []) mesh.name = name
+    }
+    named(look.base, 'body')
+    named(look.crown, 'hat')
+    named(look.beard, 'mask')
     return body
   }
 
@@ -501,6 +524,10 @@ export class Avatar {
       const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
       placePart(group, p, size)
     }
+    // Your eye inside their body (you stand where they stand: both woke at the same spot, or
+    // walked into each other): their insides would fill the screen (the eyes as two huge boxes
+    // in the sky), so they aren't drawn until you step apart.
+    if (viewer && insideBody(viewer, s, size)) this.root.visible = false
     // Zombie eyes smoulder: the halo breathes, each zombie in its own time.
     if (this.eyeGlows.length > 0) {
       const breath = this.glowSize * (1 + 0.2 * Math.sin(timeMs / 420 + this.root.id))
