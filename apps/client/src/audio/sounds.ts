@@ -60,6 +60,11 @@ export const SOUNDS = {
   hammer: { variants: 3, recipe: hammer },
   bang: { variants: 3, recipe: woodBang },
   splinter: { variants: 2, recipe: splinter },
+  // Weather: rain looped in two layers (the engine fades them by how hard it rains), thunder.
+  'rain.light': { variants: 1, recipe: rainLight },
+  'rain.heavy': { variants: 1, recipe: rainHeavy },
+  'thunder.near': { variants: 2, recipe: thunderNear },
+  'thunder.far': { variants: 2, recipe: thunderFar },
   /** One second of helicopter: replayed back to back while one is about (see render/heli.ts). */
   heli: { variants: 2, recipe: rotor },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
@@ -498,6 +503,109 @@ function windGust(rate: number, v: number): Signal {
     hiss[i] = (hiss[i] ?? 0) * swell
   }
   return fadeEdges(normalize(hiss, 0.6), rate, 0.05)
+}
+
+/**
+ * Makes a sound loop without a seam: the extra `overlap` seconds at its end are faded into its
+ * start. The result is that much shorter than what goes in.
+ */
+function loopable(x: Signal, rate: number, overlap: number): Signal {
+  const n = Math.round(overlap * rate)
+  const out = x.slice(0, x.length - n)
+  for (let i = 0; i < n; i++) {
+    const g = i / n
+    out[i] = (x[i] ?? 0) * Math.sqrt(g) + (x[x.length - n + i] ?? 0) * Math.sqrt(1 - g)
+  }
+  return out
+}
+
+/** Drops landing one by one: short ticks at random, `perSecond` of them. */
+function drops(seconds: number, rate: number, seed: number, perSecond: number): Signal {
+  const out = new Float32Array(Math.round(seconds * rate))
+  const r = rng(seed)
+  const count = Math.round(seconds * perSecond)
+  for (let d = 0; d < count; d++) {
+    const at = Math.floor(r() * (out.length - rate * 0.02))
+    const f = 1800 + r() * 4200
+    const level = 0.2 + r() * r() * 0.8
+    const decay = 0.0015 + r() * 0.004
+    for (let i = 0; i < rate * 0.02; i++) {
+      const t = i / rate
+      out[at + i] =
+        (out[at + i] ?? 0) + Math.sin(2 * Math.PI * f * t) * Math.exp(-t / decay) * level
+    }
+  }
+  return out
+}
+
+/** Light rain on leaves: a soft hiss with drops pattering through it (loops). */
+function rainLight(rate: number, _v: number): Signal {
+  const seconds = 3.5
+  const hiss = lowpass(highpass(noise(seconds, rate, 2100), rate, 1500), rate, 6000)
+  const patter = drops(seconds, rate, 2101, 90)
+  return loopable(normalize(mix(rate, gain(hiss, 0.35), gain(patter, 0.6)), 0.6), rate, 0.5)
+}
+
+/** A downpour: a broad roar of water with heavy drops in it (loops). */
+function rainHeavy(rate: number, _v: number): Signal {
+  const seconds = 4.5
+  const roar = lowpass(highpass(noise(seconds, rate, 2200), rate, 300), rate, 2600)
+  const sheet = lowpass(highpass(noise(seconds, rate, 2201), rate, 2500), rate, 9000)
+  // It comes in waves.
+  for (let i = 0; i < roar.length; i++) {
+    const t = i / rate
+    roar[i] = (roar[i] ?? 0) * (0.8 + 0.2 * Math.sin(t * 1.7) * Math.sin(t * 0.9 + 1))
+  }
+  const patter = drops(seconds, rate, 2202, 260)
+  return loopable(
+    normalize(mix(rate, gain(roar, 1), gain(sheet, 0.4), gain(patter, 0.45)), 0.65),
+    rate,
+    0.6,
+  )
+}
+
+/** A rolling rumble: low noise swelling and fading in uneven bumps. */
+function rumble(seconds: number, rate: number, seed: number, cutoff: number): Signal {
+  const body = lowpass(lowpass(noise(seconds, rate, seed), rate, cutoff), rate, cutoff * 1.5)
+  const r = rng(seed + 1)
+  const bumps = Array.from({ length: 7 }, () => ({ at: r() * 0.7, w: 0.04 + r() * 0.12 }))
+  for (let i = 0; i < body.length; i++) {
+    const t = i / body.length
+    let env = Math.exp(-t * 2.6) * 0.6
+    for (const b of bumps) env += Math.exp(-(((t - b.at) / b.w) ** 2)) * 0.5
+    body[i] = (body[i] ?? 0) * env * Math.min(1, t * 30)
+  }
+  return body
+}
+
+/** Lightning close by: a tearing crack, then the sky rolling over your head. */
+function thunderNear(rate: number, v: number): Signal {
+  const crackLayer = envelope(
+    saturate(highpass(noise(0.5, rate, 2300 + v), rate, 900), 3),
+    rate,
+    0.002,
+    0.07,
+  )
+  const tear = envelope(lowpass(noise(0.9, rate, 2310 + v), rate, 1600), rate, 0.01, 0.25)
+  const roll = rumble(5.5, rate, 2320 + v, 160)
+  return fadeEdges(
+    normalize(
+      saturate(
+        mix(rate, gain(crackLayer, 0.8), [gain(tear, 0.9), 0.02], [gain(roll, 2.4), 0.1]),
+        1.5,
+      ),
+      0.95,
+    ),
+    rate,
+    0.05,
+  )
+}
+
+/** Thunder a long way off: only the low roll is left. */
+function thunderFar(rate: number, v: number): Signal {
+  const roll = rumble(6.5, rate, 2400 + v, 95)
+  for (let i = 0; i < roll.length; i++) roll[i] = (roll[i] ?? 0) * Math.min(1, i / (rate * 0.6))
+  return fadeEdges(normalize(saturate(roll, 1.4), 0.8), rate, 0.08)
 }
 
 /** Something has seen you: a low swell that ends in a thud. */

@@ -12,6 +12,8 @@ import {
   RULE_RANGES,
   SKINS,
   SPAWN_WEAPONS,
+  WEATHER_KINDS,
+  type WeatherKind,
 } from '@office-fps/shared'
 import type { Game } from './game.ts'
 
@@ -33,6 +35,7 @@ export interface AdminOptions {
  *
  *   GET  /admin/api/state         rules, choices and who's online
  *   POST /admin/api/rules         partial rules JSON → applied live (map switch included)
+ *   POST /admin/api/weather       {"kind": "storm" | … | null} → survival weather held / let go
  *   POST /admin/api/reset-scores
  */
 export class AdminApi {
@@ -82,6 +85,23 @@ export class AdminApi {
           return json({ error: 'Body must be JSON' }, 400)
         }
         this.apply(mergeRules(this.game.rules, body))
+        return json(this.state())
+      }
+      case 'POST /admin/api/weather': {
+        // {"kind": "storm"} holds survival's weather there; {"kind": null} lets it change again.
+        let body: { kind?: unknown }
+        try {
+          body = (await request.json()) as { kind?: unknown }
+        } catch {
+          return json({ error: 'Body must be JSON' }, 400)
+        }
+        const kind = body?.kind ?? null
+        if (kind !== null && !WEATHER_KINDS.includes(kind as WeatherKind)) {
+          return json({ error: `kind must be one of ${WEATHER_KINDS.join(', ')} or null` }, 400)
+        }
+        if (!this.game.match.pinWeather(kind as WeatherKind | null)) {
+          return json({ error: 'Not playing survival' }, 409)
+        }
         return json(this.state())
       }
       case 'POST /admin/api/new-round':

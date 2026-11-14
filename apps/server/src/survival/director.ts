@@ -13,8 +13,10 @@ import {
   type Dialog,
   daylight,
   dayPhase,
+  flashAt,
   GEAR,
   gearLooks,
+  hearingScale,
   heightAt,
   type InputCommand,
   type Interactable,
@@ -43,6 +45,7 @@ import {
   type SurvivalSelf,
   type SurvivalShared,
   setBarricades,
+  sightScale,
   spotBlock,
   spotCentre,
   syncForest,
@@ -52,8 +55,11 @@ import {
   WEAPONS,
   WeaponId,
   type WeaponState,
+  type Weather,
+  type WeatherKind,
   wakeTime,
   weaponItem,
+  weatherAt,
   weightOf,
   wornStats,
   ZombieKind,
@@ -172,6 +178,10 @@ export class SurvivalDirector {
   private startTick = 0
   /** Seconds added to the night's clock by sleeping. */
   private slept = 0
+  /** This game's weather (see weather.ts): everything follows from it and the weather clock. */
+  private weatherSeed = 1
+  /** Weather held at one kind (admin, tests), or null: as the seed has it. */
+  private weatherPin: WeatherKind | null = null
   won = false
   /** Helicopter supply drops (once the story has the radio working). */
   private readonly drops: Drops
@@ -198,6 +208,22 @@ export class SurvivalDirector {
     return daylight(this.time)
   }
 
+  /** Seconds of weather since the game began (sleeping lets it pass too). */
+  get weatherClock(): number {
+    return (this.game.tick - this.startTick) / TICK_RATE + this.slept
+  }
+
+  /** The weather right now (see weather.ts). */
+  get weather(): Weather {
+    return weatherAt(this.weatherSeed, this.weatherClock, this.weatherPin ?? undefined)
+  }
+
+  /** Holds the weather at one kind (null lets it change again); everybody sees it at once. */
+  pinWeather(kind: WeatherKind | null): void {
+    this.weatherPin = kind
+    this.game.match.broadcast()
+  }
+
   // --- Life cycle --------------------------------------------------------------------------
 
   /** A new night from the beginning: the story, the loot, the dead, everybody's backpack. */
@@ -209,6 +235,7 @@ export class SurvivalDirector {
     this.won = false
     this.startTick = this.game.tick
     this.slept = 0
+    this.weatherSeed = Math.floor(this.random() * 0x7fffffff)
     this.phase = 'night'
     this.loot.clear()
     this.cells.clear()
@@ -347,10 +374,12 @@ export class SurvivalDirector {
     if (noise > sv.noise || this.now > sv.noiseUntil) sv.noise = noise
     sv.noiseUntil = this.now + 1.2
     if (noise < 20) return
+    // Rain drowns a shot out a little; the dead further off don't hear it.
+    const carries = noise * hearingScale(this.weather, true)
     for (const z of this.pool) {
       if (!z.state.alive) continue
       const d = Math.hypot(z.state.pos.x - player.state.pos.x, z.state.pos.z - player.state.pos.z)
-      if (d < noise) this.zeds.get(z.id)?.alert(player.state.pos, this.now)
+      if (d < carries) this.zeds.get(z.id)?.alert(player.state.pos, this.now)
     }
   }
 
@@ -1371,12 +1400,11 @@ export class SurvivalDirector {
   /** What the dead can perceive of each living person right now. */
   private prey(alive: readonly Survivor[]): Prey[] {
     const out: Prey[] = []
+    const weather = this.weather
     for (const sv of alive) {
       const s = sv.player.state
       // Nobody is hunted inside a safe place.
       if (this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 4)) continue
-      const speed = Math.hypot(s.vel.x, s.vel.z)
-      const steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
       const worn = wornStats(sv.self)
       out.push({
         id: sv.player.id,
@@ -1385,7 +1413,7 @@ export class SurvivalDirector {
         pitch: s.pitch,
         crouched: s.crouched,
         prone: s.prone,
-        noise: Math.max(steps * (1 - worn.quiet), this.now < sv.noiseUntil ? sv.noise : 0),
+        noise: this.noiseOf(sv, weather),
         light: sv.self.light,
         hidden: worn.stealth,
       })
@@ -1393,10 +1421,31 @@ export class SurvivalDirector {
     return out
   }
 
+  /**
+   * How far someone can be heard right now (m): their steps (less in quiet clothes), or the
+   * last loud thing they did. Rain on the leaves drowns out footsteps, and a shot a little.
+   */
+  private noiseOf(sv: Survivor, weather: Weather): number {
+    const s = sv.player.state
+    const speed = Math.hypot(s.vel.x, s.vel.z)
+    const steps = s.prone ? 1 : s.crouched ? 2.5 : speed > 6 ? 16 : speed > 1 ? 7 : 0
+    return Math.max(
+      steps * (1 - wornStats(sv.self).quiet) * hearingScale(weather),
+      this.now < sv.noiseUntil ? sv.noise * hearingScale(weather, true) : 0,
+    )
+  }
+
+  /** How far the dead hear this person right now (m; 0 for nobody). */
+  heardFrom(player: ServerPlayer): number {
+    const sv = this.survivors.get(player.id)
+    return sv ? this.noiseOf(sv, this.weather) : 0
+  }
+
   /** Each of the dead looks and listens a few times a second (spread over the ticks). */
   private senses(alive: readonly Survivor[]): void {
     const tick = this.game.tick
     let prey: Prey[] | null = null
+    let seeing = 1
     const clear = (a: Point, b: Point) => this.game.lineClear(a, b)
     for (const z of this.pool) {
       if (!z.state.alive) continue
@@ -1405,10 +1454,17 @@ export class SurvivalDirector {
       const stalker = zed.kind === ZombieKind.Stalker
       if (!stalker && (tick + z.id) % 15 !== 0) continue
       if (stalker && (tick + z.id) % 4 !== 0) continue
-      prey ??= this.prey(alive)
+      if (!prey) {
+        prey = this.prey(alive)
+        // Fog and rain close in; lightning lights everything up for a moment.
+        seeing = sightScale(
+          this.weather,
+          flashAt(this.weatherSeed, this.weatherClock, this.weatherPin ?? undefined),
+        )
+      }
       if (stalker) zed.watch(z, prey, clear)
       if ((tick + z.id) % 15 >= 4 && stalker) continue
-      if (zed.sense(z, prey, this.now, this.light, clear) === 'scream') this.scream(z)
+      if (zed.sense(z, prey, this.now, this.light, clear, seeing) === 'scream') this.scream(z)
     }
   }
 
@@ -1588,6 +1644,12 @@ export class SurvivalDirector {
       won: this.won,
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
       drops: this.drops.shared(),
+      weather: {
+        seed: this.weatherSeed,
+        clock: this.weatherClock,
+        kind: this.weather.kind,
+        ...(this.weatherPin ? { pin: this.weatherPin } : {}),
+      },
     }
   }
 

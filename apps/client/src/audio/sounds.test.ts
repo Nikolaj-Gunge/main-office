@@ -2,6 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { SOUNDS, type SoundId } from './sounds.ts'
 
 const RATE = 48000
+const AMBIENCE = new Set<SoundId>([
+  'wind',
+  'rain.light',
+  'rain.heavy',
+  'thunder.near',
+  'thunder.far',
+])
 
 describe('synthesized sounds', () => {
   for (const [id, def] of Object.entries(SOUNDS) as [SoundId, (typeof SOUNDS)[SoundId]][]) {
@@ -18,12 +25,25 @@ describe('synthesized sounds', () => {
         expect(peak).toBeLessThanOrEqual(1)
         expect(peak).toBeGreaterThan(0.1)
         expect(Math.sqrt(energy / data.length)).toBeGreaterThan(0.002)
-        // Wind is ambience: one long gust. Everything else is a short hit.
-        expect(data.length / RATE).toBeLessThan(id === 'wind' ? 8 : 2)
+        // Wind, rain and thunder are ambience: long. Everything else is a short hit.
+        expect(data.length / RATE).toBeLessThan(AMBIENCE.has(id) ? 8 : 2)
       }
       if (def.variants > 1) expect(variants[0]).not.toEqual(variants[1])
     })
   }
+
+  test('rain loops without a click: its end runs on into its start', () => {
+    for (const id of ['rain.light', 'rain.heavy'] as const) {
+      const data = SOUNDS[id].recipe(RATE, 0)
+      let jump = 0
+      let typical = 0
+      for (let i = 1; i < data.length; i++) {
+        typical = Math.max(typical, Math.abs((data[i] ?? 0) - (data[i - 1] ?? 0)))
+      }
+      jump = Math.abs((data[0] ?? 0) - (data[data.length - 1] ?? 0))
+      expect(jump).toBeLessThanOrEqual(typical)
+    }
+  })
 
   test('the whole bank synthesizes quickly (it runs when you click Play)', () => {
     const start = performance.now()

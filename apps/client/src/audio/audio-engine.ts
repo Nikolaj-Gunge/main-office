@@ -19,6 +19,12 @@ export interface PlayOptions {
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 
+/** A sound playing round and round (rain): turn it up and down, dull it, never restart it. */
+export interface AmbientLoop {
+  /** Fades to `volume` (and `lowpass` Hz, 20000 = open) over about `seconds`. */
+  set(volume: number, lowpass?: number, seconds?: number): void
+}
+
 /**
  * Web Audio mixer for the game. Sounds are synthesized once when audio is unlocked (browsers
  * only allow audio after a click), then played as cheap one-shot buffer sources.
@@ -197,6 +203,31 @@ export class AudioEngine {
     node.connect(g)
     g.connect(bus)
     src.start(ctx.currentTime + (opts.delay ?? 0))
+  }
+
+  /**
+   * Starts `id` looping at zero volume (ambience: rain). Null until audio is unlocked; ask again
+   * later.
+   */
+  loop(id: SoundId, variant = 0): AmbientLoop | null {
+    const ctx = this.ctx
+    const buffer = this.buffers.get(id)?.[variant]
+    if (!ctx || !buffer || !this.sfx) return null
+    const lp = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 20000, Q: 0.5 })
+    const g = new GainNode(ctx, { gain: 0 })
+    const src = new AudioBufferSourceNode(ctx, { buffer, loop: true })
+    src.connect(lp)
+    lp.connect(g)
+    g.connect(this.sfx)
+    // Start somewhere in the middle, so two loops of the same sound never line up.
+    src.start(ctx.currentTime, Math.random() * buffer.duration)
+    return {
+      set: (volume, lowpass = 20000, seconds = 0.4) => {
+        const t = ctx.currentTime
+        g.gain.setTargetAtTime(Math.max(0, volume), t, seconds / 3)
+        lp.frequency.setTargetAtTime(Math.min(20000, Math.max(200, lowpass)), t, seconds / 3)
+      },
+    }
   }
 
   /**

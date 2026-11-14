@@ -146,6 +146,8 @@ export class Zed {
     now: number,
     grey: number,
     clear: (a: Point, b: Point) => boolean,
+    /** The weather's say in how far it sees (see sightScale). */
+    seeing = 1,
   ): 'scream' | null {
     const k = KINDS[this.kind] as KindStats
     const me = self.state.pos
@@ -166,6 +168,7 @@ export class Zed {
         heard = p
       let sight =
         k.sight *
+        seeing *
         (1 + grey * 0.7) *
         (p.light ? 2.1 : 1) *
         (p.prone ? 0.35 : p.crouched ? 0.6 : 1) *

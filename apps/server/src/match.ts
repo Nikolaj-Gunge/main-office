@@ -21,6 +21,7 @@ import {
   TICK_RATE,
   WEAPONS,
   WeaponId,
+  type WeatherKind,
 } from '@office-fps/shared'
 import type { BotLead } from './bots.ts'
 import type { Game, ServerPlayer } from './game.ts'
@@ -121,6 +122,13 @@ export class MatchRunner {
 
   onLeave(player: ServerPlayer): void {
     this.survival?.onLeave(player)
+  }
+
+  /** Survival: holds the weather at one kind (null: as it comes). False when not surviving. */
+  pinWeather(kind: WeatherKind | null): boolean {
+    if (!this.survival) return false
+    this.survival.pinWeather(kind)
+    return true
   }
 
   /** The mode's own state for a (re)spawning player, or null for the normal loadout. */

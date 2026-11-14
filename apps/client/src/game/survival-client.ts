@@ -2,6 +2,7 @@ import {
   BOARD_REACH,
   countOf,
   DAY_SECONDS,
+  daylight,
   gearLooks,
   heightAt,
   type Interactable,
@@ -35,6 +36,7 @@ import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { Night } from '../render/night.ts'
+import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import type { RemotePlayers } from './remote-players.ts'
 
@@ -52,6 +54,9 @@ const NPC_GEAR: Partial<Record<Npc['role'], string[]>> = {
   hunter: ['beanie', 'camojacket'],
   kid: ['hoodie'],
 }
+
+/** Before the night has made its fog. */
+const FOG = new THREE.Color(0x0c121c)
 
 /** Other people's torches lit at once. */
 const TORCHES = 1
@@ -86,6 +91,8 @@ export class SurvivalClient {
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
   private readonly heli: HeliView
+  /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
+  readonly weather: WeatherView
   private readonly projected = new THREE.Vector3()
   /** When the server last said what time it is (ms). */
   private clockAt = 0
@@ -123,6 +130,8 @@ export class SurvivalClient {
     this.boards = new BarricadeView(o.def.spots)
     o.scene.add(this.boards.root)
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
+    this.weather = new WeatherView(o.def, o.physics, o.audio)
+    o.scene.add(this.weather.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
 
     // The torch rides on the camera, a little to the right, like a hand holding it.
@@ -206,6 +215,7 @@ export class SurvivalClient {
     this.hud.setShared(shared)
     this.applyBoards(shared.boards ?? [])
     this.heli.apply(shared.drops)
+    this.weather.setShared(shared.weather)
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -266,7 +276,18 @@ export class SurvivalClient {
       syncForest(this.physics, [state.pos])
       this.loot.prune(eye.x, eye.z)
     }
-    this.night.update(dt, eye, this.time, built)
+    const time = this.time
+    this.night.setWeather(
+      this.weather.update(
+        dt,
+        this.camera,
+        daylight(time),
+        this.torchLevel,
+        this.scene.fog?.color ?? FOG,
+      ),
+    )
+    this.wilds.setWetness(this.weather.wet)
+    this.night.update(dt, eye, time, built)
     this.leaves.update(dt, eye)
     this.heli.update(dt, eye)
 
@@ -338,11 +359,16 @@ export class SurvivalClient {
   private ambience(dt: number, remotes: RemotePlayers, eye: THREE.Vector3): void {
     this.sinceAmbience -= dt
     if (this.sinceAmbience <= 0) {
-      this.sinceAmbience = 5 + Math.random() * 9
+      // The windier the weather, the more often the gusts come, and the louder.
+      const blow = this.weather.weather.wind
+      this.sinceAmbience = (5 + Math.random() * 9) / (1 + blow * 2.5)
       const a = Math.random() * Math.PI * 2
       const at = { x: eye.x + Math.cos(a) * 25, y: eye.y + 4, z: eye.z + Math.sin(a) * 25 }
-      if (Math.random() < 0.6) this.audio.play('wind', { at, volume: 0.25 + Math.random() * 0.25 })
-      else
+      if (Math.random() < 0.6 + blow * 0.35) {
+        const volume =
+          (0.25 + Math.random() * 0.25) * (1 + blow * 1.2) * (this.weather.indoors ? 0.6 : 1)
+        this.audio.play('wind', { at, volume, rate: 0.9 + Math.random() * 0.2 - blow * 0.1 })
+      } else
         this.audio.play('twig', { at: { ...at, y: eye.y - 1 }, volume: 0.25 + Math.random() * 0.2 })
     }
     // Something within a few metres that you haven't been stung about lately.
