@@ -4,6 +4,7 @@ import {
   packAppearance,
   unpackAppearance,
 } from '@office-fps/shared'
+import { prefersReducedMotion } from './game/game-feel.ts'
 import { type Keybinds, withDefaults } from './input/bindings.ts'
 
 export const COLOR_MODES = { off: 0, levels: 1, palette: 2 } as const
@@ -39,6 +40,11 @@ export interface Settings {
   /** Bumped when the default look changes, so saved settings pick up the new look once. */
   lookVersion: number
   exposure: number
+  /**
+   * Camera shake from shots, hits and blasts, and the sprint FOV kick: 0 = off, 1 = full. Starts
+   * at 0 when the system asks for reduced motion.
+   */
+  screenShake: number
   /** 0–1. */
   masterVolume: number
   sfxVolume: number
@@ -77,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
   vignette: 0.4,
   lookVersion: 5,
   exposure: 1,
+  screenShake: prefersReducedMotion() ? 0 : 0.7,
   masterVolume: 0.8,
   sfxVolume: 1,
   showStats: false,

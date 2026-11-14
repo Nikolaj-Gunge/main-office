@@ -11,8 +11,14 @@ const BLOOD_LIFE = 20
 const BLOOD_FADE = 4
 const MAX_DECALS = 128
 const MAX_PARTICLES = 160
-const MAX_CASINGS = 24
-const CASING_LIFE = 2.5
+/** Casing pool; how many may lie about at once is `casingCap` (by quality). */
+const MAX_CASINGS = 48
+/** Spent casings lie where they land this long (s), shrinking away over the last `CASING_FADE`. */
+const CASING_LIFE = 12
+const CASING_FADE = 1.5
+/** Muzzle light: a hot, warm pulse this long (s), brightest at once and dying fast. */
+const FLASH_TIME = 0.05
+const FLASH_INTENSITY = 16
 const GRAVITY = 9.8
 
 /** Segment raycast against the level: distance along `dir` and the surface normal, or null. */
@@ -28,6 +34,8 @@ interface Casing {
   spin: THREE.Vector3
   life: number
   bounced: boolean
+  /** Lying still on the ground: no more physics. */
+  resting: boolean
 }
 
 interface Tracer {
@@ -198,6 +206,7 @@ export class Effects {
   private bloodIndex = 0
   private readonly casings: Casing[] = []
   private casingIndex = 0
+  private cap = MAX_CASINGS
   private readonly raycast: WorldRaycast
   /** Called the first time a casing hits something (for the clink sound). */
   onCasingHit?: (at: THREE.Vector3) => void
@@ -301,12 +310,13 @@ export class Effects {
         spin: new THREE.Vector3(),
         life: 0,
         bounced: false,
+        resting: false,
       })
     }
 
     // Two flash lights, reused round-robin: every light costs every lit pixel, even when off.
     for (let i = 0; i < 2; i++) {
-      const light = new THREE.PointLight(0xffa040, 0, 12, 2)
+      const light = new THREE.PointLight(0xffa850, 0, 12, 2)
       scene.add(light)
       this.lights.push({ light, life: 0 })
     }
@@ -394,6 +404,30 @@ export class Effects {
     }
   }
 
+  /** A confirmed headshot: a pop of blood cubes flung up and on, out of the head. */
+  headPop(at: THREE.Vector3, dir: THREE.Vector3): void {
+    const up = dir
+      .clone()
+      .setY(0)
+      .normalize()
+      .multiplyScalar(0.7)
+      .add(new THREE.Vector3(0, 0.7, 0))
+    this.burst(at, up, 0x7a0e0e, 18, 3.4, 0.6)
+    this.burst(at, up, 0xc23a3a, 6, 2.2, 0.4)
+  }
+
+  /** A melee blow that hit the world (a wall, a tree): chips and a puff of dust. */
+  thump(at: THREE.Vector3, normal: THREE.Vector3): void {
+    this.burst(at, normal, 0x8a7f70, 8, 2, 0.35)
+    this.puff(at.clone().addScaledVector(normal, 0.05), normal.clone().multiplyScalar(0.4), {
+      life: 0.6,
+      startSize: 0.1,
+      endSize: 0.45,
+      opacity: 0.5,
+      tint: 0xc4b9a6,
+    })
+  }
+
   /** Someone died here: a pool on the floor under them, plus a burst. */
   deathPool(feet: THREE.Vector3): void {
     const at = feet.clone().add(new THREE.Vector3(0, 1.1, 0))
@@ -457,9 +491,25 @@ export class Effects {
     p.sprite.visible = true
   }
 
+  /** How many spent casings may lie about at once (fewer on slow machines). */
+  get casingCap(): number {
+    return this.cap
+  }
+
+  set casingCap(cap: number) {
+    this.cap = Math.max(1, Math.min(MAX_CASINGS, Math.floor(cap)))
+    for (let i = this.cap; i < MAX_CASINGS; i++) {
+      const c = this.casings[i]
+      if (c) {
+        c.life = 0
+        c.mesh.visible = false
+      }
+    }
+  }
+
   /** Spits a spent casing out of the ejection port. */
   ejectCasing(at: THREE.Vector3, velocity: THREE.Vector3): void {
-    const c = this.casings[this.casingIndex++ % MAX_CASINGS]
+    const c = this.casings[this.casingIndex++ % this.cap]
     if (!c) return
     c.mesh.position.copy(at)
     c.mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0)
@@ -467,6 +517,8 @@ export class Effects {
     c.spin.set((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30)
     c.life = CASING_LIFE
     c.bounced = false
+    c.resting = false
+    c.mesh.scale.setScalar(1)
     c.mesh.visible = true
   }
 
@@ -474,7 +526,7 @@ export class Effects {
     const slot = this.lights[this.lightIndex++ % this.lights.length]
     if (!slot) return
     slot.light.position.copy(at)
-    slot.life = 0.06
+    slot.life = FLASH_TIME
   }
 
   private decal(at: THREE.Vector3, normal: THREE.Vector3): void {
@@ -568,7 +620,9 @@ export class Effects {
 
     for (const slot of this.lights) {
       slot.life = Math.max(0, slot.life - dt)
-      slot.light.intensity = slot.life > 0 ? 14 : 0
+      // Falls off with the square: a hard pop of light, not a lamp switched on and off.
+      const k = slot.life / FLASH_TIME
+      slot.light.intensity = FLASH_INTENSITY * k * k
     }
   }
 
@@ -581,6 +635,8 @@ export class Effects {
         c.mesh.visible = false
         continue
       }
+      if (c.life < CASING_FADE) c.mesh.scale.setScalar(c.life / CASING_FADE)
+      if (c.resting) continue
       c.vel.y -= GRAVITY * dt
       step.copy(c.vel).multiplyScalar(dt)
       const length = step.length()
@@ -595,6 +651,13 @@ export class Effects {
           if (!c.bounced) {
             c.bounced = true
             this.onCasingHit?.(c.mesh.position.clone())
+          }
+          // Too slow to bounce again on something flat: it lies there on its side.
+          if (c.vel.length() < 0.6 && hit.normal.y > 0.6) {
+            c.resting = true
+            c.mesh.position.addScaledVector(hit.normal, 0.006)
+            c.mesh.rotation.set(0, Math.random() * Math.PI * 2, 0)
+            continue
           }
         } else {
           c.mesh.position.add(step)

@@ -1,6 +1,13 @@
 import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
-import { ALTERNATES, type MeleeOffset, meleePose, meleeReady, SWING_OF } from './melee-anim.ts'
+import {
+  ALTERNATES,
+  KEYS,
+  type MeleeOffset,
+  meleePose,
+  meleeReady,
+  SWING_OF,
+} from './melee-anim.ts'
 import { survivalGuns } from './survival-guns.ts'
 
 const STEEL = 0x2b2d33
@@ -498,6 +505,11 @@ export class Viewmodel {
   /** Melee: swings so far (to alternate cut directions) and last frame's cooldown. */
   private swings = 0
   private lastCooldown = 0
+  /** Hit-stop: a landed blow freezes the swing at contact for a moment (s), then it catches up. */
+  private stopPending = 0
+  private stopLeft = 0
+  /** How far the drawn swing runs behind the real one (s), from hit-stops. */
+  private swingLag = 0
   /** Eased: hands busy climbing (gun lowered out of view). */
   private climb = 0
   private aim = 0
@@ -559,6 +571,16 @@ export class Viewmodel {
   }
 
   /** 0 = hip fire, 1 = fully aiming down sights (eased, for visuals). */
+  /** True while a landed blow holds the swing still (main.ts slows the aim with it). */
+  get hitStopping(): boolean {
+    return this.stopLeft > 0
+  }
+
+  /** The swing just started will land: hold it still for `seconds` at the moment of contact. */
+  hitStop(seconds: number): void {
+    this.stopPending = seconds
+  }
+
   get aimProgress(): number {
     return this.aim
   }
@@ -670,12 +692,32 @@ export class Viewmodel {
     let swing: MeleeOffset | null = null
     if (kind) {
       // A new swing starts when the cooldown jumps back up; every other cut may come back.
-      if (weapon.cooldown > this.lastCooldown + 1e-6) this.swings++
-      const t = weapon.cooldown > 0 ? 1 - weapon.cooldown / def.fireInterval : 1
+      if (weapon.cooldown > this.lastCooldown + 1e-6) {
+        this.swings++
+        this.swingLag = 0
+      }
+      const elapsed = def.fireInterval - Math.max(0, weapon.cooldown)
+      // Hit-stop starts when the drawn swing reaches its strike (its second key).
+      const contact = (KEYS[kind][1]?.[0] ?? 0.12) * def.fireInterval
+      if (this.stopPending > 0 && elapsed - this.swingLag >= contact) {
+        this.stopLeft = this.stopPending
+        this.stopPending = 0
+      }
+      if (this.stopLeft > 0) {
+        const held = Math.min(dt, this.stopLeft)
+        this.stopLeft -= held
+        this.swingLag += held
+      } else if (this.swingLag > 0) {
+        // Catch up at half speed again over the follow-through.
+        this.swingLag = Math.max(0, this.swingLag - dt * 0.5)
+      }
+      const t = (elapsed - this.swingLag) / def.fireInterval
       swing =
-        weapon.cooldown > 0
-          ? meleePose(kind, t, ALTERNATES.has(kind) && this.swings % 2 === 1)
+        t < 1
+          ? meleePose(kind, Math.max(0, t), ALTERNATES.has(kind) && this.swings % 2 === 1)
           : meleeReady(kind)
+    } else {
+      this.stopPending = this.stopLeft = this.swingLag = 0
     }
     this.lastCooldown = weapon.cooldown
 

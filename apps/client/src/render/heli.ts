@@ -8,6 +8,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
+import { rumble } from '../game/game-feel.ts'
 
 /** Smoke puffs per burning flare. */
 const PUFFS = 26
@@ -426,6 +427,8 @@ export class HeliView {
           delay: Math.max(0, s.nextRotor - t),
         })
       }
+      // Low overhead, every thwop rattles the view a little.
+      rumble(p, 0.18 * fade, 70)
       s.rotorVariant = 1 - s.rotorVariant
       // Keep the beat (unless the tab was asleep: then start afresh).
       s.nextRotor = (Math.abs(t - s.nextRotor) < 0.5 ? s.nextRotor : t) + 1 / rate
@@ -461,6 +464,7 @@ export class HeliView {
     if (down && !s.landed) {
       s.landed = true
       this.audio.playNear('bang', { x: d.x, y: d.y + 0.5, z: d.z }, 1, 140, 8, 0.7)
+      rumble(d, 0.6, 40)
     }
     if (!down) s.landed = false
   }

@@ -242,6 +242,14 @@ export class RemotePlayers {
   }
 
   /** 0 for people and bots, a ZombieKind for zombies. */
+  /** They were hit by a shot from `from`: a short jolt away from it (see Avatar.flinch). */
+  flinch(id: number, from: THREE.Vector3, strength: number): void {
+    const p = this.players.get(id)
+    if (!p?.shown) return
+    const dir = new THREE.Vector3(p.shown.x - from.x, 0, p.shown.z - from.z)
+    p.avatar.flinch(dir, strength, performance.now())
+  }
+
   kindOf(id: number): number {
     return this.players.get(id)?.kind ?? 0
   }

@@ -19,6 +19,7 @@ import * as THREE from 'three'
 import type { AmbientLoop, AudioEngine } from '../audio/audio-engine.ts'
 import { distanceLowpass, falloff } from '../audio/mixing.ts'
 import { type CarPose, CarView, HEADLAMP } from '../render/vehicle-view.ts'
+import { rumble } from './game-feel.ts'
 
 /** The server's reach for getting into a car (m from its body). */
 const ENTER_REACH = 1.7
@@ -246,6 +247,7 @@ export class VehiclesClient {
     if (impact > 4 && now - this.crashedAt > 250) {
       this.crashedAt = now
       this.audio.play('bang', { volume: Math.min(1, impact / 14), rate: 0.7 })
+      rumble(d.state, Math.min(0.8, impact / 14), 10)
     }
   }
 
