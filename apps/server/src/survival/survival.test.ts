@@ -361,9 +361,12 @@ describe('survival: the night', () => {
     const loot =
       t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     expect(loot.length).toBeGreaterThan(0)
-    const item = loot.find(
-      (l) => ITEMS[l.item]?.kind !== 'weapon' && ITEMS[l.item]?.kind !== 'money',
-    )
+    // Something small enough for a fresh character's pockets (a tank top and joggers).
+    const item = loot.find((l) => {
+      const kind = ITEMS[l.item]?.kind
+      const [w, h] = sizeOf(l.item)
+      return kind !== 'weapon' && kind !== 'money' && w * h <= 2 && w <= 2
+    })
     if (!item) throw new Error('nothing to take')
     const start = t.def.pois[0]
     t.move(item.x + 0.9, (start?.y ?? 0) + 0.14, item.z)
