@@ -1,5 +1,6 @@
 import {
   aimProgress,
+  bodyParts,
   carried,
   currentSpread,
   HitZone,
@@ -27,6 +28,7 @@ import type { CombatHud } from '../hud/combat-hud.ts'
 import type { DebugHitboxes } from '../render/debug-hitboxes.ts'
 import type { Effects } from '../render/effects.ts'
 import type { Viewmodel } from '../render/viewmodel.ts'
+import { hitStopSeconds, traumaAt } from './game-feel.ts'
 import type { Recoil } from './recoil.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import type { ScreenShake } from './screen-shake.ts'
@@ -221,10 +223,20 @@ export class ClientCombat {
     this.d.audio.gunshot(from, weaponLook(id), FEEL[id])
   }
 
-  /** A melee swing: swish, and a predicted stab + blood if it touches someone we see. */
+  /**
+   * A melee swing: a whoosh, and a predicted stab + blood if it touches someone we see (or a
+   * thock if it meets a wall). A blow that lands holds the frame a moment (hit-stop).
+   */
   private localSwing(shot: ShotEvent, id: WeaponId, range: number): void {
     this.d.viewmodel.onShot()
-    this.d.audio.play('swish', swung(id, 0.7))
+    const feel = FEEL[id]
+    const weight = feel?.shake ?? 0.1
+    this.d.audio.play('swish', swung(id, 0.9))
+    // Heavy things move air: a second, deeper whoosh under the first.
+    if (weight > 0.25) {
+      const low = swung(id, 0.5 * weight)
+      this.d.audio.play('swish', { ...low, rate: low.rate * 0.6 })
+    }
     let best: { distance: number; dir: { x: number; y: number; z: number } } | null = null
     for (const dir of shot.pellets) {
       for (const pose of this.d.remotes.visiblePoses().values()) {
@@ -232,20 +244,52 @@ export class ClientCombat {
         if (hit) best = { distance: hit.distance, dir }
       }
     }
-    if (!best) return
     const { origin } = shot
+    if (!best) {
+      this.swingIntoWorld(shot, id, range)
+      return
+    }
     const at = new THREE.Vector3(origin.x, origin.y, origin.z).addScaledVector(
       new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z),
       best.distance,
     )
-    const feel = FEEL[id]
-    // Blades cut; bats, bars and hammers land with a thud. Either way you feel it.
+    // Blades cut; bats, bars and hammers land with a thud. Either way you feel it: a meaty
+    // thock under every blow, heavier for heavier weapons.
     if (feel?.blunt) {
       this.d.audio.play('impact.flesh', swung(id, 1))
       this.d.audio.play('claw', swung(id, 0.5))
-    } else this.d.audio.play('stab', swung(id, 0.8))
-    this.d.shake.add(feel?.shake ?? 0.1)
+    } else {
+      this.d.audio.play('stab', swung(id, 0.8))
+      this.d.audio.play('impact.flesh', swung(id, 0.35 + weight * 0.5))
+    }
+    this.d.shake.add(weight)
+    this.d.viewmodel.hitStop(hitStopSeconds(weight))
     this.d.effects.bleed(at, new THREE.Vector3(best.dir.x, best.dir.y, best.dir.z), false)
+  }
+
+  /** A swing that met no one: if it meets a wall or a tree in reach, it thocks off it. */
+  private swingIntoWorld(shot: ShotEvent, id: WeaponId, range: number): void {
+    const dir = shot.pellets[0]
+    if (!dir) return
+    const wall = this.d.physics.world.castRayAndGetNormal(
+      new RAPIER.Ray(shot.origin, dir),
+      range,
+      true,
+      undefined,
+      PLAYER_QUERY_GROUPS,
+    )
+    if (!wall) return
+    const at = new THREE.Vector3(shot.origin.x, shot.origin.y, shot.origin.z).addScaledVector(
+      new THREE.Vector3(dir.x, dir.y, dir.z),
+      wall.timeOfImpact,
+    )
+    const weight = FEEL[id]?.shake ?? 0.1
+    const tone = swung(id, 0.7)
+    this.d.audio.play('impact.world', { ...tone, rate: tone.rate * 0.75 })
+    if (FEEL[id]?.blunt || weight > 0.4) this.d.audio.play('bang', swung(id, 0.35))
+    this.d.effects.thump(at, new THREE.Vector3(wall.normal.x, wall.normal.y, wall.normal.z))
+    this.d.shake.add(weight * 0.6)
+    this.d.viewmodel.hitStop(hitStopSeconds(weight) * 0.6)
   }
 
   /** Draws one predicted bullet/pellet: tracer to the first wall or visible player. */
@@ -372,6 +416,8 @@ export class ClientCombat {
             const at = new THREE.Vector3(msg.end.x, msg.end.y, msg.end.z)
             this.d.audio.playNear('claw', at, 0.9, 20)
             this.d.effects.bleed(at, at.clone().sub(from).normalize(), false)
+            // Someone torn at right beside you: you feel that too (your own hurt shakes more).
+            this.d.shake.add(traumaAt(0.3, at.distanceTo(this.d.camera.position), 6))
           }
           break
         }
@@ -416,11 +462,25 @@ export class ClientCombat {
         }
         break
       }
-      case ServerMsg.HitConfirm:
+      case ServerMsg.HitConfirm: {
         this.d.hud.hitmarker(msg.zone, msg.killed)
+        // They jolt where you hit them; a headshot pops blood cubes off the head.
+        const pose = this.d.remotes.visiblePoses().get(msg.victimId)
+        if (pose) {
+          const from = this.d.camera.position
+          this.d.remotes.flinch(msg.victimId, from, msg.zone === HitZone.Head ? 1 : 0.6)
+          if (msg.zone === HitZone.Head) {
+            const c = bodyParts(pose).find((p) => p.name === 'head')?.center
+            if (c) {
+              const head = new THREE.Vector3(c.x, c.y, c.z)
+              this.d.effects.headPop(head, head.clone().sub(from).normalize())
+            }
+          }
+        }
         this.d.audio.play(msg.zone === HitZone.Head ? 'hit.head' : 'hit', { bus: 'ui', rate: 1 })
         if (msg.killed) this.d.audio.play('kill', { bus: 'ui', rate: 1, delay: 0.07 })
         break
+      }
       case ServerMsg.Damaged:
         this.d.hud.setHealth(msg.health)
         this.d.hud.damageFrom(msg.from)

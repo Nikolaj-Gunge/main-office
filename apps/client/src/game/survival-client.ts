@@ -48,6 +48,7 @@ import { Night } from '../render/night.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
+import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import { VehiclesClient } from './vehicles-client.ts'
@@ -279,7 +280,9 @@ export class SurvivalClient {
         if (n.kind === 'scream' && n.at) {
           this.audio.playNear('scream', n.at, 1, 170, 12)
           this.audio.play('dread', { volume: 0.5 })
-        } else if (n.kind === 'loot') this.audio.play('pickup', { volume: 0.5 })
+        } else if (n.kind === 'loot')
+          // The better the find, the lower and fuller it lands.
+          this.audio.play('pickup', { volume: 0.5, rate: pickupPitch(n.text) })
         this.hud.notice(n)
         return true
       }

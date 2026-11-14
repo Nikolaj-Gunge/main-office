@@ -267,6 +267,7 @@ function hitTick(rate: number): Signal {
   return fadeEdges(normalize(mix(rate, tick, gain(body, 0.5)), 0.6), rate)
 }
 
+/** Headshot: the tink, over a short crunch (gritty, clipped noise) so it lands like bone. */
 function headTink(rate: number): Signal {
   const ping = mix(
     rate,
@@ -274,7 +275,26 @@ function headTink(rate: number): Signal {
     gain(tone(0.25, rate, 4650), 0.6),
     gain(tone(0.25, rate, 7300), 0.25),
   )
-  return fadeEdges(normalize(mix(rate, envelope(ping, rate, 0, 0.06), hitTick(rate)), 0.7), rate)
+  const crunch = envelope(
+    lowpass(saturate(noise(0.08, rate, 271), 4), rate, 2200),
+    rate,
+    0.001,
+    0.02,
+  )
+  const snap = envelope(bandpass(noise(0.03, rate, 272), rate, 4200, 2), rate, 0, 0.004)
+  return fadeEdges(
+    normalize(
+      mix(
+        rate,
+        gain(crunch, 0.9),
+        gain(snap, 0.5),
+        [envelope(ping, rate, 0, 0.06), 0.012],
+        [hitTick(rate), 0.012],
+      ),
+      0.7,
+    ),
+    rate,
+  )
 }
 
 function killDing(rate: number): Signal {

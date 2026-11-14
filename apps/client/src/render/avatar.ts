@@ -15,6 +15,7 @@ import {
   WeaponId,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { flinchCurve } from '../game/game-feel.ts'
 import {
   ARM_LENGTH,
   attachBaked,
@@ -430,8 +431,25 @@ export function placePart(group: THREE.Object3D, p: BodyPart, size: number): voi
  * frame (running legs, arms on the gun, head following the aim) — the same pose the server hits.
  * No floating name tag — names appear when your crosshair is on someone you can see.
  */
+/** How far each part is shoved by a flinch (the head most, the hips hardly). */
+const FLINCH_SHOVE: Partial<Record<PartName, number>> = {
+  head: 0.09,
+  chest: 0.06,
+  armL: 0.06,
+  armR: 0.06,
+  gun: 0.06,
+  stomach: 0.03,
+}
+const flinchTurn = new THREE.Quaternion()
+const flinchAxis = new THREE.Vector3()
+const UP = new THREE.Vector3(0, 1, 0)
+
 export class Avatar {
   readonly root = new THREE.Group()
+  /** Last hit (flinch): when (ms), which way (horizontal, away from the shooter) and how hard. */
+  private flinchAt = Number.NEGATIVE_INFINITY
+  private readonly flinchDir = new THREE.Vector3()
+  private flinchStrength = 0
   private readonly material: THREE.MeshLambertMaterial
   private readonly parts: Record<Exclude<PartName, 'gun'>, THREE.Group>
   private readonly gunGroup = new THREE.Group()
@@ -521,6 +539,7 @@ export class Avatar {
     this.root.visible = s.alive
     const size = pose.scale ?? 1
     this.place(bodyParts(pose), size)
+    this.applyFlinch(timeMs, size)
     // Your eye inside their body (you stand where they stand: both woke at the same spot, or
     // walked into each other): their insides would fill the screen (the eyes as two huge boxes
     // in the sky), so they aren't drawn until you step apart.
@@ -560,6 +579,30 @@ export class Avatar {
       ;(this.glint.material as THREE.SpriteMaterial).opacity = strength
       this.glint.scale.setScalar(0.4 + strength * 1.2)
     }
+  }
+
+  /**
+   * Hit: the upper body jolts away from `dir` (shooter → them) and the head snaps back. Purely
+   * what you see — the hitboxes stay where the server has them.
+   */
+  flinch(dir: THREE.Vector3, strength: number, timeMs: number): void {
+    this.flinchDir.set(dir.x, 0, dir.z)
+    if (this.flinchDir.lengthSq() < 1e-6) return
+    this.flinchDir.normalize()
+    this.flinchStrength = strength
+    this.flinchAt = timeMs
+  }
+
+  private applyFlinch(timeMs: number, size: number): void {
+    const f = flinchCurve(timeMs - this.flinchAt) * this.flinchStrength
+    if (f <= 0) return
+    for (const [name, shove] of Object.entries(FLINCH_SHOVE) as [PartName, number][]) {
+      const group = name === 'gun' ? this.gunGroup : this.parts[name]
+      group.position.addScaledVector(this.flinchDir, shove * f * size)
+    }
+    // Head thrown back: turn about the axis that tips "up" towards the push.
+    flinchAxis.crossVectors(UP, this.flinchDir).normalize()
+    this.parts.head.quaternion.premultiply(flinchTurn.setFromAxisAngle(flinchAxis, 0.45 * f))
   }
 
   /** Puts every part where `parts` says (world space). */

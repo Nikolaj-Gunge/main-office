@@ -41,6 +41,15 @@ import { addNetworkFolder } from './debug/network.ts'
 import { addTuningFolders } from './debug/tuning.ts'
 import { ClientCombat } from './game/combat.ts'
 import { FreeFly } from './game/free-fly.ts'
+import {
+  casingCap,
+  footstepTone,
+  SPRINT_FOV_KICK,
+  SprintKick,
+  setRumbleSink,
+  stepSurface,
+  traumaAt,
+} from './game/game-feel.ts'
 import { LocalPlayer } from './game/local-player.ts'
 import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
@@ -163,10 +172,12 @@ document.body.appendChild(stats.dom)
  * (aiming down sights).
  */
 let currentZoom = 1
+/** Extra degrees of FOV right now (the sprint kick). */
+let fovKick = 0
 function updateProjection(zoom = currentZoom) {
   currentZoom = zoom
   const aspect = pixels.size.x / pixels.size.y
-  const hfov = (settings.fov * Math.PI) / 180
+  const hfov = ((settings.fov + fovKick) * Math.PI) / 180
   camera.fov = (2 * Math.atan(Math.tan(hfov / 2) / aspect / zoom) * 180) / Math.PI
   camera.aspect = aspect
   camera.updateProjectionMatrix()
@@ -190,6 +201,17 @@ const audio = new AudioEngine()
 audio.muted = new URLSearchParams(location.search).has('mute')
 const recoil = new Recoil()
 const shake = new ScreenShake()
+const sprintKick = new SprintKick()
+// Helicopters, crates and crashes rattle the view of whoever is close (game-feel.ts).
+setRumbleSink((at, amount, radius) =>
+  shake.add(
+    traumaAt(
+      amount,
+      Math.hypot(at.x - camera.position.x, at.y - camera.position.y, at.z - camera.position.z),
+      radius,
+    ),
+  ),
+)
 const worldRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
 const effects = new Effects(scene, (origin, dir, maxDistance) => {
   worldRay.origin = origin
@@ -209,6 +231,7 @@ const effects = new Effects(scene, (origin, dir, maxDistance) => {
     : null
 })
 effects.onCasingHit = (at) => audio.playNear('casing', at, 0.45, 15)
+effects.casingCap = casingCap(0)
 const survival =
   map.survival && survivalCode
     ? new (await survivalCode).SurvivalClient({
@@ -254,7 +277,13 @@ let itemSoundsFrom = Number.POSITIVE_INFINITY
 player.feel.onFootstep = () => {
   const s = player.state
   const sprinting = Math.hypot(s.vel.x, s.vel.z) > player.movement.walkSpeed * 1.1
-  audio.play('step', { volume: s.crouched ? 0.05 : sprinting ? 0.16 : 0.11 })
+  // Boards knock, leaves crackle, grass hushes (whatever is underfoot).
+  const tone = footstepTone(stepSurface(map.survival?.terrain, s.pos.x, s.pos.y, s.pos.z))
+  audio.play('step', {
+    volume: (s.crouched ? 0.05 : sprinting ? 0.16 : 0.11) * tone.volume,
+    rate: tone.rate * (0.95 + Math.random() * 0.1),
+    lowpass: tone.lowpass,
+  })
 }
 remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
@@ -617,6 +646,7 @@ function applySettings() {
   setSmoothTextures(settings.smoothPixels, Math.min(8, pixels.maxAnisotropy()))
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
+  shake.scale = settings.screenShake
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
   aim.toggle = settings.aimToggle
   if (!aim.toggle) aim.release()
@@ -806,7 +836,10 @@ pixels.setAnimationLoop(() => {
   fpsSmoothed += (1 / Math.max(dt, 1e-4) - fpsSmoothed) * 0.05
   frameTimes[frameIndex++ % frameTimes.length] = dt * 1000
   // Automatic quality: coarser pixels when frames run slow, finer again when there's room.
-  if (settings.autoQuality && autoQuality.frame(dt)) pixels.setBias(autoQuality.bias)
+  if (settings.autoQuality && autoQuality.frame(dt)) {
+    pixels.setBias(autoQuality.bias)
+    effects.casingCap = casingCap(autoQuality.bias)
+  }
 
   // The player keeps simulating in noclip while online (standing still), so the server and
   // prediction stay in step.
@@ -830,6 +863,8 @@ pixels.setAnimationLoop(() => {
     if (events.switched || events.weapon?.reloadStarted || !player.state.alive) aim.release()
     if (events.landed && events.landingSpeed > 3) {
       audio.play('land', { volume: Math.min(0.35, events.landingSpeed / 20) })
+      // A real drop jars the view too (the camera dip is CameraFeel's).
+      if (events.landingSpeed > 6) shake.add(Math.min(0.45, (events.landingSpeed - 6) / 14))
     }
     if (events.slid) audio.play('slide', { volume: 0.3 })
     if (events.mantled) audio.play('mantle', { volume: 0.3 })
@@ -880,8 +915,27 @@ pixels.setAnimationLoop(() => {
 
   // Aiming down sights zooms the view; sensitivity follows so aim speed feels the same.
   const zoom = 1 + (WEAPONS[player.state.weapon.id].aimZoom - 1) * viewmodel.aimProgress
-  if (Math.abs(zoom - currentZoom) > 1e-4) updateProjection(zoom)
-  look.sensitivityScale = 1 / zoom
+  // Sprinting widens the view a little (scaled with the screen-shake setting: it's motion too).
+  const ps = player.state
+  const sprinting =
+    ps.alive &&
+    ps.grounded &&
+    !noclip &&
+    !seated &&
+    viewmodel.aimProgress < 0.1 &&
+    Math.hypot(ps.vel.x, ps.vel.z) > player.movement.walkSpeed * 1.1
+  const fovTarget =
+    sprintKick.update(dt, sprinting) * SPRINT_FOV_KICK * Math.min(1, settings.screenShake / 0.7)
+  if (
+    Math.abs(zoom - currentZoom) > 1e-4 ||
+    Math.abs(fovTarget - fovKick) > 0.01 ||
+    (fovTarget === 0 && fovKick !== 0)
+  ) {
+    fovKick = fovTarget
+    updateProjection(zoom)
+  }
+  // A landed melee blow holds the frame for a moment (hit-stop): the aim drags with it.
+  look.sensitivityScale = (1 / zoom) * (viewmodel.hitStopping ? 0.35 : 1)
   camera.updateMatrixWorld()
   audio.setListener(camera)
   audio.update(dt)

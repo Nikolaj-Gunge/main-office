@@ -155,6 +155,7 @@ export class Menu {
     settingsPanel.append(
       this.slider('Mouse sensitivity', 'sensitivity', 0.2, 8, 0.05, (v) => v.toFixed(2)),
       this.slider('Field of view', 'fov', 70, 110, 1, (v) => `${v}°`),
+      this.slider('Screen shake', 'screenShake', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.choice(
         'Pixel size',
         PIXEL_PRESETS.map(([label, value]) => [label, value]),
@@ -316,7 +317,7 @@ export class Menu {
 
   private slider(
     label: string,
-    key: 'sensitivity' | 'fov' | 'masterVolume' | 'sfxVolume',
+    key: 'sensitivity' | 'fov' | 'screenShake' | 'masterVolume' | 'sfxVolume',
     min: number,
     max: number,
     step: number,
