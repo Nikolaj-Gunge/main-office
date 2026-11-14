@@ -111,7 +111,11 @@ const AMMO_ITEMS: [AmmoType, string, string, number, number][] = [
   ['bolt', 'bolts', 'Crossbow bolts', 0.03, 8],
 ]
 for (const [ammo, id, name, weight, value] of AMMO_ITEMS) {
-  add({ id, name, kind: 'ammo', weight, value, ammo, desc: `Fits anything chambered in ${ammo}.` })
+  const guns = WEAPON_ITEMS.filter(([w]) => WEAPONS[w].ammoType === ammo).map(
+    ([w]) => WEAPONS[w].name,
+  )
+  const desc = guns.length ? `For the ${guns.join(', ')}.` : `Fits anything chambered in ${ammo}.`
+  add({ id, name, kind: 'ammo', weight, value, ammo, desc })
 }
 
 // ── Food ──
@@ -188,7 +192,7 @@ med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', {
 })
 med('painkillers', 'Painkillers', 0.05, 40, "You'll feel it tomorrow instead.", { health: 22 })
 med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', { health: 35 })
-med('adrenaline', 'Adrenaline shot', 0.05, 160, 'Run now, pay later. Holds the turn back.', {
+med('adrenaline', 'Adrenaline shot', 0.05, 300, 'Run now, pay later. Holds the turn back.', {
   health: 15,
   stamina: 100,
   infection: 'delay',

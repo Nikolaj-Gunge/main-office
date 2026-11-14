@@ -406,7 +406,7 @@ describe('survival: the bite', () => {
     expect(t.self().infected).toBeNull()
   })
 
-  test('the cure is very rare; adrenaline is rare; Gus has them only now and then', () => {
+  test('the cure is very rare and Gus has it only now and then; he always sells adrenaline', () => {
     const odds = (table: (typeof LOOT_TABLES)[number], item: string) => {
       const random = seeded(3)
       let n = 0
@@ -419,7 +419,7 @@ describe('survival: the bite', () => {
     }
     expect(odds('medical', 'adrenaline')).toBeLessThan(0.02)
     expect(TRADER_STOCK).not.toContain('cure')
-    expect(TRADER_STOCK).not.toContain('adrenaline')
+    expect(TRADER_STOCK).toContain('adrenaline')
     for (const r of RARE_STOCK) expect(ITEMS[r.item]?.id).toBe(r.item)
 
     // Today he has a cure: it's on the stall, dear, and once sold it's gone.

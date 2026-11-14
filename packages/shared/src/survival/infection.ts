@@ -38,6 +38,13 @@ export function infectionWord(left: number | null): string {
   return stage === -1 ? '' : WORDS[stage]
 }
 
+/** Time left before you turn, as a clock: "14:05" ("" when not infected). */
+export function infectionClock(left: number | null): string {
+  if (left === null) return ''
+  const s = Math.max(0, Math.ceil(left))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 /** Roughly how long is left, the way the backpack screen says it (never to the second). */
 export function infectionLeftText(left: number | null): string {
   if (left === null) return ''

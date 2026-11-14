@@ -1493,9 +1493,7 @@ export class SurvivalDirector {
         npc,
         rare.some((r) => r.item === 'cure')
           ? "Got something special today. Came off a soldier from Site 7. Don't ask what it cost him."
-          : rare.length > 0
-            ? 'Cash only. And yes, that is adrenaline. No, I will not haggle.'
-            : 'Cash only. No refunds. No haunted merchandise, probably.',
+          : 'Cash only. No refunds. No haunted merchandise, probably.',
         [{ id: 'bye', label: 'Goodbye.' }],
         stock,
       )

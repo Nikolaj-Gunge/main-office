@@ -9,7 +9,7 @@ import {
   ITEMS,
   type ItemDef,
   type ItemKind,
-  infectionLeftText,
+  infectionClock,
   infectionStage,
   infectionWord,
   type Notice,
@@ -252,6 +252,10 @@ export class SurvivalHud {
   private screen: 'none' | 'pack' | 'shop' = 'none'
   private shop: Dialog | null = null
   private selected = 0
+  /** Scroll the selected row into view on the next draw (only after W/S, never on a refresh). */
+  private revealPick = false
+  /** Which screen the lists' scroll positions belong to. */
+  private scrolledScreen = ''
   private rows: { stack: Stack; index: number }[] = []
   private shift = false
   private readonly map: HTMLCanvasElement
@@ -463,6 +467,7 @@ export class SurvivalHud {
     else if (code === 'Enter' || code === 'KeyE') this.act(this.rows[this.selected], 'main')
     else if (code === 'KeyG') this.act(this.rows[this.selected], 'drop')
     else return true // everything else is swallowed while a screen is open
+    this.revealPick = true
     this.drawScreen()
     return true
   }
@@ -487,7 +492,7 @@ export class SurvivalHud {
       const left = ctx.infected ?? null
       this.infected.hidden = left === null
       const word = infectionWord(left)
-      const status = word ? `INFECTED · ${word.toUpperCase()}` : ''
+      const status = word ? `INFECTED · ${word.toUpperCase()} · ${infectionClock(left)}` : ''
       if (this.infected.textContent !== status) this.infected.textContent = status
       const stage = String(Math.max(0, infectionStage(left)))
       if (this.infected.dataset.stage !== stage) this.infected.dataset.stage = stage
@@ -788,7 +793,14 @@ export class SurvivalHud {
   private drawScreen(): void {
     const self = this.self
     if (!self) return
-    const scroll = this.panel.querySelector('.sv-list')?.scrollTop ?? 0
+    // Redraws come with every change to what you have (hunger ticking down, too): keep every list
+    // where it was scrolled to.
+    const key = `${this.screen}:${this.shop?.name ?? ''}`
+    const scrolls =
+      key === this.scrolledScreen
+        ? [...this.panel.querySelectorAll('.sv-list')].map((l) => l.scrollTop)
+        : []
+    this.scrolledScreen = key
     this.panel.replaceChildren()
     const shop = this.screen === 'shop' ? this.shop : null
     const head = el('div', 'sv-panel-head', this.panel)
@@ -802,12 +814,28 @@ export class SurvivalHud {
       el('div', 'sv-shop-say', left, shop.text)
       el('div', 'sv-group', left, 'For sale')
       const list = el('div', 'sv-list', left)
-      for (const [id, price] of shop.shop ?? []) {
+      // Rounds for the guns you carry come first, and say which gun they're for.
+      const carried = this.ctx?.carried ?? []
+      const forYours = (id: string) => {
+        const ammo = ITEMS[id]?.ammo
+        if (!ammo) return []
+        return carried.filter((c) => WEAPONS[c.id].ammoType === ammo).map((c) => WEAPONS[c.id].name)
+      }
+      const stock = [...(shop.shop ?? [])].sort(
+        (a, b) => Number(forYours(b[0]).length > 0) - Number(forYours(a[0]).length > 0),
+      )
+      for (const [id, price] of stock) {
         const def = ITEMS[id]
         if (!def) continue
         const each = def.kind === 'ammo' ? AMMO_BOX : 1
         const row = el('div', 'sv-row', list)
-        el('span', 'sv-row-name', row, `${def.name}${each > 1 ? ` ×${each}` : ''}`)
+        const yours = forYours(id)
+        el(
+          'span',
+          'sv-row-name',
+          row,
+          `${def.name}${each > 1 ? ` ×${each}` : ''}${yours.length ? ` · for your ${yours.join(', ')}` : ''}`,
+        )
         el('span', 'sv-row-info', row, `$${price}`)
         const can = self.money >= price && roomFor(self, id) >= each
         this.button(row, 'Buy', () => this.send({ a: 'buy', item: id, n: 1 }), can)
@@ -868,7 +896,7 @@ export class SurvivalHud {
         el('div', 'sv-group', left, 'Condition')
         const row = el('div', 'sv-condition', left)
         el('b', '', row, `Infected — ${infectionWord(turnIn).toLowerCase()}.`)
-        el('span', '', row, ` ${infectionLeftText(turnIn)}`)
+        el('span', '', row, ` ${infectionClock(turnIn)} left.`)
         el('div', 'sv-condition-help', left, 'Adrenaline holds it back. Only a cure stops it.')
       }
       el('div', 'sv-help', left, 'W/S select · E use or equip · G drop (Shift: all) · Tab close')
@@ -924,8 +952,11 @@ export class SurvivalHud {
         if (effect) el('div', 'effect', detail, effect)
       }
     })
-    list.scrollTop = scroll
-    const picked = list.querySelector('.selected')
+    this.panel.querySelectorAll('.sv-list').forEach((l, i) => {
+      l.scrollTop = scrolls[i] ?? 0
+    })
+    const picked = this.revealPick ? list.querySelector('.selected') : null
+    this.revealPick = false
     if (picked instanceof HTMLElement) {
       if (picked.offsetTop < list.scrollTop) list.scrollTop = picked.offsetTop - 30
       else if (picked.offsetTop + 60 > list.scrollTop + list.clientHeight)
