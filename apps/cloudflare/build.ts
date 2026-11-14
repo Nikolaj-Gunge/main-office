@@ -22,6 +22,12 @@ const client = Bun.spawnSync(['bun', 'run', 'build'], {
   stderr: 'inherit',
 })
 if (client.exitCode !== 0) process.exit(client.exitCode ?? 1)
+// Hashed files never change: browsers keep them for a year instead of asking again every load
+// (Workers Assets default to max-age=0). index.html keeps the default and picks up new hashes.
+await Bun.write(
+  join(root, '../client/dist/_headers'),
+  '/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n',
+)
 
 // 2. Worker.
 const INLINED_WASM = /[A-Za-z_$][\w$]*\.toByteArray\("[A-Za-z0-9+/=]{1000,}"\)(\.buffer)?/

@@ -18,7 +18,13 @@ export async function serveStatic(root: string, pathname: string): Promise<Respo
   }
 
   const file = Bun.file(target === base ? resolve(base, 'index.html') : target)
-  if (await file.exists()) return new Response(file)
+  if (await file.exists()) {
+    // Vite's hashed output never changes under the same name.
+    const immutable = decoded.startsWith('/assets/')
+    return new Response(file, {
+      headers: immutable ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {},
+    })
+  }
 
   const index = Bun.file(resolve(base, 'index.html'))
   if (await index.exists()) return new Response(index)

@@ -68,6 +68,8 @@ export class GameRoom extends DurableObject {
     if (pathname === '/healthz') {
       return Response.json({
         ok: true,
+        // The client builds this map while it loads (saves a reload on join).
+        map: game.mapId,
         tick: game.tick,
         players: game.players.size,
         connections: this.sockets,

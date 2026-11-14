@@ -39,6 +39,8 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === '/healthz') {
       return Response.json({
         ok: true,
+        // The client builds this map while it loads (saves a reload on join).
+        map: game.mapId,
         tick: game.tick,
         players: game.players.size,
         connections: connections.count(),
