@@ -112,6 +112,8 @@ export interface RemotePlayerState {
    * head look | body look << 4 | legs look << 8 | feet look << 12).
    */
   gear?: number
+  /** A zombie winding up a blow: how far through (0–1); absent or 0 when it isn't. */
+  windup?: number
 }
 
 /** A car as everyone near it is told (survival): enough to draw it and to drive it on. */
@@ -272,6 +274,7 @@ const FLAG_WINDED = 64
 const FLAG_PRONE = 128
 /** Others' state only: a gear u16 follows the animation bytes (own state uses bit 0 for crouch). */
 const FLAG_GEAR = 1
+const FLAG_WINDUP = 64
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
 
@@ -397,13 +400,15 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
       (p.protected ? FLAG_PROTECTED : 0) |
       (p.aiming ? FLAG_AIMING : 0) |
       (p.light ? FLAG_LIGHT : 0) |
-      (p.gear ? FLAG_GEAR : 0),
+      (p.gear ? FLAG_GEAR : 0) |
+      (p.windup ? FLAG_WINDUP : 0),
   )
   w.u8(p.weapon)
   w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
   w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
   writeAnimation(w, p)
   if (p.gear) w.u16(p.gear & 0xffff)
+  if (p.windup) w.u8(Math.max(1, Math.round(Math.min(1, p.windup) * 255)))
 }
 
 /**
@@ -473,6 +478,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const speed = r.u8() / 10
   const animation = readAnimation(r)
   const gear = flags & FLAG_GEAR ? r.u16() : 0
+  const windup = flags & FLAG_WINDUP ? r.u8() / 255 : 0
   return {
     stride,
     speed,
@@ -491,6 +497,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
     weapon,
     ...(flags & FLAG_LIGHT ? { light: true } : {}),
     ...(gear ? { gear } : {}),
+    ...(windup ? { windup } : {}),
   }
 }
 
