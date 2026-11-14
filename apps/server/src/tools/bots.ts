@@ -1,9 +1,11 @@
 /**
- * Headless load-test bots: connect like real clients and wander around sending 60 inputs/s.
+ * Headless load-test bots: connect like real clients and wander around making 60 inputs/s,
+ * sent in batches like the game client (InputBatcher; `--batch N` overrides the batch size).
  *
  *   bun run bots                       # 20 bots against ws://localhost:3000/ws
  *   bun run bots --count 8 --url ws://host:3000/ws --seconds 60
  *   bun run bots --count 3 --shoot     # bots also shoot (badly) at the nearest player
+ *   bun run bots --count 4 --batch 2   # the old batching, to compare message counts
  */
 import {
   Button,
@@ -11,6 +13,8 @@ import {
   ClientMsg,
   decodeServerMessage,
   encodeClientMessage,
+  INPUT_BATCH_TICKS,
+  InputBatcher,
   type InputCommand,
   PROTOCOL_VERSION,
   type RemotePlayerState,
@@ -27,6 +31,7 @@ const count = Number(arg('count', '20'))
 const url = arg('url', 'ws://localhost:3000/ws')
 const seconds = Number(arg('seconds', '0'))
 const shoot = process.argv.includes('--shoot')
+const batch = Number(arg('batch', String(INPUT_BATCH_TICKS)))
 
 const MOVES = [
   Button.Forward,
@@ -46,6 +51,7 @@ class Bot {
   private readonly ws: WebSocket
   private readonly index: number
   private seq = 1
+  private readonly batcher = new InputBatcher(batch)
   private buttons = 0
   private yaw = Math.random() * Math.PI * 2
   private pitch = 0
@@ -119,7 +125,9 @@ class Bot {
       // Bots "see" the latest snapshot, no interpolation delay.
       viewTick: this.lastTick,
     }
-    this.send({ type: ClientMsg.Input, commands: [command] })
+    if (this.batcher.add(command)) {
+      this.send({ type: ClientMsg.Input, commands: this.batcher.take() })
+    }
     // Jump is edge-triggered: release it after one tick.
     this.buttons &= ~Button.Jump
   }

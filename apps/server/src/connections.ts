@@ -1,4 +1,5 @@
 import type { ServerWebSocket, WebSocketHandler } from 'bun'
+import type { RequestBudget } from './budget.ts'
 import type { Game } from './game.ts'
 import { createSession, type Session } from './session.ts'
 
@@ -7,7 +8,7 @@ export interface SocketData {
 }
 
 /** Adapts Bun WebSockets to the transport-agnostic `Game`. */
-export function createConnections(game: Game, getTickMs: () => number) {
+export function createConnections(game: Game, getTickMs: () => number, budget?: RequestBudget) {
   const sockets = new Set<ServerWebSocket<SocketData>>()
 
   const handlers: WebSocketHandler<SocketData> = {
@@ -17,6 +18,7 @@ export function createConnections(game: Game, getTickMs: () => number) {
         game,
         { send: (bytes) => ws.send(bytes), close: (code, reason) => ws.close(code, reason) },
         getTickMs,
+        { budget },
       )
     },
 

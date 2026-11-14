@@ -24,6 +24,16 @@ interface AdminState {
     ping: number
     bot: boolean
   }[]
+  /** Today's Cloudflare request use (server budget.ts); null on servers without it. */
+  budget: {
+    day: string
+    messages: number
+    http: number
+    usedToday: number
+    freeLimit: number
+    pct: number
+    resting: boolean
+  } | null
 }
 
 type NumericKey =
@@ -464,6 +474,8 @@ function render(): void {
     players.length ? table : h('p', { class: 'hint' }, 'Nobody is playing right now.'),
   )
 
+  const budgetCard = state.budget ? renderBudget(state.budget) : null
+
   const logout = h('button', { type: 'button' }, 'Log out')
   logout.addEventListener('click', () => {
     sessionStorage.removeItem(PASSWORD_KEY)
@@ -484,6 +496,35 @@ function render(): void {
     rulesCard,
     jingleCard,
     playersCard,
+    ...(budgetCard ? [budgetCard] : []),
+  )
+}
+
+/** Requests used today against the free plan's daily allowance. */
+function renderBudget(budget: NonNullable<AdminState['budget']>): HTMLElement {
+  const n = (x: number) => x.toLocaleString('en-US')
+  const limited = budget.freeLimit > 0
+  const summary = limited
+    ? `${n(budget.usedToday)} of ${n(budget.freeLimit)} requests (${budget.pct}%)`
+    : `${n(budget.usedToday)} requests (no daily limit set)`
+  const bar = h('div', {
+    style:
+      'height:10px;border:1px solid currentColor;margin:8px 0;' +
+      `background:linear-gradient(90deg,${budget.resting ? '#b33831' : '#e0a458'} ` +
+      `${Math.min(100, budget.pct)}%,transparent 0)`,
+  })
+  return card(
+    'Free plan budget today',
+    'Cloudflare meters each HTTP request and every 20 messages players send. At 95% of the ' +
+      'limit new players are told the servers are resting; the count resets at midnight UTC.',
+    h('p', {}, summary),
+    ...(limited ? [bar] : []),
+    h(
+      'p',
+      { class: 'hint' },
+      `${budget.day} UTC · ${n(budget.messages)} messages · ${n(budget.http)} HTTP requests` +
+        (budget.resting ? ' · new joins are turned away' : ''),
+    ),
   )
 }
 

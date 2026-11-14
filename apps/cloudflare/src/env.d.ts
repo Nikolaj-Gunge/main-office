@@ -13,4 +13,9 @@ interface Env {
   SAVES: DurableObjectNamespace<import('./vault.ts').SaveVault>
   /** Secret: `bunx wrangler secret put ADMIN_PASSWORD`. Unset = admin page disabled. */
   ADMIN_PASSWORD?: string
+  /**
+   * Durable Object requests a day before new joins are turned away (at 95%). Unset = the free
+   * plan's 100000; "0" = no limit (paid plan). Set in wrangler.jsonc `vars`.
+   */
+  FREE_REQUEST_LIMIT?: string
 }

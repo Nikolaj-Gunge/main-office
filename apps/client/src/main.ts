@@ -2,6 +2,7 @@ import {
   type BaseWeaponId,
   Button,
   bodyParts,
+  CLOSE_RESTING,
   ClientMsg,
   type CoopGoal,
   createPhysicsWorld,
@@ -11,8 +12,7 @@ import {
   goalZones,
   HitZone,
   INFECTED_SPEED,
-  INPUT_BATCH_TICKS,
-  type InputCommand,
+  InputBatcher,
   initPhysics,
   loadMapAsync,
   MAP_IDS,
@@ -52,6 +52,7 @@ import { Menu } from './hud/menu.ts'
 import { Minimap } from './hud/minimap.ts'
 import { ObjectiveMarker } from './hud/objective-marker.ts'
 import { Overlay } from './hud/overlay.ts'
+import { showRestingScreen } from './hud/resting-screen.ts'
 import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
 import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
@@ -321,9 +322,11 @@ const combat = new ClientCombat({
 })
 
 const net = new Connection({
-  onState: (state, reason) => {
+  onState: (state, reason, code) => {
     if (state === 'closed') {
       joined = false
+      outgoing.reset()
+      if (code === CLOSE_RESTING) showRestingScreen()
       remotes.clear()
       roster.clear()
       worldItems.clear()
@@ -758,7 +761,8 @@ let fpsSmoothed = 60
 /** Last ~2 s of frame times (ms), for spotting stalls in the F3 readout. */
 const frameTimes = new Float32Array(120)
 let frameIndex = 0
-const outgoing: InputCommand[] = []
+/** Groups our per-tick inputs into fewer messages (each incoming message is metered). */
+const outgoing = new InputBatcher()
 
 /**
  * Compiles every shader the game will need now, while loading, instead of stalling a frame the
@@ -834,13 +838,13 @@ pixels.setAnimationLoop(() => {
     if (events.slid) audio.play('slide', { volume: 0.3 })
     if (events.mantled) audio.play('mantle', { volume: 0.3 })
     if (events.proned) audio.play('prone', { volume: 0.25 })
-    if (joined) outgoing.push(command)
+    if (joined) outgoing.add(command)
     accumulator -= TICK_DT
     ticks++
   }
   if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0
-  if (outgoing.length >= INPUT_BATCH_TICKS) {
-    net.send({ type: ClientMsg.Input, commands: outgoing.splice(0, outgoing.length) })
+  if (outgoing.ready) {
+    net.send({ type: ClientMsg.Input, commands: outgoing.take() })
   }
 
   if (noclip) fly.update(dt)
