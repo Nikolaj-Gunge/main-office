@@ -141,7 +141,7 @@ export function detailItems(
         z,
         scale,
         turn,
-        ...(kind === DetailKind.Mushrooms && extra < 0.18 ? { glow: true } : {}),
+        ...(kind === DetailKind.Mushrooms && extra < 0.08 ? { glow: true } : {}),
       })
     }
   }
@@ -165,7 +165,7 @@ export function detailItems(
         z: p.z + 0.2,
         scale: 1.1,
         turn: r,
-        ...(r < 0.2 ? { glow: true } : {}),
+        ...(r < 0.1 ? { glow: true } : {}),
       })
     } else if (p.kind === PropKind.Pine && r < 0.06) {
       out.push({
@@ -175,7 +175,7 @@ export function detailItems(
         z: p.z - 0.3,
         scale: 0.9,
         turn: r,
-        ...(r < 0.015 ? { glow: true } : {}),
+        ...(r < 0.008 ? { glow: true } : {}),
       })
     }
   }
@@ -194,7 +194,8 @@ const FERN = [col(0x223a18), col(0x1e3416), col(0x28401c)]
 const FLOWER = [col(0xc8c2a0), col(0x9a86b0), col(0xc8b450)]
 const STEM = col(0xc8bca0)
 const CAP = [col(0x8a4a2a), col(0x6a4a30), col(0xa8823c)]
-const GLOW = [col(0x7affd8), col(0x9affb0), col(0x8ad8ff)]
+// Faint: a soft blue-green, not neon (unlit, so they stand out at night whatever their colour).
+const GLOW = [col(0x3f8a7a), col(0x4f8a62), col(0x4a7890)]
 const BONE = col(0xc9c2ad)
 const BONE_DARK = col(0x8f8774)
 const SHOE = col(0x2a2622)

@@ -1,11 +1,12 @@
 import {
   AMMO_BOX,
-  addStack,
+  ammoBeside,
   ammoItem,
   BITTEN_STORY,
   BOARD_REACH,
-  capacityOf,
   carried,
+  cloneBag,
+  containerOf,
   countOf,
   createPlayerState,
   createWeaponState,
@@ -14,19 +15,31 @@ import {
   type Dialog,
   daylight,
   dayPhase,
+  type EquipSlot,
+  fitsAt,
   flashAt,
-  GEAR,
+  footprint,
   gearLooks,
+  give,
+  type Held,
   hearingScale,
   heightAt,
   INFECTION_SECONDS,
   type InputCommand,
   type Interactable,
   ITEMS,
+  type ItemDef,
+  type ItemDest,
+  type ItemRef,
   infectionStage,
+  isItemDest,
+  isItemRef,
   type LootItem,
+  loosen,
   MAX_PLANKS,
+  MAX_PLAYERS,
   type MapSpawn,
+  maxStack,
   type Notice,
   type Npc,
   PLANK_HP,
@@ -39,6 +52,7 @@ import {
   type QuestState,
   questById,
   RARE_STOCK,
+  regive,
   rollLoot,
   rollRareStock,
   roomFor,
@@ -53,23 +67,27 @@ import {
   type SurvivalShared,
   setBarricades,
   sightScale,
+  slotFor,
   spotBlock,
   spotCentre,
+  stackAt,
   syncForest,
   TICK_DT,
   TICK_RATE,
   TRADER_STOCK,
   takeStack,
+  VICINITY,
+  VICINITY_UP,
   WEAPONS,
-  WEAR_SLOTS,
   WeaponId,
+  type WeaponSlot,
   type WeaponState,
+  type WearSlot,
   type Weather,
   type WeatherKind,
   wakeTime,
   weaponItem,
   weatherAt,
-  weightOf,
   wornStats,
   ZombieKind,
 } from '@office-fps/shared'
@@ -157,18 +175,32 @@ const START_KIT = [
   { id: WeaponId.Knife, ammo: 0 },
 ]
 
-const freshSelf = (): SurvivalSelf => ({
-  inv: [{ item: 'water', n: 1 }],
-  pack: null,
-  wear: {},
-  money: 0,
-  hunger: 70,
-  thirst: 70,
-  bleeding: false,
-  battery: 100,
-  light: false,
-  infected: null,
-})
+const freshSelf = (): SurvivalSelf => {
+  const self: SurvivalSelf = {
+    inv: [],
+    pack: null,
+    wear: {},
+    money: 0,
+    hunger: 70,
+    thirst: 70,
+    bleeding: false,
+    battery: 100,
+    light: false,
+    infected: null,
+  }
+  give(self, 'water', 1)
+  return self
+}
+
+const WEAPON_SLOTS: readonly EquipSlot[] = ['primary', 'sidearm', 'melee']
+
+/** Where something being moved comes from (see SurvivalDirector.move). */
+type Source = { item: string; n: number; ammo?: number | undefined } & (
+  | { kind: 'grid'; stack: Held }
+  | { kind: 'ground'; loot: Loot }
+  | { kind: 'worn'; slot: WearSlot | 'pack' }
+  | { kind: 'hand'; slot: WeaponSlot; weapon: WeaponState }
+)
 
 /** What you notice as the bite takes hold (by infection stage). */
 const SYMPTOMS: Record<number, string> = {
@@ -332,6 +364,13 @@ export class SurvivalDirector {
   }
 
   onLeave(player: ServerPlayer): void {
+    if (player.zombie) {
+      // One of the dead gave up its place to somebody joining: forget it (its body is gone).
+      this.pool = this.pool.filter((z) => z !== player)
+      this.zeds.delete(player.id)
+      this.turned.delete(player.id)
+      return
+    }
     const sv = this.survivors.get(player.id)
     if (!sv) return
     if (player.state.alive) sv.kit = kitOf(player.state)
@@ -483,6 +522,8 @@ export class SurvivalDirector {
       if (this.random() < 0.14) {
         const drop = rollLoot(this.random() < 0.5 ? 'bedroom' : 'medical', this.random)
         if (drop) this.dropAt(drop.item, drop.n, victim.state.pos, undefined, true)
+        const beside = drop && ammoBeside(drop.item, this.random)
+        if (beside) this.dropAt(beside.item, beside.n, victim.state.pos, undefined, true)
       }
       return
     }
@@ -837,8 +878,8 @@ export class SurvivalDirector {
         if (spot.poi !== i || taken.has(s)) return
         if (!first && this.random() < 0.35) return
         const [x, y, z] = spot.pos
-        // Often a second thing lies beside the first.
-        const count = this.random() < 0.35 ? 2 : 1
+        // Often a second thing lies beside the first (but a home keeps only the one gun).
+        const count = spot.table !== 'homegun' && this.random() < 0.35 ? 2 : 1
         for (let k = 0; k < count; k++) {
           const roll = rollLoot(spot.table, this.random)
           if (!roll) continue
@@ -848,7 +889,15 @@ export class SurvivalDirector {
             weapon === undefined
               ? undefined
               : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
-          this.addLoot(roll.item, roll.n, { x: x + k * 0.28, y, z: z + k * 0.12 }, s, ammo)
+          const at = { x: x + k * 0.28, y, z: z + k * 0.12 }
+          this.addLoot(roll.item, roll.n, at, s, ammo)
+          // And a couple of loose rounds for it lie right next to it.
+          const beside = ammoBeside(roll.item, this.random)
+          if (beside) {
+            const a = this.random() * Math.PI * 2
+            const near = { x: at.x + Math.cos(a) * 0.3, y, z: at.z + Math.sin(a) * 0.3 }
+            this.addLoot(beside.item, beside.n, near, s)
+          }
         }
       })
     })
@@ -971,10 +1020,9 @@ export class SurvivalDirector {
     const planks = this.planksAt(i)
     if (player.state.crouched) {
       if (planks === 0) return void this.notice(player, 'info', 'Nothing nailed up here.')
-      if (roomFor(self, PLANK_ITEM) < 1) {
-        return void this.notice(player, 'warn', 'No room in your pack for the plank.')
+      if (give(self, PLANK_ITEM, 1) < 1) {
+        return void this.notice(player, 'warn', 'No room in your pockets for the plank.')
       }
-      addStack(self.inv, PLANK_ITEM, 1)
       sv.dirty = true
       this.setBoard(i, (planks - 1) * PLANK_HP)
       return
@@ -1039,51 +1087,9 @@ export class SurvivalDirector {
     return null
   }
 
+  /** E on something lying about: into your hands, on you, or into your pockets. */
   private take(sv: Survivor, loot: Loot): void {
-    const def = ITEMS[loot.item]
-    if (!def) return
-    const player = sv.player
-    if (def.kind === 'money') {
-      sv.self.money += loot.n * (def.cash ?? 1)
-      this.removeLoot(loot)
-      this.notice(player, 'loot', `+ $${loot.n * (def.cash ?? 1)}`)
-      sv.dirty = true
-      return
-    }
-    // A weapon goes straight into an empty hand.
-    if (def.weapon !== undefined && this.holdNew(sv, def.weapon, loot.ammo ?? 0)) {
-      this.removeLoot(loot)
-      this.notice(player, 'loot', `+ ${def.name}`)
-      this.touch(sv)
-      return
-    }
-    const fits = Math.min(loot.n, roomFor(sv.self, loot.item))
-    if (fits <= 0) {
-      this.notice(player, 'warn', `No room for ${def.name}. Your pack is full.`)
-      return
-    }
-    addStack(sv.self.inv, loot.item, fits, loot.ammo)
-    this.notice(player, 'loot', `+ ${def.name}${fits > 1 ? ` ×${fits}` : ''}`)
-    if (fits === loot.n) this.removeLoot(loot)
-    else {
-      // Took what fits; the rest stays.
-      this.removeLoot(loot)
-      this.addLoot(loot.item, loot.n - fits, loot, loot.spot, loot.ammo, loot.until)
-    }
-    this.touch(sv)
-  }
-
-  /** Puts a weapon in the player's hands if nothing is in its slot yet. */
-  private holdNew(sv: Survivor, id: WeaponId, ammo: number): boolean {
-    const s = sv.player.state
-    const slot = WEAPONS[id].slot
-    if (carried(s).some((w) => WEAPONS[w.id].slot === slot)) return false
-    const w = createWeaponState(id, (this.random() * 0xffffffff) >>> 0)
-    w.ammo = Math.min(ammo, WEAPONS[id].magSize)
-    if (!s.holstered) s.holstered = w
-    else if (!s.pocket) s.pocket = w
-    else return false
-    return true
+    this.move(sv, { g: loot.id }, { auto: true }, undefined, true)
   }
 
   private useThing(sv: Survivor, thing: Interactable): void {
@@ -1110,7 +1116,7 @@ export class SurvivalDirector {
           return
         }
         if (!step.keeps) for (const [item, n] of step.needs ?? []) takeStack(sv.self.inv, item, n)
-        for (const [item, n] of step.gives ?? []) addStack(sv.self.inv, item, n)
+        for (const [item, n] of step.gives ?? []) this.giveOrDrop(sv, item, n)
         if (step.opens !== undefined) {
           this.gates |= 1 << step.opens
           this.game.setGates(this.gates)
@@ -1125,7 +1131,7 @@ export class SurvivalDirector {
         const i = step.targets.indexOf(thing.key)
         if (i < 0 || q.count & (1 << i)) continue
         q.count |= 1 << i
-        for (const [item, n] of step.gives) addStack(sv.self.inv, item, n)
+        for (const [item, n] of step.gives) this.giveOrDrop(sv, item, n)
         this.touch(sv)
         this.notice(
           player,
@@ -1178,137 +1184,14 @@ export class SurvivalDirector {
         self.light = action.on === true && self.battery > 0
         sv.dirty = true
         return
-      case 'use': {
-        const def = ITEMS[action.item]
-        if (!def || countOf(self.inv, def.id) < 1) return
-        if (def.kind === 'pack') {
-          // Swap packs: the old one goes inside the new one, if everything still fits.
-          const old = self.pack
-          takeStack(self.inv, def.id, 1)
-          if (old) addStack(self.inv, old, 1)
-          self.pack = def.id
-          if (weightOf(self.inv) > capacityOf(self) + 1e-6) {
-            self.pack = old
-            if (old) takeStack(self.inv, old, 1)
-            addStack(self.inv, def.id, 1)
-            this.notice(player, 'warn', "That pack won't hold what you're carrying.")
-            return
-          }
-          this.notice(player, 'info', `You put on the ${def.name}.`)
-          return void this.touch(sv)
+      case 'use':
+        if (isItemRef(action.from)) this.use(sv, action.from)
+        return
+      case 'move':
+        if (isItemRef(action.from) && isItemDest(action.to)) {
+          this.move(sv, action.from, action.to, action.n)
         }
-        if (def.kind === 'wear') {
-          const slot = GEAR[def.id]?.slot
-          if (!slot) return
-          // Swap: what you had on goes in the pack, if everything still fits.
-          const old = self.wear[slot]
-          takeStack(self.inv, def.id, 1)
-          if (old) addStack(self.inv, old, 1)
-          self.wear[slot] = def.id
-          if (weightOf(self.inv) > capacityOf(self) + 1e-6) {
-            if (old) {
-              takeStack(self.inv, old, 1)
-              self.wear[slot] = old
-            } else delete self.wear[slot]
-            addStack(self.inv, def.id, 1)
-            this.notice(player, 'warn', 'No room in your pack for what you take off.')
-            return
-          }
-          this.notice(player, 'info', `You put on the ${def.name}.`)
-          return void this.touch(sv)
-        }
-        if (def.infection === 'cure' && self.infected === null) {
-          return void this.notice(player, 'info', "You're not infected. Keep it: you will be.")
-        }
-        if (def.battery) self.battery = Math.min(100, self.battery + def.battery)
-        else if (def.kind === 'food' || def.kind === 'drink' || def.kind === 'med') {
-          if (def.infection && self.infected !== null) {
-            const cure = def.infection === 'cure'
-            self.infected = cure ? null : INFECTION_SECONDS
-            this.notice(
-              player,
-              cure ? 'story' : 'info',
-              cure
-                ? 'The serum goes in cold.\n\nThe fever breaks. Your hands are your own again.\n\nYou are clean.'
-                : 'The adrenaline burns through you. The fever backs off. For now.',
-            )
-          }
-          if (def.health)
-            player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
-          if (def.hunger) self.hunger = Math.max(0, Math.min(100, self.hunger + def.hunger))
-          if (def.thirst) self.thirst = Math.max(0, Math.min(100, self.thirst + def.thirst))
-          if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
-          if (def.stamina) s.winded = false
-          if (def.stopsBleeding) self.bleeding = false
-        } else return
-        takeStack(self.inv, def.id, 1)
-        return void this.touch(sv)
-      }
-      case 'drop': {
-        const def = ITEMS[action.item]
-        const n = Math.floor(Number(action.n))
-        if (!def || !(n >= 1) || def.kind === 'quest') return
-        const stack = [...self.inv].reverse().find((st) => st.item === def.id)
-        if (!stack) return
-        const got = takeStack(self.inv, def.id, def.kind === 'weapon' ? 1 : n)
-        if (got > 0) this.dropAt(def.id, got, s.pos, stack.ammo)
-        return void this.touch(sv)
-      }
-      case 'equip': {
-        const stack = self.inv[Math.floor(Number(action.index))]
-        const weapon = stack ? ITEMS[stack.item]?.weapon : undefined
-        if (!stack || weapon === undefined) return
-        const slot = WEAPONS[weapon].slot
-        const old = carried(s).find((w) => WEAPONS[w.id].slot === slot)
-        self.inv.splice(self.inv.indexOf(stack), 1)
-        if (old) {
-          addStack(self.inv, weaponItem(old.id), 1, old.ammo)
-          if (weightOf(self.inv) > capacityOf(self) + 1e-6) {
-            // The one in your hands is too heavy for the pack: swap it onto the ground.
-            takeStack(self.inv, weaponItem(old.id), 1)
-            this.dropAt(weaponItem(old.id), 1, s.pos, old.ammo)
-          }
-        }
-        const w = createWeaponState(weapon, (this.random() * 0xffffffff) >>> 0)
-        w.ammo = Math.min(stack.ammo ?? 0, WEAPONS[weapon].magSize)
-        if (!old) {
-          if (!s.holstered) s.holstered = w
-          else s.pocket = w
-        } else if (s.weapon === old) s.weapon = w
-        else if (s.holstered === old) s.holstered = w
-        else s.pocket = w
-        return void this.touch(sv)
-      }
-      case 'unwear': {
-        const slot = action.slot
-        const id = WEAR_SLOTS.includes(slot) ? self.wear[slot] : undefined
-        if (!id) return
-        delete self.wear[slot]
-        // Its pockets go with it: if that leaves too much in the pack, it can't come off.
-        if (weightOf(self.inv) + (ITEMS[id]?.weight ?? 0) > capacityOf(self) + 1e-6) {
-          self.wear[slot] = id
-          return void this.notice(player, 'warn', 'Too much in your pack to take that off.')
-        }
-        addStack(self.inv, id, 1)
-        return void this.touch(sv)
-      }
-      case 'stow': {
-        const all = carried(s)
-        const w = all.find((c) => WEAPONS[c.id].slot === action.slot)
-        if (!w || all.length < 2) return
-        const item = weaponItem(w.id)
-        if (roomFor(self, item) < 1)
-          return void this.notice(player, 'warn', 'No room in your pack.')
-        addStack(self.inv, item, 1, w.ammo)
-        const rest = all.filter((c) => c !== w)
-        const hand = s.weapon === w ? (rest[0] as WeaponState) : s.weapon
-        if (hand !== s.weapon) hand.draw = WEAPONS[hand.id].drawTime
-        const others = rest.filter((c) => c !== hand)
-        s.weapon = hand
-        s.holstered = others[0] ?? null
-        s.pocket = others[1] ?? null
-        return void this.touch(sv)
-      }
+        return
       case 'buy':
       case 'sell': {
         const def = ITEMS[action.item]
@@ -1323,14 +1206,14 @@ export class SurvivalDirector {
           const price = (rare ? rare.price : Math.ceil(def.value * each)) * n
           if (self.money < price) return void this.notice(player, 'warn', "You can't afford that.")
           if (roomFor(self, def.id) < each * n)
-            return void this.notice(player, 'warn', 'No room in your pack.')
+            return void this.notice(player, 'warn', 'No room for it in your pockets or pack.')
           self.money -= price
           if (rare && !TRADER_STOCK.includes(def.id)) {
             this.rare.set(def.id, (this.rare.get(def.id) ?? 0) - n)
             if ((this.rare.get(def.id) ?? 0) <= 0) this.rare.delete(def.id)
           }
-          addStack(
-            self.inv,
+          give(
+            self,
             def.id,
             each * n,
             def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined,
@@ -1347,6 +1230,290 @@ export class SurvivalDirector {
       case 'choose':
         return void this.choose(sv, String(action.npc), String(action.option))
     }
+  }
+
+  // --- Pockets, the pack and what you hold (the grid: grid.ts) ---------------------------------
+
+  /** Puts things in somebody's pockets; what doesn't fit lands at their feet. */
+  private giveOrDrop(sv: Survivor, item: string, n: number, ammo?: number): void {
+    const got = give(sv.self, item, n, ammo)
+    if (got < n) {
+      this.dropAt(item, n - got, sv.player.state.pos, ammo, false, ITEMS[item]?.kind === 'quest')
+      this.notice(sv.player, 'warn', `No room for ${ITEMS[item]?.name ?? item}: it's at your feet.`)
+    }
+    this.touch(sv)
+  }
+
+  /** Is this lying close enough to reach from the inventory screen? */
+  private within(sv: Survivor, loot: Loot): boolean {
+    const p = sv.player.state.pos
+    return (
+      Math.hypot(loot.x - p.x, loot.z - p.z) <= VICINITY + 0.3 &&
+      Math.abs(loot.y - p.y) <= VICINITY_UP
+    )
+  }
+
+  /** What a reference points at, or null if there's nothing there (or it's out of reach). */
+  private source(sv: Survivor, ref: ItemRef, reached: boolean): Source | null {
+    const { self } = sv
+    if ('g' in ref) {
+      const loot = this.loot.get(ref.g)
+      if (!loot || (!reached && !this.within(sv, loot))) return null
+      return { kind: 'ground', loot, item: loot.item, n: loot.n, ammo: loot.ammo }
+    }
+    if ('slot' in ref) {
+      const slot = ref.slot
+      if (WEAPON_SLOTS.includes(slot)) {
+        const weapon = carried(sv.player.state).find((w) => WEAPONS[w.id].slot === slot)
+        if (!weapon) return null
+        return {
+          kind: 'hand',
+          slot: slot as WeaponSlot,
+          weapon,
+          item: weaponItem(weapon.id),
+          n: 1,
+          ammo: weapon.ammo,
+        }
+      }
+      const item = slot === 'pack' ? self.pack : self.wear[slot as WearSlot]
+      return item ? { kind: 'worn', slot: slot as WearSlot | 'pack', item, n: 1 } : null
+    }
+    const stack = self.inv.find((s) => s.c === ref.c && s.x === ref.x && s.y === ref.y)
+    return stack ? { kind: 'grid', stack, item: stack.item, n: stack.n, ammo: stack.ammo } : null
+  }
+
+  /**
+   * Right-click, or E in the world: the obvious thing. Eat it, drink it, use it; put it on or
+   * take it in hand; take it off; pick it up.
+   */
+  private use(sv: Survivor, from: ItemRef): void {
+    const src = this.source(sv, from, false)
+    const def = src ? ITEMS[src.item] : undefined
+    if (!src || !def) return
+    if (src.kind === 'worn' || src.kind === 'hand') return void this.move(sv, from, { auto: true })
+    const slot = slotFor(def.id)
+    if (slot) return void this.move(sv, from, { slot })
+    if (!this.consume(sv, def)) {
+      // Nothing to do with it but carry it.
+      if (src.kind === 'ground') this.move(sv, from, { auto: true })
+      return
+    }
+    if (src.kind === 'grid') {
+      src.stack.n--
+      if (src.stack.n <= 0) sv.self.inv.splice(sv.self.inv.indexOf(src.stack), 1)
+    } else if (src.kind === 'ground') this.takeFromGround(src.loot, 1)
+    this.touch(sv)
+  }
+
+  /** Eats, drinks or uses one of something; false if it isn't that kind of thing (or not now). */
+  private consume(sv: Survivor, def: ItemDef): boolean {
+    const { self, player } = sv
+    const s = player.state
+    if (def.infection === 'cure' && self.infected === null) {
+      this.notice(player, 'info', "You're not infected. Keep it: you will be.")
+      return false
+    }
+    if (def.battery) {
+      self.battery = Math.min(100, self.battery + def.battery)
+      return true
+    }
+    if (def.kind !== 'food' && def.kind !== 'drink' && def.kind !== 'med') return false
+    if (def.infection && self.infected !== null) {
+      const cure = def.infection === 'cure'
+      self.infected = cure ? null : INFECTION_SECONDS
+      this.notice(
+        player,
+        cure ? 'story' : 'info',
+        cure
+          ? 'The serum goes in cold.\n\nThe fever breaks. Your hands are your own again.\n\nYou are clean.'
+          : 'The adrenaline burns through you. The fever backs off. For now.',
+      )
+    }
+    if (def.health)
+      player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
+    if (def.hunger) self.hunger = Math.max(0, Math.min(100, self.hunger + def.hunger))
+    if (def.thirst) self.thirst = Math.max(0, Math.min(100, self.thirst + def.thirst))
+    if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
+    if (def.stamina) s.winded = false
+    if (def.stopsBleeding) self.bleeding = false
+    return true
+  }
+
+  /** Takes `n` off a pile on the ground (the rest stays where it was). */
+  private takeFromGround(loot: Loot, n: number): void {
+    this.removeLoot(loot)
+    if (n < loot.n) this.addLoot(loot.item, loot.n - n, loot, loot.spot, loot.ammo, loot.until)
+  }
+
+  /**
+   * Drag and drop, checked: moves (some of) something from a cell, a slot or the ground to a
+   * cell, a slot, the ground or wherever it fits. Everything is tried on a copy first and only
+   * happens if all of it works out. Taking off clothes or the pack moves what was in its pockets
+   * elsewhere; if there's no room for that it stays on (dropped on the ground, it all goes with
+   * it). Returns whether anything moved.
+   * @param reached  the player is looking right at it (E): no need to check how far it is
+   */
+  private move(sv: Survivor, from: ItemRef, to: ItemDest, want?: number, reached = false): boolean {
+    const { self, player } = sv
+    const s = player.state
+    const src = this.source(sv, from, reached)
+    const def = src ? ITEMS[src.item] : undefined
+    if (!src || !def) return false
+    const fail = (text: string) => {
+      this.notice(player, 'warn', text)
+      return false
+    }
+    let n = want === undefined ? src.n : Math.floor(Number(want))
+    if (!(n >= 1)) return false
+    n = Math.min(n, src.n)
+    const toGround = 'ground' in to
+
+    // Cash goes straight in the wallet, wherever it's dragged.
+    if (def.kind === 'money') {
+      if (src.kind !== 'ground' || toGround) return false
+      self.money += n * (def.cash ?? 1)
+      this.takeFromGround(src.loot, n)
+      this.notice(player, 'loot', `+ $${n * (def.cash ?? 1)}`)
+      sv.dirty = true
+      return true
+    }
+    if (src.kind === 'ground' && toGround) return false
+    if ('slot' in to && (src.kind === 'worn' || src.kind === 'hand') && src.slot === to.slot) {
+      return false
+    }
+    if (src.kind === 'hand' && !('slot' in to) && carried(s).length < 2) {
+      return fail("You can't put away the last thing in your hands.")
+    }
+
+    const bag = cloneBag(self)
+    const mine = src.kind === 'grid' ? (bag.inv[self.inv.indexOf(src.stack)] as Held) : null
+    const max = maxStack(def.id)
+    /** Onto a stack of the same thing: only as many as it has room for. */
+    const onto =
+      'c' in to && max > 1 ? stackAt(bag.inv, to.c, to.x, to.y) : (undefined as Held | undefined)
+    const merge = onto && onto !== mine && onto.item === def.id ? onto : null
+    if (merge) n = Math.min(n, max - merge.n)
+    else if ('c' in to) n = Math.min(n, max)
+    if (n <= 0) return false
+
+    // 1. Out of where it was.
+    let loose: Stack[] = []
+    let hand: { slot: WeaponSlot; put: { id: WeaponId; ammo: number } | null } | null = null
+    if (mine) {
+      mine.n -= n
+      if (mine.n <= 0) bag.inv.splice(bag.inv.indexOf(mine), 1)
+    } else if (src.kind === 'worn') {
+      if (src.slot === 'pack') bag.pack = null
+      else delete bag.wear[src.slot]
+      const c = containerOf(src.slot)
+      if (c) loose = loosen(bag, c)
+    } else if (src.kind === 'hand') hand = { slot: src.slot, put: null }
+
+    // 2. Into where it goes.
+    const drops: Stack[] = []
+    const ammo = src.ammo
+    let old: Stack | null = null
+    let wore = false
+    let into: EquipSlot | null = 'slot' in to ? to.slot : null
+    if ('auto' in to && src.kind === 'ground') {
+      // Picked up: a weapon into an empty hand, clothes or a pack straight on if that's bare.
+      const slot = slotFor(def.id)
+      const empty =
+        slot === 'pack'
+          ? !bag.pack
+          : slot && WEAPON_SLOTS.includes(slot)
+            ? !carried(s).some((w) => WEAPONS[w.id].slot === slot)
+            : slot
+              ? !bag.wear[slot as WearSlot]
+              : false
+      if (slot && empty) into = slot
+    }
+    if (toGround) drops.push({ item: def.id, n, ...(ammo !== undefined ? { ammo } : {}) })
+    else if (into) {
+      if (slotFor(def.id) !== into) return fail(`The ${def.name} doesn't go there.`)
+      n = 1
+      if (WEAPON_SLOTS.includes(into)) {
+        const was = carried(s).find((w) => WEAPONS[w.id].slot === into)
+        if (was) old = { item: weaponItem(was.id), n: 1, ammo: was.ammo }
+        hand = { slot: into as WeaponSlot, put: { id: def.weapon as WeaponId, ammo: ammo ?? 0 } }
+      } else {
+        const was = into === 'pack' ? bag.pack : bag.wear[into as WearSlot]
+        if (was) old = { item: was, n: 1 }
+        if (into === 'pack') bag.pack = def.id
+        else bag.wear[into as WearSlot] = def.id
+        const c = containerOf(into)
+        if (c) loose.push(...loosen(bag, c))
+        wore = true
+      }
+    } else if ('auto' in to) {
+      const got = give(bag, def.id, n, ammo)
+      if (got === 0 || (got < n && src.kind !== 'ground')) {
+        return fail(`No room for the ${def.name}.`)
+      }
+      n = got
+    } else if (merge) merge.n += n
+    else if ('c' in to) {
+      const [w, h] = footprint(def.id, to.r)
+      if (!fitsAt(bag, to.c, to.x, to.y, w, h)) return fail("It doesn't fit there.")
+      const placed: Held = { item: def.id, n, c: to.c, x: to.x, y: to.y }
+      if (to.r === 1) placed.r = 1
+      if (ammo !== undefined) placed.ammo = ammo
+      bag.inv.push(placed)
+    } else return false
+
+    // 3. What was in the pockets of clothes that came off goes back in (or with it, onto the
+    // ground); then what was in the slot before.
+    const left = regive(bag, loose)
+    if (left.length > 0) {
+      if (!toGround) return fail('No room for what was in its pockets. Make some first.')
+      drops.push(...left)
+    }
+    if (old && give(bag, old.item, 1, old.ammo) < 1) drops.push(old)
+
+    // It all works out: make it so.
+    self.inv = bag.inv
+    self.wear = bag.wear
+    self.pack = bag.pack
+    if (src.kind === 'ground') this.takeFromGround(src.loot, n)
+    if (hand) this.setHand(s, hand.slot, hand.put)
+    for (const d of drops) {
+      this.dropAt(d.item, d.n, s.pos, d.ammo, false, ITEMS[d.item]?.kind === 'quest')
+    }
+    if (wore) this.notice(player, 'info', `You put on the ${def.name}.`)
+    else if (src.kind === 'ground') {
+      this.notice(player, 'loot', `+ ${def.name}${n > 1 ? ` ×${n}` : ''}`)
+    }
+    this.touch(sv)
+    return true
+  }
+
+  /** Puts a weapon in one of the three slots (or empties it), as the grid says. */
+  private setHand(
+    s: PlayerState,
+    slot: WeaponSlot,
+    put: { id: WeaponId; ammo: number } | null,
+  ): void {
+    const all = carried(s)
+    const old = all.find((w) => WEAPONS[w.id].slot === slot)
+    if (!put) {
+      if (!old || all.length < 2) return
+      const rest = all.filter((c) => c !== old)
+      const hand = s.weapon === old ? (rest[0] as WeaponState) : s.weapon
+      if (hand !== s.weapon) hand.draw = WEAPONS[hand.id].drawTime
+      const others = rest.filter((c) => c !== hand)
+      s.weapon = hand
+      s.holstered = others[0] ?? null
+      s.pocket = others[1] ?? null
+      return
+    }
+    const w = createWeaponState(put.id, (this.random() * 0xffffffff) >>> 0)
+    w.ammo = Math.min(put.ammo, WEAPONS[put.id].magSize)
+    if (!old) {
+      if (!s.holstered) s.holstered = w
+      else s.pocket = w
+    } else if (s.weapon === old) s.weapon = w
+    else if (s.holstered === old) s.holstered = w
+    else s.pocket = w
   }
 
   // --- People and the story ---------------------------------------------------------------
@@ -1389,8 +1556,7 @@ export class SurvivalDirector {
       for (const [item, n] of reward?.items ?? []) {
         const weapon = ITEMS[item]?.weapon
         const ammo = weapon === undefined ? undefined : WEAPONS[weapon].magSize
-        if (roomFor(to.self, item) >= n) addStack(to.self.inv, item, n, ammo)
-        else this.dropAt(item, n, to.player.state.pos, ammo)
+        this.giveOrDrop(to, item, n, ammo)
       }
       this.touch(to)
     }
@@ -1493,9 +1659,7 @@ export class SurvivalDirector {
         npc,
         rare.some((r) => r.item === 'cure')
           ? "Got something special today. Came off a soldier from Site 7. Don't ask what it cost him."
-          : rare.length > 0
-            ? 'Cash only. And yes, that is adrenaline. No, I will not haggle.'
-            : 'Cash only. No refunds. No haunted merchandise, probably.',
+          : 'Cash only. No refunds. No haunted merchandise, probably.',
         [{ id: 'bye', label: 'Goodbye.' }],
         stock,
       )
@@ -1715,6 +1879,13 @@ export class SurvivalDirector {
       this.game.retireZombie(z)
     }
     if (people.length === 0) return
+    // Places the dead gave up to people who have since left: take them back (keeping two free).
+    while (this.pool.length < POOL && this.game.players.size < MAX_PLAYERS - 2) {
+      const zombie = this.game.addZombie(new Zed(this.random))
+      if (!zombie) break
+      this.pool.push(zombie)
+      this.zeds.set(zombie.id, zombie.zombie as Zed)
+    }
     const free = () => this.pool.find((z) => !z.state.alive)
     const active = this.pool.filter((z) => z.state.alive)
     const dark = this.light < 0.3
@@ -1910,7 +2081,13 @@ const gearOf = (self: SurvivalSelf) => gearLooks(Object.values(self.wear))
 
 /** Everything somebody has: the backpack, the guns in hand, what they wear, the pack and cash. */
 function belongings(self: SurvivalSelf, state: PlayerState): Stack[] {
-  const out: Stack[] = self.inv.map((s) => ({ ...s }))
+  // One pile per thing (weapons each their own: they keep their rounds).
+  const out: Stack[] = []
+  for (const { item, n, ammo } of self.inv) {
+    const same = ITEMS[item]?.kind !== 'weapon' && out.find((s) => s.item === item)
+    if (same) same.n += n
+    else out.push({ item, n, ...(ammo !== undefined ? { ammo } : {}) })
+  }
   for (const w of carried(state)) out.push({ item: weaponItem(w.id), n: 1, ammo: w.ammo })
   for (const id of Object.values(self.wear)) if (id) out.push({ item: id, n: 1 })
   if (self.pack) out.push({ item: self.pack, n: 1 })

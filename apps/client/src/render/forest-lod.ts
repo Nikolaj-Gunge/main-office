@@ -11,6 +11,7 @@ import {
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { GRAIN_PX, grainFactor } from './grain.ts'
 
 /**
  * The forest far away, drawn for little: past the chunks Wilds builds in full (see wilds.ts) the
@@ -138,6 +139,35 @@ function makeCardAtlas(colors: TreeColors): THREE.CanvasTexture {
       [x + dir * 1.1 - 0.06, y + 1.2],
     ])
   }
+  // The same grain as the near trees' (grain.ts), at the grain's texels a metre.
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const rgb = image.data
+  const linear = new THREE.Color()
+  const toGrain = GRAIN_PX / CARD_PX
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4
+      if (!rgb[i + 3]) continue
+      linear.setRGB(
+        (rgb[i] as number) / 255,
+        (rgb[i + 1] as number) / 255,
+        (rgb[i + 2] as number) / 255,
+        THREE.SRGBColorSpace,
+      )
+      const f = grainFactor(
+        linear.r,
+        linear.g,
+        linear.b,
+        Math.floor((x % w) * toGrain),
+        Math.floor((canvas.height - y) * toGrain),
+      )
+      linear.multiplyScalar(f).getRGB(linear, THREE.SRGBColorSpace)
+      rgb[i] = Math.round(Math.min(1, linear.r) * 255)
+      rgb[i + 1] = Math.round(Math.min(1, linear.g) * 255)
+      rgb[i + 2] = Math.round(Math.min(1, linear.b) * 255)
+    }
+  }
+  ctx.putImageData(image, 0, 0)
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace

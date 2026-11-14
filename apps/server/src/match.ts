@@ -22,6 +22,7 @@ import {
   WEAPONS,
   WeaponId,
   type WeatherKind,
+  ZombieKind,
 } from '@office-fps/shared'
 import type { BotLead } from './bots.ts'
 import type { Game, ServerPlayer } from './game.ts'
@@ -141,9 +142,17 @@ export class MatchRunner {
     return this.survival ? this.survival.respawnSeconds() : null
   }
 
-  /** Does a headshot kill this victim outright? (Not survival's dead: they take four times.) */
+  /**
+   * Does a bullet in the head kill this victim outright? Everyone, and most of survival's dead
+   * too; only the brutes shrug it off (they take four times).
+   */
   headshotKills(victim: ServerPlayer): boolean {
-    return !(this.survival && victim.zombie)
+    return !(this.survival && victim.zombie?.kind === ZombieKind.Brute)
+  }
+
+  /** Does a blade to the head hit four times as hard? Survival's dead, yes; people, no. */
+  meleeHeadBonus(victim: ServerPlayer): boolean {
+    return !!(this.survival && victim.zombie) || !this.headshotKills(victim)
   }
 
   /** Does a blade in the back kill this victim outright? */
