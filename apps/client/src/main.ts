@@ -257,6 +257,8 @@ remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
 remotes.onMove = (sound, at) => audio.playNear(sound, at, 0.5, 25)
 remotes.onGroan = (at) => audio.playNear('groan', at, 0.9, 28)
+// A blow coming: a sharper, higher snarl than the groans, close up.
+remotes.onWindup = (at) => audio.playNear('groan', at, 1.1, 20, 3, 1.4)
 
 // Ragdolls: players who die fall over instead of vanishing. The Kill message (which arrives
 // ~100 ms before we draw the death) says who shot them, so the body flies the right way.

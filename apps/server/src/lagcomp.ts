@@ -81,6 +81,7 @@ export class PoseHistory {
         : !b.mantle
           ? (a.ledge ?? 0)
           : (a.ledge ?? 0) + ((b.ledge ?? 0) - (a.ledge ?? 0)) * t,
+      windup: blendProgress(a.windup ?? 0, b.windup ?? 0, t, 1),
       ...(b.weapon !== undefined ? { weapon: b.weapon } : {}),
       ...(b.gait !== undefined ? { gait: b.gait } : {}),
       ...(b.seed !== undefined ? { seed: b.seed } : {}),

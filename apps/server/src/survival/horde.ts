@@ -10,6 +10,7 @@ import {
   ZombieKind,
   zombieScale,
 } from '@office-fps/shared'
+import { CLAW_TIMING, ClawAttack } from '../claw-attack.ts'
 import type { ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 
@@ -99,6 +100,8 @@ export class Zed {
   bashing = -1
   nextBash = 0
   private speed = 0
+  /** Winding up, clawing and (after a miss) recovering. */
+  private readonly attack = new ClawAttack()
 
   constructor(private readonly random: () => number) {}
 
@@ -106,6 +109,17 @@ export class Zed {
     this.yaw = yaw
     this.pitch = 0
     this.stuckFor = 0
+    this.attack.reset()
+  }
+
+  /** How far through winding up a blow (0–1), or 0. */
+  get windup(): number {
+    return this.attack.windup
+  }
+
+  /** Its blow landed, or clawed at air. */
+  struck(landed: boolean): void {
+    this.attack.struck(landed)
   }
 
   /** Fresh out of the pool. */
@@ -123,6 +137,7 @@ export class Zed {
     this.frozen = false
     this.speed = 0
     this.bashing = -1
+    this.attack.reset()
   }
 
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
@@ -305,9 +320,10 @@ export class Zed {
     }
 
     const stalker = this.kind === ZombieKind.Stalker
-    if (stalker && this.frozen) return this.command(0, world.tick)
+    if (stalker && this.frozen && !this.attack.busy) return this.command(0, world.tick)
 
     let flat = Number.POSITIVE_INFINITY
+    let facing = Math.PI
     this.bashing = -1
     if (goal) {
       // Through the door, if one of us is indoors and the other isn't.
@@ -329,8 +345,10 @@ export class Zed {
       const dy = chasing && !via ? goal.y + CHEST - (me.y + EYE * zombieScale(this.kind)) : 0
       const pitch = chasing && !via ? Math.atan2(dy, Math.max(flat, 0.1)) : 0
       const fast = this.kind === ZombieKind.Runner || stalker
-      this.turnTowards(want, pitch, (fast ? 10 : 5) * TICK_DT)
-      if (!chasing || flat > 1) buttons |= Button.Forward
+      // Winding up a blow it can only turn so fast after you; off balance after a miss, not at all.
+      this.turnTowards(want, pitch, Math.min((fast ? 10 : 5) * TICK_DT, this.attack.turnLimit ?? 9))
+      facing = angleTo(want, this.yaw)
+      if (!this.attack.busy && (!chasing || flat > 1)) buttons |= Button.Forward
     }
 
     // Keep a little apart from the others (nobody collides with anybody).
@@ -344,20 +362,30 @@ export class Zed {
       if (d > 0.9 || d < 1e-3) continue
       push += ((ox * -fz + oz * fx) / d) * ((0.9 - d) / 0.9)
     }
+    if (this.attack.busy) push = 0 // planted for the blow
     if (push > 0.15) buttons |= Button.Right
     else if (push < -0.15) buttons |= Button.Left
 
-    // In reach: claw (a fresh click every other tick; the claws' own cooldown paces it).
+    // In reach: wind up, then claw (see ClawAttack): a blow you can see coming. It plants its
+    // feet for the blow, so only from well inside the claws' reach.
     const reach = (WEAPONS[WeaponId.Claws].range - 0.2) * zombieScale(this.kind)
-    if (chasing && flat < reach) {
-      this.swing = !this.swing
-      if (this.swing) buttons |= Button.Fire
+    const claws = s.weapon
+    if (
+      this.attack.tick(
+        this.kind,
+        chasing && flat < reach,
+        facing,
+        claws.cooldown + claws.draw <= (CLAW_TIMING[this.kind]?.windup ?? 0.6),
+      )
+    ) {
+      buttons |= Button.Fire
     }
 
     // Stuck on a tree or a wall: hop and sidestep for a moment.
     const moved = Math.hypot(me.x - this.lastPos.x, me.z - this.lastPos.z)
     this.lastPos = { x: me.x, z: me.z }
     const trying = (buttons & Button.Forward) !== 0
+    if (this.attack.busy) this.unstickFor = 0
     this.stuckFor = trying && moved < 0.25 * TICK_DT ? this.stuckFor + TICK_DT : 0
     if (this.stuckFor > 0.7) {
       this.stuckFor = 0
@@ -394,6 +422,9 @@ export class Zed {
     this.pitch += Math.max(-maxStep, Math.min(maxStep, pitch - this.pitch))
   }
 }
+
+/** Signed angle (radians, −π…π) from yaw `from` round to `to`. */
+const angleTo = (to: number, from: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from))
 
 const inside = (r: Room, p: Point) =>
   p.x > r.min[0] && p.x < r.max[0] && p.z > r.min[1] && p.z < r.max[1]

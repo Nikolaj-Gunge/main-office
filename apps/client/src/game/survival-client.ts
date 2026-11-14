@@ -28,6 +28,8 @@ import {
   setBarricades,
   spotCentre,
   syncForest,
+  VICINITY,
+  VICINITY_UP,
   WALKERS,
   type WalkerState,
   WeaponId,
@@ -415,6 +417,7 @@ export class SurvivalClient {
       pos: state.pos,
       yaw: eyeYaw,
       carried: [state.weapon, state.holstered, state.pocket].filter((w) => w !== null),
+      nearby: state.alive ? this.nearby(state) : [],
       project: (x, y, z) => {
         const v = this.projected.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse)
         const behind = v.z > 0
@@ -466,6 +469,17 @@ export class SurvivalClient {
       this.audio.play('dread', { volume: 0.55 })
       break
     }
+  }
+
+  /** What lies within reach of the inventory screen (the server checks the same distances). */
+  private nearby(state: PlayerState): LootItem[] {
+    const out: LootItem[] = []
+    for (const { loot } of this.loot.all()) {
+      if (Math.hypot(loot.x - state.pos.x, loot.z - state.pos.z) > VICINITY) continue
+      if (Math.abs(loot.y - state.pos.y) > VICINITY_UP) continue
+      out.push(loot)
+    }
+    return out
   }
 
   /** The same choice the server makes when E is pressed: who or what you're looking at. */

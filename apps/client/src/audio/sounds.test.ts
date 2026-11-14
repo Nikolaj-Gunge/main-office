@@ -25,8 +25,8 @@ describe('synthesized sounds', () => {
         expect(peak).toBeLessThanOrEqual(1)
         expect(peak).toBeGreaterThan(0.1)
         expect(Math.sqrt(energy / data.length)).toBeGreaterThan(0.002)
-        // Wind, rain and thunder are ambience: long. Everything else is a short hit.
-        expect(data.length / RATE).toBeLessThan(AMBIENCE.has(id) ? 8 : 2)
+        // Wind, rain and thunder are ambience: long (rain loops ~9 s so the repeat is hard to hear). Everything else is a short hit.
+        expect(data.length / RATE).toBeLessThan(AMBIENCE.has(id) ? 12 : 2)
       }
       if (def.variants > 1) expect(variants[0]).not.toEqual(variants[1])
     })

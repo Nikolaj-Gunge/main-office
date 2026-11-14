@@ -1705,6 +1705,371 @@ body {
   opacity: 0.8;
 }
 
+/* Survival inventory (Tab / I): vicinity, equipment and the pocket grids, DayZ style. */
+.sv-inv {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(1120px, 98vw);
+  height: min(660px, 94vh);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  background: rgb(14 14 11 / 0.95);
+  border: 2px solid #6a644e;
+  box-shadow: 6px 6px 0 #000;
+  pointer-events: auto;
+  text-shadow: none;
+  font-size: 13px;
+}
+
+.sv-inv > .sv-help {
+  margin: 0;
+  padding: 4px 12px 6px;
+  border-top: 2px solid #3a372c;
+}
+
+.sv-inv-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sv-inv-col {
+  min-width: 0;
+  padding: 8px 10px 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #6a644e transparent;
+}
+
+.sv-inv-col + .sv-inv-col {
+  border-left: 2px solid #3a372c;
+}
+
+.sv-inv-col.near,
+.sv-inv-col.pockets {
+  flex: 0 0 auto;
+  width: 296px;
+}
+
+.sv-inv-col.equip {
+  flex: 1;
+}
+
+.sv-inv-title {
+  margin-bottom: 6px;
+  padding: 2px 0;
+  background: #24221a;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-align: center;
+  color: #e0a040;
+}
+
+.sv-grid {
+  position: relative;
+  box-sizing: content-box;
+  background-color: #0b0b09;
+  background-image:
+    linear-gradient(to right, rgb(106 100 78 / 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(106 100 78 / 0.35) 1px, transparent 1px);
+  border: 1px solid #4a463a;
+}
+
+.sv-grid.near.hover-ok {
+  outline: 2px solid #8ad06a;
+}
+
+.sv-grid-empty {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.sv-cont-head {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0 3px;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.sv-cont-head:first-of-type {
+  margin-top: 0;
+}
+
+.sv-cont-cap {
+  color: #a8d888;
+}
+
+.sv-cont-none {
+  padding: 10px 8px;
+  border: 1px dashed #4a463a;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.sv-item {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(70 66 52 / 0.45);
+  border: 1px solid rgb(217 212 196 / 0.22);
+  cursor: grab;
+  touch-action: none;
+}
+
+.sv-item:hover {
+  border-color: #e0a040;
+  background: rgb(224 160 64 / 0.14);
+}
+
+.sv-item.quest {
+  border-color: rgb(224 176 64 / 0.6);
+}
+
+.sv-item img {
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.sv-item.lifted {
+  opacity: 0.3;
+}
+
+.sv-item.ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  opacity: 0.9;
+  border-color: #e0a040;
+  pointer-events: none;
+  cursor: grabbing;
+}
+
+.sv-item.fill {
+  position: absolute;
+  inset: 16px 6px 16px;
+  background: none;
+  border: none;
+}
+
+.sv-item-n,
+.sv-item-ammo {
+  position: absolute;
+  bottom: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px 0 0 #000;
+  pointer-events: none;
+}
+
+.sv-item-n {
+  right: 2px;
+  color: #fff;
+}
+
+.sv-item-ammo {
+  left: 2px;
+  color: #e0c060;
+}
+
+.sv-drop {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.sv-drop.ok {
+  background: rgb(120 200 90 / 0.28);
+  border: 2px solid #8ad06a;
+}
+
+.sv-drop.bad {
+  background: rgb(220 60 40 / 0.28);
+  border: 2px solid #d83a2e;
+}
+
+.sv-doll {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 96px 78px 96px 96px;
+  gap: 6px;
+}
+
+.sv-eq {
+  position: relative;
+  min-width: 0;
+  background: #1b1a15;
+  border: 2px solid #3a372c;
+}
+
+.sv-eq.primary {
+  grid-column: 1 / span 3;
+}
+
+.sv-eq.melee {
+  grid-row: span 2;
+}
+
+.sv-eq.melee .sv-item.fill {
+  inset: 18px 18px 18px;
+}
+
+.sv-eq.hover-ok {
+  border-color: #8ad06a;
+}
+
+.sv-eq.hover-bad {
+  border-color: #d83a2e;
+}
+
+.sv-eq-name {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #8a8270;
+}
+
+.sv-eq-key {
+  position: absolute;
+  top: 1px;
+  right: 5px;
+  font-size: 12px;
+  color: #e0a040;
+}
+
+.sv-eq-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0.35;
+}
+
+.sv-eq-title {
+  position: absolute;
+  left: 5px;
+  right: 44px;
+  bottom: 2px;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.sv-eq-info {
+  position: absolute;
+  right: 5px;
+  bottom: 2px;
+  font-size: 11px;
+  color: #a8d888;
+}
+
+.sv-eq.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  font-size: 11px;
+}
+
+.sv-eq.stats .money {
+  color: #a8c878;
+  font-size: 15px;
+}
+
+.sv-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  max-width: 280px;
+  padding: 6px 9px;
+  background: #14130f;
+  border: 2px solid #6a644e;
+  box-shadow: 4px 4px 0 #000;
+  font-size: 12px;
+  line-height: 1.35;
+  text-shadow: none;
+  pointer-events: none;
+}
+
+.sv-tip-name {
+  display: block;
+  margin-bottom: 2px;
+  color: #e0a040;
+}
+
+.sv-tip .effect {
+  color: #a8d888;
+}
+
+.sv-tip .bulk {
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.sv-ctx {
+  position: fixed;
+  z-index: 70;
+  min-width: 130px;
+  background: #1b1a15;
+  border: 2px solid #6a644e;
+  box-shadow: 4px 4px 0 #000;
+  text-shadow: none;
+  pointer-events: auto;
+}
+
+.sv-ctx-title {
+  padding: 3px 8px;
+  border-bottom: 1px solid #3a372c;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8a8270;
+}
+
+.sv-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: #d9d4c4;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.sv-ctx-item:hover {
+  background: #e0a040;
+  color: #000;
+}
+
 /* A note read: on paper, with what it is over it. */
 .sv-story.paper {
   left: 50%;

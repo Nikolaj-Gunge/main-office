@@ -8,6 +8,7 @@ import type {
 } from 'three/webgpu'
 import { cornPosition } from '../corn.tsl.ts'
 import { treeCard, treeline } from '../forest-lod.tsl.ts'
+import { grain } from '../grain.tsl.ts'
 import { detailNormal, detailPosition } from '../ground-detail.tsl.ts'
 import { skyNodeMaterial } from '../sky.tsl.ts'
 import { weatherTwin } from '../weather-view.tsl.ts'
@@ -18,7 +19,8 @@ import { swayingPosition } from '../wind.tsl.ts'
  * WebGPURenderer turns every classic material (MeshLambertMaterial…) into its node twin by
  * itself, but GLSL patches — onBeforeCompile and ShaderMaterial — mean nothing to it. This
  * hooks that conversion and gives the game's patched materials their TSL twins (the *.tsl.ts
- * files beside the GLSL), keyed by the customProgramCacheKey the GLSL patch already sets. The
+ * files beside the GLSL), keyed by the customProgramCacheKey the GLSL patch already sets (patches
+ * stacked on one material, as makeGrained does, list their keys with spaces between). The
  * materials in the scene stay the WebGL ones: nothing outside the renderer changes.
  */
 
@@ -41,6 +43,7 @@ const VARIANTS: Record<string, Variant> = {
     m.positionNode = cornPosition()
   },
   'wet-ground': (m) => wetGround(m as MeshPhongNodeMaterial),
+  grain: (m) => grain(m),
   'tree-card': (m) => treeCard(m as MeshLambertNodeMaterial),
   treeline: (m) => treeline(m as MeshBasicNodeMaterial),
 }
@@ -112,10 +115,11 @@ export function installNodeVariants(renderer: WebGPURenderer): void {
     }
     const node = base(material)
     if (!node || material.onBeforeCompile === THREE.Material.prototype.onBeforeCompile) return node
-    const key = material.customProgramCacheKey()
-    const variant = VARIANTS[key]
-    if (variant) variant(node)
-    else warnOnce(key, `no TSL twin for patched material "${key}", drawn unpatched`)
+    for (const key of material.customProgramCacheKey().split(' ')) {
+      const variant = VARIANTS[key]
+      if (variant) variant(node)
+      else warnOnce(key, `no TSL twin for patched material "${key}", drawn unpatched`)
+    }
     return node
   }
 }

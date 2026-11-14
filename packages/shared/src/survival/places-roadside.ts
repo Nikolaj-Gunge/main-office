@@ -307,6 +307,8 @@ function trailer(b: Site, o: Trailer): void {
     cabinet(b, 5.4, 1.3, 0.5, 0.9, 0.6, 'wood', 'bedroom')
   }
   b.loot(3, F + 0.02, 1.2, o.n % 3 === 2 ? 'gun' : 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(3, F + 0.02, -0.6, 'homegun')
   if (o.burnt) {
     for (const [x, z] of [
       [-4, 0.4],
@@ -600,6 +602,8 @@ function farmhouse(b: Site): void {
   // Bedroom (north-west).
   bed(b, -1.4, -3.2, true)
   cabinet(b, -2.9, -1.2, 1, 0.9, 0.5, 'wood', 'bedroom')
+  // Where they kept the gun: something cheap, if they didn't take it with them.
+  b.loot(0.2, F + 0.02, -1.7, 'homegun')
   // Parlour (south).
   b.block(-4, F, 2.5, 0.8, 0.45, 2.2, 'fabric')
   b.deco(-4.3, F + 0.45, 2.5, 0.2, 0.45, 2.2, 'fabric')

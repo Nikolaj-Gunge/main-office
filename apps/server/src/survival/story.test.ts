@@ -5,6 +5,7 @@ import {
   DEFAULT_RULES,
   decodeServerMessage,
   freshJournal,
+  give,
   initPhysics,
   loadMap,
   mergeRules,
@@ -173,7 +174,7 @@ describe('quests: choices', () => {
     t.run(1)
     for (const i of [0, 1]) {
       t.onStep('vial', 1, i)
-      t.sv(i).self.inv.push({ item: 'vial', n: 1 })
+      give(t.sv(i).self, 'vial', 1)
     }
     const asked = t.talkTo('lena', 0)
     expect(asked?.options.map((o) => o.id)).toEqual(['pick:vial:sam', 'pick:vial:ortiz', 'bye'])
@@ -183,6 +184,8 @@ describe('quests: choices', () => {
     expect(t.sv(0).self.inv.some((s) => s.item === 'adrenaline')).toBe(true)
     expect(t.inside.story.unlocks).not.toContain('armoury')
 
+    // Room on your back for the vest.
+    t.sv(1).self.pack = 'pack_military'
     t.talkTo('lena', 1)
     t.answer('lena', 'pick:vial:ortiz', 1)
     expect(t.sv(1).self.journal.flags).toContain('vial:ortiz')
