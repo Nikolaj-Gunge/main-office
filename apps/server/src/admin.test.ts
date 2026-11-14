@@ -46,6 +46,17 @@ describe('admin API', () => {
     expect(state.choices.maps.map((m) => m.id)).toContain('gym')
   })
 
+  test("lists who's playing, not survival's dead", async () => {
+    const map = loadMap('deadwood')
+    const game = new Game(map, createPhysicsWorld(map))
+    game.join('Alice', { send: () => {} })
+    const admin = new AdminApi(game, { password: 'hunter2' })
+    const state = (await (await admin.handle(request('state', 'hunter2'))).json()) as {
+      players: { name: string }[]
+    }
+    expect(state.players.map((p) => p.name)).toEqual(['Alice'])
+  })
+
   test('locks a client out after 5 wrong passwords, even with the right one', async () => {
     const { admin } = setup()
     const now = 1_000_000

@@ -139,14 +139,17 @@ export class AdminApi {
         ranges: RULE_RANGES,
         defaults: DEFAULT_RULES,
       },
-      players: [...this.game.players.values()].map((p) => ({
-        id: p.id,
-        name: p.name,
-        kills: p.kills,
-        deaths: p.deaths,
-        ping: Math.round(p.ping),
-        bot: p.bot !== undefined,
-      })),
+      // People and bots: survival's and zombies mode's dead aren't anybody you'd kick or rank.
+      players: [...this.game.players.values()]
+        .filter((p) => !p.zombie)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          kills: p.kills,
+          deaths: p.deaths,
+          ping: Math.round(p.ping),
+          bot: p.bot !== undefined,
+        })),
     }
   }
 }

@@ -557,7 +557,8 @@ function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
   const size = Math.max(8, Math.round(style.meters * TEXELS_PER_METER))
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
-  const ctx = canvas.getContext('2d')
+  // Read back for the noise (and later averaged for far tiles): keep it on the CPU side.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('2D canvas unavailable')
   const rand = mulberry32(seed)
   style.paint(ctx, size, rand)
