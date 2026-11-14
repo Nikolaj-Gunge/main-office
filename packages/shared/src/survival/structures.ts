@@ -138,6 +138,70 @@ export function campfire(s: Site, x: number, z: number, lit = true): void {
   }
 }
 
+/**
+ * A big camp bonfire: a ring of stones, a stack of split logs leaning in, embers glowing, and a
+ * warm light that reaches across the square.
+ */
+export function bonfire(s: Site, x: number, z: number): void {
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2
+    s.deco(x + Math.cos(a) * 1.05, 0, z + Math.sin(a) * 1.05, 0.34, 0.24, 0.34, 'concrete')
+  }
+  s.deco(x, 0, z, 1.5, 0.08, 1.5, 'asphalt')
+  s.deco(x, 0.05, z, 1, 0.14, 1, 'lantern')
+  // Split logs stacked crosswise, three layers, burning from the middle.
+  for (let layer = 0; layer < 3; layer++) {
+    for (const e of [-1, 1]) {
+      const y = 0.08 + layer * 0.16
+      if (layer % 2 === 0) s.deco(x, y, z + e * 0.38, 1.2, 0.16, 0.16, 'log')
+      else s.deco(x + e * 0.38, y, z, 0.16, 0.16, 1.2, 'log')
+    }
+  }
+  s.deco(x, 0.15, z, 0.5, 0.55, 0.5, 'lantern')
+  s.deco(x, 0.3, z, 0.26, 0.6, 0.26, 'lightpanel')
+  s.light(x, 1.3, z, { color: 0xffa860, intensity: 42, distance: 26, flicker: 0.35 })
+  // High above it, a soft glow over the whole camp (the fire's light on smoke and canvas).
+  s.light(x, 14, z, { color: 0xffd6aa, intensity: 220, distance: 55 })
+}
+
+/**
+ * Seats round Haven's bonfire, in the camp's own coordinates: where somebody sits (on a log,
+ * 0.42 m up) and the way they face (degrees, 0 = north, positive turns left), towards the fire.
+ */
+export const HAVEN_FIRE: [x: number, z: number] = [0, 2]
+export const HAVEN_SEATS: [x: number, z: number, yawDeg: number][] = (() => {
+  const seat = (x: number, z: number): [number, number, number] => {
+    const dx = HAVEN_FIRE[0] - x
+    const dz = HAVEN_FIRE[1] - z
+    return [x, z, Math.round((Math.atan2(-dx, -dz) * 180) / Math.PI)]
+  }
+  const r = Math.SQRT1_2 * 0.6
+  return [
+    seat(3.4, 1.4),
+    seat(3.4, 2.6),
+    seat(-3.4, 1.4),
+    seat(-3.4, 2.6),
+    seat(2.4 + r, 4.4 - r),
+    seat(2.4 - r, 4.4 + r),
+    seat(-2.4 - r, 4.4 - r),
+    seat(-2.4 + r, 4.4 + r),
+    seat(2.6, -0.4),
+    seat(-2.6, -0.4),
+  ]
+})()
+
+/**
+ * A lit window: warm light behind a curtain, filling a window opening (1 m sill, 1.1 m high) in a
+ * wall along x (`alongX`) or z, centred at (x, z) on the wall's line.
+ */
+export function litWindow(s: Site, alongX: boolean, x: number, z: number, w = 1.2): void {
+  const [sx, sz] = alongX ? [w, 0.03] : [0.03, w]
+  s.deco(x, FLOOR + 1, z, sx, 1.1, sz, 'windowglow')
+  // The cross of the frame.
+  s.deco(x, FLOOR + 1, z, alongX ? 0.06 : 0.05, 1.1, alongX ? 0.05 : 0.06, 'wood')
+  s.deco(x, FLOOR + 1.52, z, alongX ? w : 0.05, 0.06, alongX ? 0.05 : w, 'wood')
+}
+
 /** A hunter's or hermit's cabin in the woods: one room, a porch, things left behind. */
 export function cabin(s: Site, variant: number): void {
   const w = 6 + (variant % 2) * 1.5
@@ -238,8 +302,11 @@ export function startCabin(s: Site): void {
     FLOOR + 0.85,
     -0.3,
     'Read the note',
-    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nThere are planks by the door. If they come, nail them across it and keep quiet. It holds a while. Not forever.\n\nDon't sleep outside the walls.\n— Hollis",
+    "If you're reading this, I didn't make it back.\n\nFollow the road NORTH to Haven. They'll take you in if you pull your weight.\n\nTake the pistol and the knife. Twelve rounds is all there is, so don't waste them on the slow ones — and don't use the torch unless you have to. They see it.\n\nThere are planks by the door. If they come, nail them across it and keep quiet. It holds a while. Not forever.\n\nDon't sleep outside the walls.\n— Hollis",
   )
+  // Hollis' pistol and knife beside the note: everybody who wakes here finds their own.
+  s.starter(-0.3, FLOOR + 0.79, -0.35, 'glock', 12)
+  s.starter(-0.55, FLOOR + 0.79, -0.05, 'knife')
   shelf(s, -3.05, -1.2, false, ['kitchen', 'kitchen'])
   crate(s, 2.7, -1.7, 0.7, 'medical')
   // Hollis left planks by the door: the first thing to learn is to board yourself in.
@@ -271,15 +338,17 @@ export function haven(s: Site): void {
   s.label(0, 5.2, -R, 'HAVEN')
   s.npc('ortiz', 'Ortiz', 'guard', gate / 2 + 1.6, -R + 2, 0, 5)
 
-  // The fire, and logs to sit on.
-  campfire(s, 0, 2)
+  // The bonfire, and a ring of seats round it (HAVEN_SEATS), open to the north towards Mara.
+  bonfire(s, 0, 2)
   for (const [x, z, deg] of [
-    [2.6, 2, 90],
-    [-2.6, 2, 90],
-    [0, 4.6, 0],
+    [3.4, 2, 90],
+    [-3.4, 2, 90],
+    [2.4, 4.4, 45],
+    [-2.4, 4.4, -45],
   ] as const) {
-    s.turned(x, 0, z, 2, 0.35, 0.4, deg, 'log')
+    s.turned(x, 0, z, 2, 0.42, 0.42, deg, 'log')
   }
+  for (const e of [-1, 1]) s.turned(e * 2.6, 0, -0.4, 0.5, 0.45, 0.5, 20 * e, 'log')
   s.npc('mara', 'Mara', 'leader', 0, -1.2, 0, 3)
 
   // Trader's stall (east): a roofed counter with crates behind.
@@ -311,7 +380,8 @@ export function haven(s: Site): void {
   bed(clinic, -2.6, -1.9, true)
   bed(clinic, -2.6, 1.9, true)
   shelf(clinic, 0.5, -2.6, true, [], 'metal')
-  clinic.light(0, 2.2, 0, { color: 0xdfe8ff, intensity: 10, distance: 9 })
+  clinic.light(0, 2.2, 0, { color: 0xffe2c0, intensity: 10, distance: 9 })
+  litWindow(clinic, true, 0, 3 - 0.1)
   clinic.npc('lena', 'Lena', 'medic', 1.6, 0.4, -90, 8)
   clinic.label(4.3, 3.1, 0, 'INFIRMARY')
 
@@ -334,6 +404,7 @@ export function haven(s: Site): void {
   bed(bunks, 3.4, 1.9, true, 'bed_haven_3')
   bed(bunks, -3.7, -1.9, true, 'bed_haven_4')
   bunks.lantern(0, 2.6, 0, 0.45, { color: 0xffb870, intensity: 8, distance: 9 })
+  litWindow(bunks, true, -2.5, -3 + 0.1)
   bunks.label(2, 3.4, -3.2, 'BUNKHOUSE')
 
   // Workshop (south-east): Ray's generator and bench.
@@ -369,7 +440,7 @@ export function haven(s: Site): void {
   // Tom the hunter by the east wall, Sam the kid by the fire.
   s.npc('tom', 'Tom', 'hunter', 12, 6, 90, 2)
   s.block(13.5, 0, 6, 0.9, 0.9, 1.6, 'cover')
-  s.npc('sam', 'Sam', 'kid', -3, 4.4, 180, 1)
+  s.npc('sam', 'Sam', 'kid', -5.2, 5.6, -55, 1)
 
   // Tents along the north wall.
   for (const x of [8, 14, 20]) {

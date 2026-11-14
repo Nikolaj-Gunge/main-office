@@ -444,6 +444,7 @@ const SWING_STYLE: Partial<Record<number, SwingStyle>> = {
   [WeaponId.Axe]: 'overhead',
   [WeaponId.Sledge]: 'overhead',
   [WeaponId.Katana]: 'slash',
+  [WeaponId.Fists]: 'stab',
 }
 
 const MELEE_KEYS: Record<SwingStyle, [rest: SwingKey, windup: SwingKey, strike: SwingKey]> = {

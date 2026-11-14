@@ -13,6 +13,11 @@ import { hangingLightPos, wind } from './wind.ts'
 
 /** Lamps lit at once: the nearest of the map's (the world has far more than a GPU wants). */
 const LAMPS = 6
+/**
+ * Inside a safe camp (Haven) a few more: it is full of lamps, braziers and the bonfire. The extra
+ * lights are switched off (not just dimmed) elsewhere so the rest of the woods don't pay for them.
+ */
+const CAMP_LAMPS = 9
 /** Lamps further than this (m) are off; they fade in from a little further out. */
 const LAMP_RANGE = 75
 /** The moon's shadows cover this far around you (m), and are redrawn when you've walked this far. */
@@ -83,6 +88,8 @@ export class Night {
   private readonly moon: THREE.DirectionalLight
   private readonly moonDir: THREE.Vector3
   private readonly lights: readonly MapLight[]
+  /** Safe camps (x, z, radius): more lamps are lit inside. */
+  private readonly camps: { x: number; z: number; r: number }[]
   private readonly pool: { light: THREE.PointLight; source: MapLight | null; index: number }[] = []
   private readonly base: MapDef['lighting']
   private readonly shadowAt = new THREE.Vector3(1e9, 0, 1e9)
@@ -106,6 +113,9 @@ export class Night {
     const l = map.lighting
     this.base = l
     this.lights = map.lights ?? []
+    this.camps = (map.survival?.pois ?? [])
+      .filter((p) => p.safe)
+      .map((p) => ({ x: p.x, z: p.z, r: p.r + 15 }))
     this.fog = new THREE.Fog(l.fogColor, l.fogNear, l.fogFar)
     scene.fog = this.fog
     this.darkFog = new THREE.Color(l.fogColor)
@@ -126,8 +136,9 @@ export class Night {
     this.moon.shadow.bias = -0.0008
     this.moon.shadow.normalBias = 0.06
     scene.add(this.hemi, this.moon, this.moon.target)
-    for (let i = 0; i < LAMPS; i++) {
+    for (let i = 0; i < CAMP_LAMPS; i++) {
       const light = new THREE.PointLight(0xffffff, 0, 10, 2)
+      light.visible = i < LAMPS
       scene.add(light)
       this.pool.push({ light, source: null, index: -1 })
     }
@@ -249,9 +260,13 @@ export class Night {
       if (d < LAMP_RANGE) near.push({ d, i })
     }
     near.sort((a, b) => a.d - b.d)
-    const wanted = new Set(near.slice(0, LAMPS).map((n) => n.i))
-    for (const slot of this.pool) {
-      if (wanted.has(slot.index)) wanted.delete(slot.index)
+    const inCamp = this.camps.some((c) => Math.hypot(c.x - viewer.x, c.z - viewer.z) < c.r)
+    const count = inCamp ? CAMP_LAMPS : LAMPS
+    const wanted = new Set(near.slice(0, count).map((n) => n.i))
+    for (const [k, slot] of this.pool.entries()) {
+      // (Turning a light on or off changes the shaders once; three keeps both versions.)
+      slot.light.visible = k < count
+      if (wanted.has(slot.index) && k < count) wanted.delete(slot.index)
       else {
         slot.source = null
         slot.index = -1
@@ -259,7 +274,7 @@ export class Night {
       }
     }
     for (const i of wanted) {
-      const slot = this.pool.find((s) => !s.source)
+      const slot = this.pool.find((s) => !s.source && s.light.visible)
       const l = this.lights[i]
       if (!slot || !l) break
       slot.source = l

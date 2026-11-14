@@ -29,6 +29,7 @@ export const SWING_OF: Partial<Record<WeaponId, SwingKind>> = {
   [WeaponId.Axe]: 'chop',
   [WeaponId.Sledge]: 'slam',
   [WeaponId.Katana]: 'slash',
+  [WeaponId.Fists]: 'stab',
 }
 
 const o = (x: number, y: number, z: number, rx: number, ry: number, rz: number): MeleeOffset => ({

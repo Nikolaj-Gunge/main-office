@@ -829,6 +829,23 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       }
     },
   },
+  windowglow: {
+    meters: 1.2,
+    noise: 0.03,
+    kind: 'emissive',
+    glow: 1.2,
+    noShadow: true,
+    paint: (ctx, size) => {
+      // Lamplight through a thin curtain: warm white, brighter low in the middle.
+      ctx.fillStyle = '#e8c89a'
+      ctx.fillRect(0, 0, size, size)
+      ctx.fillStyle = '#f6e2c0'
+      ctx.fillRect(size * 0.2, size * 0.35, size * 0.6, size * 0.5)
+      // Curtain folds.
+      ctx.fillStyle = 'rgba(150,110,70,0.35)'
+      for (let x = 2; x < size; x += 5) ctx.fillRect(x, 0, 1, size)
+    },
+  },
 }
 
 function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {

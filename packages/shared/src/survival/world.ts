@@ -1,6 +1,7 @@
 import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
 import { PLACES } from './places.ts'
+import { havenLife } from './places-haven.ts'
 import { camperName, houseName, shedName } from './places-homes.ts'
 import { dressRoads } from './road-dressing.ts'
 import { type ScatterKind, scatterPlaces } from './scatter.ts'
@@ -260,8 +261,10 @@ export function buildDeadwood(): MapDef {
     const site = new Site(build, poi, i, 0, 0, ALL_PLANS[i]?.turn ?? 0)
     if (poi.kind === 'start') startCabin(site)
     else if (poi.kind === 'cabin') cabin(site, variant)
-    else if (poi.kind === 'camp') haven(site)
-    else PLACES[poi.kind](site, poi, variant, world)
+    else if (poi.kind === 'camp') {
+      haven(site)
+      havenLife(site)
+    } else PLACES[poi.kind](site, poi, variant, world)
   })
   // Along the roads: streetlamps, power lines, signs (after the places, to keep out of them).
   const signs = dressRoads(build, { roads, pois, lakes, groundAt: world.groundAt }, SEED)
@@ -278,6 +281,7 @@ export function buildDeadwood(): MapDef {
     interactables: build.interactables,
     rooms: build.rooms,
     spots: build.spots,
+    starter: build.starter,
     signs,
   }
   const start = pois[0] as Poi

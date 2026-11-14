@@ -117,7 +117,7 @@ export class Menu {
       h(
         'li',
         {},
-        'You start with a handgun, 12 rounds and a knife. Ammo is scarce: find it, buy it, or run.',
+        'You wake with empty hands and $50: a pistol and a knife wait on the table. Ammo is scarce: find it, buy it, or run.',
       ),
       h('li', {}, 'The dead are few and hard to kill. Noise and light draw them. Crouch to sneak.'),
       h('li', {}, 'Haven, the survivor camp, is safe: sleep, trade, take jobs · N mutes'),

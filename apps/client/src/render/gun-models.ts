@@ -88,7 +88,15 @@ export function buildGunModel(id: WeaponId): THREE.Group {
       )
       break
     case WeaponId.Knife:
+      // Survival: Hollis' kitchen knife lies on the cabin table (and dropped ones in the dirt).
+      g.add(
+        box(0.03, 0.035, 0.11, 0x1c1c20, 0, 0.018, 0.06), // handle
+        box(0.05, 0.012, 0.016, STEEL, 0, 0.018, -0.002), // guard
+        box(0.008, 0.032, 0.17, 0xc9ccd2, 0, 0.018, -0.095), // blade
+      )
+      break
     case WeaponId.Claws:
+    case WeaponId.Fists:
       break // never lie around
     default: {
       // Survival weapons: their first-person model without the hands (survival-guns.ts).

@@ -37,6 +37,8 @@ export const WeaponId = {
   Svd: 29,
   Barrett: 30,
   Crossbow: 31,
+  /** Bare fists: what you hit with until you find a blade (survival; never an item). */
+  Fists: 32,
 } as const
 export type WeaponId = (typeof WeaponId)[keyof typeof WeaponId]
 
@@ -574,6 +576,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   [WeaponId.Axe]: melee(WeaponId.Axe, 'Fire axe', 120, 1, 2.4, 1),
   [WeaponId.Sledge]: melee(WeaponId.Sledge, 'Sledgehammer', 200, 1.5, 2.5, 0.92),
   [WeaponId.Katana]: melee(WeaponId.Katana, 'Katana', 130, 0.55, 2.6, 1.08),
+  // Nothing in your hands: a punch, quick and weak (and no knife in the back).
+  [WeaponId.Fists]: { ...melee(WeaponId.Fists, 'Fists', 18, 0.5, 1.6, 1.08), noise: 2 },
 
   // ── Pistols ──
   [WeaponId.M1911]: variant(WeaponId.Handgun, WeaponId.M1911, 'M1911', {

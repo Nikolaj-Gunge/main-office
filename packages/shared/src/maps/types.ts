@@ -50,6 +50,8 @@ export const MATERIALS = [
   'lantern',
   /** Painted trim boards: window and door frames, corner posts, fascias. */
   'trim',
+  /** A lit window seen from outside: warm light through a curtain. */
+  'windowglow',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 
