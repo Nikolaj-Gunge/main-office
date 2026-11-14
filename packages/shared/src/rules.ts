@@ -172,6 +172,16 @@ export function isCoopMap(id: string): boolean {
   return (COOP_MAPS as readonly string[]).includes(id)
 }
 
+/**
+ * The mode a map is always played in (co-op maps: zombies, Deadwood: survival), or undefined
+ * for the arena maps, which run whatever mode the admin picked.
+ */
+export function modeOfMap(id: string): ModeId | undefined {
+  if (isCoopMap(id)) return 'zombies'
+  if (id === SURVIVAL_MAP) return 'survival'
+  return undefined
+}
+
 /** The movement config everyone simulates with under these rules. */
 export function movementFor(
   rules: GameRules,

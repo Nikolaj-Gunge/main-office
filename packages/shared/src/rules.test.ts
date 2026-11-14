@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_RULES, mergeRules, movementFor } from './rules.ts'
+import { COOP_MAPS, DEFAULT_MAP_ID, SURVIVAL_MAP } from './maps/index.ts'
+import { DEFAULT_RULES, mergeRules, modeOfMap, movementFor } from './rules.ts'
 import { Button } from './sim/input.ts'
 import { DEFAULT_MOVEMENT } from './sim/movement-config.ts'
 import { createWeaponState, stepWeapon } from './sim/weapon-sim.ts'
@@ -24,6 +25,12 @@ describe('game rules', () => {
     expect(r.infiniteAmmo).toBe(true)
     expect(r.respawnSeconds).toBe(DEFAULT_RULES.respawnSeconds)
     expect(mergeRules(DEFAULT_RULES, null)).toEqual(DEFAULT_RULES)
+  })
+
+  test('maps tied to a mode say which (the menu explains it before joining)', () => {
+    expect(modeOfMap(SURVIVAL_MAP)).toBe('survival')
+    expect(modeOfMap(COOP_MAPS[0])).toBe('zombies')
+    expect(modeOfMap(DEFAULT_MAP_ID)).toBeUndefined()
   })
 
   test('normal rules give the normal movement', () => {

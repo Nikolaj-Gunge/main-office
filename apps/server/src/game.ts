@@ -22,6 +22,7 @@ import {
   type MapDef,
   type MapSpawn,
   type MovementConfig,
+  mergeRules,
   moveDirection,
   movementFor,
   type PhysicsWorld,
@@ -204,6 +205,9 @@ export class Game {
     this.match = new MatchRunner(this)
     this.match.onMapChanged()
     this.syncDummies()
+    // A map tied to a mode (Deadwood: survival, co-op maps: zombies) starts in that mode.
+    const rules = mergeRules(DEFAULT_RULES, { map: map.id })
+    if (rules.mode !== this.rulesValue.mode) this.setRules(rules)
   }
 
   /** One dummy per map target (shooting range); removes dummies from the previous map. */

@@ -17,6 +17,7 @@ import {
   loadMapAsync,
   MAP_IDS,
   type MatchInfo,
+  modeOfMap,
   type PartName,
   PLAYER_QUERY_GROUPS,
   RAPIER,
@@ -105,6 +106,8 @@ const physicsReady = initPhysics()
 const params = new URLSearchParams(location.search)
 const requestedMap = params.get('map') ?? (await serverMap(1500)) ?? ''
 const mapId = MAP_IDS.includes(requestedMap) ? requestedMap : DEFAULT_MAP_ID
+// Explain the mode this map is played in before joining (the server confirms it on join).
+menu.setMode(modeOfMap(mapId) ?? 'ffa')
 // Survival's code only loads for the survival map (it downloads alongside the world builder).
 const survivalCode = mapId === SURVIVAL_MAP ? import('./game/survival-client.ts') : null
 const map = await loadMapAsync(mapId)

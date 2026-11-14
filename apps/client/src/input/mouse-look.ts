@@ -40,7 +40,9 @@ export class MouseLook {
       await this.element.requestPointerLock({ unadjustedMovement: true })
     } catch {
       // Raw input unsupported (e.g. Safari, some Linux setups): fall back to accelerated input.
-      await this.element.requestPointerLock()
+      // The browser can still refuse (too soon after Esc, page not focused): stay unlocked, the
+      // menu stays up, and the next click tries again.
+      await Promise.resolve(this.element.requestPointerLock()).catch(() => {})
     }
   }
 
