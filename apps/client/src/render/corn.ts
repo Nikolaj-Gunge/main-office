@@ -160,6 +160,7 @@ mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;`,
       )
   }
+  material.customProgramCacheKey = () => 'corn'
   return material
 }
 
@@ -239,4 +240,12 @@ export function updateCorn(
     if (n) slots[i]?.set(n.p.x, n.p.z, 1)
     else slots[i]?.set(0, 0, 0)
   }
+}
+
+// For the WebGPU renderer's TSL twin of the corn shader (corn.tsl.ts).
+export {
+  HEIGHT as CORN_HEIGHT,
+  MAX_PUSHERS as CORN_MAX_PUSHERS,
+  PUSH_RADIUS as CORN_PUSH_RADIUS,
+  uniforms as cornUniforms,
 }

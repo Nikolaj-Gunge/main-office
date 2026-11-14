@@ -226,7 +226,7 @@ export class Site {
   /**
    * A walkable slope (stairs, gangways, ramps) along local z: its top surface starts at height
    * `y` at z = `zStart` and climbs `run` metres towards −z (or +z with `toward` = 1) at
-   * `angleDeg`. Returns the height gained.
+   * `angleDeg`, `thick` metres deep. Returns the height gained.
    */
   ramp(
     x: number,
@@ -237,9 +237,10 @@ export class Site {
     angleDeg: number,
     material: MaterialId = 'wood',
     toward: -1 | 1 = -1,
+    flags: BoxFlags = {},
+    thick = 0.25,
   ): number {
     const a = (angleDeg * Math.PI) / 180
-    const thick = 0.25
     const rise = run * Math.tan(a)
     const length = run / Math.cos(a)
     // Which way it climbs in the world.
@@ -252,6 +253,7 @@ export class Site {
       size: alongX ? [length, thick, width] : [width, thick, length],
       rotation: alongX ? [0, 0, dx * a] : [-dz * a, 0, 0],
       material,
+      ...flags,
     })
     return rise
   }

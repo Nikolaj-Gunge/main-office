@@ -31,6 +31,7 @@ import {
   PLANK_HP,
   PLANK_ITEM,
   type PlayerState,
+  type PoiKind,
   planksFor,
   QUESTS,
   type QuestDef,
@@ -75,6 +76,9 @@ import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+
+/** Small places that go on the map without a "Found:" for everyone. */
+const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', 'stand']
 
 /** Loot is kept (and told to clients) in square cells this wide (m): yours and the 8 around. */
 const LOOT_CELL = 96
@@ -1532,7 +1536,7 @@ export class SurvivalDirector {
       if (this.found.has(i)) return
       if (!alive.some((sv) => dist(sv.player.state.pos, poi) < poi.r + 12)) return
       this.found.add(i)
-      if (poi.kind !== 'cabin' && poi.kind !== 'campsite' && poi.kind !== 'start') {
+      if (!QUIET_FINDS.includes(poi.kind)) {
         this.noticeAll('quest', `Found: ${poi.name}`)
       }
       this.game.match.broadcast()

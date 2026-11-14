@@ -45,6 +45,11 @@ export type PoiKind =
   | 'quarry'
   | 'radio'
   | 'cache'
+  | 'house'
+  | 'camper'
+  | 'shed'
+  | 'treehouse'
+  | 'stand'
 
 /** A place in the world: a clearing of flat ground with something built on it. */
 export interface Poi {
