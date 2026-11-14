@@ -340,7 +340,7 @@ const net = new Connection({
         combat.setName(msg.id, name)
         if (kind === 0) roster.set(msg.id, { name: msg.name, color: msg.color })
         else roster.delete(msg.id)
-        if (msg.id !== net.playerId) remotes.add(msg.id, name, msg.color, kind)
+        if (msg.id !== net.playerId) remotes.add(msg.id, name, msg.color, kind, msg.appearance)
         break
       }
       case ServerMsg.PlayerLeft:
@@ -523,13 +523,17 @@ const goalAt = new THREE.Vector3()
 // mouse still needs one click to lock — browsers require it).
 if (sessionStorage.getItem(AUTOJOIN_KEY)) {
   sessionStorage.removeItem(AUTOJOIN_KEY)
-  net.connect(menu.name)
+  net.connect(menu.name, menu.appearance)
 }
 
 menu.onPlay((name) => {
   audio.unlock() // browsers only allow audio after a click
-  if (net.state === 'idle') net.connect(name)
+  if (net.state === 'idle') net.connect(name, menu.appearance)
   void look.lock()
+})
+// A new look applies the next time you join (a reconnect included).
+menu.onCharacter((appearance) => {
+  net.appearance = appearance
 })
 // Esc releases the mouse: show the menu. Clicking Resume locks it again.
 look.onLockChange = (locked) => {

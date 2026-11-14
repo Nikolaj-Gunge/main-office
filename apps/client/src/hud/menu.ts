@@ -1,6 +1,13 @@
-import { MAX_NAME_LENGTH, type ModeId } from '@office-fps/shared'
+import {
+  type Appearance,
+  DEFAULT_APPEARANCE,
+  MAX_NAME_LENGTH,
+  type ModeId,
+  packAppearance,
+} from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
-import type { Settings } from '../settings.ts'
+import { loadAppearance, type Settings, saveAppearance } from '../settings.ts'
+import { CharacterCreator } from './character-creator.ts'
 
 const NAME_KEY = 'office-fps:name'
 
@@ -15,7 +22,7 @@ const PIXEL_PRESETS: [string, number][] = [
   ['Finest', 1080],
 ]
 
-type Tab = 'play' | 'settings' | 'controls'
+type Tab = 'play' | 'character' | 'settings' | 'controls'
 
 function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -32,8 +39,9 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * The game's front door and pause menu (Esc). One screen with three tabs:
+ * The game's front door and pause menu (Esc). One screen with four tabs:
  *   PLAY — name, Play/Resume and how to play
+ *   CHARACTER — the character creator (shown first on a device that never made one)
  *   SETTINGS — mouse, view, pixel size, sound (applied and saved instantly)
  *   CONTROLS — every action, click to rebind
  * The game keeps running behind it — it's multiplayer, there is no real pause.
@@ -69,6 +77,11 @@ export class Menu {
   /** Re-highlighters for choice rows (pixel size), run by refresh(). */
   private readonly choiceRenderers: (() => void)[] = []
   private joined = false
+  /** The character made on this device (null until the creator has been used once). */
+  private look: Appearance | null = loadAppearance()
+  private readonly creator: CharacterCreator
+  private onCharacterHandler: ((appearance: number) => void) | null = null
+  private tab: Tab = 'play'
 
   constructor(parent: HTMLElement, settings: Settings, onSettingsChange: () => void) {
     this.settings = settings
@@ -118,6 +131,25 @@ export class Menu {
       h('ul', { class: 'menu-tips' }, this.modeTip, ...this.arenaTips, ...this.survivalTips),
     )
 
+    // --- Character tab ---
+    this.creator = new CharacterCreator(this.look ?? DEFAULT_APPEARANCE, (look) => {
+      this.look = look
+      saveAppearance(look)
+      this.creator.setMode(false, this.joined)
+      this.onCharacterHandler?.(packAppearance(look))
+    })
+    this.creator.confirm.addEventListener('click', () => {
+      if (!this.look) {
+        // Happy with the default look as it is: that's a choice too.
+        this.look = this.creator.appearance
+        saveAppearance(this.look)
+        this.onCharacterHandler?.(packAppearance(this.look))
+      }
+      if (this.joined) this.showTab('play')
+      else this.play()
+    })
+    this.creator.setMode(this.look === null, false)
+
     // --- Settings tab ---
     const settingsPanel = h('section', { class: 'menu-panel menu-settings' })
     settingsPanel.append(
@@ -164,6 +196,7 @@ export class Menu {
     const tabBar = h('nav', { class: 'menu-tabs' })
     for (const [id, label, panel] of [
       ['play', 'PLAY', play],
+      ['character', 'CHARACTER', this.creator.element],
       ['settings', 'SETTINGS', settingsPanel],
       ['controls', 'CONTROLS', controls],
     ] as const) {
@@ -181,6 +214,7 @@ export class Menu {
         h('h1', {}, 'OFFICE FPS'),
         tabBar,
         play,
+        this.creator.element,
         settingsPanel,
         controls,
       ),
@@ -206,6 +240,16 @@ export class Menu {
     this.onPlayHandler = handler
   }
 
+  /** The character to send when joining (packed), or undefined to let the server pick one. */
+  get appearance(): number | undefined {
+    return this.look ? packAppearance(this.look) : undefined
+  }
+
+  /** Called whenever the character changes (it applies on the next (re)join). */
+  onCharacter(handler: (appearance: number) => void): void {
+    this.onCharacterHandler = handler
+  }
+
   get visible(): boolean {
     return !this.root.hidden
   }
@@ -213,6 +257,7 @@ export class Menu {
   setVisible(visible: boolean): void {
     this.root.hidden = !visible
     if (!visible) this.capturing = null
+    this.creator.setActive(visible && this.tab === 'character')
   }
 
   /** After joining the name is fixed for the session; the button resumes instead. */
@@ -220,6 +265,7 @@ export class Menu {
     this.joined = joined
     this.nameInput.disabled = joined
     this.playButton.textContent = joined ? 'RESUME' : 'PLAY'
+    this.creator.setMode(this.look === null && !joined, joined)
   }
 
   /** The first tip explains the game mode the server runs. */
@@ -246,16 +292,24 @@ export class Menu {
   }
 
   private play(): void {
+    // First time on this device: make a character before the first game.
+    if (!this.joined && this.look === null) {
+      this.showTab('character')
+      return
+    }
     const name = this.nameInput.value.trim()
     localStorage.setItem(NAME_KEY, name)
     this.onPlayHandler?.(name)
   }
 
   private showTab(tab: Tab): void {
+    this.tab = tab
     for (const [id, { button, panel }] of this.tabs) {
       button.classList.toggle('active', id === tab)
       panel.hidden = id !== tab
     }
+    this.root.firstElementChild?.classList.toggle('wide', tab === 'character')
+    this.creator.setActive(!this.root.hidden && tab === 'character')
     this.capturing = null
     this.renderControls()
   }

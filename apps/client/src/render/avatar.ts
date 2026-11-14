@@ -1,4 +1,5 @@
 import {
+  type Appearance,
   type BodyPart,
   type BodyPose,
   bodyParts,
@@ -379,8 +380,16 @@ export class Avatar {
   private gearMeshes: THREE.Mesh[] = []
   /** The pose last drawn (for the ragdoll when they die). */
   lastParts: BodyPart[] = []
+  /** Their own look (character creator: build, skin, hair, eyes, beard); none for zombies. */
+  readonly appearance?: Appearance
 
-  constructor(name: string, colorIndex: number, skin: BodyLook = 'worker') {
+  constructor(
+    name: string,
+    colorIndex: number,
+    skin: BodyLook = 'worker',
+    appearance?: Appearance,
+  ) {
+    if (appearance) this.appearance = appearance
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
     this.parts = buildBody(skin, colorIndex, this.material)

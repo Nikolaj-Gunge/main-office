@@ -14,6 +14,7 @@ import {
   PLANK_ITEM,
   type PlayerState,
   type RemotePlayerState,
+  randomAppearance,
   remotePose,
   type ServerMessage,
   ServerMsg,
@@ -21,6 +22,7 @@ import {
   type SurvivalDef,
   type SurvivalSelf,
   type SurvivalShared,
+  seeded,
   setBarricades,
   spotCentre,
   syncForest,
@@ -44,14 +46,14 @@ const REACH = 2.4
 const TALK_REACH = 3
 /** What the people of Haven wear, by what they do. */
 const NPC_GEAR: Partial<Record<Npc['role'], string[]>> = {
-  guard: ['helmet', 'militaryvest'],
-  leader: ['jacket'],
-  trader: ['cowboyhat', 'flannel'],
-  medic: ['raincoat'],
-  mechanic: ['cap', 'flannel'],
-  cook: ['bandana'],
-  hunter: ['beanie', 'camojacket'],
-  kid: ['hoodie'],
+  guard: ['helmet', 'militaryvest', 'camopants', 'militaryboots'],
+  leader: ['jacket', 'jeans', 'boots'],
+  trader: ['cowboyhat', 'flannel', 'jeans', 'boots'],
+  medic: ['raincoat', 'cargopants', 'sneakers'],
+  mechanic: ['cap', 'flannel', 'worktrousers', 'boots'],
+  cook: ['bandana', 'jeans', 'sneakers'],
+  hunter: ['beanie', 'camojacket', 'camopants', 'boots'],
+  kid: ['hoodie', 'jeans', 'sneakers'],
 }
 
 /** Other people's torches lit at once. */
@@ -142,7 +144,9 @@ export class SurvivalClient {
     }
 
     o.def.npcs.forEach((npc, i) => {
-      const avatar = new Avatar(npc.name, npc.color, 'worker')
+      // Each survivor at Haven has a face of their own (the same one every visit).
+      const look = randomAppearance(seeded(0x5eed + i * 7919))
+      const avatar = new Avatar(npc.name, npc.color, 'worker', look)
       o.scene.add(avatar.root)
       this.npcs.push({
         def: npc,

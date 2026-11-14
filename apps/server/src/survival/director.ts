@@ -56,6 +56,7 @@ import {
   TRADER_STOCK,
   takeStack,
   WEAPONS,
+  WEAR_SLOTS,
   WeaponId,
   type WeaponState,
   wakeTime,
@@ -1239,8 +1240,7 @@ export class SurvivalDirector {
       }
       case 'unwear': {
         const slot = action.slot
-        const id =
-          slot === 'head' || slot === 'body' || slot === 'feet' ? self.wear[slot] : undefined
+        const id = WEAR_SLOTS.includes(slot) ? self.wear[slot] : undefined
         if (!id) return
         delete self.wear[slot]
         // Its pockets go with it: if that leaves too much in the pack, it can't come off.

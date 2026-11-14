@@ -7,12 +7,17 @@ import {
   DEFAULT_RULES,
   DROP_LAND,
   decodeServerMessage,
+  FEET_LOOKS,
+  feetLook,
+  GEAR,
   gearLooks,
   heightAt,
   INFECTION_SECONDS,
   ITEMS,
   initPhysics,
+  LEGS_LOOKS,
   LOOT_TABLES,
+  legsLook,
   loadMap,
   MAX_PLANKS,
   type MatchInfo,
@@ -291,6 +296,7 @@ describe('survival: the night', () => {
     sv.self.pack = 'pack_school'
     sv.self.money = 75
     sv.self.infected = 400
+    const look = t.player().appearance
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
     // A new character: the start kit, fresh, clean.
@@ -323,6 +329,10 @@ describe('survival: the night', () => {
     expect(Math.hypot(s.pos.x - haven.x, s.pos.z - haven.z)).toBeLessThan(15)
     expect(Math.abs(s.pos.y - haven.y)).toBeLessThan(0.5)
     expect(t.self().hunger).toBe(70)
+    // Same face (their chosen appearance), back in the starting outfit: nothing worn.
+    expect(t.player().appearance).toBe(look)
+    expect(look).toBeDefined()
+    expect(t.game.match.gearOf(t.player())).toBe(0)
   })
 })
 
@@ -649,10 +659,60 @@ describe('survival: clothes and gear', () => {
     expect(countOf(me.inv, 'helmet')).toBe(1)
   })
 
+  test('a new character wears only the tank top and joggers; trousers and shoes go on and off', () => {
+    const t = setup(2)
+    t.run(1)
+    const director = (
+      t.game.match as unknown as {
+        survival: { survivors: Map<number, { self: SurvivalSelf }> }
+      }
+    ).survival
+    const me = director.survivors.get(t.ids[0] ?? 0)?.self
+    if (!me) throw new Error('no survivor')
+    // Nothing worn: everyone sees the starting outfit (all looks 0, barefoot).
+    expect(me.wear).toEqual({})
+    t.run(0.2)
+    const seenBefore = t.last(ServerMsg.Snapshot, 1)?.players.find((p) => p.id === t.ids[0])
+    expect(seenBefore?.gear ?? 0).toBe(0)
+    me.inv.push({ item: 'cargopants', n: 1 }, { item: 'jeans', n: 1 }, { item: 'boots', n: 1 })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'cargopants' })
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'boots' })
+    expect(me.wear.legs).toBe('cargopants')
+    expect(me.wear.feet).toBe('boots')
+    expect(capacityOf(me)).toBe(POCKETS_KG + 4)
+    // Swapping trousers puts the old pair in the pack.
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'use', item: 'jeans' })
+    expect(me.wear.legs).toBe('jeans')
+    expect(countOf(me.inv, 'cargopants')).toBe(1)
+    t.run(0.2)
+    const seen = t.last(ServerMsg.Snapshot, 1)?.players.find((p) => p.id === t.ids[0])
+    expect(seen?.gear).toBe(gearLooks(['jeans', 'boots']))
+    expect(legsLook(seen?.gear ?? 0)).toBe(LEGS_LOOKS.jeans)
+    expect(feetLook(seen?.gear ?? 0)).toBe(FEET_LOOKS.boots)
+    t.game.handleAction(t.ids[0] ?? 0, { a: 'unwear', slot: 'legs' })
+    expect(me.wear.legs).toBeUndefined()
+    expect(countOf(me.inv, 'jeans')).toBe(1)
+  })
+
   test('the loot tables hand out clothes, and there are more guns about', () => {
     for (const table of ['bedroom', 'store', 'police', 'military', 'hunting'] as const) {
       expect(tableItems(table).some((id) => ITEMS[id]?.kind === 'wear')).toBe(true)
     }
+    // Trousers and shoes turn up wherever people kept clothes.
+    const slotOf = (id: string) => GEAR[id]?.slot
+    for (const table of [
+      'bedroom',
+      'store',
+      'garage',
+      'police',
+      'military',
+      'hunting',
+      'camp',
+    ] as const) {
+      expect(tableItems(table).some((id) => slotOf(id) === 'legs')).toBe(true)
+      expect(tableItems(table).some((id) => slotOf(id) === 'feet')).toBe(true)
+    }
+    expect(TRADER_STOCK.some((id) => slotOf(id) === 'legs')).toBe(true)
     expect(tableItems('bedroom').some((id) => ITEMS[id]?.kind === 'weapon')).toBe(true)
   })
 })

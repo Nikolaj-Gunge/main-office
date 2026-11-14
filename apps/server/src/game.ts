@@ -29,8 +29,10 @@ import {
   PLAYER_QUERY_GROUPS,
   PlayerBody,
   type PlayerState,
+  packAppearance,
   RAPIER,
   type RemotePlayerState,
+  randomAppearance,
   raycastPose,
   type ServerMessage,
   ServerMsg,
@@ -39,6 +41,7 @@ import {
   SNAPSHOT_RATE,
   type SpawnWeapon,
   type SurvivalAction,
+  seeded,
   setGates,
   stepPlayer,
   strideLength,
@@ -46,6 +49,7 @@ import {
   TICK_DT,
   TICK_RATE,
   USE_PICKUP_RADIUS,
+  unpackAppearance,
   WEAPON_TIER,
   WEAPONS,
   WeaponId,
@@ -76,6 +80,8 @@ interface ServerPlayer {
   id: number
   name: string
   color: number
+  /** What they look like (packAppearance, sanitised); undefined for zombies. */
+  appearance?: number
   client: GameClient
   body: PlayerBody
   state: PlayerState
@@ -333,8 +339,18 @@ export class Game {
     return this.spawns.count
   }
 
-  /** Adds a player and sends them the world. Returns the id, or null if the server is full. */
-  join(rawName: string, client: GameClient, dummy?: MapSpawn, zombie?: ZombieMind): number | null {
+  /**
+   * Adds a player and sends them the world. Returns the id, or null if the server is full.
+   * `appearance` is what they chose in the character creator (packed; sanitised here). Without
+   * one, people, bots and dummies get a random look of their own; zombies have none.
+   */
+  join(
+    rawName: string,
+    client: GameClient,
+    dummy?: MapSpawn,
+    zombie?: ZombieMind,
+    appearance?: number,
+  ): number | null {
     if (this.players.size >= MAX_PLAYERS) {
       // A person always gets in: a zombie or a bot gives up its place.
       const bot =
@@ -355,6 +371,7 @@ export class Game {
       id,
       name,
       color: this.pickColor(),
+      ...(zombie ? {} : { appearance: sanitizeAppearance(appearance, id) }),
       client,
       body,
       state: createPlayerState(),
@@ -1150,7 +1167,14 @@ function joinedMessage(p: ServerPlayer): ServerMessage {
     color: p.color,
     name: p.name,
     ...(p.zombie ? { kind: p.zombie.kind } : {}),
+    ...(p.appearance === undefined ? {} : { appearance: p.appearance }),
   }
+}
+
+/** A chosen look made valid (out-of-range fields clamp), or a random one seeded by the id. */
+function sanitizeAppearance(raw: number | undefined, id: number): number {
+  if (raw !== undefined && Number.isFinite(raw)) return packAppearance(unpackAppearance(raw))
+  return packAppearance(randomAppearance(seeded(id * 2654435761)))
 }
 
 function toHistoryPose(p: ServerPlayer, tick: number): HistoryPose {

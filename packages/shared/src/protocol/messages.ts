@@ -106,7 +106,10 @@ export interface RemotePlayerState {
   ledge: number
   /** Survival: their torch is on. */
   light?: boolean
-  /** Survival: what they wear that shows (see gear.ts: head look | body look << 4). */
+  /**
+   * Survival: what they wear that shows (u16, see gear.ts:
+   * head look | body look << 4 | legs look << 8 | feet look << 12).
+   */
   gear?: number
 }
 
@@ -119,7 +122,13 @@ export const ShotResult = {
 export type ShotResult = (typeof ShotResult)[keyof typeof ShotResult]
 
 export type ClientMessage =
-  | { type: typeof ClientMsg.Hello; protocolVersion: number; name: string }
+  | {
+      type: typeof ClientMsg.Hello
+      protocolVersion: number
+      name: string
+      /** What they chose in the character creator (packAppearance); absent = server picks. */
+      appearance?: number
+    }
   | { type: typeof ClientMsg.Input; commands: InputCommand[] }
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
   | { type: typeof ClientMsg.Ping; clientTime: number; rtt: number }
@@ -166,6 +175,8 @@ export type ServerMessage =
       name: string
       /** 0 = a person or normal bot; otherwise a ZombieKind (zombies mode). */
       kind?: number
+      /** What they look like (packAppearance); absent for zombies. */
+      appearance?: number
     }
   /** The server's game rules (admin page); sent on join and whenever they change. */
   | { type: typeof ServerMsg.Rules; rules: GameRules }
@@ -242,7 +253,7 @@ const FLAG_AIMING = 16
 const FLAG_LIGHT = 32
 const FLAG_WINDED = 64
 const FLAG_PRONE = 128
-/** Others' state only: a gear byte follows the animation bytes (own state uses bit 0 for crouch). */
+/** Others' state only: a gear u16 follows the animation bytes (own state uses bit 0 for crouch). */
 const FLAG_GEAR = 1
 
 // --- Own player state: f64 everywhere so client replays start from the exact server state ---
@@ -375,7 +386,7 @@ function writeRemote(w: BinaryWriter, p: RemotePlayerState): void {
   w.u8(Math.round((((p.stride % 1) + 1) % 1) * 255))
   w.u8(Math.round(Math.max(0, Math.min(25.5, p.speed)) * 10))
   writeAnimation(w, p)
-  if (p.gear) w.u8(p.gear & 0xff)
+  if (p.gear) w.u16(p.gear & 0xffff)
 }
 
 /**
@@ -444,7 +455,7 @@ function readRemote(r: BinaryReader): RemotePlayerState {
   const stride = r.u8() / 255
   const speed = r.u8() / 10
   const animation = readAnimation(r)
-  const gear = flags & FLAG_GEAR ? r.u8() : 0
+  const gear = flags & FLAG_GEAR ? r.u16() : 0
   return {
     stride,
     speed,
@@ -487,6 +498,18 @@ function readNormal(r: BinaryReader): { x: number; y: number; z: number } {
   return { x: d(r.u8()), y: d(r.u8()), z: d(r.u8()) }
 }
 
+/** A packed appearance (packAppearance: 24 bits), or NO_APPEARANCE when there is none. */
+const NO_APPEARANCE = 0xffffffff
+
+function writeAppearance(w: BinaryWriter, appearance: number | undefined): void {
+  w.u32(appearance === undefined ? NO_APPEARANCE : appearance & 0xffffff)
+}
+
+function readAppearance(r: BinaryReader): number | undefined {
+  const v = r.u32()
+  return v === NO_APPEARANCE ? undefined : v
+}
+
 /** Fractional tick → u32 whole tick + u8 fraction. */
 function writeTick(w: BinaryWriter, tick: number): void {
   const whole = Math.max(0, Math.floor(tick))
@@ -502,6 +525,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
   switch (msg.type) {
     case ClientMsg.Hello:
       w.u16(msg.protocolVersion).str8(msg.name)
+      writeAppearance(w, msg.appearance)
       break
     case ClientMsg.Input:
       w.u8(msg.commands.length)
@@ -527,8 +551,11 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
   const r = new BinaryReader(data)
   const type = r.u8()
   switch (type) {
-    case ClientMsg.Hello:
-      return { type, protocolVersion: r.u16(), name: r.str8() }
+    case ClientMsg.Hello: {
+      const hello = { type, protocolVersion: r.u16(), name: r.str8() }
+      const appearance = readAppearance(r)
+      return appearance === undefined ? hello : { ...hello, appearance }
+    }
     case ClientMsg.Input: {
       const count = r.u8()
       const commands: InputCommand[] = []
@@ -576,6 +603,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array<ArrayBuffer>
         .u8(msg.color)
         .str8(msg.name)
         .u8(msg.kind ?? 0)
+      writeAppearance(w, msg.appearance)
       break
     case ServerMsg.PlayerLeft:
       w.u16(msg.id)
@@ -699,7 +727,12 @@ export function decodeServerMessage(data: ArrayBuffer | Uint8Array): ServerMessa
     case ServerMsg.PlayerJoined: {
       const joined = { type, id: r.u16(), color: r.u8(), name: r.str8() }
       const kind = r.u8()
-      return kind === 0 ? joined : { ...joined, kind }
+      const appearance = readAppearance(r)
+      return {
+        ...joined,
+        ...(kind === 0 ? {} : { kind }),
+        ...(appearance === undefined ? {} : { appearance }),
+      }
     }
     case ServerMsg.PlayerLeft:
       return { type, id: r.u16() }

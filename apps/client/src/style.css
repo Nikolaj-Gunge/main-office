@@ -605,6 +605,172 @@ body {
   font-size: 13px;
 }
 
+/* --- Character creator (menu → CHARACTER) ---------------------------------------------- */
+
+.menu-card.wide {
+  width: min(720px, 94vw);
+}
+
+.creator-intro {
+  padding: 8px 12px;
+  border-left: 4px solid #b33831;
+  background: rgb(179 56 49 / 0.14);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.creator-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.creator-stage {
+  position: relative;
+  min-height: 300px;
+  border: 2px solid #f2f2f2;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgb(251 185 84 / 0.18), transparent 70%),
+    linear-gradient(180deg, #2b2e3f 0%, #141520 100%);
+  box-shadow: inset 0 0 0 2px #000;
+}
+
+.creator-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.creator-canvas:active {
+  cursor: grabbing;
+}
+
+.creator-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.creator-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.creator-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.creator-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.creator-value {
+  text-transform: none;
+  letter-spacing: 0;
+  color: #fbb954;
+}
+
+.creator-segmented {
+  grid-column: auto;
+}
+
+.creator-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.menu .creator-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #0f1017;
+  background: var(--swatch);
+  box-shadow: 0 0 0 2px rgb(242 242 242 / 0.25);
+}
+
+.creator-swatches.round .creator-swatch {
+  border-radius: 50%;
+}
+
+.menu .creator-swatch:hover {
+  background: var(--swatch);
+  box-shadow: 0 0 0 2px #f2f2f2;
+}
+
+.menu .creator-swatch.chosen {
+  box-shadow:
+    0 0 0 2px #fbb954,
+    3px 3px 0 2px #000;
+  transform: translate(-1px, -1px);
+}
+
+.creator-stepper {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  border: 2px solid #f2f2f2;
+  background: #0f1017;
+}
+
+.menu .creator-arrow {
+  border: 0;
+  padding: 4px 0;
+  font-size: 16px;
+}
+
+.creator-step-value {
+  align-self: center;
+  text-align: center;
+  font-size: 15px;
+}
+
+.creator-note {
+  min-height: 1.2em;
+}
+
+.creator-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.menu .creator-random {
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.menu .creator-confirm {
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .creator-body {
+    grid-template-columns: 1fr;
+  }
+
+  .creator-stage {
+    min-height: 240px;
+  }
+}
+
 /* --- Scoreboard, minimap, banner, hover name --------------------------------------------- */
 
 .hud-scoreboard {

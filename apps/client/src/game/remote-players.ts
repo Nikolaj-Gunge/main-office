@@ -1,4 +1,5 @@
 import {
+  type Appearance,
   type HitPose,
   InterpolationBuffer,
   PLAYER_COLORS,
@@ -7,6 +8,7 @@ import {
   ServerClock,
   type SkinId,
   TICK_RATE,
+  unpackAppearance,
   ZombieKind,
   zombieScale,
 } from '@office-fps/shared'
@@ -18,6 +20,8 @@ interface Remote {
   color: number
   /** 0 = a person or bot; a ZombieKind for zombies (they keep their own look). */
   kind: number
+  /** Their character (creator look); undefined for zombies. */
+  appearance?: Appearance
   avatar: Avatar
   buffer: InterpolationBuffer
   /** Last interpolated state drawn on screen. */
@@ -64,6 +68,7 @@ export class RemotePlayers {
     colorIndex: number,
     skin: BodyLook,
     scale: number,
+    appearance?: Appearance,
   ) => void
   /** A zombie within earshot, now and then (they groan). */
   onGroan?: (at: THREE.Vector3) => void
@@ -76,15 +81,18 @@ export class RemotePlayers {
     return this.players.size
   }
 
-  add(id: number, name: string, color: number, kind = 0): void {
+  /** @param appearance their packed look (PlayerJoined), absent for zombies */
+  add(id: number, name: string, color: number, kind = 0, appearance?: number): void {
     this.remove(id)
-    const avatar = new Avatar(name, bodyColor(id, color, kind), lookOf(kind, this.skin))
+    const look = kind === 0 && appearance !== undefined ? unpackAppearance(appearance) : undefined
+    const avatar = new Avatar(name, bodyColor(id, color, kind), lookOf(kind, this.skin), look)
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)
     this.players.set(id, {
       name,
       color,
       kind,
+      ...(look ? { appearance: look } : {}),
       avatar,
       buffer: new InterpolationBuffer(),
       shown: null,
@@ -112,7 +120,7 @@ export class RemotePlayers {
       const visible = p.avatar.root.visible
       this.scene.remove(p.avatar.root)
       p.avatar.dispose()
-      p.avatar = new Avatar(p.name, p.color, skin)
+      p.avatar = new Avatar(p.name, p.color, skin, p.appearance)
       p.avatar.root.visible = visible
       this.scene.add(p.avatar.root)
       this.players.set(id, p)
@@ -156,7 +164,8 @@ export class RemotePlayers {
         }
         if (before.alive && !p.shown.alive) {
           const look = lookOf(p.kind, this.skin)
-          this.onDeath?.(id, before, p.velocity, bodyColor(id, p.color, p.kind), look, size)
+          const color = bodyColor(id, p.color, p.kind)
+          this.onDeath?.(id, before, p.velocity, color, look, size, p.appearance)
         }
         this.detectSteps(p, before, p.shown, dt)
         if (p.kind !== 0 && p.shown.alive && Math.random() < dt / 6) {
@@ -244,6 +253,11 @@ export class RemotePlayers {
 
   colorOf(id: number): number | undefined {
     return this.players.get(id)?.color
+  }
+
+  /** What player `id` chose to look like (character creator); undefined for zombies. */
+  appearanceOf(id: number): Appearance | undefined {
+    return this.players.get(id)?.appearance
   }
 }
 
