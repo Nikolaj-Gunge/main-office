@@ -1058,7 +1058,12 @@ export class SurvivalHud {
       poi.kind === 'cabin' ||
       poi.kind === 'campsite' ||
       poi.kind === 'cache' ||
-      poi.kind === 'start'
+      poi.kind === 'start' ||
+      poi.kind === 'house' ||
+      poi.kind === 'camper' ||
+      poi.kind === 'shed' ||
+      poi.kind === 'treehouse' ||
+      poi.kind === 'stand'
     g.fillStyle = poi.safe
       ? '#ffb030'
       : poi.kind === 'town'
@@ -1074,6 +1079,10 @@ export class SurvivalHud {
       g.lineTo(x - r - 2, y + r)
       g.closePath()
       g.fill()
+    } else if (poi.kind === 'treehouse' || poi.kind === 'stand') {
+      // Up in the trees: a small mark on a stalk.
+      g.fillRect(x - 0.5, y - r, 1, r + 3)
+      g.fillRect(x - r, y - r - 3, r * 2, r * 2)
     } else g.fillRect(x - r, y - r, r * 2, r * 2)
     if (poi.kind === 'church') {
       g.fillRect(x - 1, y - r - 7, 2, 7)

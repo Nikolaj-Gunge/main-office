@@ -371,13 +371,14 @@ describe('survival: the bite', () => {
     const left = sv.self.infected
     t.game.match.onDamage(t.player(), zombie, 10)
     expect(sv.self.infected).toBe(left)
-    // The client hears about it now and then, not every second.
+    // The client hears about it now and then, not every second (other news, like a place found
+    // nearby, can add one more).
     const told = t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Survival).length ?? 0
     t.run(10)
     const more =
       (t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Survival).length ?? 0) - told
     expect(more).toBeGreaterThanOrEqual(1)
-    expect(more).toBeLessThanOrEqual(3)
+    expect(more).toBeLessThanOrEqual(5)
   })
 
   test('adrenaline winds the clock back; the cure ends it', () => {

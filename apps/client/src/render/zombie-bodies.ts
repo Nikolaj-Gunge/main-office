@@ -1,124 +1,166 @@
-import { PART_SIZES } from '@office-fps/shared'
 import * as THREE from 'three'
-import { ARM_LENGTH, type Baked, Kit, pickOf, seeded, type Vec } from './body-kit.ts'
+import { type BodyMesh, Kit, mix, noise3, pickOf, seeded, shade, step } from './body-kit.ts'
+import {
+  arms,
+  FIGURE,
+  type Figure,
+  faceZ,
+  feet,
+  fists,
+  HEAD,
+  type HeadShape,
+  hairCap,
+  type Legwear,
+  legs,
+  type Paint,
+  skull,
+  skullPoint,
+  TORSO_SEG,
+  torso,
+  torsoPoint,
+} from './figure.ts'
 
 /**
  * The dead, one silhouette per kind so you can tell them apart at a glance in the dark:
- *  - walker:   ragged shirt in strips, one arm flayed to the bone, jaw hanging off;
- *  - runner:   starved and lanky, ribs showing, long greasy hair, sunken yellow eyes;
- *  - brute:    a hunched mountain in torn overalls: neck and back mass, tumours, huge fists, chains;
- *  - screamer: tall skull with the jaw unhinged, a bloated throat sack, long clawed fingers;
+ *  - walker:   a dead office worker in a ragged shirt, one arm flayed to the bone, jaw hanging off;
+ *  - runner:   starved and lanky, ribs and spine showing, long greasy hair, sunken yellow eyes;
+ *  - brute:    a hunched mountain in torn overalls: neck and back mass, growths, huge fists, chains;
+ *  - screamer: tall stretched skull with the jaw unhinged, a bloated throat sack, long clawed fingers;
  *  - stalker:  glossy black and wiry, spines down the back, long bone claws, slit eyes.
- * Everything is decoration on the hitbox parts (part sizes stay the hit volumes) and is baked per
- * kind and variant into one vertex-coloured mesh per part, cached and shared by every copy.
+ * Smooth skinned bodies (figure.ts) on the hitbox skeleton; baked once per kind and variant and
+ * shared by every copy (one draw call for the body, one for the glowing eyes).
  */
 
 export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker'
 
-const H = PART_SIZES.head
-const C = PART_SIZES.chest
-const S = PART_SIZES.stomach
-const T = PART_SIZES.thighL
-const N = PART_SIZES.shinL
-const L = ARM_LENGTH
 const SIDES = [-1, 1] as const
-
 /** How many looks each kind comes in (picked by the zombie's id). */
 const VARIANTS = 8
 
-/** Eyes: where they sit on the head (±x, y) and how big their glow halo is. */
-export const EYES: Record<ZombieLook, { x: number; y: number; glow: number }> = {
-  zombie: { x: 0.07, y: 0.03, glow: 0.2 },
-  runner: { x: 0.065, y: 0.03, glow: 0.26 },
-  brute: { x: 0.07, y: 0.01, glow: 0.22 },
-  screamer: { x: 0.055, y: 0.13, glow: 0.15 },
-  stalker: { x: 0.065, y: 0.02, glow: 0.1 },
+const HEADS: Record<ZombieLook, HeadShape> = {
+  zombie: { ...HEAD, jaw: 0.2, chin: 0 },
+  runner: { ...HEAD, rx: 0.084, rz: 0.106, ry: 0.13, jaw: 0.34, chin: 0.004 },
+  brute: { ...HEAD, rx: 0.092, ry: 0.112, rz: 0.104, cy: -0.01, jaw: 0.05, chin: 0.02 },
+  screamer: { ...HEAD, rx: 0.084, ry: 0.13, rz: 0.104, cy: 0.03, stretch: 0.09, jaw: 0.3 },
+  stalker: { ...HEAD, rx: 0.088, ry: 0.115, rz: 0.11, crest: 0.07, jaw: 0.38, chin: 0.006 },
 }
+const EYE_AT: Record<ZombieLook, { x: number; y: number; glow: number }> = {
+  zombie: { x: 0.037, y: 0.024, glow: 0.14 },
+  runner: { x: 0.034, y: 0.026, glow: 0.18 },
+  brute: { x: 0.036, y: 0.0, glow: 0.16 },
+  screamer: { x: 0.03, y: 0.075, glow: 0.11 },
+  stalker: { x: 0.036, y: 0.02, glow: 0.08 },
+}
+/** Eyes: where they sit on the head (±x, y, front z) and how big their glow halo is. */
+export const EYES: Record<ZombieLook, { x: number; y: number; z: number; glow: number }> =
+  Object.fromEntries(
+    Object.entries(EYE_AT).map(([look, e]) => [
+      look,
+      { ...e, z: faceZ(HEADS[look as ZombieLook], e.x, e.y) },
+    ]),
+  ) as Record<ZombieLook, { x: number; y: number; z: number; glow: number }>
 
-const cache = new Map<string, Baked>()
+const cache = new Map<string, BodyMesh>()
 
 /** The baked body of one kind and variant (seed: anything stable per zombie, e.g. its id). */
-export function zombieBody(look: ZombieLook, seed: number): Baked {
+export function zombieBody(look: ZombieLook, seed: number): BodyMesh {
   const variant = (Math.imul(Math.floor(seed) + 1, 2654435761) >>> 16) % VARIANTS
   const key = `${look}:${variant}`
-  let baked = cache.get(key)
-  if (!baked) {
+  let mesh = cache.get(key)
+  if (!mesh) {
     const k = new Kit()
     BUILD[look](k, variant, seeded(variant * 31 + look.length))
-    baked = k.bake()
-    cache.set(key, baked)
+    mesh = k.build()
+    cache.set(key, mesh)
   }
-  return baked
+  return mesh
 }
 
 type Build = (k: Kit, v: number, rnd: () => number) => void
 
-/** A strip of cloth (or hair) hanging down `length` from `at`, swinging a little. */
-function hang(
-  k: Kit,
-  color: number,
-  at: Vec,
-  length: number,
-  width: number,
-  rnd: () => number,
-  ry = 0,
-  thick = 0.014,
-): void {
-  const tiltX = (rnd() - 0.5) * 0.35
-  const tiltZ = (rnd() - 0.5) * 0.45
-  k.box(color, [width, length, thick], [at[0], at[1] - length / 2, at[2]], [tiltX, ry, tiltZ])
+/** Dead skin: mottled, bruised, darker in the hollows. */
+const mottled = (base: number, bruise: number) => (q: THREE.Vector3) => {
+  const n = noise3(q.x * 13, q.y * 11, q.z * 13)
+  return mix(shade(base, 0.9 + 0.2 * n), bruise, 0.5 * step(0.62, 0.8, n))
 }
 
-/** Ragged hem: strips hanging all round the bottom of a box of half-size (hx, hz) at height y. */
-function hem(
-  k: Kit,
-  color: number,
-  hx: number,
-  hz: number,
-  y: number,
-  count: number,
-  min: number,
-  max: number,
-  rnd: () => number,
-  width = 0.05,
-): void {
-  for (let i = 0; i < count; i++) {
-    const len = min + rnd() * (max - min)
-    const u = (i + rnd() * 0.6) / count
-    // Walk round the rectangle: front, side, back, side.
-    const w = 2 * hx
-    const dz = 2 * hz
-    const d = u * 2 * (w + dz)
-    let at: Vec
-    let ry = 0
-    if (d < w) at = [-hx + d, y, -hz - 0.008]
-    else if (d < w + dz) {
-      at = [hx + 0.008, y, -hz + (d - w)]
-      ry = Math.PI / 2
-    } else if (d < 2 * w + dz) at = [hx - (d - w - dz), y, hz + 0.008]
-    else {
-      at = [-hx - 0.008, y, hz - (d - 2 * w - dz)]
-      ry = Math.PI / 2
-    }
-    hang(k, color, at, len, width * (0.7 + rnd() * 0.6), rnd, ry)
-  }
-}
-
-/** Ribs across a front face at z, between y0 (top) and y1. */
-function ribs(k: Kit, color: number, width: number, y0: number, y1: number, z: number, n: number) {
-  for (let i = 0; i < n; i++) {
-    const y = y0 + ((y1 - y0) * i) / Math.max(1, n - 1)
-    const w = width * (1 - i * 0.06)
-    for (const s of SIDES)
-      k.box(color, [w / 2 - 0.02, 0.022, 0.014], [(s * w) / 4 + s * 0.012, y, z])
+/** Glowing eyes in their sockets, a dark socket round each. */
+function eyes(k: Kit, look: ZombieLook, size: readonly [number, number], socket = 0x140c08): void {
+  const e = EYES[look]
+  k.on('head')
+  for (const s of SIDES) {
+    k.blob(
+      socket,
+      [size[0] * 1.5, size[1] * 1.7, 0.01],
+      [s * e.x, e.y, e.z + 0.006],
+      [0, 0, 0],
+      6,
+      4,
+    )
+    k.blob('eyes', [size[0], size[1], 0.007], [s * e.x, e.y, e.z - 0.002], [0, 0, 0], 6, 4)
   }
 }
 
 /** A row of teeth along x at height y in front of z. */
-function teeth(k: Kit, color: number, width: number, n: number, y: number, z: number, h = 0.03) {
+function teeth(k: Kit, color: number, width: number, n: number, y: number, z: number, h = 0.02) {
   for (let i = 0; i < n; i++) {
     const x = -width / 2 + (width * (i + 0.5)) / n
-    k.box(color, [(width / n) * 0.7, h * (0.8 + ((i * 7) % 3) * 0.15), 0.02], [x, y, z])
+    k.box(color, [(width / n) * 0.7, h * (0.8 + ((i * 7) % 3) * 0.15), 0.008], [x, y, z])
+  }
+}
+
+/** A ragged skirt of cloth hanging from a torso ring (shirt tails, a gown, a torn tank top). */
+function rags(
+  k: Kit,
+  fig: Figure,
+  color: number | Paint,
+  ring: number,
+  min: number,
+  max: number,
+  rnd: () => number,
+  inflate = 0.012,
+): void {
+  const lengths = Array.from({ length: TORSO_SEG }, () => min + rnd() * (max - min))
+  k.on('torso').surface(
+    typeof color === 'number' ? color : 0xffffff,
+    TORSO_SEG,
+    3,
+    (u, v) => {
+      const i = Math.round(u * TORSO_SEG) % TORSO_SEG
+      const q = torsoPoint(fig, (i / TORSO_SEG) * Math.PI * 2, ring, inflate)
+      const len = (lengths[i] as number) * v
+      const flare = 1 + 0.12 * v
+      return [q.x * flare, q.y - len, q.z * flare]
+    },
+    { colorFn: typeof color === 'number' ? undefined : (q) => color(q) },
+  )
+}
+
+/** Clawed fingers instead of fists: long joints ending in hooks. */
+function clawHands(k: Kit, skin: number, claw: number, fingers: number, length: number): void {
+  for (const hand of ['handL', 'handR'] as const) {
+    k.on(hand).blob(skin, [0.032, 0.045, 0.018], [0, 0.04, 0], [0, 0, 0], 8, 5)
+    for (let i = 0; i < fingers; i++) {
+      const x = -0.024 + (i * 0.048) / Math.max(1, fingers - 1)
+      const spread = (i - (fingers - 1) / 2) * 0.14
+      k.tube(
+        skin,
+        [
+          [0.07, 0.008, 0.009, x, 0],
+          [0.07 + length * 0.5, 0.007, 0.008, x + Math.sin(spread) * length * 0.5, -0.012],
+          [0.07 + length, 0.005, 0.006, x + Math.sin(spread) * length, -0.03],
+        ],
+        5,
+      )
+      k.spike(
+        claw,
+        0.012,
+        0.045,
+        [x + Math.sin(spread) * length, 0.07 + length, -0.03],
+        [-0.6, 0, -spread],
+        4,
+      )
+    }
   }
 }
 
@@ -126,82 +168,83 @@ function teeth(k: Kit, color: number, width: number, n: number, y: number, z: nu
 
 const walker: Build = (k, v, rnd) => {
   const flesh = 0x80907a
-  const shade = 0x4d5947
+  const bruise = 0x4a5a48
   const blood = 0x5a1010
   const gore = 0x7e2626
   const bone = 0xd9d0b4
-  const mouth = 0x120505
   const shirt = pickOf([0xb3ad98, 0x4a5a74, 0x6e4e3a, 0x5c6a52, 0x8a7a58, 0x7a3a3a], v)
   const trousers = pickOf([0x2c2f38, 0x3c3528, 0x2a3442], v >> 1)
   const hair = pickOf([0x2a2018, 0x5a3b1e, 0x161616, 0x8a8a84], v >> 1)
   const bareArm = (v >> 2) & 1 ? 'armL' : 'armR'
   const bald = v % 3 === 0
-  const fz = -H.z - 0.006
+  const fig: Figure = { ...FIGURE, fem: v % 4 === 3 ? 0.8 : 0 }
+  const h = HEADS.zombie
+  const skin = mottled(flesh, bruise)
+  const stains = (q: THREE.Vector3, c: number) => {
+    const n = noise3(q.x * 7 + v, q.y * 6, q.z * 7)
+    return n > 0.78 ? blood : n > 0.7 ? shade(c, 0.6) : c
+  }
 
-  k.on('head').box(flesh, [H.x * 2, H.y * 2, H.z * 2])
+  // Shirt ripped open on one side over the ribs, blood down the front and back.
+  torso(k, fig, (q) => {
+    if (q.y < 0.93) return stains(q, trousers)
+    if (q.y > 1.5) return skin(q)
+    const torn = q.z < 0 && q.x < -0.02 && q.x > -0.15 && q.y > 1.1 && q.y < 1.38
+    if (torn) return Math.abs(Math.sin(q.y * 75)) > 0.7 ? bone : mix(gore, flesh, 0.5)
+    return stains(q, shirt)
+  })
+  rags(k, fig, (q) => stains(q, shirt), 3, 0.04, 0.16, rnd)
+  arms(k, fig, (q) => (q.y < -0.04 ? stains(q, shirt) : skin(q)), { cuff: -0.04, baggy: 0.008 })
+  // The flayed arm: grey meat and the bone through it.
+  const bare = k.on(bareArm)
+  bare.blob(gore, [0.05, 0.08, 0.052], [0, 0.0, 0], [0, 0, 0], 8, 5)
+  bare.spike(bone, 0.022, 0.16, [0.02, 0.0, 0.0], [0, 0, -0.25], 5)
+  fists(k, shade(flesh, 0.8))
+  const wear: Legwear = { hem: 0.2, baggy: 0.012, straight: 0.06, cuff: false }
+  legs(k, fig, wear, (q) =>
+    q.y >= 0.2 + 0.05 * noise3(q.x * 30, 0, q.z * 30) ? stains(q, trousers) : skin(q),
+  )
+  feet(k, (q) => shade(flesh, q.y < -0.215 ? 0.5 : 0.75))
+
+  skull(k, h, (q) => {
+    if (q.z < -0.06 && Math.abs(q.x) < 0.045 && q.y < -0.04 && q.y > -0.1) return 0x120505 // no jaw
+    if (q.z < -0.06 && q.x < -0.02 && q.y < -0.05) return blood
+    return skin(q)
+  })
+  eyes(k, 'zombie', [0.013, 0.009])
+  const fz = faceZ(h, 0, -0.04)
+  k.on('head')
+  teeth(k, bone, 0.07, 5, -0.045, fz - 0.004)
+  // The jaw hanging off one hinge.
+  k.blob(flesh, [0.045, 0.018, 0.04], [0.035, -0.15, -0.07], [0.6, 0, 0.55], 8, 4)
+  teeth(k, bone, 0.05, 3, -0.135, -0.105, 0.016)
+  k.blob(mix(flesh, 0x000000, 0.2), [0.016, 0.03, 0.01], [-0.02, 0.0, fz + 0.002], [0, 0, 0], 6, 4) // nose stump
   if (bald) {
-    k.box(gore, [0.11, 0.02, 0.09], [0.04, H.y + 0.005, -0.02])
-    k.box(bone, [0.06, 0.022, 0.05], [0.05, H.y + 0.008, -0.025]) // skull through the scalp
+    k.blob(gore, [0.045, 0.012, 0.04], [0.04, h.cy + h.ry - 0.005, -0.02], [0, 0, 0.3], 6, 4)
+    k.blob(bone, [0.026, 0.01, 0.022], [0.045, h.cy + h.ry, -0.02], [0, 0, 0.3], 6, 4)
   } else {
-    k.box(hair, [0.22, 0.05, 0.24], [-0.04, H.y + 0.012, 0.03]) // patchy hair
-    for (let i = 0; i < 3; i++) hang(k, hair, [-0.12 + i * 0.05, H.y, H.z + 0.01], 0.14, 0.03, rnd)
-  }
-  k.box('eyes', [0.06, 0.04, 0.02], [-0.07, EYES.zombie.y, fz])
-  k.box('eyes', [0.06, 0.04, 0.02], [0.07, EYES.zombie.y, fz])
-  k.box(shade, [0.1, 0.08, 0.012], [0.07, 0.03, -H.z - 0.001]) // a bruised, sunken socket
-  // No lower jaw: a dark hole, upper teeth, the jaw hanging off one hinge, blood down the chin.
-  k.box(mouth, [0.18, 0.1, 0.02], [0, -0.085, fz + 0.002])
-  teeth(k, bone, 0.15, 5, -0.045, fz - 0.004)
-  k.box(flesh, [0.13, 0.045, 0.11], [0.06, -0.19, -0.13], [0.6, 0, 0.55])
-  teeth(k, bone, 0.09, 3, -0.165, -0.18, 0.025)
-  k.box(blood, [0.05, 0.12, 0.016], [-0.05, -0.15, fz])
-
-  // Shirt, ripped open on one side over the ribs, stained, the collar torn.
-  const cz = -C.z - 0.006
-  k.on('chest').box(shirt, [C.x * 2, C.y * 2, C.z * 2])
-  k.box(shade, [0.16, 0.2, 0.012], [-0.11, 0.0, cz + 0.003])
-  ribs(k, bone, 0.16, 0.06, -0.07, cz - 0.004, 4)
-  k.box(blood, [0.15, 0.11, 0.012], [0.08, -0.07, cz])
-  k.box(blood, [0.2, 0.16, 0.012], [0.03, 0.02, C.z + 0.006]) // smeared down the back
-  hang(k, shirt, [-0.1, C.y, cz - 0.004], 0.12, 0.06, rnd) // collar hanging loose
-
-  const sz = -S.z - 0.006
-  k.on('stomach').box(shirt, [S.x * 2, S.y * 2, S.z * 2])
-  k.box(blood, [0.12, 0.12, 0.012], [-0.06, 0.02, sz])
-  k.box(gore, [0.07, 0.16, 0.05], [-0.05, -0.1, sz - 0.02], [0.2, 0, 0.1]) // guts
-  k.box(0x1c1a18, [S.x * 2 + 0.012, 0.05, S.z * 2 + 0.012], [0, -S.y + 0.03, 0])
-  hem(k, shirt, S.x, S.z, -S.y + 0.06, 9, 0.1, 0.24, rnd)
-
-  for (const arm of ['armL', 'armR'] as const) {
-    k.on(arm)
-    if (arm === bareArm) {
-      // Flayed: grey meat, the forearm bone sticking out of a wound.
-      k.box(flesh, [0.11, L, 0.12])
-      k.box(gore, [0.125, 0.12, 0.135], [0, 0.04, 0])
-      k.box(bone, [0.035, 0.22, 0.035], [0.045, 0.08, 0.02], [0, 0, -0.2])
-      k.box(blood, [0.12, 0.1, 0.13], [0, -0.16, 0])
-    } else {
-      k.box(shirt, [0.13, L * 0.6, 0.15], [0, -L * 0.2, 0])
-      k.box(flesh, [0.1, L * 0.45, 0.11], [0, L * 0.27, 0])
-      // Torn cuff: rags past the end of the sleeve, towards the hand.
-      for (const s of SIDES) {
-        const tilt = (rnd() - 0.5) * 0.4
-        k.box(shirt, [0.014, 0.13, 0.05], [s * 0.068, L * 0.1 + 0.06, 0.02 * s], [tilt, 0, 0])
-      }
+    hairCap(
+      k,
+      h,
+      (q) => (noise3(q.x * 30, q.y * 30, q.z * 30) > 0.62 ? shade(flesh, 0.85) : hair),
+      {
+        front: 0.28,
+        side: 0.46,
+        back: 0.62,
+      },
+      () => 0.004,
+    )
+    for (let i = 0; i < 3; i++) {
+      const q = skullPoint(h, 0.55 * Math.PI, Math.PI * (0.3 + i * 0.2), 0.01)
+      k.tube(
+        hair,
+        [
+          [q.y, 0.008, 0.006, q.x, q.z],
+          [q.y - 0.12 - rnd() * 0.06, 0.004, 0.004, q.x * 1.1, q.z + 0.02],
+        ],
+        4,
+      )
     }
-    k.box(shade, [0.11, 0.08, 0.12], [0, L / 2 - 0.02, 0]) // dirty hands
-  }
-
-  for (const thigh of ['thighL', 'thighR'] as const) {
-    k.on(thigh).box(trousers, [T.x * 2, T.y * 2, T.z * 2])
-  }
-  k.on('thighL').box(flesh, [0.08, 0.12, 0.012], [0.02, -0.05, -T.z - 0.006])
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin)
-    k.box(trousers, [N.x * 2, N.y, N.z * 2], [0, N.y / 2, 0])
-    k.box(flesh, [0.13, N.y, 0.14], [0, -N.y / 2, 0])
-    k.box(shade, [0.15, 0.06, 0.24], [0, -N.y + 0.02, -0.04]) // bare, filthy feet
-    hem(k, trousers, N.x, N.z, 0.01, 5, 0.08, 0.16, rnd, 0.045)
   }
 }
 
@@ -209,94 +252,100 @@ const walker: Build = (k, v, rnd) => {
 
 const runner: Build = (k, v, rnd) => {
   const flesh = 0xb7ad82
-  const shade = 0x6a6244
+  const hollow = 0x6a6244
   const bone = 0xe2d8b0
   const blood = 0x6a1414
   const hair = pickOf([0x18120e, 0x3a2414, 0x101010, 0x4a4030], v)
   const shorts = pickOf([0x34466a, 0x5e5638, 0x2a2a2a, 0x5a2a2a], v >> 1)
   const longHair = (v & 1) === 0
   const tank = (v >> 2) & 1
-  const fz = -H.z + 0.01
-
-  // A narrow skull, the eyes sunk deep into dark sockets, lips gone over the teeth.
-  k.on('head').box(flesh, [0.26, H.y * 2, 0.28])
-  for (const s of SIDES) {
-    k.box(0x1a140c, [0.1, 0.075, 0.012], [s * 0.065, 0.03, fz - 0.001])
-    k.box('eyes', [0.045, 0.03, 0.02], [s * EYES.runner.x, EYES.runner.y, fz - 0.005])
-    k.box(shade, [0.03, 0.12, 0.05], [s * 0.115, -0.04, -0.1]) // hollow cheeks
+  const fig: Figure = {
+    ...FIGURE,
+    girth: 0.82,
+    depth: 0.82,
+    limb: 0.72,
+    waist: 0.75,
+    shoulders: 1.05,
   }
-  k.box(0x1a0a08, [0.16, 0.05, 0.012], [0, -0.08, fz - 0.002])
-  teeth(k, bone, 0.15, 6, -0.07, fz - 0.008, 0.04)
-  if (longHair) {
-    k.box(hair, [0.28, 0.05, 0.3], [0, H.y + 0.01, 0.01])
-    // Lank strands down the back and sides, past the shoulders.
-    for (let i = 0; i < 7; i++) {
-      const x = -0.12 + i * 0.04
-      hang(k, hair, [x, H.y + 0.01, 0.15], 0.36 + rnd() * 0.16, 0.04, rnd, 0, 0.02)
+  const h = HEADS.runner
+  const skin = mottled(flesh, 0x8a7a50)
+  // Bare and starved: every rib in shadow, the belly sunk in, blood here and there.
+  const ribbed = (q: THREE.Vector3) => {
+    let c = skin(q)
+    if (q.y > 1.1 && q.y < 1.4) {
+      const rib = Math.abs(Math.sin((q.y - 1.1) * 62))
+      if (Math.abs(q.x) > 0.02) c = mix(c, rib > 0.6 ? bone : hollow, rib > 0.6 ? 0.35 : 0.55)
+      else if (q.z < 0) c = mix(c, bone, 0.4) // sternum
     }
-    for (const s of SIDES) {
-      // Curtains down the sides of the face, and a few strands hanging in front of it.
-      for (let i = 0; i < 3; i++) {
-        const at: Vec = [s * 0.145, H.y + 0.01, -0.1 + i * 0.09]
-        hang(k, hair, at, 0.3 + rnd() * 0.16, 0.06, rnd, Math.PI / 2, 0.02)
-      }
-      hang(k, hair, [s * 0.1, H.y + 0.01, fz - 0.012], 0.22 + rnd() * 0.08, 0.035, rnd, 0, 0.016)
+    if (q.y > 0.95 && q.y < 1.12 && q.z < 0) c = mix(c, hollow, 0.45)
+    if (noise3(q.x * 9 + v, q.y * 9, q.z * 9) > 0.8) c = blood
+    return c
+  }
+  torso(k, fig, (q) => {
+    if (q.y < 0.93) return shorts
+    if (tank && q.y < 1.2 && q.y > 0.93) return 0xc0b896
+    return ribbed(q)
+  })
+  if (tank) rags(k, fig, 0xc0b896, 4, 0.02, 0.1, rnd, 0.008)
+  // The spine down the back.
+  for (let i = 0; i < 6; i++) {
+    const y = 1.45 - i * 0.07
+    const q = torsoPoint(fig, Math.PI / 2, Math.min(15, Math.round(9 + (1.42 - y) * -10)), 0)
+    k.on('torso').blob(bone, [0.014, 0.016, 0.012], [0, y, Math.max(q.z, 0.07)], [0, 0, 0], 5, 4)
+  }
+  arms(k, fig, skin)
+  for (const arm of ['armL', 'armR'] as const)
+    k.on(arm).blob(bone, [0.034, 0.03, 0.034], [0, 0, 0], [0, 0, 0], 6, 4)
+  clawHands(k, shade(flesh, 0.85), 0x3a2a1a, 4, 0.06)
+  const wear: Legwear = { hem: 0.62, baggy: 0.02, straight: 0, cuff: false }
+  legs(k, { ...fig, limb: 0.78 }, wear, (q) => (q.y >= 0.62 ? shorts : skin(q)))
+  for (const shin of ['shinL', 'shinR'] as const)
+    k.on(shin).blob(bone, [0.03, 0.025, 0.02], [0, 0.2, -0.045], [0, 0, 0], 6, 4)
+  feet(k, (q) => (q.y < -0.2 ? blood : shade(flesh, 0.8)))
+
+  // A narrow skull, the eyes sunk deep, lips gone over the teeth, hollow cheeks.
+  skull(k, h, (q) => {
+    if (q.z < -0.06 && Math.abs(q.x) < 0.04 && q.y < -0.04 && q.y > -0.075) return 0x1a0a08
+    if (q.z < 0 && Math.abs(q.x) > 0.045 && q.y < 0 && q.y > -0.08) return mix(skin(q), hollow, 0.6)
+    return skin(q)
+  })
+  eyes(k, 'runner', [0.01, 0.008], 0x1a140c)
+  k.on('head')
+  teeth(k, bone, 0.07, 6, -0.058, faceZ(h, 0, -0.058) - 0.002, 0.026)
+  k.blob(flesh, [0.01, 0.026, 0.014], [0, 0.0, faceZ(h, 0, 0) - 0.006], [-0.3, 0, 0], 6, 4)
+  if (longHair) {
+    hairCap(k, h, hair, { front: 0.25, side: 0.5, back: 0.62 }, () => 0.006)
+    // Lank strands down the back and sides past the shoulders, a few across the face.
+    for (let i = 0; i < 9; i++) {
+      const phi = Math.PI * (0.05 + i * 0.1)
+      const q = skullPoint(h, 0.45 * Math.PI, phi, 0.012)
+      const len = 0.3 + rnd() * 0.16
+      k.tube(
+        hair,
+        [
+          [q.y, 0.016, 0.008, q.x, q.z],
+          [q.y - len * 0.5, 0.014, 0.007, q.x * 1.2, q.z * 1.2],
+          [q.y - len, 0.006, 0.004, q.x * 1.25, q.z * 1.3],
+        ],
+        5,
+      )
     }
   } else {
-    k.box(blood, [0.1, 0.02, 0.12], [-0.03, H.y + 0.004, 0.02]) // torn scalp
-    k.box(bone, [0.05, 0.022, 0.06], [-0.04, H.y + 0.008, 0.02])
-    k.box(blood, [0.02, 0.14, 0.012], [0.09, 0.02, fz - 0.002], [0, 0, 0.3]) // a gash
-    k.lump(shade, 0.04, [-0.13, 0.08, 0.04])
-  }
-
-  // Bare and starved: a narrow ribcage, sternum, the spine through the back.
-  const cz = -0.105
-  k.on('chest').box(flesh, [0.38, C.y * 2, 0.21])
-  k.box(shade, [0.3, 0.22, 0.01], [0, -0.03, cz - 0.002])
-  ribs(k, bone, 0.32, 0.06, -0.12, cz - 0.008, 5)
-  k.box(bone, [0.03, 0.2, 0.016], [0, -0.02, cz - 0.01])
-  for (const s of SIDES)
-    k.box(bone, [0.14, 0.025, 0.03], [s * 0.09, C.y - 0.02, cz], [0, 0, s * 0.15])
-  for (let i = 0; i < 4; i++) k.box(bone, [0.035, 0.03, 0.03], [0, C.y - 0.04 - i * 0.07, 0.105])
-  if (tank) {
-    const top = 0xc0b896
-    k.box(top, [0.39, 0.16, 0.22], [0, -0.08, 0])
-    for (const s of SIDES) k.box(top, [0.05, 0.18, 0.225], [s * 0.1, 0.07, 0])
-    k.box(blood, [0.12, 0.08, 0.01], [0.06, -0.09, -0.116])
-  }
-
-  k.on('stomach').box(shade, [0.32, S.y * 2, 0.17]) // the belly sunk in
-  k.box(flesh, [0.34, 0.12, 0.18], [0, 0.08, 0])
-  k.box(shorts, [0.36, 0.1, 0.2], [0, -S.y + 0.05, 0])
-  if (tank) hem(k, 0xc0b896, 0.17, 0.09, 0.02, 6, 0.06, 0.16, rnd, 0.04)
-
-  for (const arm of ['armL', 'armR'] as const) {
-    k.on(arm).box(flesh, [0.075, L, 0.085])
-    k.box(bone, [0.095, 0.06, 0.1], [0, 0.02, 0]) // knobbly elbows
-    k.box(shade, [0.09, 0.06, 0.1], [0, L / 2 - 0.03, 0])
-    for (let i = 0; i < 3; i++) {
-      k.box(shade, [0.018, 0.1, 0.018], [-0.03 + i * 0.03, L / 2 + 0.04, 0.01], [0.3, 0, 0])
-    }
-    k.box(blood, [0.08, 0.1, 0.09], [0, -0.14 + rnd() * 0.1, 0])
-  }
-
-  for (const thigh of ['thighL', 'thighR'] as const) {
-    k.on(thigh).box(flesh, [0.11, T.y * 2, 0.12])
-    k.box(shorts, [0.16, 0.22, 0.18], [0, T.y - 0.11, 0])
-    hem(k, shorts, 0.08, 0.09, T.y - 0.2, 4, 0.04, 0.1, rnd, 0.04)
-  }
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin).box(flesh, [0.1, N.y * 2, 0.11])
-    k.box(bone, [0.11, 0.06, 0.06], [0, N.y - 0.02, -0.03]) // knee
-    k.box(blood, [0.12, 0.05, 0.2], [0, -N.y + 0.02, -0.04]) // bloody bare feet
+    hairCap(
+      k,
+      h,
+      (q) => (q.x < 0 && q.y > 0.1 ? blood : hair),
+      { front: 0.3, side: 0.42, back: 0.6 },
+      () => 0.002,
+    )
+    k.blob(bone, [0.025, 0.01, 0.03], [-0.04, h.cy + h.ry + 0.004, 0.02], [0, 0, 0], 6, 4)
   }
 }
 
 // --- Brute: a hunched mountain in work clothes ---------------------------------------------------
 
-const brute: Build = (k, v, rnd) => {
-  const flesh = 0x6c4a4e
-  const shade = 0x42282c
+const brute: Build = (k, v) => {
+  const flesh = 0x5e4644
   const growth = 0x9c6a68
   const sore = 0x6a1c1c
   const bone = 0xd2c49a
@@ -307,87 +356,108 @@ const brute: Build = (k, v, rnd) => {
   const boots = 0x2a1e14
   const plated = (v & 1) === 0
   const chainSide = (v >> 1) & 1 ? -1 : 1
-
-  // A small bald head under a heavy brow, an underbite with tusks, a growth on the skull.
-  k.on('head').box(flesh, [H.x * 2, H.y * 2, H.z * 2])
-  k.box(shade, [0.31, 0.06, 0.07], [0, 0.07, -H.z + 0.02])
-  k.box('eyes', [0.05, 0.03, 0.02], [-EYES.brute.x, EYES.brute.y, -H.z - 0.006])
-  k.box('eyes', [0.05, 0.03, 0.02], [EYES.brute.x, EYES.brute.y, -H.z - 0.006])
-  k.box(flesh, [0.26, 0.09, 0.1], [0, -0.12, -0.12])
-  k.box(0x140606, [0.18, 0.025, 0.012], [0, -0.085, -H.z - 0.012])
-  for (const s of SIDES) k.spike(bone, 0.035, 0.07, [s * 0.08, -0.1, -0.16], [0, 0, -s * 0.1])
-  k.lump(growth, 0.07, [0.13, 0.1, 0.03], [1, 1.2, 1])
-  k.box(sore, [0.02, 0.12, 0.012], [-0.06, 0.06, -H.z - 0.004], [0, 0, 0.4]) // scar
-  if (plated) {
-    k.box(rust, [0.18, 0.025, 0.2], [-0.05, H.y + 0.01, -0.01], [0, 0.3, 0.15])
-    for (const x of [-0.11, 0.0]) k.box(iron, [0.025, 0.02, 0.025], [x, H.y + 0.025, -0.04])
+  const fig: Figure = {
+    ...FIGURE,
+    girth: 1.32,
+    depth: 1.3,
+    limb: 1.5,
+    belly: 0.06,
+    shoulders: 1.25,
   }
-
-  // Massive: muscle heaped up behind the neck and over the shoulders, a growth-covered hump,
-  // overalls straining over it all.
-  const cz = -C.z - 0.006
-  k.on('chest').box(flesh, [C.x * 2, C.y * 2, C.z * 2])
-  k.box(flesh, [0.42, 0.16, 0.26], [0, C.y + 0.05, 0.05]) // the neck mass
-  k.box(flesh, [0.44, 0.26, 0.14], [0, 0.04, C.z + 0.05]) // the hump
-  for (const s of SIDES) {
-    k.box(flesh, [0.2, 0.2, 0.24], [s * 0.27, C.y - 0.03, 0.01], [0, 0, s * 0.2])
-    k.box(shade, [0.17, 0.09, 0.03], [s * 0.1, 0.07, cz - 0.01]) // pecs
-  }
-  k.lump(growth, 0.11, [0.12, 0.08, C.z + 0.12], [1, 1.1, 0.9])
-  k.lump(growth, 0.08, [-0.08, 0.14, C.z + 0.1])
-  k.lump(growth, 0.06, [0.3, C.y + 0.06, 0.08])
-  k.lump(sore, 0.05, [-0.15, -0.04, C.z + 0.11])
-  k.box(cloth, [0.3, 0.2, 0.012], [0, -0.06, cz - 0.022]) // overall bib
-  k.box(0x00000, [0.08, 0.06, 0.008], [0.05, -0.05, cz - 0.03]) // its pocket
-  for (const s of SIDES) {
-    k.box(cloth, [0.06, 0.012, 0.3], [s * 0.12, C.y + 0.13, 0.03])
-    k.box(cloth, [0.06, 0.28, 0.012], [s * 0.12, 0.02, cz - 0.022])
-    k.box(cloth, [0.06, 0.3, 0.012], [s * 0.12, 0.02, C.z + 0.125])
-    k.box(brass, [0.035, 0.035, 0.012], [s * 0.12, 0.03, cz - 0.03])
-  }
-  if (!plated) {
-    // A rusted plate chained over one shoulder.
-    k.box(rust, [0.22, 0.03, 0.26], [-chainSide * 0.27, C.y + 0.09, 0.01], [0, 0, -chainSide * 0.3])
-  }
-
-  // A gut in work trousers, torn open on one side.
-  k.on('stomach').box(cloth, [0.46, S.y * 2, 0.28], [0, 0, -0.01])
-  k.box(flesh, [0.12, 0.12, 0.012], [-0.09, 0.03, -0.157])
-  k.lump(growth, 0.06, [-0.1, 0.04, -0.16])
-  k.box(0x1c1814, [0.47, 0.05, 0.29], [0, -S.y + 0.03, -0.01])
-  hem(k, cloth, 0.23, 0.14, 0.12, 4, 0.06, 0.12, rnd, 0.06)
-
+  const h = HEADS.brute
+  const skin = mottled(flesh, 0x3a2422)
+  // Overalls: trousers, a bib up the front, straps over the shoulders; skin everywhere else.
+  torso(k, fig, (q) => {
+    if (q.y < 1.0) return cloth
+    const bib = q.z < 0 && Math.abs(q.x) < 0.13 && q.y < 1.3
+    const strap = Math.abs(Math.abs(q.x) - 0.11) < 0.025 && q.y < 1.5
+    if (bib || strap) return shade(cloth, 0.95 + 0.1 * noise3(q.x * 20, q.y * 20, q.z * 20))
+    return skin(q)
+  })
+  const fz = torsoPoint(fig, Math.PI * 1.5, 7, 0.01).z
+  for (const s of SIDES)
+    k.blob(brass, [0.016, 0.016, 0.006], [s * 0.11, 1.28, fz - 0.016], [0, 0, 0], 6, 3)
+  // Muscle heaped behind the neck and over the shoulders, a growth-covered hump.
+  k.on('chest')
+  k.lump(flesh, 0.11, [0, 0.18, 0.06], [1.6, 0.8, 1.1])
+  k.lump(flesh, 0.13, [0, 0.06, 0.13], [1.5, 1.1, 0.8])
+  k.lump(growth, 0.07, [0.1, 0.1, 0.24], [1, 1.1, 0.9])
+  k.lump(growth, 0.05, [-0.08, 0.16, 0.2])
+  k.lump(growth, 0.04, [0.3, 0.2, 0.06])
+  k.lump(sore, 0.035, [-0.14, -0.02, 0.2])
+  if (!plated)
+    k.box(rust, [0.2, 0.025, 0.24], [-chainSide * 0.28, 0.24, 0.01], [0, 0, -chainSide * 0.3])
+  arms(k, fig, skin, null, 12)
   for (const arm of ['armL', 'armR'] as const) {
     const s = arm === 'armR' ? 1 : -1
     k.on(arm)
-    k.box(flesh, [0.17, L * 0.52, 0.19], [0, -L * 0.25, 0]) // upper arm
-    k.box(flesh, [0.21, L * 0.42, 0.23], [0, L * 0.2, 0]) // forearm
-    k.box(shade, [0.22, 0.16, 0.22], [0, L / 2 + 0.03, 0]) // fist
-    k.box(bone, [0.2, 0.03, 0.04], [0, L / 2 + 0.1, -0.06]) // knuckles
-    k.lump(growth, 0.07, [s * 0.08, -L * 0.25, 0.04])
-    k.box(iron, [0.24, 0.07, 0.26], [0, L * 0.38, 0]) // manacle
+    k.lump(growth, 0.045, [s * 0.06, -0.15, 0.03])
+    k.tube(
+      iron,
+      [
+        [0.13, 0.072, 0.075],
+        [0.17, 0.072, 0.075],
+      ],
+      10,
+    ) // manacle
     if (s === chainSide) {
-      // The broken chain swinging from it.
       for (let i = 0; i < 4; i++) {
-        const z = -0.15 - i * 0.055
         k.box(
           iron,
-          [0.035, 0.065, 0.02],
-          [0, L * 0.38, z],
+          [0.025, 0.05, 0.014],
+          [0, 0.15 + (i % 2) * 0.01, -0.09 - i * 0.045],
           [Math.PI / 2, i % 2 ? Math.PI / 2 : 0, 0],
         )
       }
     }
   }
+  fists(k, shade(flesh, 0.8), 1.6, bone)
+  const wear: Legwear = { hem: 0.12, baggy: 0.02, straight: 0.08, cuff: false }
+  legs(k, { ...fig, limb: 1.35 }, wear, (q) => (q.y >= 0.12 ? cloth : skin(q)))
+  feet(k, (q) => (q.y < -0.215 ? 0x140e0a : boots), { length: 0.15, width: 0.065, height: 0.065 })
+  for (const shin of ['shinL', 'shinR'] as const)
+    k.on(shin)
+      .rigid()
+      .tube(
+        boots,
+        [
+          [-0.2, 0.066, 0.075],
+          [-0.1, 0.066, 0.075],
+        ],
+        10,
+        { caps: [false, false] },
+      )
+      .rigid(false)
 
-  for (const thigh of ['thighL', 'thighR'] as const) {
-    k.on(thigh).box(cloth, [0.2, T.y * 2, 0.22])
-  }
-  k.on('thighR').box(flesh, [0.1, 0.1, 0.012], [0, -0.1, -0.117])
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin).box(cloth, [0.19, N.y * 2 - 0.08, 0.21], [0, 0.04, 0])
-    k.box(boots, [0.21, 0.16, 0.24], [0, -N.y + 0.06, -0.02])
-    k.box(boots, [0.21, 0.07, 0.3], [0, -N.y + 0.01, -0.05])
+  // A small bald head under a heavy brow, an underbite with tusks, a growth on the skull.
+  skull(k, h, (q) =>
+    q.z < -0.07 && Math.abs(q.x) < 0.05 && Math.abs(q.y + 0.07) < 0.008 ? 0x140606 : skin(q),
+  )
+  eyes(k, 'brute', [0.011, 0.007])
+  k.on('head')
+  k.blob(
+    shade(flesh, 0.8),
+    [0.085, 0.022, 0.03],
+    [0, 0.03, faceZ(h, 0, 0.03) + 0.012],
+    [0, 0, 0],
+    8,
+    4,
+  ) // brow
+  k.blob(flesh, [0.075, 0.03, 0.05], [0, -0.09, faceZ(h, 0, -0.09) + 0.025], [0, 0, 0], 8, 5) // jaw
+  for (const s of SIDES)
+    k.spike(
+      bone,
+      0.018,
+      0.045,
+      [s * 0.04, -0.075, faceZ(h, s * 0.04, -0.08) - 0.005],
+      [0.2, 0, -s * 0.15],
+      5,
+    )
+  k.blob(flesh, [0.014, 0.022, 0.018], [0, -0.01, faceZ(h, 0, -0.01) - 0.005], [0, 0, 0], 6, 4)
+  k.lump(growth, 0.045, [0.07, 0.06, 0.03], [1, 1.2, 1])
+  if (plated) {
+    k.box(rust, [0.13, 0.016, 0.15], [-0.02, h.cy + h.ry - 0.012, -0.01], [0, 0.3, 0.08])
+    for (const x of [-0.08, 0.02]) k.box(iron, [0.02, 0.016, 0.02], [x, h.cy + h.ry + 0.008, -0.04])
   }
 }
 
@@ -395,73 +465,69 @@ const brute: Build = (k, v, rnd) => {
 
 const screamer: Build = (k, v, rnd) => {
   const pale = 0xd2d4c8
-  const shade = 0x9a9c8e
   const vein = 0x4a5c8c
   const mouth = 0x050202
-  const gum = 0x6e2a2a
   const bone = 0xe8e2c8
   const sack = 0xc9a08e
-  const claw = 0x1a1414
   const gowned = v % 3 !== 0
   const gown = pickOf([0x8a9ca2, 0x9a9a88, 0x7a8a7a], v)
-
-  // A long skull: tall, narrow, eyes high; the mouth a black hole half the face.
-  k.on('head').box(pale, [0.26, 0.4, 0.28], [0, 0.06, 0])
-  const fz = -0.146
-  for (const s of SIDES) {
-    k.box(0x2a2a30, [0.07, 0.05, 0.01], [s * EYES.screamer.x, EYES.screamer.y, fz])
-    k.box('eyes', [0.04, 0.025, 0.02], [s * EYES.screamer.x, EYES.screamer.y, fz - 0.006])
-    k.box(vein, [0.012, 0.16, 0.012], [s * 0.1, 0.12, fz], [0, 0, s * 0.3])
-    k.box(vein, [0.012, 0.012, 0.18], [s * 0.132, 0.18, 0.02], [0.3, 0, 0])
-    k.box(shade, [0.018, 0.16, 0.018], [s * 0.095, -0.17, -0.12], [0.3, 0, s * 0.1]) // stretched tendons
+  const fig: Figure = {
+    ...FIGURE,
+    girth: 0.86,
+    depth: 0.85,
+    limb: 0.7,
+    waist: 0.82,
+    fem: v % 2 ? 0.5 : 0,
   }
-  k.box(mouth, [0.19, 0.24, 0.02], [0, -0.06, fz - 0.002])
-  k.box(gum, [0.19, 0.03, 0.022], [0, 0.055, fz - 0.004])
-  teeth(k, bone, 0.17, 6, 0.035, fz - 0.01, 0.04)
-  // The lower jaw hanging open on the chest, teeth up.
-  k.box(pale, [0.2, 0.05, 0.16], [0, -0.21, -0.13], [0.5, 0, 0])
-  k.box(mouth, [0.15, 0.01, 0.12], [0, -0.18, -0.14], [0.5, 0, 0])
-  teeth(k, bone, 0.16, 5, -0.17, -0.205, 0.035)
-  k.box(vein, [0.15, 0.012, 0.012], [0, 0.24, -0.08])
-
-  // Emaciated, veined; the throat sack bulging under the jaw.
-  const cz = -0.096
-  k.on('chest').box(pale, [0.36, C.y * 2, 0.19])
-  k.lump(sack, 0.12, [0, C.y + 0.0, -0.1], [1, 0.85, 0.95])
-  k.box(vein, [0.012, 0.14, 0.012], [0.04, C.y, -0.205], [0.4, 0, 0.3])
-  k.box(vein, [0.012, 0.12, 0.012], [-0.06, C.y - 0.01, -0.2], [0.4, 0, -0.4])
-  ribs(k, shade, 0.3, 0.03, -0.12, cz - 0.006, 4)
-  for (let i = 0; i < 4; i++) k.box(shade, [0.035, 0.03, 0.03], [0, C.y - 0.04 - i * 0.07, 0.097])
-  if (gowned) {
-    k.box(gown, [0.37, 0.18, 0.2], [0, -0.07, 0])
-    for (const s of SIDES) k.box(gown, [0.06, 0.16, 0.2], [s * 0.13, 0.08, 0])
+  const h = HEADS.screamer
+  const veins = (q: THREE.Vector3) => {
+    const n = Math.abs(Math.sin(q.x * 70 + Math.sin(q.y * 40) * 2 + q.z * 50))
+    const c = shade(pale, 0.92 + 0.12 * noise3(q.x * 12, q.y * 12, q.z * 12))
+    return n > 0.96 ? mix(c, vein, 0.7) : c
   }
+  torso(k, fig, (q) => {
+    if (gowned && q.y < 1.42 && q.y > 0.8)
+      return shade(gown, 0.95 + 0.1 * noise3(q.x * 9, q.y * 9, q.z * 9))
+    if (!gowned && q.y < 0.93) return 0x3a3a34
+    if (q.y > 1.1 && q.y < 1.38 && Math.abs(Math.sin((q.y - 1.1) * 62)) < 0.25)
+      return shade(pale, 0.7)
+    return veins(q)
+  })
+  if (gowned) rags(k, fig, gown, 2, 0.15, 0.32, rnd, 0.014)
+  // The throat sack bulging under the jaw.
+  k.on('chest').lump(sack, 0.075, [0, 0.19, -0.075], [1, 0.85, 0.95])
+  arms(k, fig, veins)
+  clawHands(k, pale, 0x1a1414, 4, 0.11)
+  legs(k, { ...fig, limb: 0.75 }, { hem: 2, baggy: 0, straight: 0, cuff: false }, veins)
+  feet(k, (q) => shade(pale, q.y < -0.215 ? 0.6 : 0.85))
 
-  k.on('stomach').box(gowned ? gown : pale, [0.3, S.y * 2, 0.17])
-  if (gowned) hem(k, gown, 0.16, 0.09, -S.y + 0.02, 9, 0.18, 0.34, rnd, 0.06)
-  else k.box(0x3a3a34, [0.31, 0.08, 0.18], [0, -S.y + 0.04, 0])
-
-  for (const arm of ['armL', 'armR'] as const) {
-    k.on(arm).box(pale, [0.07, L, 0.08])
-    k.box(shade, [0.085, 0.05, 0.09], [0, 0.02, 0])
-    k.box(vein, [0.012, L * 0.8, 0.012], [0.036, 0, -0.01], [0, 0, 0.05])
-    // Long, many-jointed fingers ending in black hooks.
-    for (let i = 0; i < 4; i++) {
-      const x = -0.045 + i * 0.03
-      const spread = (i - 1.5) * 0.12
-      k.box(pale, [0.02, 0.2, 0.02], [x, L / 2 + 0.1, 0], [0, 0, -spread])
-      k.spike(claw, 0.02, 0.07, [x - Math.sin(spread) * 0.2, L / 2 + 0.19, 0], [-0.4, 0, -spread])
-    }
-  }
-
-  for (const thigh of ['thighL', 'thighR'] as const) {
-    k.on(thigh).box(pale, [0.1, T.y * 2, 0.11])
-  }
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin).box(pale, [0.09, N.y * 2, 0.1])
-    k.box(shade, [0.1, 0.06, 0.06], [0, N.y - 0.02, -0.03])
-    k.box(shade, [0.1, 0.05, 0.2], [0, -N.y + 0.02, -0.04])
-  }
+  // A long skull, eyes high; the mouth a black hole half the face, jaw hanging on the chest.
+  skull(
+    k,
+    h,
+    (q) => {
+      if (q.z < -0.05 && Math.abs(q.x) < 0.05 && q.y < 0.03 && q.y > -0.14) return mouth
+      return veins(q)
+    },
+    16,
+    14,
+  )
+  eyes(k, 'screamer', [0.009, 0.006], 0x2a2a30)
+  const fz = faceZ(h, 0, 0.0)
+  k.on('head')
+  k.blob(0x6e2a2a, [0.05, 0.01, 0.01], [0, 0.03, fz + 0.004], [0, 0, 0], 6, 3) // gum
+  teeth(k, bone, 0.08, 6, 0.018, fz - 0.002, 0.022)
+  k.blob(pale, [0.05, 0.016, 0.045], [0, -0.2, -0.06], [0.5, 0, 0], 8, 4) // the jaw, hanging
+  teeth(k, bone, 0.07, 5, -0.18, -0.1, 0.02)
+  for (const s of SIDES)
+    k.tube(
+      shade(pale, 0.8),
+      [
+        [-0.08, 0.008, 0.008, s * 0.045, -0.07],
+        [-0.19, 0.006, 0.006, s * 0.04, -0.08],
+      ],
+      4,
+    )
 }
 
 // --- Stalker: a shape of the dark itself ----------------------------------------------------------
@@ -474,77 +540,76 @@ const stalker: Build = (k, v, rnd) => {
   const claw = 0xb8b09c
   const grin = 0x8a8478
   const big = 1 + (v % 4) * 0.1
+  const fig: Figure = { ...FIGURE, girth: 0.9, depth: 0.9, limb: 0.72, waist: 0.8, shoulders: 1.1 }
+  const h = HEADS.stalker
+  const sinew = (q: THREE.Vector3) => {
+    const n = Math.abs(Math.sin(q.x * 40 + q.y * 25))
+    return n > 0.93 ? ridge : skin
+  }
   /** A spine: dark bone fading to a pale point (the points catch the light). */
-  const spine = (width: number, length: number, at: Vec, rot: Vec) => {
+  const spine = (
+    width: number,
+    length: number,
+    at: readonly [number, number, number],
+    rot: readonly [number, number, number],
+  ) => {
     const dir = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
     k.spike(bony, width, length * 0.7, at, rot)
-    const mid: Vec = [
-      at[0] + dir.x * length * 0.55,
-      at[1] + dir.y * length * 0.55,
-      at[2] + dir.z * length * 0.55,
-    ]
-    k.spike(tip, width * 0.45, length * 0.45, mid, rot)
+    k.spike(
+      tip,
+      width * 0.45,
+      length * 0.45,
+      [at[0] + dir.x * length * 0.55, at[1] + dir.y * length * 0.55, at[2] + dir.z * length * 0.55],
+      rot,
+    )
+  }
+  torso(k, fig, sinew)
+  arms(k, fig, sinew)
+  legs(k, fig, { hem: 2, baggy: 0, straight: 0, cuff: false }, sinew)
+  for (const hand of ['handL', 'handR'] as const) {
+    k.on(hand).blob(skin, [0.03, 0.045, 0.02], [0, 0.04, 0], [0, 0, 0], 8, 5)
+    for (let i = 0; i < 3; i++)
+      k.spike(claw, 0.018, 0.24, [(i - 1) * 0.02, 0.06, -0.005], [0.25, 0, -(i - 1) * 0.22], 4)
+  }
+  feet(k, () => skin)
+  // Spines down the back and over the shoulders; spurs on elbows and heels; toe claws.
+  for (let i = 0; i < 7; i++) {
+    const y = 1.45 - i * 0.075
+    const ring = 13 - Math.round(i * 1.4)
+    const z = torsoPoint(fig, Math.PI / 2, Math.max(2, ring), 0).z
+    k.on('torso').rigid()
+    spine(0.04, (0.16 + rnd() * 0.08) * big, [0, y, z - 0.01], [1.0, 0, 0])
+    k.rigid(false)
+  }
+  for (const s of SIDES) {
+    k.on('chest').rigid()
+    spine(0.045, 0.18 * big, [s * 0.17, 0.12, 0.03], [0.7, 0, -s * 0.7])
+    k.rigid(false)
+  }
+  for (const arm of ['armL', 'armR'] as const)
+    k.on(arm)
+      .rigid()
+      .spike(bony, 0.03, 0.1, [0, 0, 0.03], [Math.PI / 2 + 0.6, 0, 0])
+      .rigid(false)
+  for (const shin of ['shinL', 'shinR'] as const) {
+    k.on(shin).rigid()
+    spine(0.03, 0.1, [0, -0.16, 0.04], [1.9, 0, 0])
+    for (let i = 0; i < 3; i++)
+      k.spike(claw, 0.016, 0.07, [(i - 1) * 0.025, -0.225, -0.13], [-Math.PI / 2 + 0.1, 0, 0], 4)
+    k.rigid(false)
   }
 
   // A long skull swept back into a crest; slit eyes; a thin grin of needle teeth.
-  k.on('head').box(skin, [0.26, 0.28, 0.28], [0, -0.01, 0])
-  k.box(skin, [0.2, 0.16, 0.2], [0, 0.08, 0.17], [-0.35, 0, 0])
-  k.box(ridge, [0.04, 0.05, 0.3], [0, H.y - 0.01, 0.08], [-0.2, 0, 0])
+  skull(k, h, (q) =>
+    q.z < -0.07 && Math.abs(q.x) < 0.05 && Math.abs(q.y + 0.055) < 0.006 ? 0x030304 : skin,
+  )
+  k.on('head')
+  const e = EYES.stalker
+  for (const s of SIDES)
+    k.blob('eyes', [0.022, 0.0045, 0.006], [s * e.x, e.y, e.z - 0.002], [0, 0, s * 0.3], 6, 3)
+  teeth(k, grin, 0.085, 9, -0.055, faceZ(h, 0, -0.055) - 0.003, 0.014)
   for (let i = 0; i < 3; i++)
-    spine(0.045, 0.14 + i * 0.04, [0, 0.13 - i * 0.03, 0.1 + i * 0.07], [1.2, 0, 0])
-  for (const s of SIDES) {
-    k.box(
-      'eyes',
-      [0.085, 0.014, 0.02],
-      [s * EYES.stalker.x, EYES.stalker.y, -0.146],
-      [0, 0, s * 0.3],
-    )
-  }
-  k.box(0x030304, [0.18, 0.03, 0.012], [0, -0.085, -0.142])
-  teeth(k, grin, 0.17, 9, -0.085, -0.15, 0.022)
-
-  // Wiry: sinews over the chest, spines all down the back, hooks on the shoulders.
-  k.on('chest').box(skin, [0.4, C.y * 2, 0.22])
-  for (const s of SIDES) {
-    k.box(ridge, [0.025, 0.24, 0.012], [s * 0.07, -0.01, -0.114], [0, 0, s * 0.25])
-    spine(0.06, 0.22 * big, [s * 0.18, C.y - 0.02, 0.04], [0.7, 0, -s * 0.7])
-  }
-  for (let i = 0; i < 4; i++) {
-    spine(0.06, (0.2 + rnd() * 0.1) * big, [0, C.y - 0.03 - i * 0.08, 0.105], [0.9, 0, 0])
-  }
-  for (const s of SIDES) {
-    for (let i = 0; i < 3; i++) {
-      spine(0.04, 0.12 * big, [s * 0.09, C.y - 0.06 - i * 0.09, 0.105], [1.0, 0, -s * 0.5])
-    }
-  }
-
-  k.on('stomach').box(skin, [0.32, S.y * 2, 0.2])
-  for (let i = 0; i < 3; i++) {
-    spine(0.05, (0.15 + rnd() * 0.06) * big, [0, S.y - 0.05 - i * 0.09, 0.095], [1.0, 0, 0])
-  }
-  for (const s of SIDES) k.box(ridge, [0.012, 0.22, 0.012], [s * 0.06, 0, -0.103])
-
-  for (const arm of ['armL', 'armR'] as const) {
-    k.on(arm).box(skin, [0.075, L, 0.085])
-    spine(0.04, 0.12, [0, -0.02, 0.04], [Math.PI / 2 + 0.6, 0, 0]) // elbow spur
-    k.box(ridge, [0.085, 0.07, 0.095], [0, L / 2 - 0.03, 0])
-    // Three long bone claws, splayed.
-    for (let i = 0; i < 3; i++) {
-      const spread = (i - 1) * 0.22
-      k.spike(claw, 0.025, 0.3, [(i - 1) * 0.03, L / 2, 0], [0.25, 0, -spread])
-    }
-  }
-
-  for (const thigh of ['thighL', 'thighR'] as const) {
-    k.on(thigh).box(skin, [0.11, T.y * 2, 0.12])
-  }
-  for (const shin of ['shinL', 'shinR'] as const) {
-    k.on(shin).box(skin, [0.1, N.y * 2, 0.11])
-    spine(0.04, 0.14, [0, -N.y + 0.08, 0.05], [1.9, 0, 0]) // heel spur
-    for (let i = 0; i < 3; i++) {
-      k.spike(claw, 0.02, 0.1, [(i - 1) * 0.035, -N.y + 0.01, -0.06], [-Math.PI / 2 + 0.1, 0, 0])
-    }
-  }
+    spine(0.03, 0.1 + i * 0.03, [0, 0.11 - i * 0.03, 0.08 + i * 0.05], [1.2, 0, 0])
 }
 
 const BUILD: Record<ZombieLook, Build> = { zombie: walker, runner, brute, screamer, stalker }

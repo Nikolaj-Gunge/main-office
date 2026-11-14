@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { COLOR_MODES, type Settings } from '../settings.ts'
+import type { GameRenderer } from './game-renderer.ts'
 import { MAX_PALETTE_SIZE, PALETTES } from './palettes.ts'
 import postFragment from './shaders/post.frag.glsl?raw'
 
@@ -115,7 +116,8 @@ function createPostUniforms(
  * canvas of the same size. CSS scales the canvas up by a whole number with nearest-neighbour,
  * so every game pixel is an exact square of screen pixels — no uneven or blurry pixels.
  */
-export class PixelRenderer {
+export class PixelRenderer implements GameRenderer {
+  readonly backend = 'webgl'
   readonly renderer: THREE.WebGLRenderer
   readonly target: THREE.WebGLRenderTarget
   /** Viewmodel layer: own color + depth, transparent where there is no gun. */
@@ -153,7 +155,7 @@ export class PixelRenderer {
     texel: { value: new THREE.Vector2() },
   }
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: false,
@@ -278,6 +280,32 @@ export class PixelRenderer {
     if (bias === this.bias) return
     this.bias = bias
     this.resize()
+  }
+
+  get shadows(): THREE.WebGLShadowMap {
+    return this.renderer.shadowMap
+  }
+
+  maxAnisotropy(): number {
+    return this.renderer.capabilities.getMaxAnisotropy()
+  }
+
+  /**
+   * Compiles for the scene target (shaders differ by output colour space: compiled for the canvas
+   * they'd all be built again on the first frame), in parallel where the browser can
+   * (KHR_parallel_shader_compile), and resolves once they're ready without blocking the page.
+   */
+  async compile(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer
+    const previous = r.getRenderTarget()
+    r.setRenderTarget(this.target)
+    const ready = r.compileAsync(scene, camera)
+    r.setRenderTarget(previous)
+    await ready
+  }
+
+  setAnimationLoop(callback: (() => void) | null): void {
+    this.renderer.setAnimationLoop(callback)
   }
 
   /**
