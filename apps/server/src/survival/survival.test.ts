@@ -58,6 +58,7 @@ import { Game, type ServerPlayer } from '../game.ts'
 import { START_MONEY } from './director.ts'
 import { openGround } from './drops.ts'
 import { POOL, type Zed } from './horde.ts'
+import { KEEP_LOOT_SECONDS } from './newcomer.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -502,6 +503,8 @@ describe('survival: the night', () => {
     sv.self.wear.body = 'policevest'
     sv.self.money = 75
     sv.self.infected = 400
+    // Past the newcomer's ten minutes (newcomer.ts): dying costs everything.
+    sv.self.age = KEEP_LOOT_SECONDS
     const look = t.player().appearance
     t.game.killPlayer(t.ids[0] ?? 0, t.ids[0] ?? 0)
     t.run(0.2)
@@ -662,6 +665,7 @@ describe('survival: the bite', () => {
     sv.self.wear.body = 'policevest'
     sv.self.money = 120
     sv.self.infected = 3
+    sv.self.age = KEEP_LOOT_SECONDS
     const where = { ...t.player().state.pos }
     t.run(3.5)
     expect(t.player().state.alive).toBe(false)
@@ -717,7 +721,11 @@ describe('survival: the bite', () => {
     const t = setup(2)
     t.run(1)
     for (let round = 0; round < 6; round++) {
-      for (const id of t.ids) t.game.killPlayer(id, id)
+      for (const id of t.ids) {
+        const self = insides(t).survivors.get(id)?.self
+        if (self) self.age = KEEP_LOOT_SECONDS
+        t.game.killPlayer(id, id)
+      }
       t.run(7)
       const people = t.ids.map((id) => t.game.players.get(id)?.state)
       for (const [i, a] of people.entries()) {
@@ -743,6 +751,7 @@ describe('survival: the bite', () => {
     const sv = survivorOf(t)
     give(sv.self, 'beans', 2)
     sv.self.infected = 2
+    sv.self.age = KEEP_LOOT_SECONDS
     t.run(2.5)
     expect(t.player().state.alive).toBe(false)
     expect(insides(t).turned.size).toBe(0)

@@ -87,10 +87,18 @@ export class QuestJournal {
     this.selected = 0
   }
 
-  draw(panel: HTMLElement, journal: Journal, unlocks: readonly string[], redraw: () => void): void {
+  draw(
+    panel: HTMLElement,
+    journal: Journal,
+    unlocks: readonly string[],
+    redraw: () => void,
+    who?: string,
+  ): void {
     panel.replaceChildren()
     const head = el('div', 'sv-panel-head', panel)
     el('b', '', head, `JOURNAL · ${STORY_TITLE.toUpperCase()}`)
+    // Whose journal it is (the character this time round; characters.ts).
+    if (who) el('span', 'sv-journal-who', head, who)
     const tabs = el('div', 'sv-tabs', head)
     JOURNAL_TABS.forEach((tab, i) => {
       const node = el(

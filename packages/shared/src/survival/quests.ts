@@ -1101,6 +1101,21 @@ export function questById(id: string): QuestDef | undefined {
   return BY_ID.get(id)
 }
 
+/**
+ * The side jobs this journal could take on Haven's job board: handed out by somebody, not begun,
+ * not done, and what they follow done.
+ */
+export function openJobs(journal: Pick<Journal, 'quests' | 'done'>): QuestDef[] {
+  return QUESTS.filter(
+    (d) =>
+      !d.story &&
+      d.giver !== undefined &&
+      !journal.done.includes(d.id) &&
+      !journal.quests.some((q) => q.id === d.id) &&
+      (!d.after || journal.done.includes(d.after)),
+  )
+}
+
 export function freshJournal(): Journal {
   return { quests: [], done: [], notes: [], flags: [] }
 }

@@ -15,6 +15,8 @@ import {
   nextStep,
   noteText,
   noteTitle,
+  openJobs,
+  PEOPLE,
   QUESTS,
   type QuestDef,
   type QuestState,
@@ -59,6 +61,10 @@ const BOSS_RANGE = 90
 const TOGETHER = 60
 /** Dot feeds you once a day. */
 const MEAL_EVERY = DAY_SECONDS
+/** Who you're "talking to" while reading Haven's job board (Dialog.npc). */
+export const JOB_BOARD = 'board'
+/** At most this many jobs on the board at once (the digits answer, and one is Goodbye). */
+const BOARD_JOBS = 8
 
 /** A survivor, as far as the story is concerned. */
 export interface Person {
@@ -445,7 +451,32 @@ export class Story {
     this.say(p, key, smallTalk(who, j, this.unlocks, this.host.random), this.options(p, key))
   }
 
+  // --- The job board ------------------------------------------------------------------------
+
+  /** Side jobs pinned on Haven's board for this person: open to them, whoever hands them out. */
+  jobsFor(p: Person): QuestDef[] {
+    return openJobs(p.self.journal).slice(0, BOARD_JOBS)
+  }
+
+  /** E on the job board: what's pinned up, and a slip to tear off for each. */
+  board(p: Person): void {
+    this.talking.set(p.player.id, JOB_BOARD)
+    const jobs = this.jobsFor(p)
+    const text =
+      jobs.length === 0
+        ? "Nothing pinned up that you haven't done or aren't already doing. Check back later."
+        : "Slips pinned under a little roof, in a dozen hands. Tear one off and it's yours."
+    this.say(p, JOB_BOARD, text, [
+      ...jobs.map((d) => ({
+        id: `job:${d.id}`,
+        label: `${d.title} (${PEOPLE[d.giver ?? '']?.name ?? d.giver})`,
+      })),
+      { id: 'bye', label: 'Leave it.' },
+    ])
+  }
+
   private nameOf(key: string): string | null {
+    if (key === JOB_BOARD) return 'Job board'
     const npc = this.def.npcs.find((n) => n.key === key)
     if (npc) return npc.name
     const w = this.walkers.get(key)
@@ -540,6 +571,16 @@ export class Story {
       this.host.touch(p)
       return void this.say(p, key, "Sit. Eat. Don't ask what it is.", this.options(p, key))
     }
+    if (option.startsWith('job:') && key === JOB_BOARD) {
+      const def = questById(option.slice(4))
+      if (!def || def.story || !def.giver || !this.open(p, def)) return
+      this.begin(p, def.id)
+      this.host.broadcast()
+      const who = PEOPLE[def.giver]?.name ?? def.giver
+      this.host.notice(p.player, 'info', `You tear the slip off the board. ${who} posted it.`)
+      this.board(p)
+      return
+    }
     if (option.startsWith('ask:')) {
       const def = questById(option.slice(4))
       if (!def || def.giver !== key || !this.open(p, def)) return
@@ -582,6 +623,8 @@ export class Story {
 
   /** Where somebody to talk to stands. */
   private where(key: string): readonly [number, number, number] | null {
+    if (key === JOB_BOARD)
+      return this.def.interactables.find((t) => t.kind === 'board')?.pos ?? null
     const npc = this.def.npcs.find((n) => n.key === key)
     if (npc) return npc.pos
     const w = this.walkers.get(key)

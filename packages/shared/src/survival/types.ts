@@ -139,6 +139,8 @@ export type InteractKind =
   | 'flare'
   | 'search'
   | 'note'
+  /** Haven's job board: the side jobs on offer. */
+  | 'board'
 
 /** Something in the world you can use with E. */
 export interface Interactable {

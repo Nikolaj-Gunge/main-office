@@ -1,3 +1,4 @@
+import type { Bio } from './characters.ts'
 import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
@@ -42,6 +43,10 @@ export interface SurvivalSelf {
   infected: number | null
   /** Your story and jobs (yours alone: a new character starts a new one). */
   journal: Journal
+  /** Who this character was before (characters.ts); absent on very old saves. */
+  bio?: Bio
+  /** Seconds this character has been alive (the newcomer's shield, newcomer.ts, reads it). */
+  age?: number
 }
 
 export interface QuestState {

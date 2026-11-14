@@ -3,6 +3,7 @@ import {
   ammoBeside,
   ammoItem,
   BITTEN_STORY,
+  type Bio,
   BOARD_REACH,
   carried,
   cloneBag,
@@ -39,6 +40,7 @@ import {
   MAX_PLANKS,
   MAX_PLAYERS,
   type MapSpawn,
+  makeBio,
   maxStack,
   type Notice,
   PLANK_HP,
@@ -68,6 +70,7 @@ import {
   TICK_DT,
   TICK_RATE,
   takeStack,
+  unpackAppearance,
   type VehicleNet,
   VICINITY,
   VICINITY_UP,
@@ -89,6 +92,17 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import {
+  drainFactor,
+  gentleCount,
+  gentleKind,
+  inShield,
+  keepsLoot,
+  SHIELD_RADIUS,
+  SHIELD_SECONDS,
+  shielded,
+  startPoi,
+} from './newcomer.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Vehicles } from './vehicles.ts'
 
@@ -175,7 +189,7 @@ interface PlaceState {
 const DAY_NEWS: Record<DayPhase, string> = {
   dawn: 'Dawn. Fewer of them walk by day, but now they can see you coming.',
   day: 'Full daylight. Use it.',
-  dusk: 'The sun is going down. Find a door you can board up.',
+  dusk: 'The horn at Haven. Night is coming. Find a door you can board up.',
   night: 'Night. Keep the torch off unless you have to.',
 }
 
@@ -199,6 +213,7 @@ const freshSelf = (): SurvivalSelf => {
     light: false,
     infected: null,
     journal: freshJournal(),
+    age: 0,
   }
   give(self, 'water', 1)
   return self
@@ -212,6 +227,8 @@ function restoreSelf(saved: SurvivalSelf): SurvivalSelf {
   for (const [slot, item] of Object.entries(self.wear))
     if (!ITEMS[item]) delete self.wear[slot as WearSlot]
   self.journal = { ...freshJournal(), ...self.journal }
+  // Saved before characters had an age: they're no newcomers.
+  if (typeof saved.age !== 'number') self.age = SHIELD_SECONDS
   return self
 }
 
@@ -398,6 +415,7 @@ export class SurvivalDirector {
       waiting: saved ? saved.waiting.filter((i) => this.def?.starter[i]) : this.allStarters(),
     }
     if (saved) this.resume(sv, saved)
+    if (!sv.self.bio) sv.self.bio = this.newBio(player)
     this.survivors.set(player.id, sv)
     this.layOut(sv)
     this.story.join(sv, sv.reborn)
@@ -421,6 +439,13 @@ export class SurvivalDirector {
     void this.game.saves.flush()
     this.clearStarters(sv)
     this.survivors.delete(player.id)
+  }
+
+  /** Who somebody new was before (characters.ts), of the build they chose. */
+  private newBio(player: ServerPlayer): Bio {
+    const body = player.appearance === undefined ? 0 : unpackAppearance(player.appearance).body
+    // Its own dice: who you were shouldn't change what the world rolls next.
+    return makeBio(Math.floor(Math.random() * 0x7fffffff) + 1, body)
   }
 
   /** Every starter thing (indices into def.starter). */
@@ -694,12 +719,16 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(victim.id)
     if (!sv) return
+    // New and unlucky (the first ten minutes): it costs nothing, this once.
+    if (keepsLoot(sv.self.age)) return void this.spare(sv)
     // Everything goes: backpack, guns, clothes, the pack, the money. Somebody new wakes at Haven.
+    const was = sv.self.bio?.name
     const at = { ...victim.state.pos }
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
     const turning = sv.turning
     sv.self = freshSelf()
+    sv.self.bio = this.newBio(victim)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     // Hollis' pistol and knife are on the cabin table again, for somebody new.
@@ -720,8 +749,32 @@ export class SurvivalDirector {
       victim,
       'story',
       turning
-        ? 'You turned.\n\nWhat is left of you walks the woods with everything you carried.\n\nYou wake at Haven: somebody new.'
-        : 'You died.\n\nEverything you carried lies where you fell.\n\nYou wake at Haven: somebody new.',
+        ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.\n\nYou wake at Haven: somebody new.`
+        : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.\n\nYou wake at Haven: somebody new.`,
+    )
+  }
+
+  /**
+   * Died in the first minutes (newcomer.ts): they wake where they started, the same person,
+   * with everything they had. Needs, bleeding and the bite are as if it never happened.
+   */
+  private spare(sv: Survivor): void {
+    const victim = sv.player
+    sv.kit = kitOf(victim.state)
+    sv.self.infected = null
+    sv.self.bleeding = false
+    sv.self.light = false
+    sv.self.hunger = Math.max(sv.self.hunger, 60)
+    sv.self.thirst = Math.max(sv.self.thirst, 60)
+    sv.turning = false
+    sv.warned = 0
+    sv.dirty = true
+    this.save(sv)
+    this.send(victim, { type: ServerMsg.Dialog, dialog: null })
+    this.notice(
+      victim,
+      'story',
+      "Everything goes dark.\n\nYou come to where you started, aching, everything still on you.\n\nThat was luck. It won't hold.",
     )
   }
 
@@ -858,8 +911,11 @@ export class SurvivalDirector {
     const { self, player } = sv
     if (!player.state.alive) return
     const before = [Math.ceil(self.hunger), Math.ceil(self.thirst), Math.ceil(self.battery)]
-    self.hunger = Math.max(0, self.hunger - 100 / HUNGER_SECONDS)
-    self.thirst = Math.max(0, self.thirst - 100 / THIRST_SECONDS)
+    // Newcomers get hungry and thirsty more slowly (newcomer.ts).
+    const drain = drainFactor(self.age)
+    self.age = (self.age ?? SHIELD_SECONDS) + 1
+    self.hunger = Math.max(0, self.hunger - (100 / HUNGER_SECONDS) * drain)
+    self.thirst = Math.max(0, self.thirst - (100 / THIRST_SECONDS) * drain)
     if (self.light) {
       self.battery = Math.max(0, self.battery - 100 / BATTERY_SECONDS)
       if (self.battery === 0) {
@@ -1285,6 +1341,7 @@ export class SurvivalDirector {
   private useThing(sv: Survivor, thing: Interactable): void {
     const player = sv.player
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
+    if (thing.kind === 'board') return void this.story.board(sv)
     if (thing.kind === 'water') {
       sv.self.thirst = 100
       sv.dirty = true
@@ -1845,6 +1902,14 @@ export class SurvivalDirector {
     const free = () => this.pool.find((z) => !z.state.alive)
     const active = this.pool.filter((z) => z.state.alive)
     const dark = this.light < 0.3
+    // Somebody new about near Hollis' cabin: the woods there are gentler (newcomer.ts).
+    const cabin = startPoi(this.def.pois)
+    const gentle =
+      !!cabin &&
+      alive.some(
+        (sv) => shielded(sv.self.age) && dist(sv.player.state.pos, cabin) < SHIELD_RADIUS * 2,
+      )
+    const soft = (at: { x: number; z: number }) => gentle && inShield(this.def.pois, at)
     // Fewer by day, more at night; a few more with more people about.
     const scale = (dark ? 1.3 : 1.15 - this.light * 0.45) * (1 + 0.15 * (people.length - 1))
 
@@ -1853,7 +1918,8 @@ export class SurvivalDirector {
       const place = this.places[i] as PlaceState
       place.kills = place.kills.filter((t) => tick - t < KILL_MEMORY * TICK_RATE)
       const here = active.filter((z) => this.zeds.get(z.id)?.home === i)
-      const want = Math.max(0, Math.round(poi.danger * scale) - place.kills.length) + place.woken
+      let want = Math.max(0, Math.round(poi.danger * scale) - place.kills.length) + place.woken
+      if (soft(poi)) want = gentleCount(want)
       const hunters = here.filter((z) => this.zeds.get(z.id)?.hunter).length
       let missing = Math.min(want - here.length, 3)
       const spots = this.def.zombieSpots.filter((s) => s.poi === i)
@@ -1873,7 +1939,9 @@ export class SurvivalDirector {
         }
         if (!pos) continue
         const slot = here.length + (3 - missing)
-        this.place(zombie, kindFor(poi, hunter ? 99 : slot, this.random(), dark), i, hunter, pos)
+        let kind = kindFor(poi, hunter ? 99 : slot, this.random(), dark)
+        if (soft(pos)) kind = gentleKind(kind)
+        this.place(zombie, kind, i, hunter, pos)
         active.push(zombie)
         missing--
       }
@@ -1882,13 +1950,16 @@ export class SurvivalDirector {
     // The woods are never quite empty.
     for (const p of people) {
       const around = active.filter((z) => dist(z.state.pos, p) < 150).length
-      const want = Math.round((dark ? 3.5 : 2) * scale)
+      let want = Math.round((dark ? 3.5 : 2) * scale)
+      if (soft(p)) want = gentleCount(want)
       if (around >= want) continue
       const zombie = free()
       if (!zombie) return
       const pos = this.ringSpot(p, 70 + this.random() * 40, people)
       if (!pos) continue
-      this.place(zombie, kindFor(undefined, 0, this.random(), dark), -1, false, pos)
+      let kind = kindFor(undefined, 0, this.random(), dark)
+      if (soft(pos)) kind = gentleKind(kind)
+      this.place(zombie, kind, -1, false, pos)
       active.push(zombie)
     }
   }

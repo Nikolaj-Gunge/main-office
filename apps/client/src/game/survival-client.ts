@@ -50,6 +50,7 @@ import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
+import { Onboarding } from './onboarding.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import { VehiclesClient } from './vehicles-client.ts'
 
@@ -96,6 +97,8 @@ export class SurvivalClient {
   private readonly infection: Infection
   /** The cars: drawn, driven, ridden in. */
   readonly vehicles: VehiclesClient
+  /** The character card, first-time hints and the dusk horn (onboarding.ts). */
+  readonly onboarding: Onboarding
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
@@ -172,6 +175,7 @@ export class SurvivalClient {
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
     if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
+    this.onboarding = new Onboarding(o.hudRoot, o.def, o.audio)
     this.vehicles = new VehiclesClient({
       scene: o.scene,
       physics: o.physics,
@@ -283,6 +287,7 @@ export class SurvivalClient {
         } else if (n.kind === 'loot')
           // The better the find, the lower and fuller it lands.
           this.audio.play('pickup', { volume: 0.5, rate: pickupPitch(n.text) })
+        this.onboarding.onNotice(n)
         this.hud.notice(n)
         return true
       }
@@ -437,6 +442,22 @@ export class SurvivalClient {
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
     this.infectionFx = this.infection.update(dt, state.alive)
+    let zombieNear = false
+    for (const [id, pose] of remotes.visiblePoses())
+      if (remotes.kindOf(id) !== 0 && Math.hypot(pose.x - eye.x, pose.z - eye.z) < 30)
+        zombieNear = true
+    this.onboarding.update(
+      dt,
+      {
+        alive: state.alive,
+        self: this.self,
+        prompt: this.prompt,
+        zombieNear,
+        carNear: !this.vehicles.seated && this.vehicles.prompt(state.pos) !== null,
+        time,
+      },
+      eye,
+    )
     this.hud.update(dt, {
       infected: state.alive ? this.infection.left : null,
       health,

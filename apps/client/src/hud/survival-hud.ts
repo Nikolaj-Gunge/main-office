@@ -1,5 +1,6 @@
 import {
   AMMO_BOX,
+  bioLine,
   countOf,
   type Dialog,
   dayPhase,
@@ -33,6 +34,7 @@ import {
 } from '@office-fps/shared'
 import { InventoryScreen } from './inventory-screen.ts'
 import { effectText } from './item-text.ts'
+import { type Fallback, fallbackStep } from './next-step.ts'
 import { markerSpot } from './objective-marker.ts'
 import { QuestJournal } from './quest-journal.ts'
 
@@ -198,6 +200,9 @@ export class SurvivalHud {
   private mainKey = ''
   /** Side jobs' "where" lines, in tracker order. */
   private sideWhere: HTMLElement[] = []
+  /** Nothing in the story to point at: what to do instead (next-step.ts), and where it is. */
+  private fallback: Fallback | null = null
+  private fallbackWhere: HTMLElement | null = null
   /** Markers over the targets themselves, out in the world: the story's first, then the jobs'. */
   private readonly waypoints: { node: HTMLElement; text: HTMLElement }[] = []
   /** Supply drops: a red mark on the compass and over the crate. */
@@ -601,12 +606,17 @@ export class SurvivalHud {
       const step = def?.steps[state.step]
       if (def && step) lines.push([def.title, stepLine(step, state, this.self?.inv ?? []), story])
     }
-    const key = JSON.stringify(lines)
+    const journal = this.self?.journal
+    this.fallback = journal
+      ? fallbackStep(this.def, journal, this.shared?.walkers ?? [], this.me())
+      : null
+    const key = JSON.stringify([lines, this.fallback?.text])
     if (key === this.trackerKey) return
     this.trackerKey = key
     this.tracker.replaceChildren()
     this.mainDistance = null
     this.sideWhere = []
+    this.fallbackWhere = null
     for (const [title, text, story] of lines) {
       if (story) {
         // The story: big, gold, impossible to miss; it flashes when the objective changes.
@@ -625,6 +635,13 @@ export class SurvivalHud {
         el('span', '', q, text)
         this.sideWhere.push(el('em', '', q))
       }
+    }
+    // Always one next step: under the story (or in its place when there is none).
+    if (this.fallback) {
+      const q = el('div', 'sv-quest next', this.tracker)
+      el('i', '', q, 'NEXT STEP')
+      el('span', '', q, this.fallback.text)
+      this.fallbackWhere = el('em', '', q)
     }
   }
 
@@ -704,6 +721,14 @@ export class SurvivalHud {
     if (this.mainDistance && this.mainDistance.textContent !== main)
       this.mainDistance.textContent = main
     if (searching) goal = null
+    // Nothing in the story to point at: the compass points at the next step instead.
+    const next = this.fallback?.at
+    if (next && this.fallbackWhere) {
+      const where = whereText(this.def, ctx.pos, { x: next[0], z: next[2] })
+      if (this.fallbackWhere.textContent !== where) this.fallbackWhere.textContent = where
+    }
+    if (goal === null && next && Math.hypot(next[0] - ctx.pos.x, next[2] - ctx.pos.z) > 6)
+      goal = { x: next[0], y: next[1], z: next[2], area: 0 }
     this.marker.hidden = goal === null
     if (goal) {
       place(this.marker, bearingTo(ctx.pos, goal), true)
@@ -815,8 +840,12 @@ export class SurvivalHud {
   private drawJournal(): void {
     const self = this.self
     if (!self) return
-    this.journal.draw(this.panel, self.journal, this.shared?.unlocks ?? [], () =>
-      this.drawJournal(),
+    this.journal.draw(
+      this.panel,
+      self.journal,
+      this.shared?.unlocks ?? [],
+      () => this.drawJournal(),
+      self.bio ? bioLine(self.bio) : undefined,
     )
   }
 

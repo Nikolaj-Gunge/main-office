@@ -319,6 +319,30 @@ export function startCabin(s: Site): void {
  * Haven, the survivor camp: a palisade with one gate, tents and huts, a fire in the middle, and
  * the people you trade and talk with. The dead never get in.
  */
+/**
+ * The job board just inside Haven's gate (west of the gate road, facing it): slips pinned under
+ * a little roof. E on it lists the side jobs you could take (story.ts board).
+ */
+function jobBoard(s: Site, x: number, z: number): void {
+  s.block(x, 0, z - 0.95, 0.14, 2.3, 0.14, 'log').block(x, 0, z + 0.95, 0.14, 2.3, 0.14, 'log')
+  s.block(x, 0.85, z, 0.08, 1.2, 1.9, 'wood')
+  s.deco(x + 0.05, 2.3, z, 0.6, 0.06, 2.3, 'shingle')
+  for (const [dz, y, w, h] of [
+    [-0.6, 1.55, 0.3, 0.36],
+    [-0.2, 1.6, 0.26, 0.3],
+    [0.25, 1.5, 0.34, 0.4],
+    [0.65, 1.62, 0.24, 0.3],
+    [-0.45, 1.05, 0.3, 0.3],
+    [0.1, 1.08, 0.28, 0.34],
+    [0.55, 1.02, 0.3, 0.26],
+  ] as const) {
+    s.deco(x + 0.05, y - h / 2, z + dz, 0.02, h, w, 'whiteboard')
+  }
+  s.lantern(x + 0.35, 2.25, z, 0.3, { color: 0xffdcb4, intensity: 6, distance: 6 })
+  s.label(x, 2.9, z, 'JOBS')
+  s.interact('haven_jobs', 'board', x + 0.1, 1.3, z, 'Read the job board')
+}
+
 export function haven(s: Site): void {
   const R = 30
   // Palisade: log walls on four sides, a gate to the north (towards the road).
@@ -337,6 +361,7 @@ export function haven(s: Site): void {
   s.block(0, 3.6, -R, gate + 1.8, 0.2, 1.2, 'wood')
   s.label(0, 5.2, -R, 'HAVEN')
   s.npc('ortiz', 'Ortiz', 'guard', gate / 2 + 1.6, -R + 2, 0, 5)
+  jobBoard(s, -4.6, -16)
 
   // The bonfire, and a ring of seats round it (HAVEN_SEATS), open to the north towards Mara.
   bonfire(s, 0, 2)
