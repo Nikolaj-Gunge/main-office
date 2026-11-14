@@ -93,7 +93,37 @@ export interface ShellOptions {
   pitch?: number
   /** Leave it out of the rooms the dead path into (sheds too small to matter). */
   noRoom?: boolean
+  /**
+   * What the trim is made of (frames round the doors and windows, corner posts, skirting, the
+   * roof's fascia), or false for none. By default it suits the walls (see trimFor).
+   */
+  trim?: MaterialId | false
 }
+
+/** The trim that suits a building's walls; null for walls that get none (glass, ruins, RVs). */
+export function trimFor(wall: MaterialId): MaterialId | null {
+  switch (wall) {
+    case 'brick':
+    case 'plaster':
+    case 'concrete':
+    case 'wood':
+    case 'barn':
+      return 'trim'
+    case 'log':
+      return 'wood'
+    case 'metal':
+    case 'rust':
+      return 'metal'
+    default:
+      return null
+  }
+}
+
+/** How far trim stands proud of a wall's face (m), and how wide frames are. */
+const TRIM_OUT = 0.04
+const FRAME = 0.07
+/** Top of the concrete footing round a building's base. */
+const FOOTING = 0.26
 
 /**
  * Builds one place: everything is given in the place's own coordinates (x east, z south, y up
@@ -423,6 +453,8 @@ export class Site {
       })),
     ]
     const doorPoints: [number, number][] = []
+    const trim = o.trim === false ? null : (o.trim ?? trimFor(o.wall))
+    const outward = (side: Side) => (side === 'n' || side === 'w' ? -1 : 1)
     for (const side of ['n', 's', 'e', 'w'] as const) {
       const alongX = side === 'n' || side === 's'
       const length = alongX ? w : d
@@ -483,9 +515,40 @@ export class Site {
           o.wall,
           gaps.map(([at, ...rest]) => [at - WALL, ...rest]),
         )
+      // After the walls, so where trim lies flush with them it's the trim that gives way.
+      if (trim) {
+        const holes = openings
+          .filter((g) => g.side === side)
+          .map((g) => ({
+            along: (alongX ? x0 : z0) + length / 2 + g.at,
+            width: g.width ?? (g.door ? DOOR_W : 1.2),
+            sill: g.sill,
+            height: g.height,
+            door: g.door,
+          }))
+        this.trimSide(alongX, fixed, outward(side), alongX ? x0 : z0, length, h, holes, trim)
+      }
+    }
+    if (trim) {
+      // Corner posts, flush with the walls inside and standing proud of them outside.
+      const post = WALL + TRIM_OUT
+      for (const [cx, sx] of [
+        [x0, 1],
+        [x1, -1],
+      ] as const) {
+        for (const [cz, sz] of [
+          [z0, 1],
+          [z1, -1],
+        ] as const) {
+          const px = cx + (sx * (WALL - TRIM_OUT)) / 2
+          const pz = cz + (sz * (WALL - TRIM_OUT)) / 2
+          this.deco(px, FOOTING, pz, post, FLOOR + h - FOOTING, post, trim)
+        }
+      }
     }
     if (o.roof) {
       this.block(x, FLOOR + h, z, w + 0.5, 0.18, d + 0.5, o.roof)
+      if (trim && o.roof !== 'glass' && o.roof !== 'canvas') this.eaves(x, z, w, d, h, o, trim)
       if (o.pitch) {
         // A stepped gable: slabs getting narrower towards the ridge.
         const steps = 4
@@ -500,5 +563,122 @@ export class Site {
     }
     if (!o.noRoom) this.room(x0 + WALL, z0 + WALL, x1 - WALL, z1 - WALL, doorPoints)
     return this
+  }
+
+  /**
+   * One side's dressing (see shell): a footing along its foot outside, skirting inside, and
+   * frames round its doors and windows. All decoration: nothing here changes what collides.
+   */
+  private trimSide(
+    alongX: boolean,
+    fixed: number,
+    out: 1 | -1,
+    start: number,
+    length: number,
+    h: number,
+    holes: { along: number; width: number; sill: number; height: number; door: boolean }[],
+    trim: MaterialId,
+  ): void {
+    const FLOOR = 0.12
+    /** A box against this wall: `off` from its centre line (outwards positive), `depth` thick. */
+    const face =
+      (along: number, y: number, len: number, hi: number, off: number, depth: number) =>
+      (material: MaterialId) => {
+        if (len < 0.02) return
+        if (alongX) this.deco(along, y, fixed + out * off, len, hi, depth, material)
+        else this.deco(fixed + out * off, y, along, depth, hi, len, material)
+      }
+    // Footing outside and skirting inside run the length of the wall, broken at the doors.
+    const doors = holes.filter((g) => g.door).sort((a, b) => a.along - b.along)
+    const runs = (from: number, to: number, put: (a: number, b: number) => void) => {
+      let cursor = from
+      for (const g of doors) {
+        put(cursor, g.along - g.width / 2)
+        cursor = g.along + g.width / 2
+      }
+      put(cursor, to)
+    }
+    const end = start + length
+    // Along x the footing wraps the corners; along z it fits between.
+    const wrap = alongX ? 0.05 : 0
+    runs(start - wrap, end + wrap, (a, b) =>
+      face((a + b) / 2, -0.3, b - a, FOOTING + 0.3, WALL / 2 + 0.025, 0.05)('concrete'),
+    )
+    runs(start + WALL, end - WALL, (a, b) =>
+      face((a + b) / 2, FLOOR, b - a, 0.1, -(WALL / 2 + 0.0125), 0.025)(trim),
+    )
+    for (const g of holes) {
+      const bottom = FLOOR + g.sill
+      const top = Math.min(bottom + g.height, FLOOR + h - FRAME)
+      const sides = g.door ? [1, -1] : [1]
+      for (const k of sides) {
+        const off = k * (WALL / 2 + TRIM_OUT / 2)
+        for (const e of [-1, 1]) {
+          face(
+            g.along + e * (g.width / 2 + FRAME / 2),
+            bottom,
+            FRAME,
+            top - bottom,
+            off,
+            TRIM_OUT,
+          )(trim)
+        }
+        face(g.along, top, g.width + 2 * FRAME, FRAME, off, TRIM_OUT)(trim)
+      }
+      if (!g.door) {
+        // A sill sticking out under the window, and a ledge inside.
+        face(g.along, bottom - 0.06, g.width + 2 * FRAME + 0.1, 0.06, WALL / 2 + 0.06, 0.12)(trim)
+        face(g.along, bottom - 0.04, g.width, 0.04, -(WALL / 2 + 0.04), 0.08)(trim)
+      }
+    }
+  }
+
+  /**
+   * Fascia boards round a roof slab and, under a pitched roof, gutters along the eaves with
+   * a downpipe down a corner each, and a cap along the ridge.
+   */
+  private eaves(
+    x: number,
+    z: number,
+    w: number,
+    d: number,
+    h: number,
+    o: ShellOptions,
+    trim: MaterialId,
+  ): void {
+    const FLOOR = 0.12
+    const W = w + 0.5
+    const D = d + 0.5
+    const y = FLOOR + h - 0.05
+    const board = 0.04
+    for (const e of [-1, 1]) {
+      this.deco(x, y, z + e * (D / 2 + board / 2), W + 2 * board, 0.26, board, trim)
+      this.deco(x + e * (W / 2 + board / 2), y, z, board, 0.26, D, trim)
+    }
+    if (!o.pitch) return
+    const alongX = w >= d
+    const run = alongX ? W : D
+    for (const e of [-1, 1] as const) {
+      // The gutter, just outside the fascia on the eaves' side.
+      const g = (alongX ? D : W) / 2 + board + 0.06
+      const gy = y - 0.02
+      if (alongX) this.deco(x, gy, z + e * g, run, 0.1, 0.12, 'metal')
+      else this.deco(x + e * g, gy, z, 0.12, 0.1, run, 'metal')
+      // Its downpipe: across from the gutter to the wall, then down to the ground.
+      const along = e * (run / 2 - 0.65)
+      const wallFace = (alongX ? d : w) / 2 + 0.06
+      const reach = g - wallFace
+      const mid = (g + wallFace) / 2
+      if (alongX) {
+        this.deco(x + along, gy - 0.12, z + e * mid, 0.08, 0.1, reach, 'metal')
+        this.deco(x + along, 0.05, z + e * wallFace, 0.08, gy - 0.07, 0.08, 'metal')
+      } else {
+        this.deco(x + e * mid, gy - 0.12, z + along, reach, 0.1, 0.08, 'metal')
+        this.deco(x + e * wallFace, 0.05, z + along, 0.08, gy - 0.07, 0.08, 'metal')
+      }
+    }
+    const ridge = FLOOR + h + 0.18 + o.pitch
+    if (alongX) this.deco(x, ridge, z, W + 0.06, 0.07, 0.26, 'metal')
+    else this.deco(x, ridge, z, 0.26, 0.07, D + 0.06, 'metal')
   }
 }

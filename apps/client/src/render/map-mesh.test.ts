@@ -11,11 +11,18 @@ describe('map rendering', () => {
       const bounds = renderBounds(map)
       const ms = performance.now() - start
       const clashes: string[] = []
-      for (let i = 0; i < bounds.length; i++) {
-        for (let j = i + 1; j < bounds.length; j++) {
+      // Sweep along x: boxes that can clash at all touch or overlap in x.
+      const order = bounds.flatMap((b, i) => (b ? [i] : []))
+      order.sort((i, j) => (bounds[i]?.min[0] ?? 0) - (bounds[j]?.min[0] ?? 0))
+      for (let p = 0; p < order.length; p++) {
+        for (let q = p + 1; q < order.length; q++) {
+          const [i, j] = [order[p] ?? 0, order[q] ?? 0].sort((x, y) => x - y) as [number, number]
           const a = bounds[i]
           const b = bounds[j]
-          if (!a || !b || map.boxes[i]?.material === map.boxes[j]?.material) continue
+          if (!a || !b) continue
+          const first = bounds[order[p] ?? 0]
+          if ((bounds[order[q] ?? 0]?.min[0] ?? 0) > (first?.max[0] ?? 0) + 1e-3) break
+          if (map.boxes[i]?.material === map.boxes[j]?.material) continue
           for (let axis = 0; axis < 3; axis++) {
             const overlap = [0, 1, 2].every(
               (k) =>

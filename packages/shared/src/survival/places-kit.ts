@@ -1,7 +1,7 @@
 import type { BoxFlags } from '../maps/builder.ts'
 import type { MaterialId } from '../maps/types.ts'
 import type { LootTable } from './items.ts'
-import { DECO, type LampOptions, type Site } from './kit.ts'
+import { DECO, type LampOptions, type Site, trimFor } from './kit.ts'
 import { FLOOR } from './structures.ts'
 
 /**
@@ -75,6 +75,21 @@ export function partition(
     material,
     doors.map((at) => doorway(at, doorWidth)),
   )
+  // Casings round the doorways, both sides.
+  const trim = trimFor(material)
+  if (!trim) return
+  const frame = 0.07
+  for (const at of doors) {
+    for (const k of [-1, 1]) {
+      const off = fixed + k * 0.09
+      const put = (a: number, y: number, len: number, hi: number) => {
+        if (alongX) s.deco(a, y, off, len, hi, 0.04, trim)
+        else s.deco(off, y, a, 0.04, hi, len, trim)
+      }
+      for (const e of [-1, 1]) put(at + e * (doorWidth / 2 + frame / 2), FLOOR, frame, 2.2)
+      put(at, FLOOR + 2.2, doorWidth + 2 * frame, frame)
+    }
+  }
 }
 
 // --- Furniture --------------------------------------------------------------------------------
@@ -205,6 +220,8 @@ export function corpse(s: Site, x: number, z: number, alongX: boolean, y = 0): v
 /** A street lamp; `lit` gives it a working bulb. */
 export function lampPost(s: Site, x: number, z: number, lit?: LampOptions, dx = 0.9, dz = 0): void {
   s.block(x, 0, z, 0.16, 5, 0.16, 'metal')
+  s.deco(x, -0.2, z, 0.34, 0.45, 0.34, 'concrete')
+  s.deco(x, 0.25, z, 0.22, 0.3, 0.22, 'metal')
   s.deco(x + dx / 2, 4.9, z + dz / 2, Math.abs(dx) + 0.1, 0.1, Math.abs(dz) + 0.1, 'metal')
   s.deco(x + dx, 4.74, z + dz, 0.45, 0.14, 0.45, lit ? 'lightpanel' : 'metal')
   if (lit) s.light(x + dx, 4.5, z + dz, { intensity: 30, distance: 20, ...lit })
@@ -245,9 +262,12 @@ export function barricade(s: Site, x: number, z: number, alongX: boolean, length
   s.deco(tx, 0, tz, 0.7, 0.28, 0.7, 'asphalt')
 }
 
-/** An oil drum. */
+/** An oil drum: two rolling hoops round it and a rim on its lid. */
 export function drum(s: Site, x: number, z: number, material: MaterialId = 'rust', y = 0): void {
   s.block(x, y, z, 0.6, 0.9, 0.6, material)
+  for (const h of [0.28, 0.6]) s.deco(x, y + h, z, 0.64, 0.04, 0.64, 'metal')
+  s.deco(x, y + 0.9, z, 0.6, 0.03, 0.6, 'metal')
+  s.deco(x + 0.16, y + 0.91, z - 0.12, 0.07, 0.04, 0.07, 'metal')
 }
 
 /** A fence along a line of corners: posts you bump into, rails you don't. */
@@ -258,21 +278,24 @@ export function fence(
   h = 1.1,
   every = 4,
 ): void {
+  /** A post with a cap on it. */
+  const post = (x: number, z: number) => {
+    s.block(x, 0, z, 0.14, h, 0.14, material)
+    s.deco(x, h, z, 0.18, 0.04, 0.18, material)
+  }
   points.forEach(([x0, z0], p) => {
     const next = points[p + 1]
     if (!next) {
       // A closed loop already has a post where it began.
       const first = points[0] as [number, number]
-      if (p === 0 || first[0] !== x0 || first[1] !== z0) s.block(x0, 0, z0, 0.14, h, 0.14, material)
+      if (p === 0 || first[0] !== x0 || first[1] !== z0) post(x0, z0)
       return
     }
     const [x1, z1] = next
     const alongX = Math.abs(x1 - x0) >= Math.abs(z1 - z0)
     const length = alongX ? Math.abs(x1 - x0) : Math.abs(z1 - z0)
     const n = Math.max(1, Math.round(length / every))
-    for (let i = 0; i < n; i++) {
-      s.block(x0 + ((x1 - x0) * i) / n, 0, z0 + ((z1 - z0) * i) / n, 0.14, h, 0.14, material)
-    }
+    for (let i = 0; i < n; i++) post(x0 + ((x1 - x0) * i) / n, z0 + ((z1 - z0) * i) / n)
     for (const y of [h * 0.4, h * 0.8]) {
       const [w, d] = alongX ? [length, 0.05] : [0.05, length]
       s.deco((x0 + x1) / 2, y, (z0 + z1) / 2, w, 0.1, d, material)
@@ -292,6 +315,14 @@ export function sign(
 ): void {
   s.block(x, 0, z, 0.25, h, 0.25, 'metal')
   s.deco(x, h - 1.5, z, alongX ? 3.4 : 0.2, 1.4, alongX ? 0.2 : 3.4, board)
+  // A metal frame round the board, standing proud of it both sides.
+  for (const y of [h - 1.56, h - 0.1]) {
+    s.deco(x, y, z, alongX ? 3.5 : 0.26, 0.06, alongX ? 0.26 : 3.5, 'metal')
+  }
+  for (const e of [-1, 1]) {
+    const off = e * 1.72
+    s.deco(alongX ? x + off : x, h - 1.5, alongX ? z : z + off, 0.06, 1.4, 0.06, 'metal')
+  }
   s.label(x, h + 0.4, z, text)
 }
 

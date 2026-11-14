@@ -1,4 +1,5 @@
-import type { MapBox, MapDef, MapLight, MaterialId } from '@office-fps/shared'
+import type { MapBox, MapDef, MapLight, MaterialId, Terrain } from '@office-fps/shared'
+import { heightAt } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { buildCorn } from './corn.ts'
@@ -26,6 +27,44 @@ function applyWorldUVs(geometry: THREE.BufferGeometry): void {
     else uv.setXY(i, x, y)
   }
   uv.needsUpdate = true
+}
+
+/** Walls are darkest right at the ground (this much of their colour) … */
+const GRIME = 0.74
+/** … clearing up to their full colour this high above it (m). */
+const GRIME_HEIGHT = 3.2
+
+/**
+ * Weathering: the sides of things darken towards the ground (splashed mud, damp, the shadow of
+ * the grass), as a vertex colour. It's linear in height up to GRIME_HEIGHT, so a wall cut into
+ * pieces round its windows shades the same as a whole one. Tops and bottoms stay clean.
+ */
+function applyGrime(geometry: THREE.BufferGeometry, terrain: Terrain | null): void {
+  const pos = geometry.getAttribute('position')
+  const normal = geometry.getAttribute('normal')
+  const color = new Float32Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i++) {
+    let shade = 1
+    if (terrain && Math.abs(normal.getY(i)) < 0.5) {
+      const above = pos.getY(i) - heightAt(terrain, pos.getX(i), pos.getZ(i))
+      shade = GRIME + (1 - GRIME) * Math.min(1, Math.max(0, above / GRIME_HEIGHT))
+    }
+    color[i * 3] = color[i * 3 + 1] = color[i * 3 + 2] = shade
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(color, 3))
+}
+
+const grimed = new Map<MaterialId, THREE.Material>()
+
+/** A surface material that takes the weathering above (the texture is the shared one). */
+function grimedMaterial(id: MaterialId): THREE.Material {
+  let material = grimed.get(id)
+  if (!material) {
+    material = getSurfaceMaterial(id).clone()
+    material.vertexColors = true
+    grimed.set(id, material)
+  }
+  return material
 }
 
 /** How far a later box's face is pushed out per earlier box it would be coplanar with (m). */
@@ -208,8 +247,12 @@ function simplifiedTile(
       const part = g.clone()
       part.deleteAttribute('uv')
       const n = part.getAttribute('position').count
+      const shade = part.getAttribute('color')
       const color = new Float32Array(n * 3)
-      for (let i = 0; i < n; i++) color.set([c.r, c.g, c.b], i * 3)
+      for (let i = 0; i < n; i++) {
+        const k = shade ? shade.getX(i) : 1
+        color.set([c.r * k, c.g * k, c.b * k], i * 3)
+      }
       part.setAttribute('color', new THREE.BufferAttribute(color, 3))
       parts.push(part)
     }
@@ -284,6 +327,10 @@ export function buildMapObject(map: MapDef): THREE.Group {
     matrix.compose(new THREE.Vector3(...center), quaternion, new THREE.Vector3(1, 1, 1))
     geometry.applyMatrix4(matrix)
     applyWorldUVs(geometry)
+    if (map.survival) {
+      const clean = isTransparent(box.material) || glows(box.material)
+      applyGrime(geometry, clean ? null : map.survival.terrain)
+    }
     const tile = tileOf(center[0], center[2])
     let target = tiles.get(tile) ?? new Map<MaterialId, THREE.BufferGeometry[]>()
     tiles.set(tile, target)
@@ -305,7 +352,8 @@ export function buildMapObject(map: MapDef): THREE.Group {
     for (const [material, geometries] of meshes) {
       const merged = mergeGeometries(geometries)
       for (const g of geometries) g.dispose()
-      const mesh = new THREE.Mesh(merged, getSurfaceMaterial(material))
+      const surface = map.survival ? grimedMaterial(material) : getSurfaceMaterial(material)
+      const mesh = new THREE.Mesh(merged, surface)
       mesh.name = `surface:${material}`
       mesh.castShadow = castsShadow(material)
       mesh.receiveShadow = !isTransparent(material)
