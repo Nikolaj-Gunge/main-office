@@ -128,6 +128,17 @@ export interface VehicleNet {
   seats: number[]
   /** Everything the car's simulation needs to carry on from here (the driver predicts it). */
   state: VehicleState
+  /** Fuel in the tank (0–100). */
+  fuel: number
+  /** What the engine is doing (Engine in car-condition.ts). */
+  engine: number
+  /** What it's known to need (CarPart bits): only what you could know. */
+  needs: number
+  /** Share of a good car's top speed (0–1), and which way it pulls (−1 … 1). */
+  top: number
+  pull: number
+  /** How far along somebody fixing it is (0–1; 0 = nobody). */
+  work: number
 }
 
 /** What a shot hit, for drawing tracers and impacts on other clients. */
@@ -511,6 +522,13 @@ function writeVehicle(w: BinaryWriter, v: VehicleNet): void {
   w.f32(s.x).f32(s.y).f32(s.z).f32(s.yaw)
   w.f32(s.vx).f32(s.vy).f32(s.vz).f32(s.steer)
   w.f32(s.pitch).f32(s.roll)
+  const unit = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255)
+  w.u8(Math.round(Math.max(0, Math.min(100, v.fuel))))
+    .u8(v.engine)
+    .u8(v.needs)
+  w.u8(unit(v.top))
+    .u8(unit((v.pull + 1) / 2))
+    .u8(unit(v.work))
 }
 
 function readVehicle(r: BinaryReader): VehicleNet {
@@ -530,7 +548,26 @@ function readVehicle(r: BinaryReader): VehicleNet {
     pitch: r.f32(),
     roll: r.f32(),
   }
-  return { id, look, health: health & 0x7f, wrecked: (health & 0x80) !== 0, seats, state }
+  const fuel = r.u8()
+  const engine = r.u8()
+  const needs = r.u8()
+  const top = r.u8() / 255
+  const pull = (r.u8() / 255) * 2 - 1
+  const work = r.u8() / 255
+  return {
+    id,
+    look,
+    health: health & 0x7f,
+    wrecked: (health & 0x80) !== 0,
+    seats,
+    state,
+    fuel,
+    engine,
+    needs,
+    top,
+    pull,
+    work,
+  }
 }
 
 // --- Small helpers ---------------------------------------------------------------------------

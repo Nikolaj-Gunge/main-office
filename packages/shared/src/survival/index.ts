@@ -1,5 +1,6 @@
 export * from './barricades.ts'
 export * from './camp-folk.ts'
+export * from './car-condition.ts'
 export * from './daytime.ts'
 export * from './drops.ts'
 export * from './gear.ts'

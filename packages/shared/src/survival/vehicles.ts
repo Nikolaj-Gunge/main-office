@@ -12,12 +12,12 @@ export interface CarSpot {
 }
 
 /**
- * The places a car was left (two in the bigger towns). Hollis' cabin has one: the first thing
- * you find can be a way to get about.
+ * The places a car was left (two in the bigger towns). None at Hollis' cabin: a car is
+ * something you go out and find (and, mostly, fix).
  */
 const CAR_PLACES: [string, number][] = [
-  ['start', 1],
   ['haven', 1],
+  ['trailers', 1],
   ['pinewatch', 2],
   ['millcreek', 1],
   ['ashford', 2],

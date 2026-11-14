@@ -1056,8 +1056,15 @@ export class SurvivalDirector {
     }
     if (spot >= 0 && (!thing || spotScore >= best)) return void this.board(sv, spot)
     if (thing) return void this.useThing(sv, thing)
-    // Beside a car: get in.
-    if (this.vehicles.use(player)) return
+    // Beside a car: fix it with what you carry, or get in.
+    const pack = {
+      has: (item: string) => countOf(sv.self.inv, item) > 0,
+      take: (item: string) => {
+        takeStack(sv.self.inv, item, 1)
+        sv.dirty = true
+      },
+    }
+    if (this.vehicles.use(player, pack)) return
 
     // Standing in the lake: drink.
     for (const lake of this.def.lakes) {
