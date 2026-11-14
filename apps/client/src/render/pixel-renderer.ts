@@ -4,6 +4,16 @@ import type { GameRenderer } from './game-renderer.ts'
 import { MAX_PALETTE_SIZE, PALETTES } from './palettes.ts'
 import postFragment from './shaders/post.frag.glsl?raw'
 
+/**
+ * Where outlines have faded out (m): at the fog's far end, kept between 120 m (small maps keep
+ * theirs) and 420 m (a forest on the horizon gets no pen line).
+ */
+export function outlineFar(scene: THREE.Scene): number {
+  const fog = scene.fog as THREE.Fog | null
+  const far = fog && 'far' in fog ? fog.far : 420
+  return Math.max(120, Math.min(420, far))
+}
+
 const POST_VERTEX = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -99,6 +109,7 @@ function createPostUniforms(
     levels: { value: 24 },
     dither: { value: 1 },
     outlines: { value: 0.35 },
+    outlineFar: { value: 420 },
     contrast: { value: 0.6 },
     saturation: { value: 1.25 },
     vignette: { value: 0.4 },
@@ -338,6 +349,7 @@ export class PixelRenderer implements GameRenderer {
   ): void {
     this.uniforms.cameraNear.value = camera.near
     this.uniforms.cameraFar.value = camera.far
+    this.uniforms.outlineFar.value = outlineFar(scene)
 
     const r = this.renderer
     r.setRenderTarget(this.target)

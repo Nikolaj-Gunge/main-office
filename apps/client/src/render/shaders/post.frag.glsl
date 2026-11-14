@@ -14,6 +14,8 @@ uniform int colorMode;      // 0 = off, 1 = per-channel levels, 2 = palette
 uniform float levels;
 uniform float dither;
 uniform float outlines;
+// Outlines fade out towards here (m): about the fog's far end (outlineFar in pixel-renderer.ts).
+uniform float outlineFar;
 uniform float contrast;     // 0 = flat, 1 = deep blacks and hot highlights
 uniform float saturation;   // 1 = as lit
 uniform float vignette;     // 0 = none, 1 = dark corners
@@ -128,8 +130,8 @@ void main() {
       max(viewDepth(vUv + vec2(texel.x, 0.0)), viewDepth(vUv - vec2(texel.x, 0.0))),
       max(viewDepth(vUv + vec2(0.0, texel.y)), viewDepth(vUv - vec2(0.0, texel.y)))
     );
-    // None far off, where the haze has softened every edge (or a far forest gets a pen line).
-    float edge = step(0.12 * d + 0.15, far - d) * (1.0 - smoothstep(250.0, 420.0, d));
+    // None far off, where the fog has softened every edge (or a far forest gets a pen line).
+    float edge = step(0.12 * d + 0.15, far - d) * (1.0 - smoothstep(outlineFar * 0.6, outlineFar, d));
     color *= 1.0 - edge * outlines;
   }
 

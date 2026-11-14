@@ -149,6 +149,7 @@ export function createPostUniforms() {
     levels: uniform(24),
     dither: uniform(1),
     outlines: uniform(0.35),
+    outlineFar: uniform(420),
     contrast: uniform(0.6),
     saturation: uniform(1.25),
     vignette: uniform(0.4),
@@ -211,8 +212,9 @@ export function postNode(i: PostInputs, u: PostUniforms): N<'vec4'> {
       max(viewDepth(vUv.add(vec2(texel.x, 0))), viewDepth(vUv.sub(vec2(texel.x, 0)))),
       max(viewDepth(vUv.add(vec2(0, texel.y))), viewDepth(vUv.sub(vec2(0, texel.y)))),
     )
-    // None far off, where the haze has softened every edge (or a far forest gets a pen line).
-    const edge = step(d.mul(0.12).add(0.15), far.sub(d)).mul(float(1).sub(smoothstep(250, 420, d)))
+    // None far off, where the fog has softened every edge (or a far forest gets a pen line).
+    const fade = float(1).sub(smoothstep(u.outlineFar.mul(0.6), u.outlineFar, d))
+    const edge = step(d.mul(0.12).add(0.15), far.sub(d)).mul(fade)
     const outline = select(u.outlines.greaterThan(0).and(overlay.a.lessThan(0.5)), u.outlines, 0)
     color.mulAssign(float(1).sub(edge.mul(outline)))
 

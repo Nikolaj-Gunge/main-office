@@ -4,6 +4,7 @@ import { NodeMaterial, QuadMesh, RenderTarget, WebGPURenderer } from 'three/webg
 import { COLOR_MODES, type Settings } from '../../settings.ts'
 import type { GameRenderer } from '../game-renderer.ts'
 import { MAX_PALETTE_SIZE, PALETTES } from '../palettes.ts'
+import { outlineFar } from '../pixel-renderer.ts'
 import { installNodeVariants } from './node-variants.ts'
 import { blurNode, brightNode, createPostUniforms, fxaaNode, postNode } from './post-nodes.ts'
 
@@ -234,6 +235,7 @@ export class GpuPixelRenderer implements GameRenderer {
   ): void {
     this.uniforms.cameraNear.value = camera.near
     this.uniforms.cameraFar.value = camera.far
+    this.uniforms.outlineFar.value = outlineFar(scene)
     this.syncShadows(scene)
 
     const r = this.renderer

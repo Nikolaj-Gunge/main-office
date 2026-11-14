@@ -23,7 +23,7 @@ import * as THREE from 'three'
 /** Tree cards and the coarse ground reach this far from the chunk you're in (m). */
 export const FAR = 450
 /** The coarse ground has a vertex every this many metres (a multiple of CELL). */
-const STEP = 8
+const STEP = 16
 /** The treeline ring stands this far out (m). */
 const WALL = 560
 /** Card atlas: one cell per kind of tree, CARD_W × CARD_H metres at CARD_PX texels a metre. */
@@ -332,6 +332,14 @@ export class FarForest {
   private readonly wall: THREE.Mesh
   /** Cards per far chunk: (x, y, z, scale) and (tile, ±shade), 6 floats a tree. */
   private readonly cache = new Map<number, Float32Array>()
+  /** The far chunks' cards (row by row), and how near each chunk comes to `centre`. */
+  private farChunks: { cards: Float32Array; near: number }[] = []
+  /** The same nearnesses, sorted. */
+  private nears = new Float32Array(0)
+  /** The point the far forest was last laid out around. */
+  private readonly centre = new THREE.Vector2()
+  /** How many of the nearest far chunks have their cards drawn (-1: refill). */
+  private shownChunks = -1
 
   constructor(host: FarHost, colors: TreeColors) {
     this.host = host
@@ -365,10 +373,24 @@ export class FarForest {
     this.root.add(this.ground, this.cards, this.wall)
   }
 
-  /** Cards and treeline beyond `fogFar` would only be fog: skip them (night). */
-  cull(fogFar: number, holeEdge: number): void {
+  /**
+   * Cards and treeline beyond `fogFar` would only be fog: skip them (all of it at night; in rain
+   * or fog by day the cards past the fog). (x, z): where you are.
+   */
+  cull(fogFar: number, holeEdge: number, x: number, z: number): void {
     this.root.visible = fogFar > holeEdge
     this.wall.visible = fogFar > 200
+    // Draw the chunks that come nearer than the fog's far end (refilled when that changes).
+    const reach = fogFar + Math.hypot(x - this.centre.x, z - this.centre.y)
+    const nears = this.nears
+    let lo = 0
+    let hi = nears.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if ((nears[mid] as number) < reach) lo = mid + 1
+      else hi = mid
+    }
+    if (lo !== this.shownChunks) this.fillCards(lo)
   }
 
   /**
@@ -378,6 +400,7 @@ export class FarForest {
   rebuild(ccx: number, ccz: number, inner: (cx: number, cz: number) => boolean): void {
     const ox = (ccx + 0.5) * CHUNK - WORLD_HALF
     const oz = (ccz + 0.5) * CHUNK - WORLD_HALF
+    this.centre.set(ox, oz)
     this.buildGround(ox, oz, inner)
     this.buildCards(ccx, ccz, inner)
     this.buildWall(ox, oz)
@@ -479,29 +502,46 @@ export class FarForest {
 
   private buildCards(ccx: number, ccz: number, inner: (cx: number, cz: number) => boolean): void {
     const reach = Math.ceil(FAR / CHUNK)
-    const pos = this.cardPos.array as Float32Array
-    const look = this.cardLook.array as Float32Array
-    let count = 0
     const keep = new Set<number>()
+    this.farChunks = []
     for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
       for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
         if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR || inner(cx, cz)) continue
         keep.add(CHUNK_KEY(cx, cz))
-        const cards = this.chunkCards(cx, cz)
-        for (let k = 0; k < cards.length && count < MAX_CARDS; k += 6) {
-          pos.set(cards.subarray(k, k + 4), count * 4)
-          look[count * 2] = cards[k + 4] as number
-          look[count * 2 + 1] = cards[k + 5] as number
-          count++
-        }
+        // How near the chunk comes to the centre (its middle, less half its diagonal).
+        const near = Math.hypot(cx - ccx, cz - ccz) * CHUNK - CHUNK * Math.SQRT1_2
+        this.farChunks.push({ cards: this.chunkCards(cx, cz), near })
       }
     }
+    this.nears = Float32Array.from(this.farChunks, (c) => c.near).sort()
+    this.fillCards(this.nears.length)
     // Forget chunks well behind (a few chunks' slack, so walking back and forth costs nothing).
     for (const key of this.cache.keys()) {
       if (keep.has(key)) continue
       const cx = Math.floor(key / CHUNKS)
       const cz = key % CHUNKS
       if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR + CHUNK * 3) this.cache.delete(key)
+    }
+  }
+
+  /**
+   * Cards for the `chunks` nearest far chunks. They go in row by row, not nearest first: trees
+   * drawn in order of distance hop all over the screen, and take a fifth longer to rasterise.
+   */
+  private fillCards(chunks: number): void {
+    this.shownChunks = chunks
+    const cut = chunks > 0 ? (this.nears[chunks - 1] as number) : -Infinity
+    const pos = this.cardPos.array as Float32Array
+    const look = this.cardLook.array as Float32Array
+    let count = 0
+    for (const { cards, near } of this.farChunks) {
+      if (near > cut) continue
+      for (let k = 0; k < cards.length && count < MAX_CARDS; k += 6) {
+        pos.set(cards.subarray(k, k + 4), count * 4)
+        look[count * 2] = cards[k + 4] as number
+        look[count * 2 + 1] = cards[k + 5] as number
+        count++
+      }
     }
     this.cardGeometry.instanceCount = count
     this.cardPos.clearUpdateRanges()
