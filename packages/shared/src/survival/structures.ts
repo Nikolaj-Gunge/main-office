@@ -161,7 +161,7 @@ export function bonfire(s: Site, x: number, z: number): void {
   s.deco(x, 0.3, z, 0.26, 0.6, 0.26, 'lightpanel')
   s.light(x, 1.3, z, { color: 0xffa860, intensity: 42, distance: 26, flicker: 0.35 })
   // High above it, a soft glow over the whole camp (the fire's light on smoke and canvas).
-  s.light(x, 14, z, { color: 0xffd6aa, intensity: 220, distance: 55 })
+  s.light(x, 14, z, { color: 0xffd6aa, intensity: 380, distance: 70 })
 }
 
 /**
