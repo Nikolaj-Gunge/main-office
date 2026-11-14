@@ -6,6 +6,7 @@ import {
   chunkProps,
   hash2,
   heightAt,
+  type Prop,
   PropKind,
   type Road,
   RoadGrid,
@@ -15,13 +16,26 @@ import {
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { FarForest } from './forest-lod.ts'
 import { buildDetail, detailItems, detailMaterials } from './ground-detail.ts'
 import { buildSigns } from './road-signs.ts'
 import { filterTexture, getSurfaceMaterial } from './textures.ts'
 import { makeSwaying } from './wind.ts'
 
-/** Ground and forest are drawn in chunks whose centre is within this of you (m). */
-const VIEW = 170
+// --- Level of detail ----------------------------------------------------------------------
+// Chunks whose centre is within NEAR of you are built in full (every bush and fern, swaying);
+// out to MID, simplified trees (a few cones, no undergrowth, still); beyond, out to FAR, the
+// coarse ground and tree cards of forest-lod.ts. Which chunks are shown is measured from the
+// centre of the chunk you're in, so the set (and the far forest's hole) only changes when you
+// cross into another chunk.
+/** Full-detail chunks: centre within this of you (m). */
+const NEAR = 100
+/** Real chunks (ground at full resolution, simplified trees): centre within this (m). */
+const MID = 190
+/** A chunk only changes detail this far (m) past the line, so walking along it costs nothing. */
+const SLACK = 10
+/** Changes within this of you (m) redraw the shadows (they reach about 80 m). */
+const SHADOW_CHUNKS = 100
 /** Chunks built per frame once the ones right around you exist (keeps frames even). */
 const PER_FRAME = 1
 /** Ground detail (grass, twigs, mushrooms…) is built for chunks this close to you (m). */
@@ -72,7 +86,7 @@ class Triangles {
 
   /**
    * An upright box turned `turn` (radians) about the vertical through (x, z), from `y` up `h`,
-   * leaning by (lx, lz) metres at the top.
+   * leaning by (lx, lz) metres at the top. `top` null leaves the top open (nobody sees it).
    */
   box(
     x: number,
@@ -85,7 +99,7 @@ class Triangles {
     color: THREE.Color,
     lx = 0,
     lz = 0,
-    top = color,
+    top: THREE.Color | null = color,
   ): void {
     const c = Math.cos(turn)
     const s = Math.sin(turn)
@@ -112,7 +126,7 @@ class Triangles {
       const j = (i + 1) % 4
       this.quad(b[j] as number[], b[i] as number[], t[i] as number[], t[j] as number[], color)
     }
-    this.quad(t[0] as number[], t[3] as number[], t[2] as number[], t[1] as number[], top)
+    if (top) this.quad(t[0] as number[], t[3] as number[], t[2] as number[], t[1] as number[], top)
   }
 
   /** A four-sided pyramid: base half-width `r` at height `y`, tip `h` above it. */
@@ -125,31 +139,28 @@ class Triangles {
     turn: number,
     color: THREE.Color,
     dark: THREE.Color,
+    base = true,
   ): void {
     const tip = [x, y + h, z]
-    const base: number[][] = []
+    const rim: number[][] = []
     for (let i = 0; i < 4; i++) {
       const a = turn + (i * Math.PI) / 2
-      base.push([x + Math.cos(a) * r, y, z - Math.sin(a) * r])
+      rim.push([x + Math.cos(a) * r, y, z - Math.sin(a) * r])
     }
     for (let i = 0; i < 4; i++) {
-      this.tri(base[i] as number[], base[(i + 1) % 4] as number[], tip, i % 2 === 0 ? color : dark)
+      this.tri(rim[i] as number[], rim[(i + 1) % 4] as number[], tip, i % 2 === 0 ? color : dark)
     }
-    this.quad(
-      base[0] as number[],
-      base[3] as number[],
-      base[2] as number[],
-      base[1] as number[],
-      dark,
-    )
+    if (!base) return
+    this.quad(rim[0] as number[], rim[3] as number[], rim[2] as number[], rim[1] as number[], dark)
   }
 
-  build(): THREE.BufferGeometry {
+  /** @param sway keep the wind attribute (still, distant trees don't need it) */
+  build(sway = true): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3))
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.normal, 3))
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.color, 3))
-    g.setAttribute('sway', new THREE.Float32BufferAttribute(this.sway, 2))
+    if (sway) g.setAttribute('sway', new THREE.Float32BufferAttribute(this.sway, 2))
     return g
   }
 }
@@ -181,6 +192,93 @@ const ROCK_TOP = col(0x5d6266)
 const STUMP_TOP = col(0x7a6444)
 const BUSH = [col(0x1f3a1c), col(0x2a4a22)]
 const FERN = col(0x35592a)
+
+/**
+ * Trees past NEAR: a pine is a trunk and two open cones (16 triangles instead of 28), a birch a
+ * trunk and one block of leaves; undergrowth, stumps and logs are left out. Built without the
+ * wind (nobody sees a tree sway 150 m away).
+ */
+function simpleProps(items: readonly Prop[]): Triangles {
+  const tris = new Triangles()
+  for (const p of items) {
+    const turn = p.turn * Math.PI * 2
+    const s = p.scale
+    const pick = Math.floor(p.turn * 4) % 4
+    switch (p.kind) {
+      case PropKind.Pine: {
+        const green = NEEDLES[pick] as THREE.Color
+        const dark = NEEDLES_DARK[pick] as THREE.Color
+        tris.box(p.x, p.y - 0.3, p.z, 0.36 * s, 2.2 * s, 0.36 * s, turn, BARK, 0, 0, null)
+        tris.cone(p.x, p.y + 1.5 * s, p.z, 2 * s, 3.6 * s, turn, green, dark, false)
+        tris.cone(p.x, p.y + 3.7 * s, p.z, 1.35 * s, 3.1 * s, turn + 0.6, green, dark, false)
+        break
+      }
+      case PropKind.DeadTree: {
+        const lean = (p.turn - 0.5) * 1.2
+        tris.box(
+          p.x,
+          p.y - 0.3,
+          p.z,
+          0.32 * s,
+          5.4 * s,
+          0.32 * s,
+          turn,
+          DEAD,
+          lean,
+          lean * 0.5,
+          null,
+        )
+        const h = 3.5 * s
+        tris.box(
+          p.x + lean * 0.65,
+          p.y + h,
+          p.z,
+          0.12 * s,
+          1.5 * s,
+          0.12 * s,
+          turn,
+          DEAD,
+          Math.cos(turn) * 1.1 * s,
+          -Math.sin(turn) * 1.1 * s,
+          null,
+        )
+        break
+      }
+      case PropKind.Birch:
+        tris.box(
+          p.x,
+          p.y - 0.3,
+          p.z,
+          0.2 * s,
+          4 * s,
+          0.2 * s,
+          turn,
+          BIRCH,
+          (p.turn - 0.5) * 0.36,
+          0,
+          null,
+        )
+        tris.box(p.x + 0.2 * s, p.y + 3.4 * s, p.z, 1.6 * s, 2.3 * s, 1.5 * s, turn, BIRCH_LEAF)
+        break
+      case PropKind.Rock:
+        tris.box(
+          p.x,
+          p.y - 0.25,
+          p.z,
+          1.5 * s,
+          1.15 * s,
+          1.3 * s,
+          turn,
+          ROCK,
+          0.15 * s,
+          -0.1 * s,
+          ROCK_TOP,
+        )
+        break
+    }
+  }
+  return tris
+}
 
 const RUT = col(0x241c14)
 const RUT_GRASS = col(0x2e3a1c)
@@ -220,12 +318,29 @@ function makeGroundTexture(): THREE.CanvasTexture {
   return texture
 }
 
+/** Ground colour at a point, as the chunks paint it (for the far ground in forest-lod.ts). */
+function groundColor(t: SurvivalDef['terrain'], x: number, z: number): THREE.Color {
+  const shades = GROUND[surfaceAt(t, x, z)] ?? (GROUND[Surface.Forest] as THREE.Color[])
+  return shades[Math.floor(hash2(Math.round(x), Math.round(z), 3) * shades.length)] as THREE.Color
+}
+
+/** How a chunk's trees are drawn: in full, or simplified (see NEAR, MID). */
+const Detail = { Full: 0, Simple: 1 } as const
+type Detail = (typeof Detail)[keyof typeof Detail]
+
 interface Chunk {
   ground: THREE.Mesh
   props: THREE.Mesh
+  detailLevel: Detail
+  /** What grows here (chunkProps), kept for when the chunk changes detail. */
+  items: readonly Prop[]
+  /** Inside the far forest's hole (drawn), or waiting for it to move here. */
+  shown: boolean
   /** The little things on the ground, near you only (see ground-detail.ts). */
   detail: THREE.Group | null
 }
+
+const chunkCentre = (c: number) => (c + 0.5) * CHUNK - WORLD_HALF
 
 /** Distance from (x, z) to the nearest point of a chunk (0 inside it). */
 function chunkDistance(cx: number, cz: number, x: number, z: number): number {
@@ -250,13 +365,37 @@ export class Wilds {
     vertexColors: true,
   })
   private readonly propMaterial = swaying(new THREE.MeshLambertMaterial({ vertexColors: true }))
+  /** Simplified trees don't sway: no wind work in their shader. */
+  private readonly stillMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
   private readonly detailMaterial = detailMaterials()
   private readonly roads: RoadGrid
+  private readonly far: FarForest
+  /** The chunk the far forest's hole is centred on (-1: not built yet). */
+  private hole = -1
   private primed = false
 
   constructor(def: SurvivalDef) {
     this.def = def
     this.root.name = 'wilds'
+    this.far = new FarForest(
+      {
+        terrain: def.terrain,
+        groundMaterial: this.groundMaterial,
+        groundColor: (x, z) => groundColor(def.terrain, x, z),
+        props: (cx, cz) =>
+          this.chunks.get(cx * CHUNKS + cz)?.items ?? chunkProps(def.terrain, def.seed, cx, cz),
+      },
+      {
+        bark: BARK,
+        barkDark: BARK_DARK,
+        needles: NEEDLES,
+        needlesDark: NEEDLES_DARK,
+        birch: BIRCH,
+        birchLeaf: BIRCH_LEAF,
+        dead: DEAD,
+      },
+    )
+    this.root.add(this.far.root)
     this.roads = new RoadGrid(def.roads)
     if (def.signs?.length) this.root.add(buildSigns(def.signs))
     for (const road of def.roads) this.root.add(this.buildRoad(road))
@@ -278,47 +417,92 @@ export class Wilds {
   }
 
   /**
-   * Builds the chunks around (x, z) that aren't there yet and drops the ones left behind.
-   * Returns true when anything was added (the shadows want redrawing).
+   * Builds the chunks around (x, z) that aren't there yet, brings the ones you walk towards to
+   * full detail (and back), drops the ones left behind and moves the far forest along.
+   * Returns true when the shadows want redrawing (something changed near you).
    */
   update(x: number, z: number): boolean {
     const [ccx, ccz] = chunkOf(x, z)
-    const reach = Math.ceil(VIEW / CHUNK)
+    const centre = ccx * CHUNKS + ccz
+    const reach = Math.ceil(MID / CHUNK)
+    /** The chunks drawn in full around chunk (hx, hz); the far forest leaves a hole for them. */
+    const inner = (hx: number, hz: number) => (cx: number, cz: number) =>
+      Math.hypot(cx - hx, cz - hz) * CHUNK <= MID
     const wanted: { key: number; cx: number; cz: number; d: number }[] = []
+    const isWanted = inner(ccx, ccz)
     for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
       for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
-        const d = Math.hypot(
-          (cx + 0.5) * CHUNK - WORLD_HALF - x,
-          (cz + 0.5) * CHUNK - WORLD_HALF - z,
-        )
-        if (d <= VIEW) wanted.push({ key: cx * CHUNKS + cz, cx, cz, d })
+        if (!isWanted(cx, cz)) continue
+        const d = Math.hypot(chunkCentre(cx) - x, chunkCentre(cz) - z)
+        wanted.push({ key: cx * CHUNKS + cz, cx, cz, d })
       }
     }
     const keep = new Set(wanted.map((w) => w.key))
+    let changed = false
     for (const [key, chunk] of this.chunks) {
       const cx = Math.floor(key / CHUNKS)
       const cz = key % CHUNKS
-      const d = Math.hypot((cx + 0.5) * CHUNK - WORLD_HALF - x, (cz + 0.5) * CHUNK - WORLD_HALF - z)
-      if (keep.has(key) || d < VIEW + CHUNK) continue
+      const d = Math.hypot(chunkCentre(cx) - x, chunkCentre(cz) - z)
+      if (keep.has(key) || d < MID + CHUNK) continue
       this.root.remove(chunk.ground, chunk.props)
       chunk.ground.geometry.dispose()
       chunk.props.geometry.dispose()
       this.dropDetail(chunk)
       this.chunks.delete(key)
     }
-    const missing = wanted.filter((w) => !this.chunks.has(w.key)).sort((a, b) => a.d - b.d)
+    // Chunks to build, and built ones whose detail should change: nearest first.
+    const work: { key: number; cx: number; cz: number; d: number; level: Detail }[] = []
+    for (const w of wanted) {
+      const chunk = this.chunks.get(w.key)
+      const want = w.d <= NEAR ? Detail.Full : Detail.Simple
+      if (!chunk) work.push({ ...w, level: want })
+      else if (chunk.detailLevel !== want && Math.abs(w.d - NEAR) > SLACK) {
+        work.push({ ...w, level: want })
+      }
+    }
+    work.sort((a, b) => a.d - b.d)
     // Everything at once the first time and after a teleport; then a little per frame.
-    const near = missing.filter((m) => m.d < CHUNK * 1.6).length
-    const budget =
-      !this.primed || near > 0 ? Math.max(near, this.primed ? 0 : missing.length) : PER_FRAME
-    for (const m of missing.slice(0, Math.max(budget, PER_FRAME))) {
-      const chunk = this.buildChunk(m.cx, m.cz)
-      this.chunks.set(m.key, chunk)
-      this.root.add(chunk.ground, chunk.props)
+    const near = work.filter((m) => m.d < CHUNK * 1.6).length
+    const hx = Math.floor(this.hole / CHUNKS)
+    const hz = this.hole % CHUNKS
+    const jumped = this.hole >= 0 && Math.max(Math.abs(hx - ccx), Math.abs(hz - ccz)) > 2
+    const budget = !this.primed || jumped ? work.length : near > 0 ? near : PER_FRAME
+    for (const m of work.slice(0, Math.max(budget, PER_FRAME))) {
+      const chunk = this.chunks.get(m.key)
+      if (chunk) this.setDetail(chunk, m.level)
+      else {
+        const built = this.buildChunk(m.cx, m.cz, m.level)
+        this.chunks.set(m.key, built)
+        this.root.add(built.ground, built.props)
+      }
+      if (m.d < SHADOW_CHUNKS + CHUNK / 2) changed = true
+    }
+    // The far forest moves once every chunk it would leave a hole for is there.
+    if (centre !== this.hole && wanted.every((w) => this.chunks.has(w.key))) {
+      this.hole = centre
+      this.far.rebuild(ccx, ccz, isWanted)
+      for (const [key, chunk] of this.chunks) {
+        chunk.shown = keep.has(key)
+        chunk.ground.visible = chunk.props.visible = chunk.shown
+      }
     }
     this.updateDetail(x, z, budget)
     this.primed = true
-    return missing.length > 0
+    return changed
+  }
+
+  /**
+   * Hides what the fog hides anyway: real chunks beyond `fogFar` of (x, z), and the far forest
+   * when the fog closes in (night). Call once a frame, after the fog is set.
+   */
+  cull(x: number, z: number, fogFar: number): void {
+    for (const [key, chunk] of this.chunks) {
+      const cx = Math.floor(key / CHUNKS)
+      const cz = key % CHUNKS
+      const seen = chunk.shown && chunkDistance(cx, cz, x, z) < fogFar + 4
+      chunk.ground.visible = chunk.props.visible = seen
+    }
+    this.far.cull(fogFar, MID - CHUNK)
   }
 
   /** Ground detail for the chunks right around (x, z); dropped again once you've walked on. */
@@ -357,7 +541,7 @@ export class Wilds {
     chunk.detail = null
   }
 
-  private buildChunk(cx: number, cz: number): Chunk {
+  private buildChunk(cx: number, cz: number, level: Detail): Chunk {
     const t = this.def.terrain
     const x0 = cx * CHUNK - WORLD_HALF
     const z0 = cz * CHUNK - WORLD_HALF
@@ -408,8 +592,40 @@ export class Wilds {
     ground.receiveShadow = true
     ground.name = 'ground'
 
+    const items = chunkProps(t, this.def.seed, cx, cz)
+    const chunk: Chunk = {
+      ground,
+      props: this.buildProps(items, level),
+      detailLevel: level,
+      items,
+      shown: this.hole < 0,
+      detail: null,
+    }
+    chunk.ground.visible = chunk.props.visible = chunk.shown
+    return chunk
+  }
+
+  /** Swaps a chunk's trees for the full or the simplified ones. */
+  private setDetail(chunk: Chunk, level: Detail): void {
+    const props = this.buildProps(chunk.items, level)
+    props.visible = chunk.props.visible
+    this.root.remove(chunk.props)
+    chunk.props.geometry.dispose()
+    chunk.props = props
+    chunk.detailLevel = level
+    this.root.add(props)
+  }
+
+  private buildProps(items: readonly Prop[], level: Detail): THREE.Mesh {
+    if (level === Detail.Simple) {
+      const props = new THREE.Mesh(simpleProps(items).build(false), this.stillMaterial)
+      props.castShadow = true
+      props.receiveShadow = true
+      props.name = 'forest-simple'
+      return props
+    }
     const tris = new Triangles()
-    for (const p of chunkProps(t, this.def.seed, cx, cz)) {
+    for (const p of items) {
       const turn = p.turn * Math.PI * 2
       const s = p.scale
       const pick = Math.floor(p.turn * 4) % 4
@@ -538,7 +754,7 @@ export class Wilds {
     props.castShadow = true
     props.receiveShadow = true
     props.name = 'forest'
-    return { ground, props, detail: null }
+    return props
   }
 
   /** A strip along the road's centre line, lying just above the ground it levelled. */

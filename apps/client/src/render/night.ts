@@ -32,8 +32,9 @@ const DAY = {
   sun: new THREE.Color(0xfff0d8),
   sunIntensity: 2.4,
   fog: new THREE.Color(0x8d989c),
-  fogNear: 25,
-  fogFar: 150,
+  fogNear: 40,
+  /** Far, now that the distant forest is cheap (see forest-lod.ts); night stays at the map's. */
+  fogFar: 420,
 }
 /** The low sun at dawn and dusk tints the fog and sky. */
 const EMBER = new THREE.Color(0xc8784a)

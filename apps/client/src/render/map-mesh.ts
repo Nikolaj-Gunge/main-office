@@ -141,6 +141,105 @@ export function renderBounds(map: MapDef): (Bounds | null)[] {
 
 /** Tile size (m) for cutting big worlds up (see buildMapObject). */
 const TILE = 96
+/** Tiles nearer than this (m, to their nearest edge) are drawn in full; further, simplified. */
+const TILE_NEAR = 90
+/** Boxes smaller than this every way (m) are left out of the simplified tiles. */
+const SMALL = 1.2
+
+/** A big world's tile: its full meshes, the simplified one, and what glows (always shown). */
+interface TileLod {
+  group: THREE.Group
+  x0: number
+  z0: number
+  full: THREE.Mesh[]
+  simple: THREE.Mesh | null
+}
+
+const averages = new Map<MaterialId, THREE.Color>()
+
+/**
+ * A material's colour seen from afar: its texture averaged, tinted by the material (glass as a
+ * dark pane, since the simplified tiles have nothing behind it to show).
+ */
+function averageColor(id: MaterialId): THREE.Color {
+  const cached = averages.get(id)
+  if (cached) return cached
+  const material = getSurfaceMaterial(id) as THREE.MeshLambertMaterial
+  const color = new THREE.Color(0.5, 0.5, 0.5)
+  const image = material.map?.image as HTMLCanvasElement | undefined
+  const ctx = image?.getContext?.('2d')
+  if (image && ctx) {
+    const data = ctx.getImageData(0, 0, image.width, image.height).data
+    let r = 0
+    let g = 0
+    let b = 0
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i] ?? 0
+      g += data[i + 1] ?? 0
+      b += data[i + 2] ?? 0
+    }
+    const n = (data.length / 4) * 255
+    color.setRGB(r / n, g / n, b / n, THREE.SRGBColorSpace)
+  }
+  color.multiply(material.color)
+  if (isTransparent(id)) color.lerp(new THREE.Color(0x141a22), 0.65)
+  averages.set(id, color)
+  return color
+}
+
+const glows = (id: MaterialId) =>
+  (getSurfaceMaterial(id) as THREE.MeshLambertMaterial).emissiveMap != null
+
+/**
+ * One mesh for a far tile: every box but the small ones, each painted its material's average
+ * colour. One draw call instead of one per material, and a fifth fewer triangles.
+ */
+function simplifiedTile(
+  meshes: Map<MaterialId, THREE.BufferGeometry[]>,
+  small: Set<THREE.BufferGeometry>,
+  material: THREE.Material,
+): THREE.Mesh | null {
+  const parts: THREE.BufferGeometry[] = []
+  for (const [id, geometries] of meshes) {
+    if (glows(id)) continue
+    const c = averageColor(id)
+    for (const g of geometries) {
+      if (small.has(g)) continue
+      const part = g.clone()
+      part.deleteAttribute('uv')
+      const n = part.getAttribute('position').count
+      const color = new Float32Array(n * 3)
+      for (let i = 0; i < n; i++) color.set([c.r, c.g, c.b], i * 3)
+      part.setAttribute('color', new THREE.BufferAttribute(color, 3))
+      parts.push(part)
+    }
+  }
+  if (parts.length === 0) return null
+  const merged = mergeGeometries(parts)
+  for (const g of parts) g.dispose()
+  const mesh = new THREE.Mesh(merged, material)
+  mesh.name = 'tile-simple'
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  return mesh
+}
+
+/**
+ * Big worlds (survival): tiles out of `reach` (the fog) are skipped, far ones drawn simplified,
+ * near ones in full. Call once a frame with where you are.
+ */
+export function updateMapLod(mapObject: THREE.Object3D, x: number, z: number, reach: number): void {
+  for (const tile of (mapObject.userData.tiles ?? []) as TileLod[]) {
+    const dx = Math.max(tile.x0 - x, 0, x - (tile.x0 + TILE))
+    const dz = Math.max(tile.z0 - z, 0, z - (tile.z0 + TILE))
+    const d = Math.hypot(dx, dz)
+    tile.group.visible = d < reach
+    if (!tile.group.visible) continue
+    const near = d < TILE_NEAR || !tile.simple
+    for (const mesh of tile.full) mesh.visible = near
+    if (tile.simple) tile.simple.visible = !near
+  }
+}
 
 /**
  * Builds the static map: one merged mesh per material (few draw calls) plus labels. Gates
@@ -162,6 +261,8 @@ export function buildMapObject(map: MapDef): THREE.Group {
   const euler = new THREE.Euler()
 
   const bounds = renderBounds(map)
+  /** Boxes left out of far tiles (see simplifiedTile). */
+  const small = new Set<THREE.BufferGeometry>()
   const corn: MapBox[] = []
   map.boxes.forEach((box, i) => {
     if (box.render === false) return
@@ -193,12 +294,14 @@ export function buildMapObject(map: MapDef): THREE.Group {
       target = swings.get(box.swing) ?? new Map()
       swings.set(box.swing, target)
     }
+    if (Math.max(...size) < SMALL) small.add(geometry)
     const list = target.get(box.material) ?? []
     list.push(geometry)
     target.set(box.material, list)
   })
 
   const addMerged = (parent: THREE.Group, meshes: Map<MaterialId, THREE.BufferGeometry[]>) => {
+    const added: THREE.Mesh[] = []
     for (const [material, geometries] of meshes) {
       const merged = mergeGeometries(geometries)
       for (const g of geometries) g.dispose()
@@ -209,14 +312,29 @@ export function buildMapObject(map: MapDef): THREE.Group {
       // Glass after everything opaque so you see what's behind it.
       if (isTransparent(material)) mesh.renderOrder = 1
       parent.add(mesh)
+      // What glows stays in full at any distance (a lit window far off is still lit).
+      if (!glows(material)) added.push(mesh)
     }
+    return added
   }
+  const lods: TileLod[] = []
+  const simpleMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
   for (const [key, meshes] of tiles) {
     const tile = new THREE.Group()
     tile.name = `tile:${key}`
-    addMerged(tile, meshes)
+    const simple = map.survival ? simplifiedTile(meshes, small, simpleMaterial) : null
+    const full = addMerged(tile, meshes)
+    if (simple) {
+      simple.visible = false
+      tile.add(simple)
+    }
     group.add(tile)
+    if (map.survival) {
+      const [tx = 0, tz = 0] = key.split(',').map(Number)
+      lods.push({ group: tile, x0: tx * TILE, z0: tz * TILE, full, simple })
+    }
   }
+  group.userData.tiles = lods
   for (const [id, meshes] of gates) {
     const gate = new THREE.Group()
     gate.name = `gate:${id}`

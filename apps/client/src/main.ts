@@ -120,8 +120,9 @@ const coopZone = new CoopZoneMarker()
 scene.add(coopZone.root)
 // Survival lights itself (see SurvivalClient): a moon that follows you, lamps only nearby.
 if (!map.survival) createLighting(map, scene)
-// Survival: nothing past the fog is worth drawing (the sky is pinned to the far plane anyway).
-if (map.survival) camera.far = 240
+// Survival: nothing past the fog is worth drawing (the sky is pinned to the far plane anyway);
+// by day the haze lifts to ~420 m and a faint treeline stands at 560 m (see forest-lod.ts).
+if (map.survival) camera.far = 640
 // The map never moves: draw the sun's (big) shadow map once instead of every frame — the
 // single most expensive thing a laptop GPU was doing each frame.
 pixels.renderer.shadowMap.autoUpdate = false
