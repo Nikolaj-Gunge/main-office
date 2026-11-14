@@ -1,5 +1,6 @@
 import {
   AMMO_BOX,
+  ammoBeside,
   ammoItem,
   BITTEN_STORY,
   BOARD_REACH,
@@ -513,6 +514,8 @@ export class SurvivalDirector {
       if (this.random() < 0.14) {
         const drop = rollLoot(this.random() < 0.5 ? 'bedroom' : 'medical', this.random)
         if (drop) this.dropAt(drop.item, drop.n, victim.state.pos, undefined, true)
+        const beside = drop && ammoBeside(drop.item, this.random)
+        if (beside) this.dropAt(beside.item, beside.n, victim.state.pos, undefined, true)
       }
       return
     }
@@ -867,8 +870,8 @@ export class SurvivalDirector {
         if (spot.poi !== i || taken.has(s)) return
         if (!first && this.random() < 0.35) return
         const [x, y, z] = spot.pos
-        // Often a second thing lies beside the first.
-        const count = this.random() < 0.35 ? 2 : 1
+        // Often a second thing lies beside the first (but a home keeps only the one gun).
+        const count = spot.table !== 'homegun' && this.random() < 0.35 ? 2 : 1
         for (let k = 0; k < count; k++) {
           const roll = rollLoot(spot.table, this.random)
           if (!roll) continue
@@ -878,7 +881,15 @@ export class SurvivalDirector {
             weapon === undefined
               ? undefined
               : Math.floor(this.random() * (WEAPONS[weapon].magSize + 1) * 0.6)
-          this.addLoot(roll.item, roll.n, { x: x + k * 0.28, y, z: z + k * 0.12 }, s, ammo)
+          const at = { x: x + k * 0.28, y, z: z + k * 0.12 }
+          this.addLoot(roll.item, roll.n, at, s, ammo)
+          // And a couple of loose rounds for it lie right next to it.
+          const beside = ammoBeside(roll.item, this.random)
+          if (beside) {
+            const a = this.random() * Math.PI * 2
+            const near = { x: at.x + Math.cos(a) * 0.3, y, z: at.z + Math.sin(a) * 0.3 }
+            this.addLoot(beside.item, beside.n, near, s)
+          }
         }
       })
     })
@@ -1640,9 +1651,7 @@ export class SurvivalDirector {
         npc,
         rare.some((r) => r.item === 'cure')
           ? "Got something special today. Came off a soldier from Site 7. Don't ask what it cost him."
-          : rare.length > 0
-            ? 'Cash only. And yes, that is adrenaline. No, I will not haggle.'
-            : 'Cash only. No refunds. No haunted merchandise, probably.',
+          : 'Cash only. No refunds. No haunted merchandise, probably.',
         [{ id: 'bye', label: 'Goodbye.' }],
         stock,
       )

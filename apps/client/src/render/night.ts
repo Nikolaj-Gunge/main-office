@@ -21,6 +21,14 @@ const SHADOW_STEP = 20
 
 /** The moon is this much brighter than the map's (night) sun value says. */
 const MOON = 1.8
+/** How much brighter a lamp burns than the map says (it used to be 2.6, which glared). */
+const LAMP_BOOST = 1.8
+/**
+ * Lamps are drawn towards a plain warm white by this much, so a red or green bulb reads as a
+ * tint rather than a disco light.
+ */
+const LAMP_TINT = 0.5
+const LAMP_WHITE = new THREE.Color(0xffe4c4)
 
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 
@@ -221,9 +229,12 @@ export class Night {
       if (!s) continue
       const d = Math.hypot(s.pos[0] - viewer.x, s.pos[2] - viewer.z)
       const fade = Math.max(0, Math.min(1, (LAMP_RANGE - d) / 15))
-      const flicker = s.flicker ? flickerLevel(t, slot.index * 7.31, s.flicker) : 1
+      // A gentler flicker than the map asks for: fewer bursts, and they dim rather than go out.
+      const flicker = s.flicker
+        ? 0.55 + 0.45 * flickerLevel(t, slot.index * 7.31, s.flicker * 0.5)
+        : 1
       // By day a lamp hardly shows.
-      slot.light.intensity = s.intensity * 2.6 * fade * flicker * this.lampLevel
+      slot.light.intensity = s.intensity * LAMP_BOOST * fade * flicker * this.lampLevel
       // Lanterns swing in the wind, and their light with them.
       if (s.hang) hangingLightPos(s, slot.index, wind.time, true, slot.light.position)
     }
@@ -253,7 +264,7 @@ export class Night {
       if (!slot || !l) break
       slot.source = l
       slot.index = i
-      slot.light.color.setHex(l.color)
+      slot.light.color.setHex(l.color).lerp(LAMP_WHITE, LAMP_TINT)
       slot.light.distance = l.distance * 1.15
       slot.light.position.set(...l.pos)
     }

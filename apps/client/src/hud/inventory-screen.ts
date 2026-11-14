@@ -11,7 +11,7 @@ import {
   type ItemDef,
   type ItemDest,
   type ItemRef,
-  infectionLeftText,
+  infectionClock,
   infectionWord,
   type LootItem,
   maxStack,
@@ -336,7 +336,7 @@ export class InventoryScreen {
     const turnIn = this.ctx.infected ?? self.infected ?? null
     if (turnIn !== null) {
       el('div', 'sv-condition', stats, `Infected — ${infectionWord(turnIn).toLowerCase()}.`)
-      el('div', 'sv-condition-help', stats, infectionLeftText(turnIn))
+      el('div', 'sv-condition-help', stats, `${infectionClock(turnIn)} left.`)
     }
   }
 

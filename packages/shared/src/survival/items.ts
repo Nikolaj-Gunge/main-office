@@ -109,7 +109,11 @@ const AMMO_ITEMS: [AmmoType, string, string, number, number][] = [
   ['bolt', 'bolts', 'Crossbow bolts', 0.03, 8],
 ]
 for (const [ammo, id, name, weight, value] of AMMO_ITEMS) {
-  add({ id, name, kind: 'ammo', weight, value, ammo, desc: `Fits anything chambered in ${ammo}.` })
+  const guns = WEAPON_ITEMS.filter(([w]) => WEAPONS[w].ammoType === ammo).map(
+    ([w]) => WEAPONS[w].name,
+  )
+  const desc = guns.length ? `For the ${guns.join(', ')}.` : `Fits anything chambered in ${ammo}.`
+  add({ id, name, kind: 'ammo', weight, value, ammo, desc })
 }
 
 // ── Food ──
@@ -186,7 +190,7 @@ med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', {
 })
 med('painkillers', 'Painkillers', 0.05, 40, "You'll feel it tomorrow instead.", { health: 22 })
 med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', { health: 35 })
-med('adrenaline', 'Adrenaline shot', 0.05, 160, 'Run now, pay later. Holds the turn back.', {
+med('adrenaline', 'Adrenaline shot', 0.05, 300, 'Run now, pay later. Holds the turn back.', {
   health: 15,
   stamina: 100,
   infection: 'delay',
@@ -377,6 +381,8 @@ export const LOOT_TABLES = [
   'drop',
   /** Site 7's laboratory: what Voss worked on, and now and then what it was for. */
   'lab',
+  /** The gun most homes kept somewhere: a cheap pistol or an old shotgun, never anything good. */
+  'homegun',
 ] as const
 export type LootTable = (typeof LOOT_TABLES)[number]
 
@@ -394,7 +400,10 @@ const TABLES: Record<LootTable, TableDef> = {
     empty: 0.18,
     entries: [
       ['revolver', 0.25],
-      ['ammo357', 0.8, 2, 6],
+      ['ammo357', 1.5, 2, 6],
+      ['ammo9', 2, 3, 8],
+      ['ammo12', 1.5, 2, 5],
+      ['ammo22', 1.5, 6, 12],
       ['beans', 10],
       ['soup', 9],
       ['tuna', 8],
@@ -436,7 +445,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['flannel', 1.5],
       ['bandana', 1.5],
       ['doublebarrel', 0.6],
-      ['ammo12', 2, 2, 6],
+      ['ammo12', 4, 2, 6],
+      ['ammo22', 2, 6, 12],
+      ['ammo9', 1.5, 3, 8],
       ['scrap', 10, 1, 3],
       ['planks', 7, 2, 4],
       ['ducttape', 7],
@@ -467,7 +478,10 @@ const TABLES: Record<LootTable, TableDef> = {
       ['glock', 0.8],
       ['revolver', 0.5],
       ['m1911', 0.4],
-      ['ammo9', 2, 4, 10],
+      ['ammo9', 10, 4, 10],
+      ['ammo357', 2, 2, 6],
+      ['ammo45', 1.5, 3, 7],
+      ['ammo12', 2, 2, 5],
       ['cash', 9, 5, 40],
       ['watch', 3],
       ['ring', 1.5],
@@ -476,8 +490,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['batteries', 4],
       ['painkillers', 3],
       ['chocolate', 4],
-      ['ammo9', 3, 4, 10],
-      ['ammo22', 3, 8, 20],
+      ['ammo22', 6, 6, 14],
       ['pack_school', 1.5],
       ['bat', 1.5],
       ['glock', 0.6],
@@ -509,6 +522,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['beer', 5],
       ['cash', 4, 3, 25],
       ['ducttape', 2],
+      ['ammo22', 3, 8, 16],
+      ['ammo9', 2, 4, 10],
+      ['ammo12', 2, 3, 6],
     ],
   },
   gun: {
@@ -651,8 +667,10 @@ const TABLES: Record<LootTable, TableDef> = {
       ['axe', 1.5],
       ['pack_hiking', 0.8],
       ['pack_school', 1],
-      ['bolts', 2, 1, 3],
-      ['ammo22', 3, 6, 16],
+      ['bolts', 3, 1, 3],
+      ['ammo22', 5, 6, 14],
+      ['ammo12', 1.5, 2, 5],
+      ['ammo357', 1, 2, 5],
       ['dirtywater', 3],
     ],
   },
@@ -716,7 +734,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['cap', 0.5],
       ['hoodie', 1],
       ['m9', 0.5],
-      ['ammo9', 1, 4, 10],
+      ['ammo9', 2.5, 3, 8],
+      ['ammo45', 1, 3, 6],
       ['cash', 6, 2, 30],
       ['electronics', 5],
       ['batteries', 5],
@@ -779,6 +798,18 @@ const TABLES: Record<LootTable, TableDef> = {
       ['cure', 0.6],
     ],
   },
+  homegun: {
+    // Most homes had one; about one in five was taken along when its people ran.
+    empty: 0.22,
+    entries: [
+      ['glock', 5],
+      ['m9', 2.5],
+      ['ruger', 2.5],
+      ['doublebarrel', 2.5],
+      ['m1911', 1],
+      ['revolver', 0.5],
+    ],
+  },
   fuel: {
     empty: 0.15,
     entries: [
@@ -805,6 +836,27 @@ export function rollLoot(
     if (pick <= 0) return { item, n: min + Math.floor(random() * (max - min + 1)) }
   }
   return null
+}
+
+/** How many rounds lie beside a gun when it's found (min–max), by what it fires. */
+const BESIDE: Partial<Record<AmmoType, [number, number]>> = {
+  '12ga': [3, 6],
+  '.22': [6, 12],
+  '.308': [3, 6],
+  '.50': [2, 3],
+  bolt: [2, 4],
+}
+
+/**
+ * The few rounds that lie next to a gun found in the world: its own ammunition, 4–8 of it
+ * (shells and big calibres fewer, .22 more). Null for anything that doesn't shoot.
+ */
+export function ammoBeside(item: string, random: () => number): { item: string; n: number } | null {
+  const weapon = ITEMS[item]?.weapon
+  const type = weapon === undefined ? undefined : WEAPONS[weapon].ammoType
+  if (!type) return null
+  const [min, max] = BESIDE[type] ?? [4, 8]
+  return { item: ammoItem(type), n: min + Math.floor(random() * (max - min + 1)) }
 }
 
 /** Every item a table can produce (for tests: they must all exist). */
