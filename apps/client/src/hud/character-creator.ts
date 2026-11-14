@@ -90,8 +90,8 @@ class Preview {
   private idleUntil = 0
 
   constructor() {
-    this.camera.position.set(0, 1.12, 4.6)
-    this.camera.lookAt(0, 0.92, 0)
+    this.camera.position.set(0, 1.14, 5)
+    this.camera.lookAt(0, 0.95, 0)
     this.scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x2a2018, 1.4))
     const key = new THREE.DirectionalLight(0xfff1dc, 2.6)
     key.position.set(2.5, 3.5, 3)
@@ -131,7 +131,7 @@ class Preview {
       this.scene.remove(this.avatar.root)
       this.avatar.dispose()
     }
-    this.avatar = new Avatar('preview', 0, 'worker', appearance)
+    this.avatar = new Avatar('preview', 0, 'survivor', appearance)
     this.scene.add(this.avatar.root)
   }
 

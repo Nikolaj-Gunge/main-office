@@ -1,8 +1,17 @@
 import {
   type Appearance,
+  BEARDS,
   type BodyPart,
   type BodyPose,
   bodyParts,
+  EYE_COLORS,
+  FEET_LOOKS,
+  feetLook,
+  HAIR_STYLES,
+  LEGS_LOOKS,
+  HAIR_COLORS as LOOK_HAIR_COLORS,
+  SKIN_TONES as LOOK_SKIN_TONES,
+  legsLook,
   PART_SIZES,
   type PartName,
   PLAYER_COLORS,
@@ -27,8 +36,13 @@ import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zomb
  * part is a group placed exactly where that part's hitbox is, so what you see is what you hit.
  */
 
-/** What a body looks like: the admin's skin, or one of the zombies (zombies mode). */
-export type BodyLook = SkinId | ZombieLook
+/**
+ * What a body looks like: the admin's skin, a survivor (survival: tank top, joggers, barefoot
+ * until they find clothes), or one of the zombies.
+ */
+export type BodyLook = SkinId | 'survivor' | ZombieLook
+/** The looks people (not zombies) can have. */
+export type PersonLook = SkinId | 'survivor'
 export type { ZombieLook }
 
 const ZOMBIE_LOOKS: readonly string[] = ['zombie', 'runner', 'brute', 'screamer', 'stalker']
@@ -43,6 +57,7 @@ const TIE_COLORS = [0x1f2a44, 0x7a1f2b, 0x2d4a3a, 0x3b2d4f, 0x8a6a1f, 0x1c1c1c]
 const HAT_COLORS = [0x2b2b2e, 0x4a3426, 0x2f3b4a, 0x5a5048]
 const skinMaterials = SKIN_TONES.map(lambert)
 const hairMaterials = HAIR_COLORS.map(lambert)
+const hairMaterial = lambert(0x2a1c12)
 const tieMaterials = TIE_COLORS.map(lambert)
 const hatMaterials = HAT_COLORS.map(lambert)
 const trouserMaterial = lambert(0x2f3440)
@@ -56,6 +71,28 @@ const darkMetalMaterial = lambert(0x3c424c)
 const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x5ff2ff })
 const gunMaterial = lambert(0x2b2d33)
 const deadEyes = lambert(0x2a0d0d)
+// The character creator's colours, and survival's clothes below the waist (see gear.ts).
+const lookSkins = LOOK_SKIN_TONES.map(lambert)
+const lookHair = LOOK_HAIR_COLORS.map(lambert)
+const lookEyes = EYE_COLORS.map(lambert)
+/** Stubble: the hair colour, thinly over the skin. */
+const lookStubble = LOOK_HAIR_COLORS.map(
+  (color) => new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.45 }),
+)
+const tankTopMaterial = lambert(0xe8e6df)
+const LEGS_MATERIALS: Record<number, THREE.MeshLambertMaterial> = {
+  [LEGS_LOOKS.joggers]: lambert(0x7d8088),
+  [LEGS_LOOKS.jeans]: lambert(0x34507a),
+  [LEGS_LOOKS.cargo]: lambert(0x7a6e4e),
+  [LEGS_LOOKS.camo]: lambert(0x4d5a36),
+  [LEGS_LOOKS.work]: lambert(0x5a4632),
+  [LEGS_LOOKS.police]: lambert(0x1e2638),
+}
+const FEET_MATERIALS: Record<number, THREE.MeshLambertMaterial> = {
+  [FEET_LOOKS.sneakers]: lambert(0xe4e4e4),
+  [FEET_LOOKS.boots]: lambert(0x5a3a22),
+  [FEET_LOOKS.military]: lambert(0x1e1e1a),
+}
 const pick = <T>(list: T[], i: number): T =>
   list[((i % list.length) + list.length) % list.length] as T
 
@@ -137,6 +174,7 @@ export function buildBody(
   colorIndex: number,
   material: THREE.MeshLambertMaterial,
   dead = false,
+  appearance?: Appearance,
 ): Record<Exclude<PartName, 'gun'>, THREE.Group> {
   const s = PART_SIZES
   const g = () => new THREE.Group()
@@ -217,14 +255,29 @@ export function buildBody(
     return body
   }
 
-  // Office worker (default): shirt in the player's color, tie, trousers, shoes, hair.
-  body.head.add(
-    part(box(...W(s.head)), skinTone),
-    part(box(0.32, 0.09, 0.32), hair, 0, s.head.y + 0.02, 0),
-    part(box(0.32, 0.06, 0.05), hair, 0, s.head.y - 0.04, -s.head.z + 0.01),
-    part(box(0.05, 0.04, 0.02), eyeMaterial, -0.07, 0.01, -s.head.z - 0.005),
-    part(box(0.05, 0.04, 0.02), eyeMaterial, 0.07, 0.01, -s.head.z - 0.005),
-  )
+  // A survivor or an office worker: their own face and hair when they made a character.
+  if (appearance) {
+    const own = lookSkins[appearance.skin] ?? skinTone
+    addHead(body.head, appearance, own)
+    if (skin === 'survivor') {
+      survivorBody(body, appearance, own)
+      return body
+    }
+  } else {
+    body.head.add(
+      part(box(...W(s.head)), skinTone),
+      part(box(0.32, 0.09, 0.32), hair, 0, s.head.y + 0.02, 0),
+      part(box(0.32, 0.06, 0.05), hair, 0, s.head.y - 0.04, -s.head.z + 0.01),
+      part(box(0.05, 0.04, 0.02), eyeMaterial, -0.07, 0.01, -s.head.z - 0.005),
+      part(box(0.05, 0.04, 0.02), eyeMaterial, 0.07, 0.01, -s.head.z - 0.005),
+    )
+    if (skin === 'survivor') {
+      survivorBody(body, undefined, skinTone)
+      return body
+    }
+  }
+
+  // Office worker (default): shirt in the player's color, tie, trousers, shoes.
   body.chest.add(
     part(box(...W(s.chest)), material),
     under(part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z)),
@@ -257,6 +310,148 @@ export function buildBody(
     )
   }
   return body
+}
+
+/** A head with the creator's skin, eyes, hair style and colour, and beard. */
+function addHead(head: THREE.Group, a: Appearance, skin: THREE.Material): void {
+  const h = PART_SIZES.head
+  const hair: THREE.Material = lookHair[a.hairColor] ?? hairMaterial
+  const eyes: THREE.Material = lookEyes[a.eyes] ?? eyeMaterial
+  const top = h.y
+  const front = -h.z
+  head.add(
+    part(box(h.x * 2, h.y * 2, h.z * 2), skin),
+    part(box(0.05, 0.04, 0.02), eyes, -0.07, 0.01, front - 0.005),
+    part(box(0.05, 0.04, 0.02), eyes, 0.07, 0.01, front - 0.005),
+  )
+  const hairBox = (w: number, ht: number, d: number, x: number, y: number, z: number) =>
+    head.add(part(box(w, ht, d), hair, x, y, z))
+  // Every style but the buzz and the mohawk starts from the same cap and fringe.
+  const cap = () => {
+    hairBox(0.32, 0.09, 0.32, 0, top + 0.02, 0)
+    hairBox(0.32, 0.06, 0.05, 0, top - 0.04, front + 0.01)
+  }
+  const back = (down: number) => hairBox(0.32, down, 0.04, 0, top - down / 2 + 0.02, h.z + 0.01)
+  switch (HAIR_STYLES[a.hair]) {
+    case 'buzz':
+      hairBox(0.31, 0.03, 0.31, 0, top + 0.005, 0)
+      break
+    case 'short':
+      cap()
+      break
+    case 'side part':
+      cap()
+      hairBox(0.16, 0.04, 0.3, -0.07, top + 0.07, 0)
+      break
+    case 'messy':
+      cap()
+      for (const [x, z] of [
+        [-0.08, -0.06],
+        [0.06, 0.02],
+        [-0.02, 0.09],
+      ] as const)
+        hairBox(0.08, 0.06, 0.08, x, top + 0.08, z)
+      break
+    case 'mohawk':
+      hairBox(0.07, 0.12, 0.3, 0, top + 0.06, 0)
+      break
+    case 'bob':
+      cap()
+      back(0.26)
+      for (const x of [-1, 1]) hairBox(0.03, 0.22, 0.26, x * (h.x + 0.01), top - 0.1, 0.02)
+      break
+    case 'ponytail':
+      cap()
+      back(0.14)
+      hairBox(0.08, 0.24, 0.07, 0, top - 0.14, h.z + 0.06)
+      break
+    case 'long':
+      cap()
+      back(0.42)
+      for (const x of [-1, 1]) hairBox(0.03, 0.3, 0.2, x * (h.x + 0.01), top - 0.14, 0.04)
+      break
+    case 'bun':
+      cap()
+      back(0.12)
+      hairBox(0.12, 0.1, 0.1, 0, top + 0.02, h.z + 0.06)
+      break
+    default: // bald
+      break
+  }
+  switch (BEARDS[a.beard]) {
+    case 'stubble':
+      head.add(
+        part(
+          box(0.28, 0.08, 0.012),
+          lookStubble[a.hairColor] ?? hair,
+          0,
+          -h.y + 0.04,
+          front - 0.004,
+        ),
+      )
+      break
+    case 'moustache':
+      hairBox(0.12, 0.03, 0.02, 0, -0.06, front - 0.008)
+      break
+    case 'goatee':
+      hairBox(0.12, 0.03, 0.02, 0, -0.06, front - 0.008)
+      hairBox(0.08, 0.08, 0.03, 0, -h.y + 0.03, front - 0.01)
+      break
+    case 'full':
+      hairBox(0.3, 0.14, 0.03, 0, -h.y + 0.05, front - 0.01)
+      for (const x of [-1, 1]) hairBox(0.02, 0.16, 0.2, x * (h.x + 0.008), -h.y + 0.08, -0.04)
+      break
+    default:
+      break
+  }
+}
+
+/**
+ * Survival's starting outfit: a white tank top (bare arms), grey joggers, bare feet. Found
+ * trousers and shoes recolour the meshes named "legs" and "feet" (Avatar.setGear).
+ */
+function survivorBody(
+  body: Record<Exclude<PartName, 'gun'>, THREE.Group>,
+  a: Appearance | undefined,
+  skin: THREE.Material,
+): void {
+  const s = PART_SIZES
+  // A slimmer waist for the feminine build (visual only: the hitboxes stay the same).
+  const waist = a?.body === 1 ? 0.88 : 1
+  body.chest.add(
+    part(box(s.chest.x * 2, s.chest.y * 2, s.chest.z * 2), tankTopMaterial),
+    part(box(0.14, 0.05, 0.02), skin, 0, s.chest.y - 0.02, -s.chest.z - 0.002), // neckline
+  )
+  body.stomach.add(
+    part(box(s.stomach.x * 2 * waist, s.stomach.y * 2, s.stomach.z * 2), tankTopMaterial),
+    named(
+      part(
+        box(s.stomach.x * 2 * waist + 0.01, 0.05, s.stomach.z * 2 + 0.01),
+        LEGS_MATERIALS[0] as THREE.Material,
+        0,
+        -s.stomach.y + 0.03,
+        0,
+      ),
+      'legs',
+    ),
+  )
+  for (const arm of [body.armL, body.armR]) {
+    arm.add(part(box(0.11, ARM_LENGTH - 0.02, 0.12), skin, 0, -0.01, 0))
+  }
+  const joggers = LEGS_MATERIALS[0] as THREE.Material
+  for (const thigh of [body.thighL, body.thighR])
+    thigh.add(named(part(box(s.thighL.x * 2, s.thighL.y * 2, s.thighL.z * 2), joggers), 'legs'))
+  for (const shin of [body.shinL, body.shinR]) {
+    shin.add(
+      named(part(box(s.shinL.x * 2, s.shinL.y * 2, s.shinL.z * 2), joggers), 'legs'),
+      named(part(box(0.17, 0.07, 0.24), skin, 0, -s.shinL.y + 0.02, -0.04), 'feet'),
+    )
+  }
+}
+
+function named<T extends THREE.Object3D>(o: T, name: string): T {
+  o.name = name
+  return o
 }
 
 /** Marks what a closed coat or vest hides (tie, collar). */
@@ -392,8 +587,9 @@ export class Avatar {
     if (appearance) this.appearance = appearance
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
-    this.parts = buildBody(skin, colorIndex, this.material)
+    this.parts = buildBody(skin, colorIndex, this.material, false, appearance)
     for (const group of Object.values(this.parts)) this.root.add(group)
+    this.applyClothes(0)
     if (isZombie(skin)) {
       const eyes = EYES[skin]
       this.glowSize = eyes.glow
@@ -440,6 +636,23 @@ export class Avatar {
     const under = showsUnder(gear)
     for (const group of [this.parts.chest, this.parts.stomach]) {
       for (const child of group.children) if (child.name === 'under') child.visible = under
+    }
+    this.applyClothes(gear)
+  }
+
+  /** Survivors: the trousers and shoes they found (joggers and bare feet without). */
+  private applyClothes(gear: number): void {
+    const legs = LEGS_MATERIALS[legsLook(gear)] ?? LEGS_MATERIALS[0]
+    const feet = FEET_MATERIALS[feetLook(gear)]
+    for (const group of Object.values(this.parts)) {
+      for (const child of group.children) {
+        if (!(child instanceof THREE.Mesh)) continue
+        if (child.name === 'legs' && legs) child.material = legs
+        else if (child.name === 'feet') {
+          child.userData.skin ??= child.material
+          child.material = feet ?? child.userData.skin
+        }
+      }
     }
   }
 

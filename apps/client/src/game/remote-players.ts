@@ -6,14 +6,13 @@ import {
   type RemotePlayerState,
   remotePose,
   ServerClock,
-  type SkinId,
   TICK_RATE,
   unpackAppearance,
   ZombieKind,
   zombieScale,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { Avatar, type BodyLook } from '../render/avatar.ts'
+import { Avatar, type BodyLook, type PersonLook } from '../render/avatar.ts'
 
 interface Remote {
   name: string
@@ -53,7 +52,7 @@ export class RemotePlayers {
   private lastUpdateMs = 0
   private readonly poses = new Map<number, HitPose>()
   /** Game rules: what everyone looks like and how big they are. */
-  private skin: SkinId = 'worker'
+  private skin: PersonLook = 'worker'
   private scale = 1
   /** Someone else's footstep (derived from their movement, no network traffic needed). */
   onFootstep?: (at: THREE.Vector3, sprinting: boolean) => void
@@ -110,8 +109,11 @@ export class RemotePlayers {
     this.players.delete(id)
   }
 
-  /** Applies the server's skin and body size; rebuilds the models if the skin changed. */
-  setLook(skin: SkinId, scale: number): void {
+  /**
+   * Applies the server's skin (or survival's survivors) and body size; rebuilds the models if
+   * the look changed.
+   */
+  setLook(skin: PersonLook, scale: number): void {
     this.scale = scale
     if (skin === this.skin) return
     this.skin = skin
@@ -269,7 +271,7 @@ function bodyColor(id: number, color: number, kind: number): number {
   return kind === 0 ? color : color + PLAYER_COLORS.length * (id % 1024)
 }
 
-function lookOf(kind: number, skin: SkinId): BodyLook {
+function lookOf(kind: number, skin: PersonLook): BodyLook {
   if (kind === 0) return skin
   if (kind === ZombieKind.Runner) return 'runner'
   if (kind === ZombieKind.Brute) return 'brute'

@@ -1,4 +1,5 @@
 import {
+  type Appearance,
   type BodyPart,
   createPhysicsWorld,
   DEFAULT_MOVEMENT,
@@ -81,6 +82,7 @@ export class Ragdolls {
     size: number,
     velocity: THREE.Vector3,
     push: DeathPush,
+    appearance?: Appearance,
   ): void {
     if (this.ragdolls.length >= MAX_RAGDOLLS) {
       const oldest = this.ragdolls.shift()
@@ -88,7 +90,7 @@ export class Ragdolls {
     }
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     const material = new THREE.MeshLambertMaterial({ color })
-    const meshes = buildBody(skin, colorIndex, material, true)
+    const meshes = buildBody(skin, colorIndex, material, true, appearance)
     const world = this.physics.world
     const hit: PartName = push.headshot ? 'head' : 'chest'
     const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()
