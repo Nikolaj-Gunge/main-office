@@ -90,6 +90,16 @@ describe('Game', () => {
     expect(game.players.get(idC)?.appearance).toBe(joinedB?.appearance)
   })
 
+  test('a server started on a map tied to a mode plays that mode (MAP=deadwood)', () => {
+    for (const [id, mode] of [
+      ['deadwood', 'survival'],
+      ['gym', 'ffa'],
+    ] as const) {
+      const map = loadMap(id)
+      expect(new Game(map, createPhysicsWorld(map)).rules.mode).toBe(mode)
+    }
+  })
+
   test('spawns players apart and gives them different colors', () => {
     const game = makeGame()
     const ids = [1, 2, 3].map((i) => game.join(`P${i}`, fakeClient()) ?? 0)

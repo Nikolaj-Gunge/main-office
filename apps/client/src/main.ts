@@ -17,6 +17,7 @@ import {
   loadMap,
   MAPS,
   type MatchInfo,
+  modeOfMap,
   type PartName,
   PLAYER_QUERY_GROUPS,
   RAPIER,
@@ -105,6 +106,8 @@ const params = new URLSearchParams(location.search)
 const requestedMap = params.get('map') ?? (await serverMap(1500)) ?? ''
 const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
 const map = loadMap(mapId)
+// Explain the mode this map is played in before joining (the server confirms it on join).
+menu.setMode(modeOfMap(map.id) ?? 'ffa')
 // Survival's code only loads for the survival map.
 const survivalCode = map.survival ? import('./game/survival-client.ts') : null
 
