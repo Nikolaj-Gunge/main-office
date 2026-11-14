@@ -67,6 +67,7 @@ import { Effects } from './render/effects.ts'
 import { createGameRenderer, rendererChoice } from './render/game-renderer.ts'
 import { createLighting, gradeLighting } from './render/lighting.ts'
 import { buildMapObject, swingLamps } from './render/map-mesh.ts'
+import { setMapOutfit } from './render/person.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures } from './render/textures.ts'
@@ -104,6 +105,8 @@ const params = new URLSearchParams(location.search)
 const requestedMap = params.get('map') ?? (await serverMap(1500)) ?? ''
 const mapId = requestedMap in MAPS ? requestedMap : DEFAULT_MAP_ID
 const map = loadMap(mapId)
+// People start in a tank top and joggers on the survival map, in office clothes elsewhere.
+setMapOutfit(map.survival ? 'survival' : 'office')
 // Survival's code only loads for the survival map.
 const survivalCode = map.survival ? import('./game/survival-client.ts') : null
 
@@ -264,7 +267,7 @@ const PUSH_SPEED: Record<BaseWeaponId, number> = {
   [WeaponId.Claws]: 2,
 }
 const recentKills = new Map<number, { from: THREE.Vector3; weapon: WeaponId; headshot: boolean }>()
-remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
+remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale, appearance) => {
   const kill = recentKills.get(id)
   recentKills.delete(id)
   const at = new THREE.Vector3(pose.x, pose.y, pose.z)
@@ -273,11 +276,16 @@ remotes.onDeath = (id, pose, velocity, colorIndex, skin, scale) => {
   dir.normalize().setY(0.25).normalize()
   const speed = (kill ? PUSH_SPEED[weaponLook(kill.weapon)] : 2) + (kill?.headshot ? 1 : 0)
   const parts = bodyParts({ ...remotes.poseOf(id, pose), scale })
-  ragdolls.spawn(skin, colorIndex, parts, scale, velocity, {
-    dir,
-    speed,
-    headshot: kill?.headshot ?? false,
-  })
+  ragdolls.spawn(
+    skin,
+    colorIndex,
+    parts,
+    scale,
+    velocity,
+    { dir, speed, headshot: kill?.headshot ?? false },
+    appearance ? { appearance } : undefined,
+    pose.gear ?? 0,
+  )
 }
 
 // --- Networking -----------------------------------------------------------------------

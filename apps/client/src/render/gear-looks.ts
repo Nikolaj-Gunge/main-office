@@ -1,19 +1,42 @@
-import { BODY_LOOKS, bodyLook, HEAD_LOOKS, headLook, PART_SIZES } from '@office-fps/shared'
+import {
+  BODY_LOOKS,
+  bodyLook,
+  FEET_LOOKS,
+  feetLook,
+  HEAD_LOOKS,
+  headLook,
+  LEGS_LOOKS,
+  legsLook,
+  PART_SIZES,
+} from '@office-fps/shared'
 import * as THREE from 'three'
 import { ARM_LENGTH, type Baked, Kit, seeded } from './body-kit.ts'
 
 /**
- * Survival gear as other people see it: one head piece and one body piece (gear.ts packs them
- * into the replicated `gear` value). Pieces are decoration on the part groups, a little larger
- * than the parts they cover, baked once per look into one vertex-coloured mesh per part.
+ * Survival gear as other people see it: one head piece, one body piece, trousers and footwear
+ * (gear.ts packs them into the replicated `gear` value). Pieces are decoration on the part
+ * groups, a little larger than the parts they cover, baked once per look into one
+ * vertex-coloured mesh per part. People in survival always wear a legs and a feet look (grey
+ * joggers and bare feet to start with); zombies only ever show head and body pieces.
  */
 
 const H = PART_SIZES.head
 const C = PART_SIZES.chest
 const S = PART_SIZES.stomach
+const T = PART_SIZES.thighL
+const N = PART_SIZES.shinL
 const L = ARM_LENGTH
 const SIDES = [-1, 1] as const
 const ARMS = ['armL', 'armR'] as const
+/** Legs with the side their outside faces (left is −x). */
+const THIGHS = [
+  ['thighL', -1],
+  ['thighR', 1],
+] as const
+const SHINS = [
+  ['shinL', -1],
+  ['shinR', 1],
+] as const
 
 /** Shells: just over the chest, stomach and sleeves (sleeves stop short of the hands). */
 const SHELL_CHEST = [C.x * 2 + 0.03, C.y * 2 + 0.012, C.z * 2 + 0.03] as const
@@ -294,6 +317,177 @@ const BODY: Record<number, Build> = {
   },
 }
 
+/** Trouser legs end this far above the sole (ankles and feet are the feet look's). */
+const HEM = 0.07
+const SHIN_LEG = [N.x * 2, N.y * 2 - HEM, N.z * 2] as const
+const SHIN_LEG_Y = HEM / 2
+
+/**
+ * Trousers in one colour: both legs and a waistband round the bottom of the stomach, `hips`
+ * wide (wider on the feminine build).
+ */
+function trousers(k: Kit, color: number, hips: number): void {
+  for (const [thigh] of THIGHS) k.on(thigh).box(color, [T.x * 2, T.y * 2, T.z * 2])
+  for (const [shin] of SHINS) k.on(shin).box(color, SHIN_LEG, [0, SHIN_LEG_Y, 0])
+  k.on('stomach').box(color, [hips + 0.008, 0.08, S.z * 2 + 0.008], [0, -S.y + 0.04, 0])
+}
+
+/** A belt with a buckle over the waistband. */
+function belt(k: Kit, color: number, hips: number, buckle = 0xb0a890): void {
+  k.on('stomach').box(color, [hips + 0.014, 0.035, S.z * 2 + 0.014], [0, -S.y + 0.055, 0])
+  k.box(buckle, [0.05, 0.035, 0.01], [0, -S.y + 0.055, -S.z - 0.008])
+}
+
+const TZ = -T.z - 0.003 // fronts of the thighs and shins
+const NZ = -N.z - 0.003
+
+type LegsBuild = (k: Kit, hips: number) => void
+
+const LEGS: Record<number, LegsBuild> = {
+  [LEGS_LOOKS.joggers]: (k, hips) => {
+    const grey = 0x8a8d93
+    const rib = 0x6c6f75
+    trousers(k, grey, hips)
+    for (const [shin] of SHINS)
+      k.on(shin).box(rib, [N.x * 2 + 0.008, 0.045, N.z * 2 + 0.008], [0, -N.y + HEM + 0.022, 0])
+    k.on('stomach').box(rib, [hips + 0.012, 0.03, S.z * 2 + 0.012], [0, -S.y + 0.065, 0])
+    for (const s of SIDES)
+      k.box(0xf0f0ec, [0.01, 0.06, 0.008], [s * 0.025, -S.y + 0.03, -S.z - 0.008]) // drawstrings
+  },
+  [LEGS_LOOKS.jeans]: (k, hips) => {
+    const denim = 0x3a5684
+    const seam = 0xc49a4a
+    trousers(k, denim, hips)
+    belt(k, 0x4a2e1c, hips)
+    for (const [thigh, side] of THIGHS) {
+      k.on(thigh).box(0x2e466c, [0.07, 0.07, 0.008], [side * 0.03, T.y - 0.07, -TZ]) // back pocket
+      k.box(seam, [0.006, T.y * 2, 0.006], [side * T.x, 0, 0]) // outside seam
+      k.box(0x2e466c, [0.06, 0.012, 0.008], [side * -0.04, T.y - 0.05, TZ], [0, 0, side * 0.6]) // pocket
+    }
+    for (const [shin, side] of SHINS) {
+      k.on(shin).box(seam, [0.006, SHIN_LEG[1], 0.006], [side * N.x, SHIN_LEG_Y, 0])
+      k.box(0x30486e, [N.x * 2 + 0.008, 0.03, N.z * 2 + 0.008], [0, -N.y + HEM + 0.015, 0]) // turn-up
+    }
+  },
+  [LEGS_LOOKS.cargo]: (k, hips) => {
+    const khaki = 0x7c7252
+    const dark = 0x5e5640
+    trousers(k, khaki, hips)
+    belt(k, 0x2a2a24, hips, 0x5a5a50)
+    for (const [thigh, side] of THIGHS) {
+      // The big pockets on the outside of each thigh, with flaps.
+      k.on(thigh).box(khaki, [0.03, 0.13, 0.13], [side * (T.x + 0.014), -0.03, 0])
+      k.box(dark, [0.034, 0.03, 0.135], [side * (T.x + 0.015), 0.035, 0])
+      k.box(dark, [0.008, T.y * 2, 0.01], [side * -0.03, 0, TZ]) // front seam
+    }
+    for (const [shin] of SHINS)
+      k.on(shin).box(dark, [N.x * 2 + 0.008, 0.03, N.z * 2 + 0.008], [0, -N.y + HEM + 0.015, 0])
+  },
+  [LEGS_LOOKS.camo]: (k, hips) => {
+    trousers(k, 0x5a6440, hips)
+    belt(k, 0x2a2a20, hips, 0x4a4a40)
+    const blots = [0x3a4228, 0x7a7448, 0x26281c, 0x6a5a3a]
+    const rnd = seeded(23)
+    for (const [part, [hx, hy, hz], y0] of [
+      ...THIGHS.map(([p]) => [p, [T.x, T.y, T.z], 0] as const),
+      ...SHINS.map(([p]) => [p, [N.x, N.y, N.z], SHIN_LEG_Y] as const),
+    ]) {
+      k.on(part)
+      for (let i = 0; i < 9; i++) {
+        const color = blots[Math.floor(rnd() * blots.length)] as number
+        const face = i % 4
+        const y = y0 + (rnd() - 0.5) * (hy * 2 - 0.12)
+        const w = 0.05 + rnd() * 0.04
+        const h = 0.05 + rnd() * 0.06
+        if (face < 2)
+          k.box(
+            color,
+            [w, h, 0.008],
+            [(rnd() - 0.5) * hx, y, (face ? 1 : -1) * (hz + 0.003)],
+            [0, 0, rnd() * 0.6],
+          )
+        else
+          k.box(
+            color,
+            [0.008, h, w],
+            [(face === 2 ? 1 : -1) * (hx + 0.003), y, (rnd() - 0.5) * hz],
+            [rnd() * 0.6, 0, 0],
+          )
+      }
+    }
+  },
+  [LEGS_LOOKS.work]: (k, hips) => {
+    const canvas = 0x46423c
+    const pad = 0x1c1c1c
+    trousers(k, canvas, hips)
+    belt(k, 0x1c1a18, hips)
+    for (const [thigh, side] of THIGHS) {
+      k.on(thigh).box(canvas, [0.03, 0.1, 0.09], [side * (T.x + 0.014), 0.02, 0.02]) // tool pocket
+      if (side === 1) k.box(0x8a8a8e, [0.03, 0.12, 0.012], [side * (T.x + 0.03), 0.02, 0.05]) // ruler
+    }
+    for (const [shin] of SHINS) {
+      k.on(shin).box(pad, [0.13, 0.12, 0.03], [0, N.y - 0.06, NZ - 0.01]) // knee pad
+      k.box(0xe87a1c, [N.x * 2 + 0.008, 0.04, N.z * 2 + 0.008], [0, -0.04, 0]) // reflective band
+      k.box(0xd8dcd8, [N.x * 2 + 0.01, 0.012, N.z * 2 + 0.01], [0, -0.04, 0])
+    }
+  },
+  [LEGS_LOOKS.police]: (k, hips) => {
+    const navy = 0x1a2236
+    trousers(k, navy, hips)
+    belt(k, 0x101010, hips, 0xc8c8c8)
+    for (const [thigh, side] of THIGHS)
+      k.on(thigh).box(0x4a6ea8, [0.008, T.y * 2, 0.02], [side * (T.x + 0.002), 0, 0])
+    for (const [shin, side] of SHINS)
+      k.on(shin).box(0x4a6ea8, [0.008, SHIN_LEG[1], 0.02], [side * (N.x + 0.002), SHIN_LEG_Y, 0])
+  },
+}
+
+/** A shoe: sole, upper, toe cap; its top `height` up from the ground. */
+function shoe(k: Kit, upper: number, sole: number, height: number, width = 0.17): void {
+  k.box(sole, [width + 0.01, 0.025, 0.275], [0, -N.y + 0.0125, -0.05])
+  k.box(upper, [width, height - 0.02, 0.26], [0, -N.y + 0.025 + (height - 0.025) / 2, -0.05])
+}
+
+type FeetBuild = (k: Kit, skin: number) => void
+
+const FEET: Record<number, FeetBuild> = {
+  [FEET_LOOKS.barefoot]: (k, skin) => {
+    const shade = new THREE.Color(skin).multiplyScalar(0.82).getHex()
+    for (const [shin] of SHINS) {
+      k.on(shin).box(skin, [0.11, HEM + 0.01, 0.12], [0, -N.y + (HEM + 0.01) / 2, 0]) // ankle
+      k.box(skin, [0.13, 0.05, 0.24], [0, -N.y + 0.025, -0.05])
+      k.box(shade, [0.132, 0.02, 0.03], [0, -N.y + 0.01, -0.155]) // toes
+    }
+  },
+  [FEET_LOOKS.sneakers]: (k) => {
+    for (const [shin] of SHINS) {
+      k.on(shin)
+      shoe(k, 0xe8e8e4, 0xb8b8b4, 0.085)
+      k.box(0xc8362e, [0.172, 0.03, 0.11], [0, -N.y + 0.045, 0.0]) // side stripe
+      k.box(0x2a2a2e, [0.07, 0.008, 0.11], [0, -N.y + 0.086, -0.1]) // laces
+    }
+  },
+  [FEET_LOOKS.boots]: (k) => {
+    for (const [shin] of SHINS) {
+      k.on(shin)
+      shoe(k, 0x5a3a22, 0x2a1c12, 0.1, 0.18)
+      k.box(0x5a3a22, [0.17, 0.12, 0.19], [0, -N.y + 0.12, 0]) // shaft over the trouser leg
+      k.box(0x3a2416, [0.175, 0.025, 0.195], [0, -N.y + 0.17, 0]) // padded collar
+      k.box(0xc8a050, [0.06, 0.1, 0.008], [0, -N.y + 0.1, -0.1]) // laces
+    }
+  },
+  [FEET_LOOKS.military]: (k) => {
+    for (const [shin] of SHINS) {
+      k.on(shin)
+      shoe(k, 0x2a2622, 0x121212, 0.1, 0.18)
+      k.box(0x2a2622, [0.17, 0.17, 0.19], [0, -N.y + 0.145, 0]) // tall shaft
+      k.box(0x8a7a5a, [0.172, 0.06, 0.192], [0, -N.y + 0.19, 0]) // canvas top
+      for (let i = 0; i < 4; i++)
+        k.box(0x0a0a0a, [0.06, 0.008, 0.008], [0, -N.y + 0.08 + i * 0.04, -0.1])
+    }
+  },
+}
+
 const cache = new Map<string, Baked | null>()
 
 function bake(key: string, build: Build | undefined): Baked | null {
@@ -313,6 +507,18 @@ export function gearBodies(gear: number): { head: Baked | null; body: Baked | nu
   const h = headLook(gear)
   const b = bodyLook(gear)
   return { head: bake(`h${h}`, HEAD[h]), body: bake(`b${b}`, BODY[b]) }
+}
+
+/**
+ * A person's trousers and footwear in survival (`hips`: waistband width for their build; `skin`:
+ * their skin tone, for bare feet).
+ */
+export function lowerBody(gear: number, hips: number, skin: number): Baked[] {
+  const l = legsLook(gear)
+  const f = feetLook(gear)
+  const legs = bake(`l${l}:${hips}`, (k) => (LEGS[l] ?? LEGS[0])?.(k, hips))
+  const feet = bake(`f${f}:${f === 0 ? skin : 0}`, (k) => (FEET[f] ?? FEET[0])?.(k, skin))
+  return [legs, feet].filter((b): b is Baked => b !== null)
 }
 
 /** Jackets are worn open: what's under them (tie, collar) stays visible. */

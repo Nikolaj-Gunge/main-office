@@ -3,10 +3,13 @@ import {
   type BodyPart,
   type BodyPose,
   bodyParts,
+  HEAD_LOOKS,
+  headLook,
   PART_SIZES,
   type PartName,
   PLAYER_COLORS,
   type RemotePlayerState,
+  SKIN_TONES,
   type SkinId,
   WEAPONS,
   WeaponId,
@@ -15,11 +18,14 @@ import * as THREE from 'three'
 import {
   ARM_LENGTH,
   attachBaked,
+  type Baked,
   glossyVertexColored,
+  pickOf,
   type Slot,
   vertexColored,
 } from './body-kit.ts'
-import { gearBodies, showsUnder } from './gear-looks.ts'
+import { gearBodies, lowerBody, showsUnder } from './gear-looks.ts'
+import { build, defaultOutfit, lookFor, type Outfit, personBody } from './person.ts'
 import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zombie-bodies.ts'
 
 /**
@@ -37,19 +43,11 @@ const isZombie = (skin: BodyLook): skin is ZombieLook => ZOMBIE_LOOKS.includes(s
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)
 const lambert = (color: number) => new THREE.MeshLambertMaterial({ color })
 
-const SKIN_TONES = [0xf1c6a0, 0xd9a07a, 0xa86f4c, 0x6e4630, 0xffdbbd]
-const HAIR_COLORS = [0x2a1c12, 0x5a3b1e, 0xc9a35a, 0x161616, 0x8a4a22, 0x9a9a9a]
 const TIE_COLORS = [0x1f2a44, 0x7a1f2b, 0x2d4a3a, 0x3b2d4f, 0x8a6a1f, 0x1c1c1c]
 const HAT_COLORS = [0x2b2b2e, 0x4a3426, 0x2f3b4a, 0x5a5048]
-const skinMaterials = SKIN_TONES.map(lambert)
-const hairMaterials = HAIR_COLORS.map(lambert)
 const tieMaterials = TIE_COLORS.map(lambert)
 const hatMaterials = HAT_COLORS.map(lambert)
-const trouserMaterial = lambert(0x2f3440)
-const shoeMaterial = lambert(0x1a1a1a)
-const beltMaterial = lambert(0x1c1a18)
 const collarMaterial = lambert(0xf2f0ea)
-const eyeMaterial = lambert(0x15151a)
 const visorMaterial = lambert(0x1b1d2a)
 const metalMaterial = lambert(0x8e96a3)
 const darkMetalMaterial = lambert(0x3c424c)
@@ -128,16 +126,91 @@ function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y
   return mesh
 }
 
+/** A person's own look and what they wear (office clothes, or survival's tank top). */
+export interface PersonLook {
+  appearance?: Appearance
+  outfit?: Outfit
+}
+
+type PartGroups = Record<Exclude<PartName, 'gun'>, THREE.Group>
+
+/** Survival people wear trousers and shoes from their gear: what those need to know about them. */
+export interface Lower {
+  hips: number
+  skin: number
+}
+
+/** The legs and feet looks apply to people in survival clothes only (null for everyone else). */
+export function lowerOf(
+  skin: BodyLook,
+  colorIndex: number,
+  person: PersonLook | undefined,
+): Lower | null {
+  if (skin !== 'worker' || (person?.outfit ?? defaultOutfit()) !== 'survival') return null
+  const look = lookFor(person?.appearance, colorIndex)
+  return { hips: build(look.body).hips, skin: pickOf(SKIN_TONES, look.skin) }
+}
+
+/** Puts baked meshes on the part groups, all with one name (looked up to hide them later). */
+function attachNamed(
+  baked: Baked | null,
+  body: PartGroups,
+  material: THREE.Material,
+  name: string,
+): THREE.Mesh[] {
+  if (!baked) return []
+  const meshes = attachBaked(baked, body, (slot) => (slot === 'own' ? material : vertexColored))
+  for (const mesh of meshes) mesh.name = name
+  return meshes
+}
+
+/**
+ * Dresses a body in survival gear: head and body pieces, and for people in survival clothes their
+ * trousers and footwear. Hides what the gear covers (hair on top under a hat, a beard under a
+ * mask, collar and tie under a closed coat). Returns [gear meshes, trouser and shoe meshes].
+ */
+export function dress(
+  body: PartGroups,
+  gear: number,
+  material: THREE.Material,
+  lower: Lower | null,
+): [THREE.Mesh[], THREE.Mesh[]] {
+  const worn: THREE.Mesh[] = []
+  const legs: THREE.Mesh[] = []
+  const { head, body: coat } = gearBodies(gear)
+  const resolve = (slot: Slot) =>
+    slot === 'vc' ? vertexColored : slot === 'own' || slot === 'eyes' ? material : slot
+  if (head) worn.push(...attachBaked(head, body, resolve))
+  if (coat) worn.push(...attachBaked(coat, body, resolve))
+  if (lower) {
+    for (const baked of lowerBody(gear, lower.hips, lower.skin))
+      legs.push(...attachBaked(baked, body, resolve))
+  }
+  const face = headLook(gear)
+  const masked = face === HEAD_LOOKS.bandana || face === HEAD_LOOKS.gasmask
+  for (const child of body.head.children) {
+    if (child.name === 'hat') child.visible = head === null
+    if (child.name === 'mask') child.visible = !masked
+  }
+  const under = showsUnder(gear)
+  for (const group of [body.chest, body.stomach]) {
+    for (const child of group.children) if (child.name === 'under') child.visible = under
+  }
+  return [worn, legs]
+}
+
 /**
  * The meshes of every body part for a skin, each in its own group (part space). Shared by the
- * live avatar and the ragdoll, so a body falls exactly as it stood.
+ * live avatar and the ragdoll, so a body falls exactly as it stood. Office workers (the default
+ * skin) wear the person's own look: `person.appearance`, or a stable random one without it.
  */
 export function buildBody(
   skin: BodyLook,
   colorIndex: number,
   material: THREE.MeshLambertMaterial,
   dead = false,
-): Record<Exclude<PartName, 'gun'>, THREE.Group> {
+  person?: PersonLook,
+): PartGroups {
   const s = PART_SIZES
   const g = () => new THREE.Group()
   const body = {
@@ -151,8 +224,6 @@ export function buildBody(
     thighR: g(),
     shinR: g(),
   }
-  const skinTone = pick(skinMaterials, colorIndex)
-  const hair = pick(hairMaterials, colorIndex * 7)
   const tie = pick(tieMaterials, colorIndex)
   const W = (h: { x: number; y: number; z: number }) => [h.x * 2, h.y * 2, h.z * 2] as const
 
@@ -217,45 +288,16 @@ export function buildBody(
     return body
   }
 
-  // Office worker (default): shirt in the player's color, tie, trousers, shoes, hair.
-  body.head.add(
-    part(box(...W(s.head)), skinTone),
-    part(box(0.32, 0.09, 0.32), hair, 0, s.head.y + 0.02, 0),
-    part(box(0.32, 0.06, 0.05), hair, 0, s.head.y - 0.04, -s.head.z + 0.01),
-    part(box(0.05, 0.04, 0.02), eyeMaterial, -0.07, 0.01, -s.head.z - 0.005),
-    part(box(0.05, 0.04, 0.02), eyeMaterial, 0.07, 0.01, -s.head.z - 0.005),
+  // A person (person.ts): their face and hair, in office or survival clothes.
+  const look = personBody(
+    lookFor(person?.appearance, colorIndex),
+    person?.outfit ?? defaultOutfit(),
+    colorIndex,
   )
-  body.chest.add(
-    part(box(...W(s.chest)), material),
-    under(part(box(0.3, 0.06, 0.05), collarMaterial, 0, s.chest.y - 0.03, -s.chest.z)),
-    under(part(box(0.11, 0.07, 0.04), tie, 0, s.chest.y - 0.08, -s.chest.z - 0.01)),
-    under(part(box(0.09, 0.24, 0.03), tie, 0, -0.04, -s.chest.z - 0.01)),
-  )
-  body.stomach.add(
-    part(box(...W(s.stomach)), material),
-    under(part(box(0.09, 0.2, 0.03), tie, 0, 0.05, -s.stomach.z - 0.01)),
-    part(
-      box(s.stomach.x * 2 + 0.01, 0.05, s.stomach.z * 2 + 0.01),
-      beltMaterial,
-      0,
-      -s.stomach.y + 0.03,
-      0,
-    ),
-  )
-  for (const arm of [body.armL, body.armR]) {
-    arm.add(
-      part(box(0.12, ARM_LENGTH - 0.1, 0.14), material, 0, -0.05, 0),
-      part(box(0.11, 0.1, 0.11), skinTone, 0, ARM_LENGTH / 2 - 0.05, 0),
-    )
-  }
-  for (const thigh of [body.thighL, body.thighR])
-    thigh.add(part(box(...W(s.thighL)), trouserMaterial))
-  for (const shin of [body.shinL, body.shinR]) {
-    shin.add(
-      part(box(...W(s.shinL)), trouserMaterial),
-      part(box(0.19, 0.08, 0.26), shoeMaterial, 0, -s.shinL.y + 0.02, -0.04),
-    )
-  }
+  attachNamed(look.base, body, material, 'body')
+  attachNamed(look.crown, body, material, 'hat')
+  attachNamed(look.beard, body, material, 'mask')
+  attachNamed(look.under, body, material, 'under')
   return body
 }
 
@@ -376,23 +418,33 @@ export class Avatar {
   private readonly eyeGlows: THREE.Sprite[] = []
   private readonly glowSize: number = 0.2
   /** Survival gear worn (people, and the dead who were survivors); the value shown and its meshes. */
-  private gear = 0
+  private gear = -1
   private gearMeshes: THREE.Mesh[] = []
+  /** Trousers and shoes (people in survival clothes; they don't blink with spawn protection). */
+  private legMeshes: THREE.Mesh[] = []
+  private readonly lower: Lower | null
   /** The pose last drawn (for the ragdoll when they die). */
   lastParts: BodyPart[] = []
   /** Their own look (character creator: build, skin, hair, eyes, beard); none for zombies. */
   readonly appearance?: Appearance
 
+  /** @param outfit office clothes or survival's tank top (default: what this map wears) */
   constructor(
     name: string,
     colorIndex: number,
     skin: BodyLook = 'worker',
     appearance?: Appearance,
+    outfit?: Outfit,
   ) {
     if (appearance) this.appearance = appearance
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     this.material = new THREE.MeshLambertMaterial({ color, transparent: true })
-    this.parts = buildBody(skin, colorIndex, this.material)
+    const person: PersonLook = {
+      ...(appearance ? { appearance } : {}),
+      ...(outfit ? { outfit } : {}),
+    }
+    this.parts = buildBody(skin, colorIndex, this.material, false, person)
+    this.lower = lowerOf(skin, colorIndex, person)
     for (const group of Object.values(this.parts)) this.root.add(group)
     if (isZombie(skin)) {
       const eyes = EYES[skin]
@@ -411,6 +463,7 @@ export class Avatar {
     this.gunGroup.add(this.gun, this.muzzle, this.glint)
     this.root.add(this.gunGroup)
     this.setWeapon(WeaponId.Rifle)
+    this.setGear(0)
     this.root.name = `avatar:${name}`
   }
 
@@ -425,22 +478,11 @@ export class Avatar {
     this.glint.position.set(0, 0.07, -0.05)
   }
 
-  /** Swaps the worn head and body pieces (only when the replicated value changes). */
+  /** Swaps the worn pieces (only when the replicated value changes). */
   private setGear(gear: number): void {
     this.gear = gear
-    for (const mesh of this.gearMeshes) mesh.removeFromParent()
-    this.gearMeshes = []
-    const { head, body } = gearBodies(gear)
-    const resolve = (slot: Slot) =>
-      slot === 'vc' ? vertexColored : slot === 'own' || slot === 'eyes' ? this.material : slot
-    if (head) this.gearMeshes.push(...attachBaked(head, this.parts, resolve))
-    if (body) this.gearMeshes.push(...attachBaked(body, this.parts, resolve))
-    const hat = this.parts.head.getObjectByName('hat')
-    if (hat) hat.visible = head === null
-    const under = showsUnder(gear)
-    for (const group of [this.parts.chest, this.parts.stomach]) {
-      for (const child of group.children) if (child.name === 'under') child.visible = under
-    }
+    for (const mesh of [...this.gearMeshes, ...this.legMeshes]) mesh.removeFromParent()
+    ;[this.gearMeshes, this.legMeshes] = dress(this.parts, gear, this.material, this.lower)
   }
 
   /**

@@ -11,7 +11,7 @@ import {
   setGates,
 } from '@office-fps/shared'
 import * as THREE from 'three'
-import { type BodyLook, buildBody, placePart } from './avatar.ts'
+import { type BodyLook, buildBody, dress, lowerOf, type PersonLook, placePart } from './avatar.ts'
 
 const quat = (q: { x: number; y: number; z: number; w: number }) =>
   new THREE.Quaternion(q.x, q.y, q.z, q.w)
@@ -81,6 +81,8 @@ export class Ragdolls {
     size: number,
     velocity: THREE.Vector3,
     push: DeathPush,
+    person?: PersonLook,
+    gear = 0,
   ): void {
     if (this.ragdolls.length >= MAX_RAGDOLLS) {
       const oldest = this.ragdolls.shift()
@@ -88,7 +90,8 @@ export class Ragdolls {
     }
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length] ?? 0xffffff
     const material = new THREE.MeshLambertMaterial({ color })
-    const meshes = buildBody(skin, colorIndex, material, true)
+    const meshes = buildBody(skin, colorIndex, material, true, person)
+    dress(meshes, gear, material, lowerOf(skin, colorIndex, person))
     const world = this.physics.world
     const hit: PartName = push.headshot ? 'head' : 'chest'
     const bodies = new Map<PartName, { body: RAPIER.RigidBody; part: BodyPart }>()
