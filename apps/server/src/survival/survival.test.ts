@@ -973,7 +973,7 @@ describe('survival: clothes and gear', () => {
 
     // In the world: walk past some houses and look at what was put out.
     const t = setup()
-    const houses = t.def.pois.filter((p) => p.kind === 'house').slice(0, 8)
+    const houses = t.def.pois.filter((p) => p.kind === 'house').slice(0, 16)
     const seen = () =>
       t.clients[0]?.inbox.filter((m) => m.type === ServerMsg.Loot).flatMap((m) => m.add) ?? []
     for (const h of houses) {
