@@ -26,15 +26,15 @@ const STREAKS = 6000
 const RAIN_BOX = new THREE.Vector3(44, 26, 44)
 /** How fast it falls (m/s), and how long a streak is (s of its fall). */
 const FALL = 11
-const STREAK_SECONDS = 0.05
+export const STREAK_SECONDS = 0.05
 /** Splashes and ripples alive at once, how far around you, and for how long (s). */
 const SPLASHES = 420
 const SPLASH_REACH = 13
 /** Low fog drifting through the trees, and fireflies. */
 const WISPS = 34
-const WISP_REACH = 46
+export const WISP_REACH = 46
 const FIREFLIES = 70
-const FIREFLY_REACH = 24
+export const FIREFLY_REACH = 24
 /** Seconds between looking up for a roof over your head. */
 const ROOF_EVERY = 0.3
 /** Speed of sound (m/s): thunder comes this much later per metre. */

@@ -3,6 +3,7 @@ import {
   abs,
   Break,
   clamp,
+  cos,
   dot,
   Fn,
   float,
@@ -17,6 +18,7 @@ import {
   pow,
   screenCoordinate,
   select,
+  sin,
   smoothstep,
   step,
   texture,
@@ -153,6 +155,11 @@ export function createPostUniforms() {
     saturation: uniform(1.25),
     vignette: uniform(0.4),
     paletteSize: uniform(0, 'int'),
+    // Survival: the bite taking hold (game/infection.ts). 0 = clean … 1 = turning.
+    infection: uniform(0),
+    infectPulse: uniform(0),
+    infectTime: uniform(0),
+    infectMotion: uniform(1),
   }
 }
 
@@ -185,11 +192,47 @@ export function postNode(i: PostInputs, u: PostUniforms): N<'vec4'> {
     return best
   })
 
+  // The world, gun and glow at one point (linear, before tone mapping).
+  const sceneAt = (p: N<'vec2'>) => {
+    const o = texture(i.overlay, p)
+    return texture(i.color, p)
+      .rgb.mul(o.a.oneMinus())
+      .add(o.rgb)
+      .add(texture(i.bloom, p).rgb.mul(u.bloomStrength))
+  }
+
+  // uv() runs top-down here, bottom-up in GLSL: offsets have their y turned over.
+  const UP = vec2(1, -1)
+
+  // Late in the turn: the picture sways, softens and doubles (a ghost drifting to one side).
+  const infectedScene = (color: N<'vec3'>) => {
+    const late = smoothstep(0.45, 1, u.infection)
+    const t = u.infectTime
+    const sway = vec2(
+      sin(t.mul(0.9)).add(sin(t.mul(2.3)).mul(0.5)),
+      cos(t.mul(0.7)).add(sin(t.mul(1.7)).mul(0.4)),
+    ).mul(u.infectMotion.mul(late).mul(0.006).mul(UP))
+    const p = uv().add(sway)
+    color.assign(sceneAt(p))
+    If(late.greaterThan(0), () => {
+      const r = vec2(1).div(resolution).mul(late.mul(2.2).add(0.8))
+      const soft = sceneAt(p.add(vec2(r.x, r.y)))
+        .add(sceneAt(p.sub(vec2(r.x, r.y))))
+        .add(sceneAt(p.add(vec2(r.x, r.y.negate()))))
+        .add(sceneAt(p.sub(vec2(r.x, r.y.negate()))))
+        .mul(0.25)
+      color.assign(mix(color, soft, late.mul(0.4).add(0.35)))
+      const drift = mix(0.7, sin(t.mul(0.5)).mul(0.4).add(0.6), u.infectMotion)
+      const ghost = vec2(u.infectPulse.mul(0.004).add(0.006), 0.0015).mul(late).mul(drift).mul(UP)
+      color.assign(mix(color, sceneAt(p.add(ghost)), late.mul(0.3)))
+    })
+  }
+
   return Fn(() => {
     const vUv = uv()
     const overlay = texture(i.overlay)
-    const color = texture(i.color).rgb.mul(overlay.a.oneMinus()).add(overlay.rgb).toVar()
-    color.addAssign(texture(i.bloom).rgb.mul(u.bloomStrength))
+    const color = sceneAt(vUv).toVar()
+    If(u.infection.greaterThan(0), () => infectedScene(color))
     color.assign(linearToSRGB(acesFilm(color.mul(u.exposure))))
 
     // Grade: richer colours, then an S-curve that sinks the shadows and lifts the lights.
@@ -202,6 +245,19 @@ export function postNode(i: PostInputs, u: PostUniforms): N<'vec4'> {
     color.mulAssign(
       float(1).sub(u.vignette.mul(smoothstep(0.25, 0.95, dot(fromCentre, fromCentre).mul(2)))),
     )
+
+    // The bite: colour drains out, the edges throb red with the heart, the last minute goes red.
+    If(u.infection.greaterThan(0), () => {
+      const grey = dot(color, LUMA_601)
+      color.assign(mix(color, vec3(grey), smoothstep(0, 0.45, u.infection).mul(0.8)))
+      const edge = smoothstep(0.1, 0.85, dot(fromCentre, fromCentre).mul(2))
+      const throb = edge.mul(min(1, u.infection.mul(2.5))).mul(u.infectPulse.mul(0.5).add(0.5))
+      color.assign(mix(color, vec3(0.38, 0, 0.02), throb.mul(0.8)))
+      const last = smoothstep(0.8, 1, u.infection).mul(u.infectPulse.mul(0.2).add(0.8))
+      color.assign(
+        mix(color, color.mul(vec3(1.3, 0.4, 0.35)).add(vec3(0.07, 0, 0)), last.mul(0.75)),
+      )
+    })
 
     // 1 px outline where this pixel sits in front of a much farther neighbour. Sampled always
     // (WGSL wants texture reads in uniform control flow), applied only where it should be.

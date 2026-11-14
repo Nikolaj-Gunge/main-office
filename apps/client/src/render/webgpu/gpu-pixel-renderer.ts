@@ -4,6 +4,8 @@ import { NodeMaterial, QuadMesh, RenderTarget, WebGPURenderer } from 'three/webg
 import { COLOR_MODES, type Settings } from '../../settings.ts'
 import type { GameRenderer } from '../game-renderer.ts'
 import { MAX_PALETTE_SIZE, PALETTES } from '../palettes.ts'
+import { shadowEdgesFaded } from '../shadow-fade.ts'
+import { fadedShadowFilter } from '../shadow-fade.tsl.ts'
 import { installNodeVariants } from './node-variants.ts'
 import { blurNode, brightNode, createPostUniforms, fxaaNode, postNode } from './post-nodes.ts'
 
@@ -220,8 +222,14 @@ export class GpuPixelRenderer implements GameRenderer {
     r.setRenderTarget(null)
   }
 
-  /** Survival's bite on screen: not ported to TSL yet (post.frag.glsl's infectedScene). */
-  setInfection(_fx: { level: number; pulse: number; time: number; motion: number } | null): void {}
+  /** Survival's bite on screen (see game/infection.ts); null: none. */
+  setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void {
+    const u = this.uniforms
+    u.infection.value = fx?.level ?? 0
+    u.infectPulse.value = fx?.pulse ?? 0
+    u.infectTime.value = fx?.time ?? 0
+    u.infectMotion.value = fx?.motion ?? 1
+  }
 
   setAnimationLoop(callback: (() => void) | null): void {
     void this.renderer.setAnimationLoop(callback)
@@ -286,8 +294,13 @@ export class GpuPixelRenderer implements GameRenderer {
           this.shadowCasters.push(light)
       }
     }
+    const fade = shadowEdgesFaded()
     for (const light of this.shadowCasters) {
       if (!light.shadow) continue
+      // shadow-fade.ts's patch, for directional shadows (only takes on lights not yet drawn).
+      if (fade && (light as THREE.DirectionalLight).isDirectionalLight)
+        (light.shadow as THREE.LightShadow & { filterNode?: unknown }).filterNode =
+          fadedShadowFilter
       light.shadow.autoUpdate = s.autoUpdate
       if (s.needsUpdate) light.shadow.needsUpdate = true
     }

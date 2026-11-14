@@ -1,8 +1,17 @@
 import * as THREE from 'three'
-import type { NodeMaterial, WebGPURenderer } from 'three/webgpu'
+import type {
+  MeshBasicNodeMaterial,
+  MeshLambertNodeMaterial,
+  MeshPhongNodeMaterial,
+  NodeMaterial,
+  WebGPURenderer,
+} from 'three/webgpu'
 import { cornPosition } from '../corn.tsl.ts'
+import { treeCard, treeline } from '../forest-lod.tsl.ts'
 import { detailNormal, detailPosition } from '../ground-detail.tsl.ts'
 import { skyNodeMaterial } from '../sky.tsl.ts'
+import { weatherTwin } from '../weather-view.tsl.ts'
+import { wetGround } from '../wet-ground.tsl.ts'
 import { swayingPosition } from '../wind.tsl.ts'
 
 /**
@@ -31,6 +40,9 @@ const VARIANTS: Record<string, Variant> = {
   corn: (m) => {
     m.positionNode = cornPosition()
   },
+  'wet-ground': (m) => wetGround(m as MeshPhongNodeMaterial),
+  'tree-card': (m) => treeCard(m as MeshLambertNodeMaterial),
+  treeline: (m) => treeline(m as MeshBasicNodeMaterial),
 }
 
 const warned = new Set<string>()
@@ -43,6 +55,41 @@ function warnOnce(key: string, message: string): void {
 const skies = new WeakMap<THREE.Material, NodeMaterial>()
 
 export function installNodeVariants(renderer: WebGPURenderer): void {
+  // The weather's ShaderMaterials need the object as well (points become quads), so they are
+  // swapped for their twins per draw rather than per material.
+  renderer.setRenderObjectFunction(
+    (object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId) => {
+      const twin = material instanceof THREE.ShaderMaterial ? weatherTwin(object, material) : null
+      if (twin && twin.object !== object) {
+        object.onBeforeRender(renderer as never, scene, camera, geometry, material, group as never)
+        twin.sync()
+        const o = twin.object as THREE.Mesh
+        renderer.renderObject(
+          o,
+          scene,
+          camera,
+          o.geometry,
+          twin.material,
+          group,
+          lightsNode,
+          clippingContext,
+          passId,
+        )
+        return
+      }
+      renderer.renderObject(
+        object,
+        scene,
+        camera,
+        geometry,
+        twin ? twin.material : material,
+        group,
+        lightsNode,
+        clippingContext,
+        passId,
+      )
+    },
+  )
   const library = renderer.library
   const base = library.fromMaterial.bind(library)
   library.fromMaterial = (material: THREE.Material) => {
