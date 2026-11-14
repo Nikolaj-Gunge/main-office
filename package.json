@@ -12,6 +12,7 @@
     "start": "bun run --filter @office-fps/server start",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
+    "soak": "SOAK_SECONDS=300 bun test apps/server/src/survival/soak.test.ts",
     "lint": "biome check .",
     "format": "biome check --write .",
     "bots": "bun apps/server/src/tools/bots.ts"

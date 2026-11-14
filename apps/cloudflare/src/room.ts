@@ -48,12 +48,22 @@ export class GameRoom extends DurableObject {
             method: 'PUT',
             body: JSON.stringify(rules),
           }),
+        onBansChanged: (bans) =>
+          void settings.fetch('https://settings/bans', {
+            method: 'PUT',
+            body: JSON.stringify(bans),
+          }),
       })
       const saved = await settings
         .fetch('https://settings/rules')
         .then((r) => r.json())
         .catch(() => null)
       if (saved) this.admin.apply(mergeRules(DEFAULT_RULES, saved))
+      const bans = await settings
+        .fetch('https://settings/bans')
+        .then((r) => r.json())
+        .catch(() => null)
+      this.admin.moderation.loadBans(bans)
       console.log(`[room] map "${this.game.mapId}" ready, ${this.game.spawnPointCount} spawn spots`)
     })
   }
@@ -99,6 +109,7 @@ export class GameRoom extends DurableObject {
         this.lastInput = Date.now()
         if (!loop.running) loop.start()
       },
+      request.headers.get('CF-Connecting-IP') ?? undefined,
     )
     server.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') session.message(event.data)

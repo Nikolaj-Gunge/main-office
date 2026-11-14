@@ -19,8 +19,8 @@ export interface ConnectionEvents {
 
 const PING_INTERVAL_MS = 1000
 const RECONNECT_DELAY_MS = 2000
-/** Close codes where reconnecting won't help (see server connections.ts). */
-const FATAL_CODES = new Set([4000, 4001])
+/** Close codes where reconnecting won't help: old version, full, kicked, banned (server session.ts). */
+const FATAL_CODES = new Set([4000, 4001, 4002, 4003])
 
 /** WebSocket to the game server: binary codec, ping, traffic stats, net-sim, auto-reconnect. */
 export class Connection {

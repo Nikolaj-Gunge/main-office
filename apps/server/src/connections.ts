@@ -4,6 +4,8 @@ import { createSession, type Session } from './session.ts'
 
 export interface SocketData {
   session: Session | null
+  /** The client's address (for bans). */
+  ip?: string
 }
 
 /** Adapts Bun WebSockets to the transport-agnostic `Game`. */
@@ -17,6 +19,8 @@ export function createConnections(game: Game, getTickMs: () => number) {
         game,
         { send: (bytes) => ws.send(bytes), close: (code, reason) => ws.close(code, reason) },
         getTickMs,
+        undefined,
+        ws.data.ip,
       )
     },
 

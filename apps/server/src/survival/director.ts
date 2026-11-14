@@ -1926,6 +1926,44 @@ export class SurvivalDirector {
     }
   }
 
+  // --- Admin (moderation.ts) and checks (soak test) -----------------------------------------
+
+  /** Ids of the pooled dead. */
+  get poolIds(): number[] {
+    return this.pool.map((z) => z.id)
+  }
+
+  /** Winds the day's clock forward to `t` (0–1, see daytime.ts); everybody sees it at once. */
+  setTime(t: number): void {
+    this.slept += ((((t - this.time) % 1) + 1) % 1) * DAY_SECONDS
+    this.game.match.broadcast()
+  }
+
+  /** Into someone's pockets (what doesn't fit lands at their feet). False: no such item or person. */
+  adminGive(player: ServerPlayer, item: string, n: number): boolean {
+    const sv = this.survivors.get(player.id)
+    const def = ITEMS[item]
+    if (!sv || !def) return false
+    const ammo = def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined
+    this.giveOrDrop(sv, item, n, ammo)
+    return true
+  }
+
+  /** Out of any car seat (before being moved somewhere else). */
+  unseat(player: ServerPlayer): void {
+    this.vehicles.leave(player)
+  }
+
+  /** Starts someone's character over: fresh pockets, kit and journal, back at the start. */
+  resetCharacter(player: ServerPlayer): boolean {
+    if (!this.survivors.has(player.id)) return false
+    this.onLeave(player)
+    this.profiles.delete(player.name)
+    this.onJoin(player)
+    this.game.respawnNow(player)
+    return true
+  }
+
   // --- Telling people ------------------------------------------------------------------------
 
   info(): SurvivalShared {

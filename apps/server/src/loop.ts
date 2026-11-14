@@ -1,3 +1,5 @@
+import { errorLog } from './errors.ts'
+
 /** Max ticks simulated in one wake-up before we drop time (avoids spiral of death). */
 const MAX_CATCH_UP_TICKS = 5
 
@@ -60,6 +62,7 @@ export class GameLoop {
       } catch (err) {
         // One bad tick must not stop the world for everybody: log it and carry on.
         console.error('tick failed:', err)
+        errorLog.add('tick', err)
       }
       const ms = performance.now() - start
       this.tickMs += (ms - this.tickMs) * 0.05
