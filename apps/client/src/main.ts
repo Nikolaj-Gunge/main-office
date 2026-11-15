@@ -53,6 +53,7 @@ import {
   stepSurface,
   traumaAt,
 } from './game/game-feel.ts'
+import { GrabbedView } from './game/grabbed.ts'
 import { LocalPlayer } from './game/local-player.ts'
 import { PartyClient } from './game/party-client.ts'
 import { Recoil } from './game/recoil.ts'
@@ -302,6 +303,8 @@ if (survival) {
 const turnedSelf = survival
   ? new TurnedSelfView(hudRoot, (action) => net.send({ type: ClientMsg.Action, action }))
   : null
+/** A walker has hold of you (survival): mash E (game/grabbed.ts). */
+const grabbed = survival ? new GrabbedView(hudRoot) : null
 // People sitting in cars aren't drawn (the car is), nor the body you're steering.
 if (survival) remotes.hidden = (id) => survival.vehicles.isSeated(id) || id === turnedSelf?.body
 const debugHitboxes = new DebugHitboxes(scene)
@@ -1159,6 +1162,7 @@ pixels.setAnimationLoop(() => {
     const pose = turned && shown ? remotes.poseOf(turned.body, shown) : null
     audio.setTurned(turnedSelf.update(now, player.state.alive || !joined, pose, look, camera))
   }
+  if (grabbed?.update(survival?.self?.grabbed, player.state.alive)) shake.add(0.35)
 
   // Aiming down sights zooms the view; sensitivity follows so aim speed feels the same.
   const zoom = 1 + (WEAPONS[player.state.weapon.id].aimZoom - 1) * viewmodel.aimProgress

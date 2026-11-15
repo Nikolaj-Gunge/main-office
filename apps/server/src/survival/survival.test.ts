@@ -59,6 +59,7 @@ import { START_MONEY } from './director.ts'
 import { openGround } from './drops.ts'
 import { POOL, type Zed } from './horde.ts'
 import { KEEP_LOOT_SECONDS } from './newcomer.ts'
+import { OFFER_SECONDS } from './turned-self.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -714,8 +715,9 @@ describe('survival: the bite', () => {
       expect(loot.some((l) => l.item === item && l.n === n)).toBe(true)
     }
     expect(insides(t).turned.size).toBe(0)
-    // And you wake at Haven with the start kit (a knife from the camp) and the start money.
-    t.run(7)
+    // And you wake at Haven with the start kit (a knife from the camp) and the start money (once
+    // the offer to steer what's left of you has run out: turned-self.ts).
+    t.run(OFFER_SECONDS + 1)
     const s = t.player().state
     expect(s.alive).toBe(true)
     expect(s.weapon.id).toBe(WeaponId.Knife)

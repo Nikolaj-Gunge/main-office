@@ -3845,3 +3845,54 @@ body.turned-self .hud-scope {
   font-size: 12px;
   color: #9c8676;
 }
+
+/* Grabbed! A walker has hold of you (p27-turned). */
+.grabbed-prompt {
+  position: absolute;
+  top: 62%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #e8d6c4;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.7);
+}
+
+.grabbed-title {
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: #d9584a;
+}
+
+.grabbed-key {
+  display: inline-block;
+  padding: 0 6px;
+  border: 2px solid #d9584a;
+  color: #f2c9b4;
+}
+
+.grabbed-bar {
+  width: 180px;
+  height: 8px;
+  margin: 6px auto 4px;
+  background: rgb(20 10 8 / 0.8);
+  border: 2px solid #5a3a30;
+}
+
+.grabbed-fill {
+  width: 0;
+  height: 100%;
+  background: #c9584a;
+}
+
+.grabbed-hint {
+  font-size: 12px;
+  color: #9c8676;
+}
+
+body.grabbed #hud::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgb(110 10 0 / 0.45) 100%);
+}

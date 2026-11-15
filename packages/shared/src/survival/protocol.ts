@@ -82,6 +82,8 @@ export interface SurvivalSelf {
   skills?: Skills
   /** Sent, never saved: what's left of the one you were, if you may (or do) steer it. */
   turned?: TurnedSelfState
+  /** Sent, never saved: the id of the walker that has hold of you (grabs.ts), if one does. */
+  grabbed?: number
 }
 
 /**
