@@ -190,6 +190,17 @@ export class Night {
     this.shadowsDirty = true
   }
 
+  /** For the mist (fog-atmosphere.ts): the lamps in use, the moon, and the fog as it is now. */
+  get litLamps(): THREE.PointLight[] {
+    return this.pool.filter((s) => s.source !== null).map((s) => s.light)
+  }
+  get moonLight(): THREE.DirectionalLight {
+    return this.moon
+  }
+  get distanceFog(): THREE.Fog {
+    return this.fog
+  }
+
   /** The weather to light the world for, from the next update on. */
   setWeather(weather: SkyWeather): void {
     this.weather = weather

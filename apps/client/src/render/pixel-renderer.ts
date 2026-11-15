@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import { COLOR_MODES, type Settings } from '../settings.ts'
+import type { FogFrame } from './fog-atmosphere.ts'
 import type { GameRenderer } from './game-renderer.ts'
 import { MAX_PALETTE_SIZE, PALETTES } from './palettes.ts'
 import postFragment from './shaders/post.frag.glsl?raw'
+import { VolumetricFog } from './volumetric-fog.ts'
 
 /**
  * Where outlines have faded out (m): at the fog's far end, kept between 120 m (small maps keep
@@ -119,6 +121,8 @@ function createPostUniforms(
     infectPulse: { value: 0 },
     infectTime: { value: 0 },
     infectMotion: { value: 1 },
+    tFog: { value: null as THREE.Texture | null },
+    fogOn: { value: 0 },
   }
 }
 
@@ -163,6 +167,9 @@ export class PixelRenderer implements GameRenderer {
   private smooth = false
   private readonly postTarget: THREE.WebGLRenderTarget
   private readonly fxaaMaterial: THREE.ShaderMaterial
+  /** The mist pass (volumetric-fog.ts), made the first time there is mist to draw. */
+  private fog: VolumetricFog | null = null
+  private fogFrame: FogFrame | null = null
   private readonly fxaaUniforms = {
     tInput: { value: null as THREE.Texture | null },
     texel: { value: new THREE.Vector2() },
@@ -288,6 +295,11 @@ export class PixelRenderer implements GameRenderer {
     u.infectMotion.value = fx?.motion ?? 1
   }
 
+  /** Survival's mist for the next frames (fog-atmosphere.ts); null or tier off: none. */
+  setFog(frame: FogFrame | null): void {
+    this.fogFrame = frame && frame.tier.mode !== 'off' && frame.density > 0 ? frame : null
+  }
+
   /** Coarser pixels by `bias` whole steps than the setting asks (automatic quality). */
   setBias(bias: number): void {
     if (bias === this.bias) return
@@ -366,6 +378,13 @@ export class PixelRenderer implements GameRenderer {
     const r = this.renderer
     r.setRenderTarget(this.target)
     r.render(scene, camera)
+    const fog = this.fogFrame
+    if (fog && this.target.depthTexture) {
+      this.fog ??= new VolumetricFog()
+      this.fog.render(r, this.target.depthTexture, camera, this.size, fog)
+      this.uniforms.tFog.value = this.fog.target.texture
+    }
+    this.uniforms.fogOn.value = fog ? 1 : 0
     r.setRenderTarget(this.overlayTarget)
     r.setClearColor(0x000000, 0)
     r.clear()
