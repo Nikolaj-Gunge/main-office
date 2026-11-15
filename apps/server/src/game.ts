@@ -564,6 +564,11 @@ export class Game {
     if (player) this.voice.handle(player, req)
   }
 
+  /** Somebody waved (social.ts): survival makes truces of it. */
+  onWave(player: ServerPlayer): void {
+    this.match.onWave(player)
+  }
+
   /** One client. */
   sendTo(player: ServerPlayer, msg: ServerMessage): void {
     send(player.client, msg)

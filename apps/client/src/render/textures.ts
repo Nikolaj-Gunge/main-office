@@ -846,6 +846,28 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
       for (let x = 2; x < size; x += 5) ctx.fillRect(x, 0, 1, size)
     },
   },
+  redpaint: {
+    meters: 0.5,
+    noise: 0.08,
+    paint: (ctx, size, rand) => {
+      // Red paint slapped on bark with a brush: streaky, thin where it ran out, bark showing.
+      ctx.fillStyle = '#8e2a1f'
+      ctx.fillRect(0, 0, size, size)
+      for (let y = 0; y < size; y += 2) {
+        ctx.fillStyle = `rgba(${rand() < 0.5 ? '120,30,22' : '160,52,38'},0.5)`
+        ctx.fillRect(0, y, size, 1)
+      }
+      ctx.fillStyle = 'rgba(52,38,28,0.8)'
+      for (let i = 0; i < 10; i++) {
+        ctx.fillRect(
+          Math.floor(rand() * size),
+          Math.floor(rand() * size),
+          1 + Math.floor(rand() * 3),
+          1,
+        )
+      }
+    },
+  },
 }
 
 function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {

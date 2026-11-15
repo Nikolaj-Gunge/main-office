@@ -25,7 +25,7 @@ export const WS_PATH = '/ws'
 export const CLOSE_RESTING = 4010
 
 /** Bumped whenever the binary protocol changes incompatibly. */
-export const PROTOCOL_VERSION = 35
+export const PROTOCOL_VERSION = 36
 
 /** Hard cap on simultaneous players (ids and counts are encoded in a u8/u16). */
 export const MAX_PLAYERS = 32

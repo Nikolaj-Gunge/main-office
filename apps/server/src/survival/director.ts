@@ -30,6 +30,7 @@ import {
   freshNeeds,
   gearLooks,
   give,
+  groundAt,
   type Held,
   hearingScale,
   heightAt,
@@ -48,6 +49,7 @@ import {
   type LootItem,
   legacyKit,
   loosen,
+  lootTableOn,
   MAX_PLANKS,
   MAX_PLAYERS,
   type MapSpawn,
@@ -73,6 +75,7 @@ import {
   type SurvivalDef,
   type SurvivalSelf,
   type SurvivalShared,
+  secondFind,
   setBarricades,
   sightScale,
   slotFor,
@@ -125,6 +128,7 @@ import {
   startPoi,
 } from './newcomer.ts'
 import { type Nav, navFor } from './pathing.ts'
+import { type PvpHost, PvpKeeper } from './pvp.ts'
 import { type RotHost, RotWorld } from './rot-world.ts'
 import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
@@ -384,6 +388,7 @@ export class SurvivalDirector {
         if (sv) sv.dirty = true
       },
     })
+    this.pvp = new PvpKeeper(this.pvpHost())
   }
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
@@ -391,6 +396,9 @@ export class SurvivalDirector {
 
   /** Trading between players (trade.ts). */
   readonly trades: Trades
+
+  /** PvP by choice: who may hurt whom where, reputation, truces (see pvp.ts). */
+  readonly pvp: PvpKeeper
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
@@ -534,6 +542,7 @@ export class SurvivalDirector {
 
   onLeave(player: ServerPlayer): void {
     this.vehicles.leave(player)
+    this.pvp.forget(player)
     if (player.zombie) {
       // One of the dead gave up its place to somebody joining: forget it (its body is gone).
       this.pool = this.pool.filter((z) => z !== player)
@@ -831,7 +840,18 @@ export class SurvivalDirector {
     }
   }
 
+  /** May `attacker` hurt `victim` here (Haven, the woods, Lawless ground: pvp.ts)? */
+  canHurt(attacker: ServerPlayer, victim: ServerPlayer): boolean {
+    return this.pvp.canHurt(attacker, victim)
+  }
+
+  /** A wave: at somebody close, it offers (or agrees) a truce. */
+  onWave(player: ServerPlayer): void {
+    this.pvp.onWave(player, this.game.players.values())
+  }
+
   onDamage(victim: ServerPlayer, attacker: ServerPlayer, amount: number): void {
+    this.pvp.onDamage(victim, attacker, amount)
     const zed = this.zeds.get(victim.id)
     // Shot from the dark: it comes for whoever did it.
     if (zed && isPerson(attacker)) zed.alert(attacker.state.pos, this.now)
@@ -852,6 +872,7 @@ export class SurvivalDirector {
 
   onKill(victim: ServerPlayer, killer: ServerPlayer): void {
     this.vehicles.leave(victim)
+    this.pvp.onKill(victim, killer)
     const zed = this.zeds.get(victim.id)
     if (zed) {
       victim.respawnAt = Number.POSITIVE_INFINITY
@@ -914,10 +935,13 @@ export class SurvivalDirector {
     // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
     this.workbench.forget(victim)
     this.storage.forget(victim)
+    const before = sv.self
     sv.self = freshSelf()
     sv.self.bio = this.newBio(victim)
     this.evacKit(sv)
     this.legacy.newCharacter(sv)
+    // Reputation and the Oathbreaker mark aren't washed off by dying.
+    this.pvp.carry(before, sv.self)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     // Hollis' pistol and knife are on the cabin table again, for somebody new.
@@ -1120,6 +1144,7 @@ export class SurvivalDirector {
     if (tick % TICK_RATE === 0) {
       for (const sv of people) this.tickSurvivor(sv)
       for (const sv of people) this.drive(sv)
+      for (const sv of people) this.pvp.second(sv.player)
       this.discover(alive)
       this.stockPlaces(alive)
       this.expireLoot()
@@ -1411,9 +1436,11 @@ export class SurvivalDirector {
         if (!first && this.random() < 0.35) return
         const [x, y, z] = spot.pos
         // Often a second thing lies beside the first (but a home keeps only the one gun).
-        const count = spot.table !== 'homegun' && this.random() < 0.35 ? 2 : 1
+        // Lawless ground (pvp.ts) holds better things, and more of them.
+        const ground = groundAt(this.def.pois, { x, z })
+        const count = spot.table !== 'homegun' && this.random() < secondFind(ground) ? 2 : 1
         for (let k = 0; k < count; k++) {
-          const roll = rollLoot(spot.table, this.random)
+          const roll = rollLoot(lootTableOn(spot.table, ground, this.random()), this.random)
           if (!roll) continue
           const weapon = ITEMS[roll.item]?.weapon
           // Guns are found with a few rounds in them, if any.
@@ -2058,10 +2085,12 @@ export class SurvivalDirector {
       const starter = src.loot.starter
       if (starter !== undefined) sv.waiting = sv.waiting.filter((i) => i !== starter)
       this.takeFromGround(src.loot, n)
+      this.pvp.pickedUp(player, src.loot.item, src.loot, this.game.players)
     }
     if (hand) this.setHand(s, hand.slot, hand.put)
     for (const d of drops) {
       this.dropAt(d.item, d.n, s.pos, d.ammo, false, ITEMS[d.item]?.kind === 'quest')
+      this.pvp.dropped(player, d.item, s.pos)
     }
     if (wore) this.notice(player, 'info', `You put on the ${def.name}.`)
     else if (src.kind === 'ground') {
@@ -2470,6 +2499,21 @@ export class SurvivalDirector {
     }
   }
 
+  private pvpHost(): PvpHost {
+    return {
+      pois: () => this.def?.pois ?? [],
+      now: () => this.now,
+      selfOf: (player) => this.survivors.get(player.id)?.self ?? null,
+      touch: (player) => {
+        const sv = this.survivors.get(player.id)
+        if (sv) sv.dirty = true
+      },
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      besieged: (poi) => this.story.besieged(poi),
+      broadcast: () => this.game.match.broadcast(),
+    }
+  }
+
   private storyHost(): StoryHost {
     const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
     return {
@@ -2673,6 +2717,7 @@ export class SurvivalDirector {
         ...(this.weatherPin ? { pin: this.weatherPin } : {}),
       },
       rot: this.rot.shared(),
+      ...this.standing(),
     }
   }
 
@@ -2685,6 +2730,12 @@ export class SurvivalDirector {
       ...(evac ? { evac } : {}),
       ...(retired.length > 0 ? { walkers: [...(walkers ?? []), ...retired] } : {}),
     }
+  }
+
+  /** Armbands and Oathbreaker marks (pvp.ts), when anybody has one. */
+  private standing(): { standing?: number[] } {
+    const standing = this.pvp.shared([...this.survivors.values()].map((sv) => sv.player))
+    return standing ? { standing } : {}
   }
 
   /** What someone wears that shows (gear.ts looks, packed for the wire). */

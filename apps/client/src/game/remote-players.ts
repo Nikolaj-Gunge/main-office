@@ -121,6 +121,11 @@ export class RemotePlayers {
     this.waves.delete(id)
   }
 
+  /** Every other player's avatar (survival's armbands and marks are put on them, pvp-client.ts). */
+  forEachAvatar(fn: (id: number, avatar: Avatar) => void): void {
+    for (const [id, p] of this.players) fn(id, p.avatar)
+  }
+
   /** Player `id` waves (friendly emote): their left arm goes up for a couple of seconds. */
   wave(id: number, nowMs: number): void {
     if (this.players.has(id)) this.waves.set(id, nowMs)

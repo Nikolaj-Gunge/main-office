@@ -89,10 +89,14 @@ export class MatchRunner {
 
   // --- What the game asks ----------------------------------------------------------------
 
-  /** No damage between teammates, and none at all on the winner screen. */
+  /**
+   * No damage between teammates, and none at all on the winner screen. Survival: people hurt
+   * each other only on Lawless ground, and nobody is hurt in Haven (survival/pvp.ts).
+   */
   canHurt(attacker: ServerPlayer, victim: ServerPlayer): boolean {
     if (this.phase === 'ended') return false
     if (attacker === victim) return true
+    if (this.survival) return this.survival.canHurt(attacker, victim)
     return attacker.team === 0 || attacker.team !== victim.team
   }
 
@@ -122,6 +126,11 @@ export class MatchRunner {
 
   onAction(player: ServerPlayer, action: SurvivalAction): void {
     this.survival?.onAction(player, action)
+  }
+
+  /** Survival: a wave at somebody close offers (or agrees) a truce. */
+  onWave(player: ServerPlayer): void {
+    this.survival?.onWave(player)
   }
 
   onShot(player: ServerPlayer): void {

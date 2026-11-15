@@ -72,6 +72,10 @@ export interface SurvivalSelf {
    */
   legacy?: Legacy
   wall?: ObitWall
+  /** Reputation (pvp.ts: Raider at or below RAIDER_AT, Saint from SAINT_AT); absent = 0. */
+  rep?: number
+  /** Oathbreaker: seconds of play the mark has left (pvp.ts); absent or 0 = none. */
+  oath?: number
 }
 
 export interface QuestState {
@@ -149,6 +153,8 @@ export interface SurvivalShared {
   rot?: { mood?: RotMood; birds: number[] }
   /** Somebody called in the evacuation helicopter (evac.ts), or none. */
   evac?: EvacShared
+  /** Who wears an armband or the Oathbreaker mark (pvp.ts packStanding); absent = nobody. */
+  standing?: number[]
 }
 
 export type SurvivalAction =
