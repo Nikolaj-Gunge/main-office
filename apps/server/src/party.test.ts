@@ -397,6 +397,18 @@ describe('trading', () => {
     expect(t.window(0)).toBeNull()
     expect(t.window(1)).toBeNull()
   })
+  test('flying out (retiring) calls it off: the next character never inherits the deal', () => {
+    const t = pair()
+    t.open()
+    t.social(0, { kind: 'trade', op: 'offer', offer: { items: [], money: 20 } })
+    t.social(0, { kind: 'trade', op: 'confirm' })
+    expect(t.window(1)?.theirsOk).toBe(true)
+    ;(t.inside as unknown as { retire(p: ServerPlayer): void }).retire(t.sv(0).player)
+    expect(t.window(0)).toBeNull()
+    expect(t.window(1)).toBeNull()
+    t.social(1, { kind: 'trade', op: 'confirm' })
+    expect(t.sv(1).self.money).toBe(10)
+  })
 })
 
 describe('camps in survival', () => {

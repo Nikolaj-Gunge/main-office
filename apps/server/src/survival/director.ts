@@ -1247,6 +1247,8 @@ export class SurvivalDirector {
         retired: [...evac.retired, was],
       })
     }
+    // A trade left open would settle with whoever they are next (and what Haven left them).
+    this.trades.forget(player.id)
     this.workbench.forget(player)
     this.storage.forget(player)
     this.vehicles.leave(player)

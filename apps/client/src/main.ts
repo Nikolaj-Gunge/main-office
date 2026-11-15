@@ -274,12 +274,19 @@ const survival =
     : null
 /** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
 let uiOpen = false
+/** Which of those is open: the survival HUD's screens and the trade window come and go apart. */
+const modals = { hud: false, trade: false }
+function setModal(which: keyof typeof modals, open: boolean): void {
+  modals[which] = open
+  const was = uiOpen
+  uiOpen = modals.hud || modals.trade
+  if (uiOpen) document.exitPointerLock()
+  // Only once the last one closes (closing the backpack mid-trade mustn't grab the mouse back),
+  // and not over the Esc menu if that's up.
+  else if (was && !menu.visible) closeMenu()
+}
 if (survival) {
-  survival.hud.onModalChange = (open) => {
-    uiOpen = open
-    if (open) document.exitPointerLock()
-    else closeMenu()
-  }
+  survival.hud.onModalChange = (open) => setModal('hud', open)
   survival.hud.onSound = (cue) => {
     if (cue === 'open' || cue === 'close')
       audio.play('reload.in', { bus: 'ui', volume: 0.3, rate: cue === 'open' ? 1.3 : 1 })
@@ -698,11 +705,7 @@ const party = new PartyClient({
   say: (text) => social.onEvent({ kind: 'system', text }, performance.now()),
   world: () => net.world,
   myName: () => survival?.self?.bio?.name ?? menu.name ?? null,
-  onTradeOpen: (open) => {
-    uiOpen = open
-    if (open) document.exitPointerLock()
-    else closeMenu()
-  },
+  onTradeOpen: (open) => setModal('trade', open),
 })
 menu.addToPlay(party.panel.root)
 // The death postcard and the Dawn Report, to save and share (keepsakes.ts).
