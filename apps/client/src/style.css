@@ -1242,6 +1242,7 @@ body {
 
 .sv-quest i {
   font-style: normal;
+  font-weight: normal;
   font-size: 10px;
   letter-spacing: 3px;
 }
@@ -1269,6 +1270,7 @@ body {
 
 .sv-quest.story em {
   font-style: normal;
+  font-weight: normal;
   font-size: 13px;
   color: #f0b040;
 }
@@ -2384,6 +2386,7 @@ body {
 
 .hud-chat-log .line i {
   font-style: normal;
+  font-weight: normal;
   opacity: 0.7;
 }
 
@@ -2649,4 +2652,94 @@ body {
 .sv-journal-who {
   letter-spacing: 1px;
   color: #b8ae96;
+}
+
+/* ── Survival needs: buffs and statuses under the vitals (needs-hud.ts) ─────────────────────── */
+.sv-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.sv-effect {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px 1px 1px;
+  background: rgb(0 0 0 / 0.55);
+  border: 1px solid rgb(217 212 196 / 0.35);
+  font-size: 10px;
+  pointer-events: auto;
+}
+
+.sv-effect-icon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  line-height: 13px;
+  text-align: center;
+  font-style: normal;
+  font-weight: normal;
+  color: #000;
+  text-shadow: none;
+}
+
+.sv-effect.good .sv-effect-icon {
+  background: #c9a85a;
+}
+
+.sv-effect.good {
+  color: #e8dcb0;
+}
+
+.sv-effect.bad .sv-effect-icon {
+  background: #b04a32;
+  color: #f2e6d8;
+}
+
+.sv-effect.bad {
+  color: #e8b8a8;
+}
+
+.sv-effect[data-effect="wet"] .sv-effect-icon,
+.sv-effect[data-effect="cold"] .sv-effect-icon {
+  background: #5a7e96;
+}
+
+.sv-effect:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  width: 220px;
+  padding: 4px 6px;
+  background: rgb(10 8 6 / 0.92);
+  border: 1px solid rgb(217 212 196 / 0.4);
+  color: #d9d4c4;
+  font-size: 11px;
+  letter-spacing: 0;
+  white-space: normal;
+  z-index: 5;
+}
+
+/* Food poisoning: the edges of the world swim. */
+.sv-nausea {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(3px) saturate(0.8);
+  mask-image: radial-gradient(ellipse at center, transparent 45%, #000 85%);
+  background: radial-gradient(ellipse at center, transparent 55%, rgb(70 80 30 / 0.22));
+  animation: sv-nausea 4s ease-in-out infinite alternate;
+}
+
+@keyframes sv-nausea {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
 }

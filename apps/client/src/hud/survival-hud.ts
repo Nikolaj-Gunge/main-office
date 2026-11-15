@@ -34,6 +34,7 @@ import {
 } from '@office-fps/shared'
 import { InventoryScreen } from './inventory-screen.ts'
 import { effectText } from './item-text.ts'
+import { NeedsHud } from './needs-hud.ts'
 import { type Fallback, fallbackStep } from './next-step.ts'
 import { markerSpot } from './objective-marker.ts'
 import { QuestJournal } from './quest-journal.ts'
@@ -177,6 +178,7 @@ export class SurvivalHud {
   private readonly bleeding: HTMLElement
   private readonly infected: HTMLElement
   private readonly money: HTMLElement
+  private readonly needs: NeedsHud
   // Story and jobs
   private readonly tracker: HTMLDivElement
   private trackerKey = ''
@@ -256,6 +258,7 @@ export class SurvivalHud {
     this.infected = el('div', 'sv-infected', vitals)
     this.infected.hidden = true
     this.money = el('div', 'sv-money', vitals)
+    this.needs = new NeedsHud(vitals, this.root)
 
     this.tracker = el('div', 'sv-tracker', this.root)
     this.feed = el('div', 'sv-feed', this.root)
@@ -501,6 +504,7 @@ export class SurvivalHud {
       if (this.infected.textContent !== status) this.infected.textContent = status
       const stage = String(Math.max(0, infectionStage(left)))
       if (this.infected.dataset.stage !== stage) this.infected.dataset.stage = stage
+      this.needs.update(self)
       const money = `$${self.money}`
       if (this.money.textContent !== money) this.money.textContent = money
     }

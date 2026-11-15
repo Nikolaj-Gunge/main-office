@@ -20,6 +20,7 @@ import {
   flashAt,
   footprint,
   freshJournal,
+  freshNeeds,
   gearLooks,
   give,
   type Held,
@@ -32,6 +33,7 @@ import {
   type ItemDef,
   type ItemDest,
   type ItemRef,
+  infectionRate,
   infectionStage,
   isItemDest,
   isItemRef,
@@ -43,6 +45,7 @@ import {
   makeBio,
   maxStack,
   type Notice,
+  needsDrain,
   PLANK_HP,
   PLANK_ITEM,
   type PlayerState,
@@ -66,6 +69,7 @@ import {
   spotBlock,
   spotCentre,
   stackAt,
+  starveHurt,
   syncForest,
   TICK_DT,
   TICK_RATE,
@@ -75,6 +79,7 @@ import {
   VICINITY,
   VICINITY_UP,
   WEAPONS,
+  WELL_FED,
   WeaponId,
   type WeaponSlot,
   type WeaponState,
@@ -92,6 +97,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
   gentleCount,
@@ -111,9 +117,7 @@ const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', '
 
 /** Loot is kept (and told to clients) in square cells this wide (m): yours and the 8 around. */
 const LOOT_CELL = 96
-/** Seconds from full to starving / parched, and a torch's battery life. */
-const HUNGER_SECONDS = 45 * 60
-const THIRST_SECONDS = 30 * 60
+/** A torch's battery life (s). Hunger and thirst: see needsDrain (needs.ts). */
 const BATTERY_SECONDS = 9 * 60
 const RESPAWN_SECONDS = 6
 /** Everybody playing is saved this often (s); the world is checked for changes this often. */
@@ -214,6 +218,7 @@ const freshSelf = (): SurvivalSelf => {
     infected: null,
     journal: freshJournal(),
     age: 0,
+    needs: freshNeeds(),
   }
   give(self, 'water', 1)
   return self
@@ -229,6 +234,8 @@ function restoreSelf(saved: SurvivalSelf): SurvivalSelf {
   self.journal = { ...freshJournal(), ...self.journal }
   // Saved before characters had an age: they're no newcomers.
   if (typeof saved.age !== 'number') self.age = SHIELD_SECONDS
+  // Saves from before needs.ts have none: they start fresh.
+  self.needs = { ...freshNeeds(), ...self.needs }
   return self
 }
 
@@ -299,7 +306,18 @@ export class SurvivalDirector {
     this.drops = new Drops(this.dropHost())
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
     this.story = new Story(this.storyHost())
+    this.needs = new NeedsKeeper({
+      world: () => this.def ?? null,
+      time: () => this.time,
+      rain: () => this.weather.rain,
+      random: () => this.random(),
+      notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
+      seated: (sv) => this.vehicles.seatOf(sv.player as ServerPlayer) !== null,
+    })
   }
+
+  /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
+  readonly needs: NeedsKeeper
 
   /** The story and everybody's quests (see story.ts). */
   readonly story: Story
@@ -856,6 +874,7 @@ export class SurvivalDirector {
     // Reloads eat the ammunition in the backpack.
     for (const sv of alive) this.settleAmmo(sv)
     for (const sv of alive) this.shortOfBreath(sv)
+    for (const sv of alive) this.needs.watch(sv)
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
@@ -911,11 +930,11 @@ export class SurvivalDirector {
     const { self, player } = sv
     if (!player.state.alive) return
     const before = [Math.ceil(self.hunger), Math.ceil(self.thirst), Math.ceil(self.battery)]
-    // Newcomers get hungry and thirsty more slowly (newcomer.ts).
-    const drain = drainFactor(self.age)
+    // Newcomers get hungry and thirsty more slowly (newcomer.ts); needsDrain owns the rate.
+    const drain = needsDrain(drainFactor(self.age))
     self.age = (self.age ?? SHIELD_SECONDS) + 1
-    self.hunger = Math.max(0, self.hunger - (100 / HUNGER_SECONDS) * drain)
-    self.thirst = Math.max(0, self.thirst - (100 / THIRST_SECONDS) * drain)
+    self.hunger = Math.max(0, self.hunger - drain.hunger)
+    self.thirst = Math.max(0, self.thirst - drain.thirst)
     if (self.light) {
       self.battery = Math.max(0, self.battery - 100 / BATTERY_SECONDS)
       if (self.battery === 0) {
@@ -925,28 +944,33 @@ export class SurvivalDirector {
     }
     if (self.infected !== null) {
       const was = infectionStage(self.infected)
-      self.infected = Math.max(0, self.infected - 1)
+      const then = self.infected
+      // Rested, the bite spreads a little slower.
+      self.infected = Math.max(0, self.infected - infectionRate(self.needs))
       if (self.infected === 0) return void this.turn(sv)
       const stage = infectionStage(self.infected)
       if (stage !== was && SYMPTOMS[stage]) this.notice(player, 'warn', SYMPTOMS[stage] as string)
       // Told now and then (the client counts down in between).
-      if (stage !== was || self.infected % 5 === 0) sv.dirty = true
+      if (stage !== was || Math.floor(self.infected / 5) !== Math.floor(then / 5)) sv.dirty = true
     }
     const second = Math.floor(this.now)
-    let hurt = 0
-    if (self.bleeding && second % 2 === 0) hurt += 1
-    if (self.hunger === 0 && second % 4 === 0) hurt += 1
-    if (self.thirst === 0 && second % 3 === 0) hurt += 1
-    if (hurt > 0) {
-      player.health -= hurt
+    // Going hungry or thirsty hurts slowly, but never kills on its own (STARVE_FLOOR).
+    let starve = 0
+    if (self.hunger === 0 && second % 4 === 0) starve += 1
+    if (self.thirst === 0 && second % 3 === 0) starve += 1
+    const bleed = self.bleeding && second % 2 === 0 ? 1 : 0
+    if (starve > 0 || bleed > 0) {
+      player.health = starveHurt(player.health, starve) - bleed
       if (player.health <= 0) {
         this.game.killPlayer(player.id, player.id)
         return
       }
-    } else if (!self.bleeding && self.hunger > 40 && self.thirst > 40 && second % 6 === 0) {
-      // Fed and watered, you mend slowly.
-      player.health = Math.min(player.maxHealth, player.health + 1)
+    } else if (!self.bleeding && self.hunger > 40 && self.thirst > 40) {
+      // Fed and watered, you mend slowly; well fed, twice as fast.
+      if (second % (self.hunger > WELL_FED ? 3 : 6) === 0)
+        player.health = Math.min(player.maxHealth, player.health + 1)
     }
+    this.needs.second(sv)
     const warn = (bit: number, low: boolean, text: string) => {
       if (low && !(sv.warned & bit)) this.notice(player, 'warn', text)
       sv.warned = low ? sv.warned | bit : sv.warned & ~bit
@@ -1236,7 +1260,7 @@ export class SurvivalDirector {
     for (const lake of this.def.lakes) {
       if (Math.hypot(s.pos.x - lake.x, s.pos.z - lake.z) < lake.r && s.pos.y < lake.y + 0.1) {
         sv.self.thirst = Math.min(100, sv.self.thirst + 35)
-        if (this.random() < 0.3) player.health = Math.max(1, player.health - 6)
+        this.needs.drankLake(sv)
         sv.dirty = true
         this.notice(player, 'info', 'You drink from the lake. It tastes of mud.')
         return
@@ -1374,6 +1398,7 @@ export class SurvivalDirector {
     sv.self.thirst = Math.max(0, sv.self.thirst - 16)
     player.health = player.maxHealth
     player.state.stamina = 1
+    this.needs.slept(sv)
     sv.dirty = true
     // Sleeping through the dark: wake at dawn.
     const t = this.time
@@ -1551,6 +1576,7 @@ export class SurvivalDirector {
     if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
     if (def.stamina) s.winded = false
     if (def.stopsBleeding) self.bleeding = false
+    this.needs.used(sv, def)
     return true
   }
 

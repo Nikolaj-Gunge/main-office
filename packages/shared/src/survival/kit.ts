@@ -12,6 +12,7 @@ import type {
   Poi,
   Room,
   Starter,
+  WarmSpot,
 } from './types.ts'
 
 /** Everything the places of the world add up to. */
@@ -26,6 +27,8 @@ export interface WorldBuild {
   rooms: Room[]
   spots: BoardSpot[]
   starter: Starter[]
+  /** Lit fires people can warm up and rest at (see needs.ts). */
+  fires: WarmSpot[]
 }
 
 export function emptyBuild(): WorldBuild {
@@ -40,6 +43,7 @@ export function emptyBuild(): WorldBuild {
     rooms: [],
     spots: [],
     starter: [],
+    fires: [],
   }
 }
 
@@ -289,6 +293,12 @@ export class Site {
       ...flags,
     })
     return rise
+  }
+
+  /** A lit fire: warms (and dries, and rests) anybody within `r` metres (see needs.ts). */
+  fire(x: number, y: number, z: number, r: number): this {
+    this.build.fires.push({ pos: this.world(x, y, z), r })
+    return this
   }
 
   light(x: number, y: number, z: number, options: LampOptions = {}): this {

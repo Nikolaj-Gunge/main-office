@@ -3,12 +3,14 @@ import {
   createPlayerState,
   createWeaponState,
   DEFAULT_MOVEMENT,
+  type EffectId,
   eyeHeight,
   type GameRules,
   type InputCommand,
   type MapSpawn,
   type MovementConfig,
   movementFor,
+  movementKey,
   type PhysicsWorld,
   PlayerBody,
   type PlayerInput,
@@ -16,6 +18,7 @@ import {
   Predictor,
   type StepEvents,
   TICK_DT,
+  tuneMovement,
   WeaponId,
   weaponRulesFor,
 } from '@office-fps/shared'
@@ -60,11 +63,27 @@ export class LocalPlayer {
     return this.predictor.state
   }
 
+  /** Movement as the rules have it, before survival's buffs and statuses (tuneMovement). */
+  private baseMovement: MovementConfig = { ...DEFAULT_MOVEMENT }
+  private effects: readonly EffectId[] = []
+
   /** Server game rules: movement (gravity, speed, size…) and shooting (spread, ammo). */
   applyRules(rules: GameRules): void {
-    Object.assign(this.movement, movementFor(rules))
+    this.baseMovement = movementFor(rules)
+    Object.assign(this.movement, tuneMovement(this.baseMovement, this.effects))
     this.body.configure(this.movement)
     this.body.weaponRules = weaponRulesFor(rules)
+  }
+
+  /**
+   * Survival's buffs and statuses (Well fed, a sprain…) change how you run: predict with the same
+   * tuning the server uses.
+   */
+  setEffects(effects: readonly EffectId[]): void {
+    if (movementKey(effects) === movementKey(this.effects)) return
+    this.effects = effects
+    Object.assign(this.movement, tuneMovement(this.baseMovement, effects))
+    this.body.configure(this.movement)
   }
 
   /** Re-applies `movement` after live edits. */

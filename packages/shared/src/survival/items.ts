@@ -38,6 +38,12 @@ export interface ItemDef {
   stamina?: number
   /** Using it stops bleeding. */
   stopsBleeding?: boolean
+  /** Using it binds a sprained ankle (see needs.ts). */
+  splints?: boolean
+  /** Chance (0–1) that eating or drinking it gives you food poisoning (see needs.ts). */
+  poison?: number
+  /** Using it settles food poisoning. */
+  settles?: boolean
   /** The bite (infection.ts): 'delay' winds the clock back to the start, 'cure' ends it. */
   infection?: 'delay' | 'cure'
   /** Backpacks: roughly what it carries (kg); its pocket grid is in grid.ts. */
@@ -138,9 +144,12 @@ food('energybar', 'Energy bar', 18, 0.07, 14, 'Tastes like cardboard that believ
 })
 food('mre', 'MRE', 60, 0.7, 60, 'Meal, Ready-to-Eat. Three lies in one name.', { thirst: 5 })
 food('apple', 'Apple', 10, 0.18, 6, 'Slightly bruised.', { thirst: 6 })
-food('dogfood', 'Dog food', 22, 0.4, 5, "Don't think about it.")
+food('dogfood', 'Dog food', 22, 0.4, 5, "Don't think about it.", { poison: 0.3 })
 food('cereal', 'Box of cereal', 20, 0.35, 12, 'Stale. Still part of a complete breakfast.')
-food('berries', 'Wild berries', 6, 0.05, 3, 'Probably the safe kind.', { thirst: 4 })
+food('berries', 'Wild berries', 6, 0.05, 3, 'Probably the safe kind.', {
+  thirst: 4,
+  poison: 0.12,
+})
 
 // ── Drinks ──
 const drink = (
@@ -168,6 +177,7 @@ drink('coffee', 'Thermos of coffee', 24, 0.5, 25, 'Still warm, somehow.', { stam
 drink('beer', 'Bottle of beer', 14, 0.5, 12, 'For courage.', { health: 3 })
 drink('dirtywater', 'Dirty water', 28, 0.55, 2, "It'll do. It'll also do something to you.", {
   health: -8,
+  poison: 0.5,
 })
 
 // ── Medical ──
@@ -182,14 +192,20 @@ const med = (
 med('rags', 'Clean rags', 0.05, 6, 'Better than bleeding.', { stopsBleeding: true })
 med('bandage', 'Bandage', 0.06, 25, 'Stops bleeding and patches you up a little.', {
   stopsBleeding: true,
+  splints: true,
   health: 12,
 })
 med('medkit', 'First aid kit', 0.9, 140, 'Everything short of a doctor.', {
   stopsBleeding: true,
+  splints: true,
+  settles: true,
   health: 70,
 })
 med('painkillers', 'Painkillers', 0.05, 40, "You'll feel it tomorrow instead.", { health: 22 })
-med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', { health: 35 })
+med('antibiotics', 'Antibiotics', 0.05, 90, 'Rare now. People kill for these.', {
+  health: 35,
+  settles: true,
+})
 med('adrenaline', 'Adrenaline shot', 0.05, 300, 'Run now, pay later. Holds the turn back.', {
   health: 15,
   stamina: 100,
