@@ -34,6 +34,8 @@ export interface TierSettings {
   campLamps: number
   /** Falling leaves around you. */
   leaves: number
+  /** World surfaces' pixel texture density (texels a metre, see textures.ts setTexelDensity). */
+  texelsPerMeter: number
 }
 
 /** High is the game as it was before tiers. */
@@ -53,6 +55,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     lamps: 6,
     campLamps: 9,
     leaves: 260,
+    texelsPerMeter: 32,
   },
   medium: {
     shadowMap: 2048,
@@ -69,6 +72,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     lamps: 5,
     campLamps: 7,
     leaves: 180,
+    texelsPerMeter: 32,
   },
   low: {
     shadowMap: 1024,
@@ -85,6 +89,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     lamps: 3,
     campLamps: 4,
     leaves: 90,
+    texelsPerMeter: 16,
   },
 }
 

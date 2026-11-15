@@ -4,30 +4,9 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { buildCorn } from './corn.ts'
 import { createLabel } from './labels.ts'
+import { planarUVs } from './pixel-textures.ts'
 import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
 import { lampSwing } from './wind.ts'
-
-/**
- * World-space planar UVs: each face is projected on its dominant axis, so the 1 m texture grid
- * lines up across every box in the map (and reads as a ruler).
- */
-function applyWorldUVs(geometry: THREE.BufferGeometry): void {
-  const pos = geometry.getAttribute('position')
-  const normal = geometry.getAttribute('normal')
-  const uv = geometry.getAttribute('uv')
-  for (let i = 0; i < pos.count; i++) {
-    const nx = Math.abs(normal.getX(i))
-    const ny = Math.abs(normal.getY(i))
-    const nz = Math.abs(normal.getZ(i))
-    const x = pos.getX(i)
-    const y = pos.getY(i)
-    const z = pos.getZ(i)
-    if (ny >= nx && ny >= nz) uv.setXY(i, x, z)
-    else if (nx >= nz) uv.setXY(i, z, y)
-    else uv.setXY(i, x, y)
-  }
-  uv.needsUpdate = true
-}
 
 /** Walls are darkest right at the ground (this much of their colour) … */
 const GRIME = 0.74
@@ -326,7 +305,8 @@ export function buildMapObject(map: MapDef): THREE.Group {
     quaternion.setFromEuler(euler)
     matrix.compose(new THREE.Vector3(...center), quaternion, new THREE.Vector3(1, 1, 1))
     geometry.applyMatrix4(matrix)
-    applyWorldUVs(geometry)
+    // World-space metric UVs: the texture grid lines up across every box in the map.
+    planarUVs(geometry)
     if (map.survival) {
       const clean = isTransparent(box.material) || glows(box.material)
       applyGrime(geometry, clean ? null : map.survival.terrain)

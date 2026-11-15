@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 
 /**
- * The survival ground's material: vertex colours (ground-colour.ts) over the speckle texture,
- * the texture sampled a second time at a much larger scale so the repeat doesn't show, and rain
+ * The survival ground's material: vertex colours (ground-colour.ts) over the forest floor's
+ * pixel detail (`map`), big soft patches from a second, coarse speckle (`patches`, sampled at a
+ * much larger scale) so the small repeat doesn't show, and rain
  * that soaks in — the ground darkens, the mud most, and takes on a sheen that catches the moon,
  * the lamps and your torch. `uWet` is shared: one number wets every chunk.
  */
@@ -12,32 +13,41 @@ export const wetUniforms = {
   uMudColor: { value: new THREE.Color(0x1e1810) },
 }
 
+/** The coarse speckle the ground's big patches come from (one ground, one texture). */
+export const groundPatches: { texture: THREE.Texture | null } = { texture: null }
+
 /** How dark soaked ground gets, and how it shines. */
 export const DARKEN = 0.4
 const SHEEN = new THREE.Color(0x4a525c)
 
-export function wetGroundMaterial(map: THREE.Texture): THREE.MeshPhongMaterial {
+export function wetGroundMaterial(
+  map: THREE.Texture,
+  patches: THREE.Texture,
+): THREE.MeshPhongMaterial {
   const material = new THREE.MeshPhongMaterial({
     map,
     vertexColors: true,
     shininess: 34,
     specular: SHEEN,
   })
+  // The TSL twin (wet-ground.tsl.ts) finds it here (node twins don't carry userData over).
+  groundPatches.texture = patches
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, wetUniforms)
+    shader.uniforms.uPatches = { value: patches }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float mud;\nvarying float vMud;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMud = mud;')
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying float vMud;\nuniform float uWet;\nuniform vec3 uMudColor;',
+        '#include <common>\nvarying float vMud;\nuniform float uWet;\nuniform vec3 uMudColor;\nuniform sampler2D uPatches;',
       )
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-        // Big soft patches from the same texture, so the small repeat never lines up.
-        diffuseColor.rgb *= mix(0.8, 1.22, texture2D(map, vMapUv * 0.09 + vec2(0.37, 0.61)).g);`,
+        // Big soft patches from the coarse speckle, so the small repeat never lines up.
+        diffuseColor.rgb *= mix(0.8, 1.22, texture2D(uPatches, vMapUv * 0.09 + vec2(0.37, 0.61)).g);`,
       )
       .replace(
         '#include <color_fragment>',

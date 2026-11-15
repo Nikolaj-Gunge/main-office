@@ -12,10 +12,12 @@ import { filterTexture } from './textures.ts'
  * birch). Far away the mips even it out to the plain colour.
  */
 
-/** Texels a metre (big enough to survive the pixel renderer at 5–20 m). */
-export const GRAIN_PX = 8
+/** Texels a metre: bark ridges and needle tufts a few centimetres across, as on the buildings. */
+export const GRAIN_PX = 16
 /** The texture is GRAIN_SIZE² texels and repeats (every GRAIN_SIZE / GRAIN_PX metres). */
-export const GRAIN_SIZE = 128
+export const GRAIN_SIZE = 256
+/** Each channel is snapped to this many flat steps: a few shades, crisp, not a smooth noise. */
+const GRAIN_STEPS = 6
 /** A channel's 0…1 turns the colour into LOW … LOW + RANGE times itself (0.5: unchanged). */
 export const GRAIN_LOW = 0.35
 export const GRAIN_RANGE = 1.3
@@ -23,6 +25,8 @@ export const GRAIN_RANGE = 1.3
 export const GRAIN_PALE = 0.25
 
 const N = GRAIN_SIZE
+/** Scattered marks (cracks, birch dashes) scale with the texture's area. */
+const AREA = (N / 128) ** 2
 
 /** Value noise that wraps round the texture: lattice every `cell` texels. */
 function tileNoise(x: number, y: number, cell: number, seed: number): number {
@@ -72,7 +76,7 @@ function paintGrain(): Uint8Array {
     }
   }
   // Rock: cracks wandering across, a texel at a time, some forking.
-  for (let k = 0; k < 28; k++) {
+  for (let k = 0; k < 28 * AREA; k++) {
     let x = Math.floor(hash2(k, 4, 59) * N)
     let y = Math.floor(hash2(k, 5, 59) * N)
     const dx = hash2(k, 6, 59) < 0.5 ? 1 : -1
@@ -83,17 +87,18 @@ function paintGrain(): Uint8Array {
     }
   }
   // Birch: the black dashes across a white trunk.
-  for (let k = 0; k < 300; k++) {
+  for (let k = 0; k < 300 * AREA; k++) {
     const x0 = Math.floor(hash2(k, 8, 62) * N)
     const y = Math.floor(hash2(k, 9, 62) * N)
     const len = 2 + Math.floor(hash2(k, 10, 62) * 4)
     for (let j = 0; j < len; j++) birch[y * N + ((x0 + j) % N)] = 0
   }
+  const step = (v: number) => Math.round((Math.round(clamp01(v) * GRAIN_STEPS) / GRAIN_STEPS) * 255)
   for (let i = 0; i < N * N; i++) {
-    data[i * 4] = Math.round(clamp01(bark[i] as number) * 255)
-    data[i * 4 + 1] = Math.round(clamp01(leaf[i] as number) * 255)
-    data[i * 4 + 2] = Math.round(clamp01(rock[i] as number) * 255)
-    data[i * 4 + 3] = Math.round(clamp01(birch[i] as number) * 255)
+    data[i * 4] = step(bark[i] as number)
+    data[i * 4 + 1] = step(leaf[i] as number)
+    data[i * 4 + 2] = step(rock[i] as number)
+    data[i * 4 + 3] = step(birch[i] as number)
   }
   return data
 }

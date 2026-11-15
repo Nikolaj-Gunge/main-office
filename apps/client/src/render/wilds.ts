@@ -32,8 +32,9 @@ import { type GeometryData, toGeometry } from './geometry-data.ts'
 import { makeGrained } from './grain.ts'
 import { type GroundColour, groundColour } from './ground-colour.ts'
 import { detailMaterials } from './ground-detail.ts'
+import { dataTexture, paintForestFloor } from './pixel-textures.ts'
 import { buildSigns } from './road-signs.ts'
-import { filterTexture, getSurfaceMaterial } from './textures.ts'
+import { filterTexture, getSurfaceMaterial, onTexelDensity, texelsPerMeter } from './textures.ts'
 import { wetGroundMaterial, wetUniforms } from './wet-ground.ts'
 import { makeSwaying } from './wind.ts'
 
@@ -74,6 +75,29 @@ const PUDDLE = col(0x141c26)
 const PUDDLE_SHINE = col(0x9aa8b8)
 const PUDDLE_SHINE_WET = col(0xd8e2ee)
 
+/** The ground's UVs repeat every this many metres (chunk-geometry.ts, forest-lod.ts). */
+const GROUND_TILE = 6
+
+/**
+ * The forest floor's pixel detail (needles, twigs, pebbles, tufts) at the world surfaces'
+ * texel density, repainted in place when that changes (Low tier: half).
+ */
+function makeFloorTexture(): THREE.DataTexture {
+  const paint = (tpm: number) => {
+    const size = GROUND_TILE * tpm
+    return { data: paintForestFloor(size, GROUND_TILE, 0x7f3a11), width: size, height: size }
+  }
+  const texture = dataTexture(paint(texelsPerMeter()).data, GROUND_TILE * texelsPerMeter(), 1)
+  filterTexture(texture)
+  onTexelDensity((tpm) => {
+    texture.image = paint(tpm)
+    texture.dispose()
+    texture.needsUpdate = true
+  })
+  return texture
+}
+
+/** A coarse speckle, for the ground's big soft patches (wet-ground.ts). */
 function makeGroundTexture(): THREE.CanvasTexture {
   const size = 64
   const canvas = document.createElement('canvas')
@@ -142,7 +166,7 @@ export class Wilds {
   readonly root = new THREE.Group()
   private readonly chunks = new Map<number, Chunk>()
   // Weather: the ground soaks up the rain (wet-ground.ts) and the puddles gleam (setWetness).
-  private readonly groundMaterial = wetGroundMaterial(makeGroundTexture())
+  private readonly groundMaterial = wetGroundMaterial(makeFloorTexture(), makeGroundTexture())
   private readonly puddleMaterials: THREE.MeshPhongMaterial[] = []
   // Both grained (grain.ts): bark, leaves and rock look the same near and simplified.
   private readonly propMaterial = grained(
