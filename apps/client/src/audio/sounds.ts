@@ -16,6 +16,7 @@ import {
   sweep,
   tone,
 } from './dsp.ts'
+import { ROT_SOUNDS } from './rot-sounds.ts'
 
 /**
  * Every sound in the game, synthesized at startup. Swappable for recorded samples later (same
@@ -77,6 +78,8 @@ export const SOUNDS = {
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
   'jingle.airhorn': { variants: 3, recipe: jingleAirhorn },
+  // The Rot (rot-sounds.ts): birds, birdsong, car alarms, glass underfoot.
+  ...ROT_SOUNDS,
 } satisfies Record<string, { variants: number; recipe: (rate: number, v: number) => Signal }>
 
 export type SoundId = keyof typeof SOUNDS

@@ -1,5 +1,5 @@
-import { coverAt, surfaceAt } from './terrain.ts'
 import { hash2, seeded } from './noise.ts'
+import { coverAt, surfaceAt } from './terrain.ts'
 import { Surface, type SurvivalDef } from './types.ts'
 
 /**

@@ -289,8 +289,12 @@ player.feel.onFootstep = () => {
     rate: tone.rate * (0.95 + Math.random() * 0.1),
     lowpass: tone.lowpass,
   })
+  survival?.rot.footstep(s.pos, true, s.crouched)
 }
-remotes.onFootstep = (at, sprinting) => audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
+remotes.onFootstep = (at, sprinting) => {
+  audio.playNear('step', at, sprinting ? 0.8 : 0.55, 30)
+  survival?.rot.footstep(at, false, false)
+}
 remotes.onLand = (at) => audio.playNear('land', at, 0.6, 25)
 remotes.onMove = (sound, at) => audio.playNear(sound, at, 0.5, 25)
 remotes.onGroan = (at) => audio.playNear('groan', at, 0.9, 28)
@@ -704,7 +708,7 @@ function applySettings() {
   pixels.applySettings(settings)
   look.sensitivity = settings.sensitivity
   shake.scale = settings.screenShake
-  audio.setVolumes(settings.masterVolume, settings.sfxVolume)
+  audio.setVolumes(settings.masterVolume, settings.sfxVolume, settings.musicVolume)
   aim.toggle = settings.aimToggle
   if (!aim.toggle) aim.release()
   stats.dom.style.display = settings.showStats ? '' : 'none'

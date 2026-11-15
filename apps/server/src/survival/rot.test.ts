@@ -148,9 +148,7 @@ describe('the Rot: out of sight', () => {
   test('in front of you is seen; well round to the side, or behind a wall, is not', () => {
     expect(unseen(me, { x: 0, y: 0, z: -50 }, open)).toBe(false)
     const side = ((UNSEEN_ANGLE + 5) * Math.PI) / 180
-    expect(unseen(me, { x: -Math.sin(side) * 50, y: 0, z: -Math.cos(side) * 50 }, open)).toBe(
-      true,
-    )
+    expect(unseen(me, { x: -Math.sin(side) * 50, y: 0, z: -Math.cos(side) * 50 }, open)).toBe(true)
     expect(unseen(me, { x: 0, y: 0, z: -50 }, () => false)).toBe(true)
   })
 
@@ -314,7 +312,7 @@ describe('the Rot: birds', () => {
       w.rot.tick()
     }
     expect(w.rot.relaxing(me)).toBe(true)
-    expect(zed.mood).toBe('search')
+    expect(zed.mood as string).toBe('search')
   })
 })
 

@@ -8,6 +8,7 @@ const AMBIENCE = new Set<SoundId>([
   'rain.heavy',
   'thunder.near',
   'thunder.far',
+  'birdsong',
 ])
 
 describe('synthesized sounds', () => {

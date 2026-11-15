@@ -51,6 +51,7 @@ import { Wilds } from '../render/wilds.ts'
 import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import type { RemotePlayers } from './remote-players.ts'
+import { RotClient } from './rot-client.ts'
 import { VehiclesClient } from './vehicles-client.ts'
 
 /** How far you reach for things, and how close you stand to talk (m): the server's numbers. */
@@ -96,6 +97,8 @@ export class SurvivalClient {
   private readonly infection: Infection
   /** The cars: drawn, driven, ridden in. */
   readonly vehicles: VehiclesClient
+  /** The Rot: music by tension, birds, birdsong, car alarms, crunchy ground (rot-client.ts). */
+  readonly rot: RotClient
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
@@ -172,6 +175,7 @@ export class SurvivalClient {
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
     if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
+    this.rot = new RotClient(o.def, o.audio, o.scene)
     this.vehicles = new VehiclesClient({
       scene: o.scene,
       physics: o.physics,
@@ -270,6 +274,7 @@ export class SurvivalClient {
           this.hud.dropStory(BITTEN_STORY)
         this.self = msg.self
         this.infection.set(msg.self.infected ?? null)
+        this.rot.setInfected((msg.self.infected ?? null) !== null)
         this.hud.setSelf(msg.self)
         return true
       case ServerMsg.Loot:
@@ -277,6 +282,7 @@ export class SurvivalClient {
         return true
       case ServerMsg.Notice: {
         const n = msg.notice
+        if (this.rot.onNotice(n)) return true
         if (n.kind === 'scream' && n.at) {
           this.audio.playNear('scream', n.at, 1, 170, 12)
           this.audio.play('dread', { volume: 0.5 })
@@ -288,6 +294,9 @@ export class SurvivalClient {
       }
       case ServerMsg.Dialog:
         this.hud.dialog(msg.dialog)
+        return true
+      case ServerMsg.Tension:
+        this.rot.onTension(msg.level, msg.spotted)
         return true
       case ServerMsg.Snapshot:
         // The cars; the rest of the snapshot is the game's.
@@ -306,6 +315,7 @@ export class SurvivalClient {
     this.heli.apply(shared.drops)
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
+    this.rot.setShared(shared.rot)
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -378,15 +388,16 @@ export class SurvivalClient {
       this.loot.prune(eye.x, eye.z)
     }
     const time = this.time
-    this.night.setWeather(
-      this.weather.update(
-        dt,
-        this.camera,
-        daylight(time),
-        this.torchLevel,
-        this.scene.fog?.color ?? FOG,
-      ),
+    const sky = this.weather.update(
+      dt,
+      this.camera,
+      daylight(time),
+      this.torchLevel,
+      this.scene.fog?.color ?? FOG,
     )
+    // Fog Night (the Rot): the fog comes down after dark, whatever the weather.
+    const moodFog = this.rot.fog * (1 - daylight(time))
+    this.night.setWeather(moodFog > 0 ? { ...sky, fog: Math.min(1, sky.fog + moodFog) } : sky)
     this.wilds.setWetness(this.weather.wet)
     this.night.update(dt, eye, time, built)
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
@@ -436,6 +447,7 @@ export class SurvivalClient {
     this.moveWalkers(dt, eye)
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
+    this.rot.update(dt, time, eye, remotes, this.weather.indoors)
     this.infectionFx = this.infection.update(dt, state.alive)
     this.hud.update(dt, {
       infected: state.alive ? this.infection.left : null,

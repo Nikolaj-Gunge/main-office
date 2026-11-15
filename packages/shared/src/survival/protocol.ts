@@ -2,8 +2,8 @@ import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
-import type { WeatherShared } from './weather.ts'
 import type { RotMood } from './rot.ts'
+import type { WeatherShared } from './weather.ts'
 
 /** Some of one item. Weapons never stack (n = 1) and remember what's loaded. */
 export interface Stack {

@@ -229,7 +229,12 @@ export class RotWorld {
     )
     for (const e of events) {
       const who = people.find((p) => p.player.id === e.id)
-      if (who) this.happen(who.player, e.kind, people.map((p) => p.player))
+      if (who)
+        this.happen(
+          who.player,
+          e.kind,
+          people.map((p) => p.player),
+        )
     }
     // Relaxing: whatever is after them and can't see them gives up and goes to look instead.
     for (const { player, zed } of zombies) {

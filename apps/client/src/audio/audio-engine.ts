@@ -39,10 +39,12 @@ export class AudioEngine {
   private master: GainNode | null = null
   private sfx: GainNode | null = null
   private ui: GainNode | null = null
+  /** The music (music.ts) has its own volume, and isn't muffled by low health. */
+  private music: GainNode | null = null
   private muffle: BiquadFilterNode | null = null
   private heartbeatGain: GainNode | null = null
   private readonly listener = { x: 0, y: 0, z: 0 }
-  private volumes = { master: 0.8, sfx: 1 }
+  private volumes = { master: 0.8, sfx: 1, music: 0.35 }
   private isMuted = false
   /** 0 = clear, 1 = fully muffled. Combines low health and a short "ringing" after hits. */
   private lowHealthMuffle = 0
@@ -83,6 +85,8 @@ export class AudioEngine {
     // UI sounds (hit markers) skip the muffle so feedback stays crisp.
     this.ui = new GainNode(ctx, { gain: 0.7 })
     this.ui.connect(this.master)
+    this.music = new GainNode(ctx, { gain: this.volumes.music })
+    this.music.connect(this.master)
 
     const rate = ctx.sampleRate
     for (const [id, def] of Object.entries(SOUNDS) as [SoundId, (typeof SOUNDS)[SoundId]][]) {
@@ -107,10 +111,16 @@ export class AudioEngine {
     }
   }
 
-  setVolumes(master: number, sfx: number): void {
-    this.volumes = { master, sfx }
+  setVolumes(master: number, sfx: number, music = this.volumes.music): void {
+    this.volumes = { master, sfx, music }
     if (this.master) this.master.gain.value = this.outputGain()
     if (this.sfx) this.sfx.gain.value = sfx
+    if (this.music) this.music.gain.value = music
+  }
+
+  /** Where the music plays (music.ts): the context and its bus, once audio is unlocked. */
+  musicOut(): { ctx: AudioContext; bus: GainNode } | null {
+    return this.ctx && this.music ? { ctx: this.ctx, bus: this.music } : null
   }
 
   /**

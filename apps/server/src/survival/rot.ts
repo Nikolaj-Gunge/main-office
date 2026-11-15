@@ -2,8 +2,8 @@ import {
   heightAt,
   MOODS,
   moodFor,
-  RotPhase,
   type RotMood,
+  RotPhase,
   type SurvivalDef,
 } from '@office-fps/shared'
 import type { Point } from '../items.ts'
@@ -238,11 +238,7 @@ export interface Watcher {
 }
 
 /** True when `at` is out of `who`'s sight: well round from where they look, or behind something. */
-export function unseen(
-  who: Watcher,
-  at: Point,
-  clear: (a: Point, b: Point) => boolean,
-): boolean {
+export function unseen(who: Watcher, at: Point, clear: (a: Point, b: Point) => boolean): boolean {
   const dx = at.x - who.pos.x
   const dz = at.z - who.pos.z
   const d = Math.hypot(dx, dz)
@@ -266,7 +262,9 @@ export function ambushSpot(
   random: () => number,
 ): Point | null {
   const moving = Math.hypot(who.vel.x, who.vel.z) > 0.5
-  const heading = moving ? Math.atan2(who.vel.x, who.vel.z) : Math.atan2(-Math.sin(who.yaw), -Math.cos(who.yaw))
+  const heading = moving
+    ? Math.atan2(who.vel.x, who.vel.z)
+    : Math.atan2(-Math.sin(who.yaw), -Math.cos(who.yaw))
   for (let n = 0; n < 12; n++) {
     const a = heading + (random() - 0.5) * ((100 * Math.PI) / 180)
     const r = AMBUSH_MIN + random() * (AMBUSH_MAX - AMBUSH_MIN)
