@@ -3765,3 +3765,63 @@ body {
   opacity: 0.6;
   cursor: wait;
 }
+
+/* ── Chalk marks (p27-gate): L's picker ──────────────────────────────────────────────────── */
+.chalk-pick {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 60;
+  width: 520px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px;
+  transform: translate(-50%, -50%);
+  background: rgb(20 22 20 / 0.92);
+  border: 2px solid #4a4a42;
+  color: #e8e4da;
+  font-size: 13px;
+}
+
+.chalk-pick[hidden] {
+  display: none;
+}
+
+.chalk-title {
+  margin-bottom: 8px;
+  color: #b8b2a4;
+}
+
+.chalk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.chalk-row button,
+.chalk-go button {
+  padding: 3px 7px;
+  background: #2a2c28;
+  border: 1px solid #4a4a42;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chalk-row button.on {
+  background: #4a4a40;
+  border-color: #e8e4da;
+}
+
+.chalk-row canvas {
+  display: block;
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.chalk-go {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

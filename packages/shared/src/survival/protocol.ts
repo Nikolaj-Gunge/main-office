@@ -1,4 +1,5 @@
 import type { CampShared } from './camp.ts'
+import type { ChalkMark } from './chalk.ts'
 import type { Bio } from './characters.ts'
 import type { Chart } from './chart.ts'
 import type { Busy } from './crafting.ts'
@@ -75,6 +76,8 @@ export interface SurvivalSelf {
    */
   legacy?: Legacy
   wall?: ObitWall
+  /** Sent, never saved: the world's chalk marks (chalk.ts), only when they change. */
+  chalk?: ChalkMark[]
   /** Reputation (pvp.ts: Raider at or below RAIDER_AT, Saint from SAINT_AT); absent = 0. */
   rep?: number
   /** Oathbreaker: seconds of play the mark has left (pvp.ts); absent or 0 = none. */
@@ -180,6 +183,11 @@ export interface SurvivalShared {
   junk?: number[]
   /** Cans in Haven's barrel so far (junk.ts); absent = none yet. */
   hoop?: number
+  /**
+   * Haven's gate (haven-gate.ts): how far somebody has wound the winch, 0–100 (absent: nobody
+   * at it). Whether it is open is gate HAVEN_GATE in `gates`.
+   */
+  crank?: number
 }
 
 export type SurvivalAction =
@@ -210,6 +218,8 @@ export type SurvivalAction =
   | { a: 'trait'; id: TraitId | null }
   /** Put up a piece from a kit you carry (building.ts) where you point, turned `rot` eighths. */
   | { a: 'build'; kit: string; x: number; z: number; rot: number }
+  /** Chalk a mark where you look (chalk.ts): a symbol and up to two words (-1: none). */
+  | { a: 'chalk'; sym: number; word: number; place: number }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

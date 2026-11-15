@@ -135,6 +135,8 @@ export interface BanditHost {
   steal(): void
   /** May raiders come today (not while Haven is under siege)? */
   raidable(): boolean
+  /** Is Haven's gate shut (night, nobody on the winch)? Raiders can't get at the stores. */
+  gateShut?(): boolean
 }
 
 interface Camp {
@@ -173,6 +175,8 @@ interface Raid {
   /** They got into the stores and are leaving with it. */
   stole: boolean
   over: boolean
+  /** They found the gate shut (said once). */
+  barred?: boolean
 }
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) =>
@@ -410,7 +414,14 @@ export class Bandits {
       return
     }
     const gate = RAID_ROAD[RAID_ROAD.length - 1] as Point
-    if (!raid.stole && alive.some((b) => dist(b.player.state.pos, gate) < STORES_REACH)) {
+    const atGate = alive.some((b) => dist(b.player.state.pos, gate) < STORES_REACH)
+    // A shut gate keeps them out: they hang about outside it, shooting at whoever shows.
+    if (atGate && !raid.stole && this.host.gateShut?.()) {
+      if (!raid.barred) {
+        raid.barred = true
+        this.host.noticeAll('warn', "Raiders at Haven's gate. It's shut: don't wind it up now.")
+      }
+    } else if (!raid.stole && atGate) {
       raid.stole = true
       this.host.steal()
       this.host.noticeAll(
