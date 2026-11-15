@@ -346,6 +346,9 @@ export class SurvivalClient {
         // The account's legacy and the wall come only when they change: keep the last ones.
         if (!msg.self.legacy && this.self?.legacy) msg.self.legacy = this.self.legacy
         if (!msg.self.wall && this.self?.wall) msg.self.wall = this.self.wall
+        // So do the map you've drawn and the account's old map (chart.ts).
+        if (!msg.self.chart && this.self?.chart) msg.self.chart = this.self.chart
+        if (!msg.self.oldChart && this.self?.oldChart) msg.self.oldChart = this.self.oldChart
         if (msg.self.wall) this.obituary.set(msg.self.wall)
         this.self = msg.self
         this.infection.set(msg.self.infected ?? null)

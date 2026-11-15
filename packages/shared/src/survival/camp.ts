@@ -1,5 +1,6 @@
 import { CAMP_FOLK } from './camp-folk.ts'
 import { DAWN, DUSK, NIGHTFALL } from './daytime.ts'
+import { type ProjectShared, type ProjectsSave, readProjects } from './projects.ts'
 import type { Stack } from './protocol.ts'
 
 /**
@@ -172,6 +173,8 @@ export interface CampSave {
   graves: GraveSave[]
   /** Next grave's id. */
   nextGrave: number
+  /** Haven's community projects (projects.ts); absent in older saves. */
+  projects?: ProjectsSave
 }
 
 export const freshCamp = (): CampSave => ({
@@ -210,6 +213,7 @@ export function readCamp(raw: unknown): CampSave {
         .map((g) => ({ ...g, stash: Array.isArray(g.stash) ? g.stash : [] }))
     : []
   c.nextGrave = Math.max(num(r.nextGrave, 1), ...c.graves.map((g) => num(g.id, 0) + 1), 1)
+  c.projects = readProjects(r.projects)
   return c
 }
 
@@ -250,4 +254,6 @@ export interface CampShared {
   graves: GraveShared[]
   /** Bodies lying about that could be buried (the prompt's business). */
   remains?: RemainsShared[]
+  /** Haven's community projects (projects.ts): how far along, and the plaques. */
+  projects?: ProjectShared[]
 }

@@ -69,6 +69,7 @@ import {
   PLANK_ITEM,
   type PlayerState,
   type PoiKind,
+  PROJECT_BOARD_KEY,
   planksFor,
   recipeOf,
   regive,
@@ -127,6 +128,7 @@ import { type AlphaHost, Alphas } from './alphas.ts'
 import { type BanditHost, Bandits } from './bandits.ts'
 import { BASH_BASE, type BuildHost, Building } from './building.ts'
 import { Camp } from './camp.ts'
+import { Cartographer } from './chart.ts'
 import { DawnDesk } from './dawn-report.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
@@ -433,6 +435,11 @@ export class SurvivalDirector {
       saves: () => this.game.saves,
       notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
     })
+    this.chart = new Cartographer({
+      saves: () => this.game.saves,
+      pois: () => this.def?.pois ?? [],
+      notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
+    })
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
     this.building = new Building(this.buildHost())
@@ -524,6 +531,9 @@ export class SurvivalDirector {
 
   /** Field Notes, achievements and cosmetics (field-notes.ts): the account's, for good. */
   readonly fieldNotes: FieldNotesKeeper
+
+  /** The map each character draws as they walk (chart.ts). */
+  readonly chart: Cartographer
 
   /** Counts something for Field Notes and the journal. */
   private note(sv: Survivor | undefined, event: NoteEvent, n = 1): void {
@@ -658,6 +668,7 @@ export class SurvivalDirector {
     // A new world: the saved one starts over, and every character with it (saves.ts).
     this.game.saves.newWorld()
     this.legacy.reset()
+    this.chart.reset()
     this.dawnDesk.reset()
     this.savedWorld = ''
     this.survivors.clear()
@@ -747,6 +758,7 @@ export class SurvivalDirector {
     this.firstShot.forget(player.id)
     this.story.left(player)
     this.fieldNotes.forget(sv)
+    this.chart.forget(sv)
     this.save(sv)
     void this.game.saves.flush()
     this.clearStarters(sv)
@@ -1489,7 +1501,10 @@ export class SurvivalDirector {
       this.fieldNotes.attach(sv)
       if (!sv.dirty) continue
       sv.dirty = false
-      this.send(sv.player, { type: ServerMsg.Survival, self: this.legacy.outgoing(sv) })
+      this.send(sv.player, {
+        type: ServerMsg.Survival,
+        self: this.chart.outgoing(sv, this.legacy.outgoing(sv)),
+      })
     }
   }
 
@@ -1546,6 +1561,7 @@ export class SurvivalDirector {
   private tickSurvivor(sv: Survivor): void {
     const { self, player } = sv
     this.storage.check(sv)
+    this.chart.second(sv)
     if (!player.state.alive) return
     // Out there tonight (the Dawn Report counts who was).
     if (this.phase !== 'day') this.dawnDesk.seen(self.bio?.name ?? player.name)
@@ -2148,6 +2164,8 @@ export class SurvivalDirector {
         // The retired only say their piece (evac.ts): any answer ends it.
         if (String(action.npc).startsWith('retired:'))
           return void this.send(player, { type: ServerMsg.Dialog, dialog: null })
+        if (action.npc === PROJECT_BOARD_KEY)
+          return void this.camp.projects.choose(sv, String(action.option))
         return void this.story.choose(sv, String(action.npc), String(action.option))
       case 'craft':
         return void this.workbench.startCraft(sv, String(action.recipe))

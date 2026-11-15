@@ -11,6 +11,7 @@ import {
   daysToRed,
   freshCamp,
   GRAVE_STASH,
+  GREENHOUSE_PRICE,
   HAVEN_FIRE,
   HAVEN_MAX_LEVEL,
   healPrice,
@@ -24,6 +25,7 @@ import {
   moraleWord,
   NIGHTFALL,
   nextToLeave,
+  PROJECT_BOARD_KEY,
   priceFactor,
   RED_AT_FIRE,
   RED_HP,
@@ -38,9 +40,13 @@ import {
   redPhase,
   SHOVEL,
   type SiegeState,
+  WALL_INSIDE,
+  WATCHTOWER_WAVE_GAP,
+  WELL_DAY_TOLL,
   ZombieKind,
 } from '@office-fps/shared'
 import type { ServerPlayer } from '../game.ts'
+import { Projects } from './projects.ts'
 import type { Person, StoryHost } from './story.ts'
 
 /** Haven's palisade runs this far either side of the camp's middle (m); the gate is north. */
@@ -129,15 +135,29 @@ export class Camp {
   /** The day whose night had one of the gone walk the woods. */
   private haunted = -1
   private remains: Remains[] = []
+  /** What Haven is building together (projects.ts). */
+  readonly projects: Projects
 
   constructor(host: CampHost) {
     this.host = host
+    this.projects = new Projects({
+      people: () => host.people(),
+      count: (p, item) => host.count(p, item),
+      take: (p, item, n) => host.take(p, item, n),
+      touch: (p) => host.touch(p),
+      notice: (player, kind, text, title) => host.notice(player, kind, text, title),
+      dialog: (player, dialog) => host.dialog(player, dialog),
+      broadcast: () => host.broadcast(),
+      cheer: (n) => this.cheer(n),
+      day: () => this.state.day,
+    })
   }
 
   /** The world as saved (or a fresh one). */
   restore(raw: unknown): void {
     this.end()
     this.state = readCamp(raw)
+    this.projects.restore(this.state.projects)
     this.seen = null
     this.told = ''
     this.remains = []
@@ -149,7 +169,7 @@ export class Camp {
 
   /** For the world save. */
   save(): CampSave {
-    return JSON.parse(JSON.stringify(this.state)) as CampSave
+    return JSON.parse(JSON.stringify({ ...this.state, projects: this.projects.save() })) as CampSave
   }
 
   get morale(): number {
@@ -178,7 +198,9 @@ export class Camp {
   /** What Haven's morale does to its traders and its medic. */
   terms(): { price: number; heal: number; stock: [string, number][] } {
     const m = this.state.morale
-    return { price: priceFactor(m), heal: healPrice(m), stock: campStock(m) }
+    // The greenhouse (projects.ts): food grown at home takes a little off.
+    const grown = this.projects.has('greenhouse') ? GREENHOUSE_PRICE : 1
+    return { price: priceFactor(m) * grown, heal: healPrice(m), stock: campStock(m) }
   }
 
   // --- Every second ----------------------------------------------------------------------------
@@ -214,7 +236,8 @@ export class Camp {
     s.day++
     // A Red Night that never came (put off, or slept through somehow): the next is a week on.
     if (s.day > s.nextRed) s.nextRed = s.day + RED_NIGHT_EVERY - 1
-    this.cheer(MORALE.day)
+    // The well (projects.ts) makes the days a little easier.
+    this.cheer(MORALE.day + (this.projects.has('well') ? WELL_DAY_TOLL : 0))
     if (s.morale < MORALE_LOW) {
       const who = nextToLeave(s.gone.map((g) => g.name))
       if (who) {
@@ -276,7 +299,8 @@ export class Camp {
     const now = this.host.now()
     if (r.wave < RED_WAVES && now >= r.nextWave) {
       r.wave++
-      r.nextWave = now + RED_WAVE_GAP
+      // The watchtower (projects.ts) sees each wave coming: a little more time between them.
+      r.nextWave = now + RED_WAVE_GAP + (this.projects.has('watchtower') ? WATCHTOWER_WAVE_GAP : 0)
       const near = this.host.people().filter((p) => this.near(p, haven)).length
       const n = Math.min(RED_MOST - r.zeds.size, 4 + r.wave * 2 + 2 * near)
       for (let i = 0; i < n; i++) this.spawn(haven, r)
@@ -290,7 +314,8 @@ export class Camp {
       }
       const at = z.state.pos
       const inside = Math.abs(at.x - haven.x) < WALL && Math.abs(at.z - haven.z) < WALL
-      if (inside) r.hp -= RED_INSIDE
+      // The outer wall (projects.ts) slows the ones that get in.
+      if (inside) r.hp -= RED_INSIDE * (this.projects.has('wall') ? WALL_INSIDE : 1)
       if (Math.hypot(at.x - fire.x, at.z - fire.z) < AT_FIRE && !r.atFire.has(z)) {
         r.atFire.add(z)
         r.hp -= RED_AT_FIRE
@@ -449,6 +474,7 @@ export class Camp {
         `$${DONATION} through the slot. Somebody by the fire nods at you. (Morale ${Math.round(s.morale)})`,
       )
     }
+    if (key === PROJECT_BOARD_KEY) return void this.projects.use(p)
     if (key !== MORALE_BOARD_KEY) return
     this.host.dialog(p.player, {
       npc: MORALE_BOARD_KEY,
@@ -610,6 +636,7 @@ export class Camp {
       level: s.level,
       ...(s.shut ? { shut: true } : {}),
       gone: s.gone.map((g) => g.name),
+      projects: this.projects.shared(),
       graves: s.graves.map((g) => ({
         id: g.id,
         name: g.name,

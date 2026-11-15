@@ -1,6 +1,7 @@
 import {
   AMMO_BOX,
   bioLine,
+  chartCell,
   countOf,
   type Dialog,
   dayPhase,
@@ -33,6 +34,7 @@ import {
   WORLD_SIZE,
 } from '@office-fps/shared'
 import { BusyRing } from './busy-ring.ts'
+import { ChartPaper } from './chart-paper.ts'
 import { InventoryScreen } from './inventory-screen.ts'
 import { effectText } from './item-text.ts'
 import { NeedsHud } from './needs-hud.ts'
@@ -239,6 +241,8 @@ export class SurvivalHud {
   private readonly map: HTMLCanvasElement
   private mapBase: HTMLCanvasElement | null = null
   private mapOpen = false
+  /** The fog over the map: what this character has drawn (chart-paper.ts). */
+  private readonly paper = new ChartPaper()
   private sinceMap = 1
   private visible = false
   private clock = 0
@@ -1058,11 +1062,24 @@ export class SurvivalHud {
     const s = size / WORLD_SIZE
     const at = (v: number) => (v + WORLD_HALF) * s
     g.drawImage(this.mapBase, 0, 0)
+    // Only what this character has walked is drawn in (chart.ts); older servers send no chart.
+    const chart = this.self?.chart
+    if (chart) {
+      g.imageSmoothingEnabled = false
+      g.drawImage(this.paper.fogFor(chart.seen, this.self?.oldChart), 0, 0, size, size)
+    }
     g.textAlign = 'center'
     const found = new Set(this.shared?.found ?? [])
+    const inked = new Set(chart?.inked ?? [])
     this.def.pois.forEach((poi, i) => {
-      if (!found.has(i)) return
-      this.drawPlace(g, poi, at(poi.x), at(poi.z))
+      if (!chart) {
+        if (found.has(i)) this.drawPlace(g, poi, at(poi.x), at(poi.z))
+        return
+      }
+      // Been there: inked. Seen it, or heard of it: pencilled in.
+      const ink = poi.safe === true || inked.has(poi.key)
+      if (!ink && !found.has(i) && !this.paper.drawn(chartCell(poi.x, poi.z))) return
+      this.drawPlace(g, poi, at(poi.x), at(poi.z), !ink)
     })
     // A dashed line from you to the story's next stop.
     const goal = this.goal(ctx.pos)
@@ -1129,9 +1146,20 @@ export class SurvivalHud {
     g.textAlign = 'left'
     g.fillText('500 m', 20, size - 28)
     g.fillText('DEADWOOD COUNTY', 20, 26)
+    if (chart) {
+      g.fillStyle = '#968f78'
+      g.font = '12px "Pixelify Sans", monospace'
+      g.fillText(`Your map: ${Math.floor(this.paper.share * 100)}% drawn`, 20, 44)
+    }
   }
 
-  private drawPlace(g: CanvasRenderingContext2D, poi: Poi, x: number, y: number): void {
+  private drawPlace(
+    g: CanvasRenderingContext2D,
+    poi: Poi,
+    x: number,
+    y: number,
+    pencil = false,
+  ): void {
     const small =
       poi.kind === 'cabin' ||
       poi.kind === 'campsite' ||
@@ -1149,6 +1177,8 @@ export class SurvivalHud {
         : poi.kind === 'cache'
           ? '#9ad06a'
           : '#a8a088'
+    // Not been there yet: a pencil mark, no ink.
+    if (pencil) g.fillStyle = '#6e6a58'
     const r = poi.kind === 'town' ? 5 : small ? 2 : 3.5
     if (poi.kind === 'campsite' || poi.kind === 'cache') {
       g.beginPath()
@@ -1169,6 +1199,7 @@ export class SurvivalHud {
     if (small && poi.kind !== 'cache') return
     g.font = `${poi.kind === 'town' || poi.safe ? 'bold 14px' : '11px'} "Pixelify Sans", monospace`
     g.fillStyle = poi.safe ? '#ffb030' : '#c8c0a0'
+    if (pencil) g.fillStyle = '#8a8470'
     g.fillText(poi.name, x, y - r - 5)
   }
 }
