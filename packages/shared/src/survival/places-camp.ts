@@ -7,6 +7,7 @@ import {
   MORALE_BOARD_KEY,
 } from './camp.ts'
 import type { Site } from './kit.ts'
+import { PROJECT_BOARD, PROJECT_BOARD_KEY } from './projects.ts'
 
 /**
  * Haven's things for the camp (camp.ts), in Haven's own coordinates: the morale board beside the
@@ -27,6 +28,13 @@ export function campThings(s: Site): void {
   s.block(dx, 0.7, dz, 0.5, 0.36, 0.42, 'metal')
   s.deco(dx, 1.06, dz, 0.3, 0.02, 0.05, 'asphalt')
   s.interact(DONATION_BOX_KEY, 'camp', dx, 1, dz, `Give to the camp ($${DONATION})`)
+
+  // The project board (projects.ts) beside it: what Haven is building, and what it still needs.
+  const [px, pz] = PROJECT_BOARD
+  s.block(px, 0, pz - 0.8, 0.14, 2.2, 0.14, 'log').block(px, 0, pz + 0.8, 0.14, 2.2, 0.14, 'log')
+  s.block(px, 0.9, pz, 0.08, 1.1, 1.6, 'wood')
+  s.deco(px + 0.05, 2.2, pz, 0.5, 0.06, 1.9, 'shingle')
+  s.interact(PROJECT_BOARD_KEY, 'camp', px + 0.1, 1.4, pz, 'Haven builds: give materials')
 
   // The banner pole, out from the palisade west of the gate.
   const [gx, gz] = GATE_BANNER

@@ -13,6 +13,7 @@ import {
 import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
 import { createLabel } from './labels.ts'
+import { ProjectsView } from './projects-view.ts'
 
 /** The red a Red Night's sky goes. */
 export const RED_SKY = new THREE.Color(0x6a0c08)
@@ -64,6 +65,8 @@ export class CampView {
   private readonly shrouds = new THREE.Group()
   private shroudKey = ''
   private lastRed: CampShared['red'] | 'none' | null = null
+  /** Haven's community projects (projects-view.ts). */
+  private readonly projects: ProjectsView
 
   constructor(def: SurvivalDef, audio: AudioEngine) {
     this.audio = audio
@@ -102,6 +105,8 @@ export class CampView {
     chalk.rotation.y = Math.PI / 2
     this.root.add(chalk)
 
+    this.projects = new ProjectsView(def, this.origin)
+    this.root.add(this.projects.root)
     this.buildLevels()
     this.buildShut()
     this.root.add(this.shut, this.shrouds)
@@ -194,6 +199,7 @@ export class CampView {
     this.drawBoard(camp)
     this.syncGraves(camp.graves)
     this.syncShrouds(camp)
+    this.projects.apply(camp.projects)
     // The horn as the sky starts to go red (not when you join halfway through).
     if (camp.red === 'dusk' && this.lastRed !== null && this.lastRed !== 'dusk')
       this.audio.play('horn', { volume: 0.9 })
@@ -360,6 +366,7 @@ export class CampView {
 
   clear(): void {
     this.apply(undefined)
+    this.projects.apply(undefined)
     for (const g of this.graves.values()) this.graveRoot.remove(g)
     this.graves.clear()
     this.shrouds.clear()

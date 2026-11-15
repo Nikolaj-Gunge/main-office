@@ -1,5 +1,6 @@
 import type { CampShared } from './camp.ts'
 import type { Bio } from './characters.ts'
+import type { Chart } from './chart.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
 import type { EvacShared } from './evac.ts'
@@ -80,6 +81,13 @@ export interface SurvivalSelf {
   oath?: number
   /** What this character has learned by doing (skills.ts); absent in old saves. */
   skills?: Skills
+  /**
+   * The map this character has drawn (chart.ts): saved with them, but sent only when it
+   * changes (absent: as last sent).
+   */
+  chart?: Chart
+  /** Sent, never saved: the account's faded old map (chart.ts bitset), only when it changes. */
+  oldChart?: string
 }
 
 export interface QuestState {
