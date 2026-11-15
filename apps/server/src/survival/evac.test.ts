@@ -75,7 +75,7 @@ describe('evacuation rules', () => {
     const haven = d.pois.find((p) => p.key === 'haven')
     if (!pad || !radio || !haven) throw new Error('missing')
     expect(Math.hypot(pad.x - radio.x, pad.z - radio.z)).toBeLessThan(radio.r)
-    expect(Math.hypot(pad.x - haven.x, pad.z - haven.z)).toBeGreaterThan(1500)
+    expect(Math.hypot(pad.x - haven.x, pad.z - haven.z)).toBeGreaterThan(700)
     const set = d.interactables.find((i) => i.key === 'evac_radio')
     expect(set && Math.hypot(set.pos[0] - pad.x, set.pos[2] - pad.z)).toBeLessThan(10)
   })

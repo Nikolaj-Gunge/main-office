@@ -18,8 +18,8 @@ export interface Keepout extends Spot {
 }
 
 /** How far a migration walks at the least and the most (m, straight line, end to end). */
-export const MIGRATION_MIN = 900
-export const MIGRATION_MAX = 1900
+export const MIGRATION_MIN = 450
+export const MIGRATION_MAX = 1100
 /** How fast the crowd drifts along (m/s): a shuffle. */
 export const MIGRATION_SPEED = 1.1
 /** How many of the dead walk in one. */
@@ -102,9 +102,22 @@ export function planMigration(
     const to = ends[Math.floor(random() * ends.length)] as Poi
     const d = Math.hypot(to.x - from.x, to.z - from.z)
     if (d < MIGRATION_MIN || d > MIGRATION_MAX) continue
-    return { from, to, route: detour(from, to, keep) }
+    const route = detour(from, to, keep)
+    // Keep-outs close together (Haven and the lake) can leave no way round: try another pair.
+    if (!clearOf(route, keep)) continue
+    return { from, to, route }
   }
   return null
+}
+
+/** Every leg of `route` stays (all but) outside every keep-out. */
+function clearOf(route: readonly Spot[], keep: readonly Keepout[]): boolean {
+  for (let i = 0; i + 1 < route.length; i++) {
+    const a = route[i] as Spot
+    const b = route[i + 1] as Spot
+    if (keep.some((k) => closest(a, b, k).d < k.r - 5)) return false
+  }
+  return true
 }
 
 /** How long a route is (m). */

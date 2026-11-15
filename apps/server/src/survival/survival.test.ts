@@ -467,7 +467,7 @@ describe('survival: the night', () => {
   test('the dead turn up in the woods around you, but never many', () => {
     const t = setup()
     t.run(1)
-    t.move(-300, t.player().state.pos.y, 600)
+    t.move(-840, t.player().state.pos.y, 1020)
     t.player().state.pos.y = 40
     t.run(8)
     const n = t.zombies().length
@@ -1020,8 +1020,8 @@ describe('survival: supply drops', () => {
       }
     ).survival
     // Out in the woods, where nothing much lives.
-    t.move(-300, 0, 600)
-    t.player().state.pos.y = heightAt(t.def.terrain, -300, 600) + 0.1
+    t.move(280, 0, 300)
+    t.player().state.pos.y = heightAt(t.def.terrain, 280, 300) + 0.1
     const now = () => t.game.tick / TICK_RATE
     // Not before the story gets there, however long you wait.
     director.drops.nextAt = now()
@@ -1180,10 +1180,10 @@ describe('survival: clothes and gear', () => {
     const homes = def.pois.flatMap((p, i) =>
       p.kind === 'house' || p.kind === 'cabin' || p.kind === 'camper' ? [i] : [],
     )
-    expect(homes.length).toBeGreaterThan(50)
+    expect(homes.length).toBeGreaterThan(45)
     for (const i of homes)
       expect(def.loot.some((l) => l.poi === i && l.table === 'homegun')).toBe(true)
-    expect(def.loot.filter((l) => l.table === 'homegun').length).toBeGreaterThan(75)
+    expect(def.loot.filter((l) => l.table === 'homegun').length).toBeGreaterThan(65)
     // Pistols and old shotguns: no rifles, nothing military.
     for (const id of tableItems('homegun')) {
       const weapon = ITEMS[id]?.weapon

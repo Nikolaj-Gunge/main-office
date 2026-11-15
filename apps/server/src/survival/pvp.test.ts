@@ -99,7 +99,7 @@ describe('pvp: the ground', () => {
     for (const p of def.pois.filter((q) => q.kind === 'town' || q.safe))
       expect(Math.hypot(p.x - c.x, p.z - c.z)).toBeGreaterThan(LAWLESS_RADIUS + p.r)
     // The border is signed all the way round (it's all inside the world).
-    expect(lawlessBorder(def.pois, 40).length).toBeGreaterThan(45)
+    expect(lawlessBorder(def.pois, 40).length).toBeGreaterThan(30)
   })
 
   test('the border is marked: warning signs and red-painted trees', () => {

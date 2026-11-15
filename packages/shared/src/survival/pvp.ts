@@ -12,7 +12,7 @@ import { type Poi, WORLD_HALF } from './types.ts'
 export type Ground = 'haven' | 'woods' | 'lawless'
 
 /** The Lawless ground is this far round Site 7 (m), out to the world's edge. */
-export const LAWLESS_RADIUS = 320
+export const LAWLESS_RADIUS = 220
 /** Haven's safety reaches this far past its clearing (m). */
 export const HAVEN_MARGIN = 6
 

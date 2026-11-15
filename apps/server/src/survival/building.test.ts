@@ -277,10 +277,13 @@ describe('building: walls, doors and the dead', () => {
     t.game.placeZombie(zombie, { pos: [g.x, heightOf(t.def, g.x, g.z - 3), g.z - 3], yaw: 0 }, 5000)
     zombie.health = 5000
     const zed = zombie.zombie as Zed
-    const before = zed.speedFactor
     t.run(0.3)
     expect(zed.slowed).toBe(true)
-    expect(zed.speedFactor).toBeLessThan(before)
+    // Slower than it would go off the spikes, whatever its mood (it may have seen somebody).
+    const slowedPace = zed.speedFactor
+    zed.slowed = false
+    expect(slowedPace).toBeLessThan(zed.speedFactor)
+    zed.slowed = true
     zombie.state.pos = { x: g.x, y: heightOf(t.def, g.x, g.z - 3), z: g.z - 3 }
     t.run(1.5)
     expect(zombie.health).toBeLessThan(5000)

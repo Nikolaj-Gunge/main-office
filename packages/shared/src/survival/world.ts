@@ -31,6 +31,26 @@ interface Plan {
   wooded?: boolean
 }
 
+/** Haven's middle: the county is drawn in towards it (see `drawIn`). */
+const HAVEN_X = 0
+const HAVEN_Z = 480
+/** Within this of Haven nothing moves; beyond it, distances from Haven are cut to DRAW_IN. */
+const DRAW_IN_FROM = 60
+const DRAW_IN = 0.45
+
+/**
+ * Where a planned spot really is: pulled in towards Haven along its bearing, so the story's far
+ * places are a walk of minutes, not a trek (the coordinates below are the old, wide layout).
+ */
+export function drawIn(x: number, z: number): [number, number] {
+  const dx = x - HAVEN_X
+  const dz = z - HAVEN_Z
+  const d = Math.hypot(dx, dz)
+  if (d <= DRAW_IN_FROM) return [x, z]
+  const k = (DRAW_IN_FROM + (d - DRAW_IN_FROM) * DRAW_IN) / d
+  return [Math.round((HAVEN_X + dx * k) * 10) / 10, Math.round((HAVEN_Z + dz * k) * 10) / 10]
+}
+
 const place = (
   key: string,
   kind: PoiKind,
@@ -40,7 +60,11 @@ const place = (
   r: number,
   danger: number,
   extra: Partial<Plan> = {},
-): Plan => ({ key, kind, name, x, z, r, danger, ...extra })
+  drawn = true,
+): Plan => {
+  const [px, pz] = drawn ? drawIn(x, z) : [x, z]
+  return { key, kind, name, x: px, z: pz, r, danger, ...extra }
+}
 
 /** The cabins scattered through the woods (x, z). */
 const CABINS: [number, number][] = [
@@ -82,9 +106,10 @@ const CAMPSITES: [number, number][] = [
  * the roads. Added after everything else so the scattered places stay where they always were.
  */
 const BANDIT_CAMPS: [number, number, string][] = [
-  [-300, -560, "Crow's camp"],
-  [-700, -60, 'Burnt Hollow camp'],
-  [1250, 250, 'Rook Ridge camp'],
+  // Where they really are (not drawn in: picked in the drawn-in county, clear of everything).
+  [-140, -40, "Crow's camp"],
+  [-480, 420, 'Burnt Hollow camp'],
+  [690, 340, 'Rook Ridge camp'],
 ]
 const CACHES: [number, number][] = [
   [-1330, 1300],
@@ -143,8 +168,16 @@ const PLANS: Plan[] = [
   ),
 ]
 
-const asphalt = (...points: [number, number][]): RoadPlan => ({ kind: 'asphalt', width: 7, points })
-const dirt = (...points: [number, number][]): RoadPlan => ({ kind: 'dirt', width: 4, points })
+const asphalt = (...points: [number, number][]): RoadPlan => ({
+  kind: 'asphalt',
+  width: 7,
+  points: points.map(([x, z]) => drawIn(x, z)),
+})
+const dirt = (...points: [number, number][]): RoadPlan => ({
+  kind: 'dirt',
+  width: 4,
+  points: points.map(([x, z]) => drawIn(x, z)),
+})
 
 const ROADS: RoadPlan[] = [
   // The highway, north to south, passing east of Haven.
@@ -190,7 +223,10 @@ const ROADS: RoadPlan[] = [
   dirt([-820, -260], [-1050, 100], [-1210, 440]),
 ]
 
-const LAKES = [{ x: 420, z: 110, r: 85 }]
+const LAKES = [{ x: 420, z: 110, r: 85 }].map((l) => {
+  const [x, z] = drawIn(l.x, l.z)
+  return { ...l, x, z }
+})
 
 const SCATTER_NAMES: Record<ScatterKind, (variant: number) => string> = {
   house: houseName,
@@ -222,10 +258,12 @@ const ALL_PLANS: Plan[] = (() => {
       p.r,
       SCATTER_DANGER[p.kind] + (p.kind === 'house' ? variant % 2 : 0),
       { turn: p.turn, wooded: p.wooded, hidden: true },
+      // Picked among the drawn-in places already: where they land is where they are.
+      false,
     )
   })
   const bandits = BANDIT_CAMPS.map(([x, z, name], i) =>
-    place(`bandits_${i + 1}`, 'bandits', name, x, z, 16, 0, { hidden: true }),
+    place(`bandits_${i + 1}`, 'bandits', name, x, z, 16, 0, { hidden: true }, false),
   )
   return [...PLANS, ...scattered, ...bandits]
 })()

@@ -72,7 +72,9 @@ describe('pathing', () => {
     const t = setup()
     Math.random = seeded(3)
     t.run(0.5)
-    const town = t.def.pois.findIndex((p) => p.key === 'pinewatch')
+    // Mill Creek: since the county was drawn in, Pinewatch's garages sit where this test drops
+    // the dead at random, and some start shut inside one (never so in play: they spawn outside).
+    const town = t.def.pois.findIndex((p) => p.key === 'millcreek')
     const poi = t.def.pois[town]
     if (!poi) throw new Error('no town')
     const rooms = t.def.rooms.filter(

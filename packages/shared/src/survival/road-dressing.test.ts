@@ -47,7 +47,7 @@ describe('road dressing', () => {
     const solid = map.boxes.filter(
       (b) => b.collide !== false && (isLampPost(b) || isPowerPole(b) || isRoadsideDrum(b)),
     )
-    expect(map.boxes.filter(isPowerPole).length).toBeGreaterThan(100)
+    expect(map.boxes.filter(isPowerPole).length).toBeGreaterThan(80)
     for (const b of solid) {
       const half = Math.max(b.size[0], b.size[2]) / 2
       expect(roads.edgeDistance(b.center[0], b.center[2])).toBeGreaterThan(half)
