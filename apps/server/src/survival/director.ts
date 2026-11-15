@@ -139,6 +139,7 @@ import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { type FirstShotHost, FirstShotLesson } from './first-shot.ts'
+import { type GrabHost, Grabs } from './grabs.ts'
 import { HavenGate } from './haven-gate.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { Junk, type JunkHost } from './junk.ts'
@@ -164,6 +165,7 @@ import { SkillsKeeper } from './skills.ts'
 import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Trades } from './trade.ts'
+import { TurnedSelf, type TurnedSelfHost } from './turned-self.ts'
 import { Vehicles } from './vehicles.ts'
 import { WeatherWorld } from './weather-world.ts'
 import { Workbench, type WorkbenchHost } from './workbench.ts'
@@ -476,6 +478,8 @@ export class SurvivalDirector {
     this.radio = new Radio(this.radioHost())
     this.alphas = new Alphas(this.alphaHost())
     this.lurkers = new Lurkers(this.lurkerHost())
+    this.turnedSelf = new TurnedSelf(this.turnedSelfHost())
+    this.grabs = new Grabs(this.grabHost())
     this.camp = new Camp({
       ...this.storyHost(),
       days: () => this.weatherClock / DAY_SECONDS + START_TIME,
@@ -539,6 +543,12 @@ export class SurvivalDirector {
 
   /** Crawlers under cars and mimics (see lurkers.ts). */
   readonly lurkers: Lurkers
+
+  /** Steering your own turned body for a minute (see turned-self.ts). */
+  readonly turnedSelf: TurnedSelf
+
+  /** Walkers that take hold of you, and friends who pull you free (see grabs.ts). */
+  readonly grabs: Grabs
 
   /** Haven's Red Nights, its morale, the people who leave, and graves (see camp.ts). */
   readonly camp: Camp
@@ -742,6 +752,8 @@ export class SurvivalDirector {
     this.turned.clear()
     this.risen = []
     this.lurkers.reset()
+    this.turnedSelf.reset()
+    this.grabs.reset()
     this.clearBoards()
     this.vehicles.dispose()
     this.storage.reset()
@@ -796,6 +808,8 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(player.id)
     if (!sv) return
+    this.turnedSelf.left(player)
+    this.grabs.forget(player)
     this.trades.forget(player.id)
     this.workbench.forget(player)
     this.storage.forget(player)
@@ -1048,7 +1062,12 @@ export class SurvivalDirector {
   }
 
   speedFactor(player: ServerPlayer): number {
-    return this.lurkers.heldSpeed(player) ?? this.zeds.get(player.id)?.speedFactor ?? 1
+    return (
+      this.lurkers.heldSpeed(player) ??
+      this.grabs.heldSpeed(player) ??
+      this.zeds.get(player.id)?.speedFactor ??
+      1
+    )
   }
 
   clawDamage(zombie: ServerPlayer): number {
@@ -1070,6 +1089,12 @@ export class SurvivalDirector {
   thinkZombie(zombie: ServerPlayer): InputCommand | null {
     const zed = this.zeds.get(zombie.id)
     if (!zed || !zombie.state.alive) return null
+    // One of you, steering what's left of you (turned-self.ts).
+    const steered = zed.steered ? this.turnedSelf.command(zombie, this.game.tick) : null
+    if (steered) {
+      if (zed.speedChanged()) this.game.applyRules(zombie)
+      return steered
+    }
     const target = this.game.players.get(zed.targetId)
     const crowd: Point[] = []
     for (const other of this.pool) {
@@ -1127,7 +1152,7 @@ export class SurvivalDirector {
 
   /** May `attacker` hurt `victim` here (Haven, the woods, Lawless ground: pvp.ts)? */
   canHurt(attacker: ServerPlayer, victim: ServerPlayer): boolean {
-    return this.pvp.canHurt(attacker, victim)
+    return this.turnedSelf.canHurt(attacker, victim) && this.pvp.canHurt(attacker, victim)
   }
 
   /** A wave: at somebody close, it offers (or agrees) a truce. */
@@ -1168,6 +1193,10 @@ export class SurvivalDirector {
       )
     }
     this.bandits.onDamage(victim, attacker)
+    // Grabbed! A walker's blow may turn into a hold; a hit on one holding somebody knocks it off.
+    if (zed && isPerson(attacker) && amount > 0) this.grabs.hit(victim, attacker)
+    if (attacker.zombie && isPerson(victim) && amount > 0 && !zed?.steered)
+      this.grabs.struck(victim, attacker)
     const sv = this.survivors.get(victim.id)
     if (sv && amount > 0) this.rot.hurt(victim, amount)
     // One bite that draws blood is all it takes (and more bites don't make it faster).
@@ -1192,6 +1221,8 @@ export class SurvivalDirector {
       victim.respawnAt = Number.POSITIVE_INFINITY
       this.alphas.onKill(victim, killer)
       this.lurkers.killed(victim)
+      this.turnedSelf.bodyKilled(victim)
+      this.grabs.killed(victim)
       const was = this.turned.get(victim.id)
       if (was) {
         // One of you: everything they carried is still on them.
@@ -1234,6 +1265,7 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(victim.id)
     if (!sv) return
+    this.grabs.forget(victim)
     this.trades.forget(victim.id)
     // New and unlucky (the first ten minutes): it costs nothing, this once.
     if (keepsLoot(sv.self.age)) return void this.spare(sv)
@@ -1282,7 +1314,9 @@ export class SurvivalDirector {
     this.save(sv)
     this.saveWorld(true)
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
-    const rose = turning && this.rise(victim, stuff, look, at)
+    const rose = turning ? this.rise(victim, stuff, look, at) : null
+    // What got up may be steered by them for a minute (turned-self.ts).
+    if (rose) this.turnedSelf.offer(victim, rose)
     if (!turning) this.spill(stuff, at)
     const legacy = left ? `\n\n${was ?? 'They'} left you something: ${TRAITS[left].name}.` : ''
     this.notice(
@@ -1396,9 +1430,9 @@ export class SurvivalDirector {
   /**
    * The clock ran out: what's left of them gets up where they stood, wearing what they wore and
    * carrying all they had, their name over their head. Inside Haven the guards see to it first.
-   * False when nothing got up (their things lie where they fell).
+   * Null when nothing got up (their things lie where they fell).
    */
-  private rise(victim: ServerPlayer, stuff: Stack[], look: number, at: Point): boolean {
+  private rise(victim: ServerPlayer, stuff: Stack[], look: number, at: Point): ServerPlayer | null {
     const safe = this.def.pois.some((p) => p.safe && dist(at, p) < p.r + 6)
     const zombie = safe ? null : this.freeZombie(at)
     const who = victim.name
@@ -1412,7 +1446,7 @@ export class SurvivalDirector {
           `${who} turned. The guards put them down before they got up.`,
         )
       }
-      return false
+      return null
     }
     this.raise(zombie, { name: who, appearance: victim.appearance, look, stuff, ...at })
     zombie.zombie?.face(victim.state.yaw)
@@ -1428,7 +1462,7 @@ export class SurvivalDirector {
       )
     }
     this.saveWorld()
-    return true
+    return zombie
   }
 
   /** Puts one of you who turned on its feet: their clothes, their name, their things. */
@@ -1498,6 +1532,7 @@ export class SurvivalDirector {
       syncForest(this.game.world.physics, [
         ...alive.map((sv) => sv.player.state.pos),
         ...this.bandits.positions(),
+        ...this.turnedSelf.positions(),
       ])
     }
     if (tick % TICK_RATE === 0) {
@@ -1536,6 +1571,8 @@ export class SurvivalDirector {
     if (tick % 15 === 3) this.firstShot.step()
     this.vehicles.step()
     this.lurkers.step()
+    this.turnedSelf.step()
+    this.grabs.step()
     this.workbench.step()
     this.gate.step(TICK_DT)
     this.story.step(TICK_DT)
@@ -1556,6 +1593,10 @@ export class SurvivalDirector {
       sv.dirty = false
       const self = this.chart.outgoing(sv, this.legacy.outgoing(sv))
       this.chalk.attach(sv.player, self)
+      const turned = this.turnedSelf.viewOf(sv.player)
+      if (turned) self.turned = turned
+      const grabbed = this.grabs.heldBy(sv.player)
+      if (grabbed) self.grabbed = grabbed.id
       this.send(sv.player, { type: ServerMsg.Survival, self })
     }
   }
@@ -1887,6 +1928,8 @@ export class SurvivalDirector {
     if (!sv || !player.state.alive) return
     // In a car, E gets you out.
     if (this.vehicles.seatOf(player)) return void this.vehicles.use(player)
+    // Held by a walker: E wrenches at its grip; right by somebody held, E pulls them free.
+    if (this.grabs.use(player)) return
     const s = player.state
     const eye = { x: s.pos.x, y: s.pos.y + 1.6, z: s.pos.z }
     const fx = -Math.sin(s.yaw) * Math.cos(s.pitch)
@@ -2159,6 +2202,8 @@ export class SurvivalDirector {
   // --- The backpack, the shop -----------------------------------------------------------------
 
   onAction(player: ServerPlayer, action: SurvivalAction): void {
+    // Just turned (dead): steer what's left of you, or wake now.
+    if (action?.a === 'turned') return void this.turnedSelf.answer(player, action.take === true)
     const sv = this.survivors.get(player.id)
     if (!sv || !player.state.alive || typeof action !== 'object' || action === null) return
     const self = sv.self
@@ -2977,6 +3022,70 @@ export class SurvivalDirector {
       clear: (a, b) => this.game.lineClear(a, b),
       send: (player, msg) => this.send(player, msg),
       notice: (player, kind, text) => this.notice(player, kind, text),
+    }
+  }
+
+  /** What walkers taking hold of people (grabs.ts) need. */
+  private grabHost(): GrabHost {
+    return {
+      now: () => this.now,
+      random: () => this.random(),
+      person: (id) => this.survivors.get(id)?.player,
+      near: (player, r) =>
+        [...this.survivors.values()]
+          .map((sv) => sv.player)
+          .filter((p) => p.state.alive && dist(p.state.pos, player.state.pos) < r),
+      kind: (zombie) => this.zeds.get(zombie.id)?.kind,
+      grabbable: (victim, zombie) => {
+        const sv = this.survivors.get(victim.id)
+        const zed = this.zeds.get(zombie.id)
+        return (
+          !!sv &&
+          !!zed &&
+          !zed.crawler &&
+          !zed.hunter &&
+          !shielded(sv.self.age) &&
+          this.vehicles.seatOf(victim) === null &&
+          this.lurkers.heldSpeed(victim) === null
+        )
+      },
+      hurt: (victim, attacker, amount) => this.game.hurt(victim, attacker, amount),
+      rules: (player) => this.game.applyRules(player),
+      changed: (player) => {
+        const sv = this.survivors.get(player.id)
+        if (sv) sv.dirty = true
+      },
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    }
+  }
+
+  /** What steering your turned self (turned-self.ts) needs. */
+  private turnedSelfHost(): TurnedSelfHost {
+    return {
+      now: () => this.now,
+      random: () => this.random(),
+      player: (id) => this.game.players.get(id),
+      zed: (id) => this.zeds.get(id),
+      turned: (id) => this.turned.has(id),
+      safe: () => this.def.pois.filter((p) => p.safe),
+      shielded: (p) => shielded(this.survivors.get(p.id)?.self.age),
+      holdRespawn: (player, seconds) => {
+        player.respawnAt = Math.max(player.respawnAt, this.game.tick + seconds * TICK_RATE)
+      },
+      wake: (player) => {
+        if (!player.state.alive && this.game.players.has(player.id)) this.game.respawnNow(player)
+      },
+      putDown: (zombie) => this.game.killPlayer(zombie.id, zombie.id),
+      changed: (player) => {
+        const sv = this.survivors.get(player.id)
+        if (sv) sv.dirty = true
+      },
+      send: (player, msg) => this.send(player, msg),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      near: (at, r) =>
+        [...this.survivors.values()]
+          .map((sv) => sv.player)
+          .filter((p) => p.state.alive && dist(p.state.pos, at) < r),
     }
   }
 

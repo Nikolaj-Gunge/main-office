@@ -48,6 +48,7 @@ export class AudioEngine {
   private isMuted = false
   /** 0 = clear, 1 = fully muffled. Combines low health and a short "ringing" after hits. */
   private lowHealthMuffle = 0
+  private turnedMuffle = 0
   private hitMuffle = 0
 
   get ready(): boolean {
@@ -313,6 +314,11 @@ export class AudioEngine {
     }
   }
 
+  /** Steering your turned self (turned-self.ts): the world comes through thick and far off. */
+  setTurned(on: boolean): void {
+    this.turnedMuffle = on ? 0.7 : 0
+  }
+
   /** Brief dulled hearing after taking a hit. */
   onHurt(damage: number): void {
     this.hitMuffle = Math.min(1, this.hitMuffle + damage / 60)
@@ -321,7 +327,7 @@ export class AudioEngine {
   update(dt: number): void {
     this.hitMuffle = Math.max(0, this.hitMuffle - dt * 1.5)
     if (!this.muffle || !this.ctx) return
-    const m = Math.max(this.lowHealthMuffle * 0.8, this.hitMuffle)
+    const m = Math.max(this.lowHealthMuffle * 0.8, this.hitMuffle, this.turnedMuffle)
     this.muffle.frequency.setTargetAtTime(20000 * (1 - m) + 700 * m, this.ctx.currentTime, 0.05)
   }
 }

@@ -54,6 +54,7 @@ import {
   stepSurface,
   traumaAt,
 } from './game/game-feel.ts'
+import { GrabbedView } from './game/grabbed.ts'
 import { LocalPlayer } from './game/local-player.ts'
 import { PartyClient } from './game/party-client.ts'
 import { Recoil } from './game/recoil.ts'
@@ -61,6 +62,7 @@ import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { SocialClient } from './game/social-client.ts'
 import { Spectator } from './game/spectator.ts'
+import { TurnedSelfView } from './game/turned-self.ts'
 import { VoiceClient } from './game/voice-client.ts'
 import { ClipBuffer, clipMoment, clipsSupported } from './hud/clip-buffer.ts'
 import { CombatHud } from './hud/combat-hud.ts'
@@ -303,8 +305,14 @@ if (survival) {
     else if (cue === 'story') audio.play('dread', { bus: 'ui', volume: 0.35, rate: 1.2 })
   }
 }
-// People sitting in cars aren't drawn (the car is).
-if (survival) remotes.hidden = (id) => survival.vehicles.isSeated(id)
+/** Just turned (survival): steer what's left of you for a minute (game/turned-self.ts). */
+const turnedSelf = survival
+  ? new TurnedSelfView(hudRoot, (action) => net.send({ type: ClientMsg.Action, action }))
+  : null
+/** A walker has hold of you (survival): mash E (game/grabbed.ts). */
+const grabbed = survival ? new GrabbedView(hudRoot) : null
+// People sitting in cars aren't drawn (the car is), nor the body you're steering.
+if (survival) remotes.hidden = (id) => survival.vehicles.isSeated(id) || id === turnedSelf?.body
 const debugHitboxes = new DebugHitboxes(scene)
 const worldItems = new WorldItemsView(scene)
 /** Ignore item sounds for the batch the server sends right after joining. */
@@ -1186,7 +1194,7 @@ pixels.setAnimationLoop(() => {
   if (!noclip && joined) {
     spectator.update(
       dt,
-      player.state.alive,
+      player.state.alive || turnedSelf?.active === true,
       teammates(),
       remotes.visiblePoses(),
       camera,
@@ -1199,6 +1207,14 @@ pixels.setAnimationLoop(() => {
       (id) => roster.get(id)?.name ?? remotes.nameOf(id) ?? `Player ${id}`,
     )
   }
+  if (turnedSelf) {
+    const turned = survival?.self?.turned
+    turnedSelf.set(turned, now)
+    const shown = turned ? remotes.shownOf(turned.body) : null
+    const pose = turned && shown ? remotes.poseOf(turned.body, shown) : null
+    audio.setTurned(turnedSelf.update(now, player.state.alive || !joined, pose, look, camera))
+  }
+  if (grabbed?.update(survival?.self?.grabbed, player.state.alive)) shake.add(0.35)
 
   // Aiming down sights zooms the view; sensitivity follows so aim speed feels the same.
   const zoom = 1 + (WEAPONS[player.state.weapon.id].aimZoom - 1) * viewmodel.aimProgress

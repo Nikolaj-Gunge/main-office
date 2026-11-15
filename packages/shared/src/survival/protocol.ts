@@ -91,6 +91,21 @@ export interface SurvivalSelf {
   chart?: Chart
   /** Sent, never saved: the account's faded old map (chart.ts bitset), only when it changes. */
   oldChart?: string
+  /** Sent, never saved: what's left of the one you were, if you may (or do) steer it. */
+  turned?: TurnedSelfState
+  /** Sent, never saved: the id of the walker that has hold of you (grabs.ts), if one does. */
+  grabbed?: number
+}
+
+/**
+ * Just turned (the server's turned-self.ts): the body that got up, and either the seconds left
+ * to take the wheel (`offer`) or the seconds left steering it (`left`).
+ */
+export interface TurnedSelfState {
+  /** The player id of the risen body. */
+  body: number
+  offer?: number
+  left?: number
 }
 
 export interface QuestState {
@@ -220,6 +235,8 @@ export type SurvivalAction =
   | { a: 'build'; kit: string; x: number; z: number; rot: number }
   /** Chalk a mark where you look (chalk.ts): a symbol and up to two words (-1: none). */
   | { a: 'chalk'; sym: number; word: number; place: number }
+  /** Just turned: steer what's left of you for a while (take), or wake at Haven now. */
+  | { a: 'turned'; take: boolean }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

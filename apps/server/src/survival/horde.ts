@@ -136,6 +136,8 @@ export class Zed {
   lurking = false
   /** Running from a torch (mimics): ignores everyone until `fleeUntil`. */
   fleeing = false
+  /** Steered by the one it used to be (turned-self.ts): their input, not its own mind. */
+  steered = false
   private fleeUntil = 0
   /** Lost you: when it got to where you were (and started sniffing about), or 0. */
   private sniffFrom = 0
@@ -208,6 +210,7 @@ export class Zed {
     this.lurking = false
     this.fleeing = false
     this.fleeUntil = 0
+    this.steered = false
     this.path = []
     this.planAt = 0
     this.planned = null
@@ -232,6 +235,7 @@ export class Zed {
 
   private get pace(): number {
     const k = KINDS[this.kind] as KindStats
+    if (this.steered) return k.chase
     if (this.mood === 'chase' || this.mood === 'lost' || this.fleeing) return k.chase * this.boost
     // Looking into a noise: a careful walk, quicker than a shuffle, nowhere near a run.
     if (this.mood === 'investigate') return Math.max(0.3, Math.min(k.chase, k.wander * 1.4))
@@ -301,7 +305,7 @@ export class Zed {
     let seen: Prey | null = null
     let seenD = Number.POSITIVE_INFINITY
     let heard: Prey | null = null
-    if (this.lurking) return null
+    if (this.lurking || this.steered) return null
     if (this.fleeing) {
       if (now < this.fleeUntil) return null
       this.fleeing = false
@@ -600,6 +604,29 @@ export class Zed {
   }
 
   /**
+   * This tick's input while steered (turned-self.ts): where they look and how they move, by the
+   * dead's rules. No running, no hands for anything but the claws, and a blow is wound up like
+   * any of the dead's (the same tell, the same turning limit, the same stagger after a miss).
+   */
+  steer(self: ServerPlayer, input: { buttons: number; yaw: number; pitch: number }, tick: number) {
+    const s = self.state
+    if (!s.alive) return this.command(0, tick)
+    const yaw = Number.isFinite(input.yaw) ? input.yaw : this.yaw
+    const pitch = Number.isFinite(input.pitch) ? Math.max(-1.4, Math.min(1.4, input.pitch)) : 0
+    this.turnTowards(yaw, pitch, this.attack.turnLimit ?? Math.PI)
+    let buttons = input.buttons & STEER_BUTTONS
+    // Got up off the ground (or lay down): only ever on its feet.
+    if (s.prone && s.grounded && !(s.prevButtons & Button.Prone)) buttons |= Button.Prone
+    if (this.attack.busy) buttons &= ~STEER_MOVES // planted for the blow
+    const claws = s.weapon
+    const windup = (CLAW_TIMING[this.kind] ?? CLAW_TIMING[baseKind(this.kind)])?.windup ?? 0.6
+    const wants = (input.buttons & Button.Fire) !== 0
+    if (this.attack.tick(this.kind, wants, 0, claws.cooldown + claws.draw <= windup))
+      buttons |= Button.Fire
+    return this.command(buttons, tick)
+  }
+
+  /**
    * The point to head for on the way to `goal`: the next corner of its path (pathing.ts), or
    * null to go straight at the goal. A new path now and then (sooner when the goal has moved),
    * never more than the nav's few per tick.
@@ -676,6 +703,10 @@ export class Zed {
     this.pitch += Math.max(-maxStep, Math.min(maxStep, pitch - this.pitch))
   }
 }
+
+/** What somebody steering one of the dead may press: walk about and hop, nothing else. */
+const STEER_MOVES = Button.Forward | Button.Back | Button.Left | Button.Right | Button.Jump
+const STEER_BUTTONS = STEER_MOVES | Button.Crouch
 
 /** Signed angle (radians, −π…π) from yaw `from` round to `to`. */
 const angleTo = (to: number, from: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from))
