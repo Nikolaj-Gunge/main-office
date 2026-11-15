@@ -48,6 +48,10 @@ export interface NeedsHost {
   seated(sv: NeedsSurvivor): boolean
   /** Warmed through by a fire (Field Notes count it). */
   rested?(sv: NeedsSurvivor): void
+  /** How hard it snows, 0–1 (weather.ts). */
+  snow?(): number
+  /** In a lake, flooded or not (weather-effects.ts); without it, the lakes as they were made. */
+  inWater?(pos: { x: number; y: number; z: number }): boolean
 }
 
 /** What we keep on each survivor between ticks. */
@@ -135,10 +139,13 @@ export class NeedsKeeper {
         (r) => pos.x > r.min[0] && pos.x < r.max[0] && pos.z > r.min[1] && pos.z < r.max[1],
       ),
       byFire: (world?.fires ?? []).some(near) || this.extraFires.some(near),
-      inWater: (world?.lakes ?? []).some(
-        (l) => Math.hypot(pos.x - l.x, pos.z - l.z) < l.r && pos.y < l.y + 0.1,
-      ),
+      inWater: this.host.inWater
+        ? this.host.inWater(pos)
+        : (world?.lakes ?? []).some(
+            (l) => Math.hypot(pos.x - l.x, pos.z - l.z) < l.r && pos.y < l.y + 0.1,
+          ),
       still: Math.hypot(vel.x, vel.z) < 0.6,
+      snow: this.host.snow?.() ?? 0,
     }
   }
 

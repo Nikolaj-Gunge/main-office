@@ -4,6 +4,9 @@ import {
   chunkOf,
   chunkProps,
   hash2,
+  type Lake,
+  lakeLevel,
+  lakeReach,
   type Prop,
   type Road,
   RoadGrid,
@@ -153,6 +156,8 @@ export class Wilds {
   private readonly detailMaterial = detailMaterials()
   private readonly roads: RoadGrid
   private readonly far: FarForest
+  /** The lakes' water, to raise in a flood (setFlood), with each lake as it was made. */
+  private readonly waters: { mesh: THREE.Mesh; lake: Lake }[] = []
   private readonly builder: ChunkBuilder
   /** Work sent to the builder and not back yet (see jobKey). */
   private readonly pending = new Set<string>()
@@ -203,6 +208,18 @@ export class Wilds {
       mesh.position.set(lake.x, lake.y, lake.z)
       mesh.name = 'lake'
       this.root.add(mesh)
+      this.waters.push({ mesh, lake })
+    }
+  }
+
+  /**
+   * How swollen the lakes are, 0–1 (weather-effects.ts): the water stands higher and spreads
+   * over the low ground round about (the ground hides whatever is under it).
+   */
+  setFlood(flood: number): void {
+    for (const { mesh, lake } of this.waters) {
+      mesh.position.y = lakeLevel(lake, flood)
+      mesh.scale.setScalar(lakeReach(lake, flood) / (lake.r + 28))
     }
   }
 
@@ -220,6 +237,11 @@ export class Wilds {
     this.farStale = true
     // Thinner or thicker ground detail: built again as it comes back into view.
     if (density) for (const chunk of this.chunks.values()) this.dropDetail(chunk)
+  }
+
+  /** How much snow lies on the ground, 0 none … 1 covered (weather-marks.ts). */
+  setSnow(snow: number): void {
+    wetUniforms.uSnow.value = snow
   }
 
   /** How soaked the ground is, 0 dry … 1 after a long rain: darker, muddier, shinier. */

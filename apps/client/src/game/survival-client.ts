@@ -51,6 +51,7 @@ import { LootView } from '../render/loot-view.ts'
 import { updateMapLod } from '../render/map-mesh.ts'
 import { Night } from '../render/night.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
+import { WeatherMarks } from '../render/weather-marks.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
 import { pickupPitch } from './game-feel.ts'
@@ -130,6 +131,8 @@ export class SurvivalClient {
   private readonly folk: CampFolk
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
   readonly weather: WeatherView
+  /** The flood, snow falling and lying, footprints (weather-marks.ts). */
+  readonly marks: WeatherMarks
   private readonly projected = new THREE.Vector3()
   /** When the server last said what time it is (ms). */
   private clockAt = 0
@@ -184,6 +187,8 @@ export class SurvivalClient {
     o.scene.add(this.folk.root)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
+    this.marks = new WeatherMarks(o.def)
+    o.scene.add(this.marks.root)
     this.hud = new SurvivalHud(o.hudRoot, o.def, o.send)
     if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
@@ -402,6 +407,7 @@ export class SurvivalClient {
     this.wilds.setTier(tier)
     this.night.setTier(tier)
     this.leaves.setCount(tier.leaves)
+    this.marks.setTier(tier)
   }
 
   /**
@@ -445,6 +451,16 @@ export class SurvivalClient {
     const moodFog = this.rot.fog * (1 - daylight(time))
     this.night.setWeather(moodFog > 0 ? { ...sky, fog: Math.min(1, sky.fog + moodFog) } : sky)
     this.wilds.setWetness(this.weather.wet)
+    this.marks.update(
+      dt,
+      eye,
+      this.weather.past(),
+      this.weather.weather.snow,
+      this.weather.indoors,
+      printWalkers(this.myId(), state, remotes),
+    )
+    this.wilds.setFlood(this.marks.flood)
+    this.wilds.setSnow(this.marks.snow)
     this.night.update(dt, eye, time, built)
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
@@ -693,6 +709,17 @@ export class SurvivalClient {
     }
     return null
   }
+}
+
+/** You and everyone drawn about you, for footprints in the snow (weather-marks.ts). */
+function* printWalkers(
+  me: number,
+  state: PlayerState,
+  remotes: RemotePlayers,
+): Generator<{ id: number; x: number; y: number; z: number; grounded: boolean }> {
+  if (state.alive) yield { id: me, ...state.pos, grounded: state.grounded }
+  for (const [id, pose] of remotes.visiblePoses())
+    yield { id, x: pose.x, y: pose.y, z: pose.z, grounded: pose.grounded !== false }
 }
 
 /** Somebody standing still with empty hands (the people of Haven, and those who walk). */

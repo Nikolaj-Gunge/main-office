@@ -211,6 +211,8 @@ export class SurvivalHud {
   /** Supply drops: a red mark on the compass and over the crate. */
   private readonly dropMarker: HTMLElement
   private readonly dropWay: { node: HTMLElement; text: HTMLElement }
+  /** A horde on the move in the fog: a vague mark on the compass where the radio has it. */
+  private readonly hordeMarker: HTMLElement
   private readonly hour: HTMLElement
   // Talking
   private readonly talk: HTMLDivElement
@@ -283,6 +285,7 @@ export class SurvivalHud {
     }
     for (let i = 0; i < 3; i++) this.sideMarkers.push(el('b', 'sv-compass-side', this.compass))
     this.dropMarker = el('b', 'sv-compass-drop', this.compass)
+    this.hordeMarker = el('b', 'sv-compass-horde', this.compass)
     const dropNode = el('div', 'sv-way drop', this.root)
     el('b', '', dropNode, '✚')
     this.dropWay = { node: dropNode, text: el('span', '', dropNode) }
@@ -782,6 +785,13 @@ export class SurvivalHud {
     }
     this.dropMarker.hidden = drop === null
     if (drop) place(this.dropMarker, bearingTo(ctx.pos, drop), true)
+    // The horde in the fog (weather-world.ts): only a rumour, so no distance.
+    const horde = this.shared?.horde
+    this.hordeMarker.hidden = !horde
+    if (horde) {
+      place(this.hordeMarker, bearingTo(ctx.pos, horde), true)
+      this.hordeMarker.title = `A horde on the move, heading for ${horde.to} (so they say)`
+    }
     const way = this.dropWay
     const p = drop && ctx.project ? ctx.project(drop.x, drop.y + 2, drop.z) : null
     way.node.hidden = !drop || !p || this.modal

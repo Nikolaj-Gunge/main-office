@@ -32,6 +32,7 @@ import {
   SEAT_DROP,
   SEATS,
   SPUTTER_SECONDS,
+  STALL_DEPTH,
   type SurvivalDef,
   seeded,
   stepSeated,
@@ -451,6 +452,25 @@ export class Vehicles {
       t.breakAt = t.odometer + roll(car.random)
       this.say(player, 'info', 'It catches.')
     } else this.say(player, 'info', "It turns over, but won't catch.")
+  }
+
+  /**
+   * Once a second in a flood (weather-world.ts): a running car standing in water deeper than
+   * STALL_DEPTH drowns its engine. It dies like an overheated one: wait, then try it again.
+   */
+  drown(depthAt: (x: number, z: number, y: number) => number): void {
+    for (const car of this.cars) {
+      if (car.wrecked) continue
+      const engine = engineOf(car.trouble)
+      if (engine !== Engine.Ok && engine !== Engine.Sputter) continue
+      if (depthAt(car.state.x, car.state.z, car.state.y) < STALL_DEPTH) continue
+      car.trouble.overheated = true
+      car.trouble.coolUntil = this.now + COOLDOWN_SECONDS
+      car.trouble.crankAt = 0
+      car.state.vx = car.state.vz = 0
+      const driver = this.game.players.get(car.seats[0] ?? 0)
+      if (driver) this.say(driver, 'warn', 'Water pours in round the pedals. The engine drowns.')
+    }
   }
 
   /** Every tick: a coughing engine dies when its time is up. */

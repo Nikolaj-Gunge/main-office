@@ -9,10 +9,19 @@ import { hash2, smoothstep, valueNoise } from './noise.ts'
  *
  * Underneath are two slow curves: how wet the sky is (clear → overcast → drizzle → rain → storm,
  * always passing through the steps in between) and how misty (fog, which the rain clears away).
- * Spells last several minutes and ease into each other.
+ * Spells last several minutes and ease into each other. Now and then (rarely) a cold spell
+ * comes through: whatever falls from the sky then falls as snow.
  */
 
-export const WEATHER_KINDS = ['clear', 'overcast', 'fog', 'drizzle', 'rain', 'storm'] as const
+export const WEATHER_KINDS = [
+  'clear',
+  'overcast',
+  'fog',
+  'drizzle',
+  'rain',
+  'storm',
+  'snow',
+] as const
 export type WeatherKind = (typeof WEATHER_KINDS)[number]
 
 /** What the weather is doing at one moment. Every channel runs 0–1. */
@@ -29,6 +38,8 @@ export interface Weather {
   storm: number
   /** How windy, on top of the usual breeze. */
   wind: number
+  /** How hard it snows (a rare cold spell turns the rain to snow). */
+  snow: number
 }
 
 /** What everybody is told: enough to work out the rest (see weatherAt). */
@@ -39,16 +50,29 @@ export interface WeatherShared {
   kind: WeatherKind
   /** Held at this kind (an admin, or a test), whatever the seed says. */
   pin?: WeatherKind
+  /**
+   * When the weather was held, and at what (weather clock, s): the latest few, the one going on
+   * now without a `to`. What builds up slowly (floods, snow on the ground) looks back over these.
+   */
+  holds?: WeatherHold[]
+}
+
+/** A stretch of the weather clock the weather was held at one kind. */
+export interface WeatherHold {
+  kind: WeatherKind
+  from: number
+  to?: number
 }
 
 /** Each kind at its most typical: what a pinned weather holds at. */
 export const WEATHER_PRESETS: Record<WeatherKind, Weather> = {
-  clear: { kind: 'clear', cloud: 0, rain: 0, fog: 0, storm: 0, wind: 0 },
-  overcast: { kind: 'overcast', cloud: 1, rain: 0, fog: 0, storm: 0, wind: 0.18 },
-  fog: { kind: 'fog', cloud: 0.6, rain: 0, fog: 1, storm: 0, wind: 0.05 },
-  drizzle: { kind: 'drizzle', cloud: 1, rain: 0.25, fog: 0.1, storm: 0, wind: 0.26 },
-  rain: { kind: 'rain', cloud: 1, rain: 0.65, fog: 0, storm: 0, wind: 0.4 },
-  storm: { kind: 'storm', cloud: 1, rain: 1, fog: 0, storm: 1, wind: 1 },
+  clear: { kind: 'clear', cloud: 0, rain: 0, fog: 0, storm: 0, wind: 0, snow: 0 },
+  overcast: { kind: 'overcast', cloud: 1, rain: 0, fog: 0, storm: 0, wind: 0.18, snow: 0 },
+  fog: { kind: 'fog', cloud: 0.6, rain: 0, fog: 1, storm: 0, wind: 0.05, snow: 0 },
+  drizzle: { kind: 'drizzle', cloud: 1, rain: 0.25, fog: 0.1, storm: 0, wind: 0.26, snow: 0 },
+  rain: { kind: 'rain', cloud: 1, rain: 0.65, fog: 0, storm: 0, wind: 0.4, snow: 0 },
+  storm: { kind: 'storm', cloud: 1, rain: 1, fog: 0, storm: 1, wind: 1, snow: 0 },
+  snow: { kind: 'snow', cloud: 1, rain: 0, fog: 0.1, storm: 0, wind: 0.3, snow: 0.8 },
 }
 
 /** Seconds per step of the wet and misty curves: spells last a few of these. */
@@ -74,6 +98,17 @@ function mistiness(seed: number, seconds: number): number {
   return 0.5 + 0.5 * valueNoise(seconds / FOG_STEP + 5, 0, seed + 2)
 }
 
+/** Seconds per step of the cold curve: cold spells are long and rare. */
+const COLD_STEP = 1500
+// Where along the cold curve the snow begins, and where everything falling is snow.
+const COLD = 0.78
+const COLD_FULL = 0.87
+
+/** How cold the air is at `seconds`, 0–1 (only the far top of it snows). */
+function coldness(seed: number, seconds: number): number {
+  return 0.5 + 0.5 * valueNoise(seconds / COLD_STEP + 11, 0, seed + 3)
+}
+
 /**
  * The weather at `seconds` on the weather clock of a game with this seed (or, pinned, the
  * preset of that kind).
@@ -82,26 +117,33 @@ export function weatherAt(seed: number, seconds: number, pin?: WeatherKind): Wea
   if (pin) return WEATHER_PRESETS[pin]
   const wet = wetness(seed, seconds)
   const cloud = smoothstep(OVERCAST - 0.14, DRIZZLE + 0.02, wet)
-  const rain = smoothstep(DRIZZLE - 0.02, STORM_FULL, wet)
-  const storm = smoothstep(STORM - 0.04, STORM_FULL, wet)
+  const wetRain = smoothstep(DRIZZLE - 0.02, STORM_FULL, wet)
+  const wetStorm = smoothstep(STORM - 0.04, STORM_FULL, wet)
+  // A cold spell: the rain comes down as snow (and a grey sky lets a little fall too).
+  const chill = smoothstep(COLD, COLD_FULL, coldness(seed, seconds))
+  const snow = chill * Math.max(wetRain, cloud * 0.35)
+  const rain = wetRain * (1 - chill)
+  const storm = wetStorm * (1 - chill)
   // Mist hangs about when it is grey but dry; rain washes it out.
   const fog =
     smoothstep(0.58, 0.84, mistiness(seed, seconds)) *
     (1 - smoothstep(DRIZZLE - 0.14, RAIN + 0.06, wet))
-  const wind = Math.min(1, cloud * 0.18 + rain * 0.3 + storm * 0.6)
+  const wind = Math.min(1, cloud * 0.18 + rain * 0.3 + storm * 0.6 + snow * 0.3)
   const kind: WeatherKind =
-    wet >= STORM
-      ? 'storm'
-      : wet >= RAIN
-        ? 'rain'
-        : wet >= DRIZZLE
-          ? 'drizzle'
-          : fog >= 0.5
-            ? 'fog'
-            : wet >= OVERCAST
-              ? 'overcast'
-              : 'clear'
-  return { kind, cloud, rain, fog, storm, wind }
+    snow >= 0.2
+      ? 'snow'
+      : wet >= STORM
+        ? 'storm'
+        : wet >= RAIN
+          ? 'rain'
+          : wet >= DRIZZLE
+            ? 'drizzle'
+            : fog >= 0.5
+              ? 'fog'
+              : wet >= OVERCAST
+                ? 'overcast'
+                : 'clear'
+  return { kind, cloud, rain, fog, storm, wind, snow }
 }
 
 /** How strongly each kind is present (0–1 each): what the transitions blend between. */
@@ -110,11 +152,12 @@ export function weatherMix(w: Weather): Record<WeatherKind, number> {
   const raining = smoothstep(0.25, 0.5, w.rain) * (1 - w.storm)
   return {
     clear: (1 - w.cloud) * (1 - w.fog),
-    overcast: w.cloud * (1 - Math.min(1, w.rain * 3)) * (1 - w.fog),
+    overcast: w.cloud * (1 - Math.min(1, w.rain * 3)) * (1 - w.fog) * (1 - w.snow),
     fog: w.fog,
     drizzle,
     rain: raining,
     storm: w.storm,
+    snow: w.snow,
   }
 }
 
@@ -199,5 +242,5 @@ export function hearingScale(w: Weather, loud = false): number {
  * lightning flash lights everything up for a moment.
  */
 export function sightScale(w: Weather, flash: number): number {
-  return (1 - w.fog * 0.35) * (1 - w.rain * 0.15) * (1 + flash * 1.4)
+  return (1 - w.fog * 0.35) * (1 - w.rain * 0.15) * (1 - w.snow * 0.15) * (1 + flash * 1.4)
 }

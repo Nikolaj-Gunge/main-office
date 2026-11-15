@@ -94,8 +94,11 @@ import {
   type WeaponState,
   type WearSlot,
   type Weather,
+  type WeatherHold,
   type WeatherKind,
+  type WeatherPast,
   wakeTime,
+  waterAt,
   weaponItem,
   weatherAt,
   wornStats,
@@ -125,6 +128,7 @@ import { type RotHost, RotWorld } from './rot-world.ts'
 import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Vehicles } from './vehicles.ts'
+import { WeatherWorld } from './weather-world.ts'
 import { Workbench, type WorkbenchHost } from './workbench.ts'
 
 /** Small places that go on the map without a "Found:" for everyone. */
@@ -321,6 +325,10 @@ export class SurvivalDirector {
   private weatherSeed = 1
   /** Weather held at one kind (admin, tests), or null: as the seed has it. */
   private weatherPin: WeatherKind | null = null
+  /** When the weather was held (the latest few): floods and snow look back over them. */
+  private weatherHolds: WeatherHold[] = []
+  /** Floods, the horde the fog lets loose, tracks in the snow (weather-world.ts). */
+  private readonly weatherWorld: WeatherWorld
   /** Helicopter supply drops (once the story has the radio working). */
   private readonly drops: Drops
   /** The cars parked about the woods, and who sits in them. */
@@ -347,7 +355,12 @@ export class SurvivalDirector {
       notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
       seated: (sv) => this.vehicles.seatOf(sv.player as ServerPlayer) !== null,
       rested: (sv) => this.note(sv as Survivor, 'rest_fire'),
+      snow: () => this.weather.snow,
+      inWater: (pos) =>
+        !!this.def &&
+        waterAt(this.def, pos.x, pos.z, this.weatherWorld.flood, pos.y + 0.1) !== null,
     })
+    this.weatherWorld = this.makeWeatherWorld()
     this.fieldNotes = new FieldNotesKeeper({
       saves: () => this.game.saves,
       notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
@@ -412,8 +425,64 @@ export class SurvivalDirector {
 
   /** Holds the weather at one kind (null lets it change again); everybody sees it at once. */
   pinWeather(kind: WeatherKind | null): void {
+    const clock = this.weatherClock
+    const open = this.weatherHolds.at(-1)
+    if (open && open.to === undefined) open.to = clock
+    if (kind) this.weatherHolds.push({ kind, from: clock })
+    // An hour back is all anything looks.
+    this.weatherHolds = this.weatherHolds.filter((h) => h.to === undefined || h.to > clock - 3600)
     this.weatherPin = kind
     this.game.match.broadcast()
+  }
+
+  /** The weather's seed, clock and holds: what floods and snow follow from. */
+  get weatherPast(): WeatherPast {
+    return {
+      seed: this.weatherSeed,
+      clock: this.weatherClock,
+      ...(this.weatherPin ? { pin: this.weatherPin } : {}),
+      holds: this.weatherHolds,
+    }
+  }
+
+  /** The weather's mark on the map (weather-world.ts), and what it gets to do here. */
+  private makeWeatherWorld(): WeatherWorld {
+    return new WeatherWorld({
+      def: () => this.def,
+      now: () => this.now,
+      random: this.random,
+      weather: () => this.weather,
+      past: () => this.weatherPast,
+      people: () =>
+        [...this.survivors.values()]
+          .filter((sv) => sv.player.state.alive)
+          .map((sv) => {
+            const pos = sv.player.state.pos
+            return {
+              player: sv.player,
+              seated: this.vehicles.seatOf(sv.player) !== null,
+              indoors: this.def.rooms.some(
+                (r) => pos.x > r.min[0] && pos.x < r.max[0] && pos.z > r.min[1] && pos.z < r.max[1],
+              ),
+            }
+          }),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      spawnWalker: (at) => {
+        const zombie = this.freeZombie(at)
+        if (!zombie) return null
+        this.place(zombie, ZombieKind.Walker, -1, false, at)
+        return zombie
+      },
+      zedOf: (zombie) => this.zeds.get(zombie.id),
+      zombies: () => this.pool,
+      drownCars: (depthAt) => this.vehicles.drown(depthAt),
+      broadcast: () => this.game.match.broadcast(),
+    })
+  }
+
+  /** Floods, the fog's horde and tracks in the snow (tests and the admin page look). */
+  get weatherEffects(): WeatherWorld {
+    return this.weatherWorld
   }
 
   // --- Life cycle --------------------------------------------------------------------------
@@ -428,6 +497,8 @@ export class SurvivalDirector {
     this.startTick = this.game.tick
     this.slept = 0
     this.weatherSeed = Math.floor(this.random() * 0x7fffffff)
+    this.weatherHolds = this.weatherPin ? [{ kind: this.weatherPin, from: 0 }] : []
+    this.weatherWorld.reset()
     this.phase = 'night'
     this.loot.clear()
     this.cells.clear()
@@ -1016,6 +1087,7 @@ export class SurvivalDirector {
     for (const sv of alive) this.settleAmmo(sv)
     for (const sv of alive) this.shortOfBreath(sv)
     for (const sv of alive) this.needs.watch(sv)
+    this.weatherWorld.step(tick)
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
@@ -1035,6 +1107,7 @@ export class SurvivalDirector {
       this.drops.step()
       this.tickDay(people)
       this.rot.tick()
+      this.weatherWorld.second()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
@@ -2564,9 +2637,17 @@ export class SurvivalDirector {
         clock: this.weatherClock,
         kind: this.weather.kind,
         ...(this.weatherPin ? { pin: this.weatherPin } : {}),
+        holds: this.weatherHolds,
       },
+      ...this.hordeShared(),
       rot: this.rot.shared(),
     }
+  }
+
+  /** A horde on the move in the fog, as the radio has it (weather-world.ts). */
+  private hordeShared(): Pick<SurvivalShared, 'horde'> {
+    const rumour = this.weatherWorld.rumour()
+    return rumour ? { horde: rumour } : {}
   }
 
   /** The evacuation under way, and the retired standing about Haven among the walkers. */

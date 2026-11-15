@@ -200,6 +200,8 @@ export interface Surroundings {
   inWater: boolean
   /** Not walking about (sitting it out). */
   still: boolean
+  /** How hard it snows, 0–1 (a cold spell: it chills you on top of the rest). */
+  snow?: number
 }
 
 /**
@@ -230,14 +232,15 @@ export function stepNeeds(
 
   // Wet: soaked in the lake or the rain; dried by a fire, a roof, or slowly by the air.
   if (at.inWater) n.wet = clamp(n.wet + 40 * dt)
-  else if (!at.indoors && at.rain > 0.05)
-    n.wet = clamp(n.wet + at.rain * 3 * (1 - clothes.dry) * dt)
+  else if (!at.indoors && at.rain + (at.snow ?? 0) * 0.4 > 0.05)
+    n.wet = clamp(n.wet + (at.rain + (at.snow ?? 0) * 0.4) * 3 * (1 - clothes.dry) * dt)
   else n.wet = clamp(n.wet - (at.byFire ? 4 : at.indoors ? 1 : at.night > 0.5 ? 0.15 : 0.3) * dt)
 
   // Cold: the night, wet clothes and the rain against what you wear. A fire or a roof warms.
   if (at.byFire || at.indoors) n.chill = clamp(n.chill - (at.byFire ? 6 : 2.5) * dt)
   else {
-    const cold = at.night + n.wet / 100 + at.rain * 0.3 - clothes.warmth
+    // Snow: the cold itself, stacking on the night and the wet (it bites even by day).
+    const cold = at.night + n.wet / 100 + at.rain * 0.3 + (at.snow ?? 0) * 0.9 - clothes.warmth
     n.chill = clamp(n.chill + (cold > 1 ? (cold - 1) * 1.5 : -1) * dt)
   }
   return becameRested

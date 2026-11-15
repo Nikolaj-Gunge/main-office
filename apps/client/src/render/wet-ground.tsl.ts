@@ -39,6 +39,10 @@ const wet = uniform(0)
   .setGroup(renderGroup)
   .onRenderUpdate(() => wetUniforms.uWet.value)
 const mudColor = uniform(wetUniforms.uMudColor.value).setGroup(renderGroup)
+const snow = uniform(0)
+  .setGroup(renderGroup)
+  .onRenderUpdate(() => wetUniforms.uSnow.value)
+const snowColor = uniform(wetUniforms.uSnowColor.value).setGroup(renderGroup)
 
 /** The `mud` attribute, or 0 on ground that has none (the far ground of forest-lod.ts). */
 const mud = Fn((builder: NodeBuilder) =>
@@ -88,7 +92,10 @@ export function wetGround(m: MeshPhongNodeMaterial): void {
     const base = materialColor.rgb.mul(patches).mul(vertexColor().rgb)
     const soak = wet.mul(vMud.mul(0.45).add(0.55))
     const rgb = mix(base, mudColor, wet.mul(vMud).mul(0.45)).mul(soak.mul(-DARKEN).add(1))
-    return vec4(rgb, 1)
+    // Snow settles in patches first (the big texture pattern), then covers everything.
+    const drift = texture(map, uv().mul(0.05).add(vec2(0.11, 0.83))).g
+    const cover = snow.mul(1.6).sub(drift.mul(0.6)).clamp().mul(0.92)
+    return vec4(mix(rgb, snowColor, cover), 1)
   })()
   m.setupLightingModel = () => new WetPhong()
 }
