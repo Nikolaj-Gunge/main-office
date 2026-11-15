@@ -3,8 +3,8 @@ import {
   createPhysicsWorld,
   createWeaponState,
   DEFAULT_RULES,
-  initPhysics,
   ITEMS,
+  initPhysics,
   loadMap,
   MANUAL_BOOST,
   mergeRules,
@@ -18,6 +18,7 @@ import {
 import { Game, type ServerPlayer } from '../game.ts'
 import { MemoryStore, type SaveStore } from '../saves.ts'
 import type { SurvivalDirector } from './director.ts'
+import type { SkillSurvivor } from './skills.ts'
 
 beforeAll(async () => {
   await initPhysics()
@@ -32,7 +33,7 @@ async function server(store: SaveStore) {
   await game.useSaves(store)
   const director = (game.match as unknown as { survival: SurvivalDirector }).survival
   const insides = director as unknown as {
-    survivors: Map<number, { self: SurvivalSelf; dirty: boolean }>
+    survivors: Map<number, SkillSurvivor>
     consume(sv: unknown, def: unknown): boolean
   }
   const join = async (name: string, account: string): Promise<ServerPlayer> => {

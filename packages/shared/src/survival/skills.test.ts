@@ -115,7 +115,7 @@ describe('skills: saved and sent', () => {
       xp: { aim: 100, juggling: 50, melee: -3, medic: 'lots', fitness: 1e9 },
       read: { aim: 1e9, stealth: -1 },
     })
-    expect(back.xp).toEqual({ aim: 100, fitness: SKILL_XP[5] })
+    expect(back.xp).toEqual({ aim: 100, fitness: SKILL_XP[5] as number })
     expect(back.read).toEqual({ aim: MANUAL_SECONDS })
   })
 })
