@@ -183,6 +183,13 @@ export class Moderation {
     return true
   }
 
+  /** Survival: raiders come up the east road now. Returns an error message, or null when done. */
+  raid(): string | null {
+    const director = this.game.match.survivalDirector
+    if (!director) return 'Not playing survival'
+    return director.raid()
+  }
+
   /** A line from the server to everyone playing (survival's notice feed). */
   broadcast(text: string): void {
     const line = text.trim().slice(0, 200)

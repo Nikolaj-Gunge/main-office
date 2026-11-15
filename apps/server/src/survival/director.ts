@@ -3260,6 +3260,13 @@ export class SurvivalDirector {
       drop: (item, n, at, ammo) => this.dropAt(item, n, at, ammo, true),
       notice: (player, kind, text) => this.notice(player, kind, text),
       noticeAll: (kind, text) => this.noticeAll(kind, text),
+      horn: (at) => {
+        for (const sv of this.survivors.values())
+          this.send(sv.player, {
+            type: ServerMsg.Notice,
+            notice: { kind: 'sound', text: '', sound: 'horn', at: { ...at } },
+          })
+      },
       steal: () => this.rare.clear(),
       raidable: () => {
         const haven = this.def.pois.find((p) => p.key === 'haven')
@@ -3382,6 +3389,14 @@ export class SurvivalDirector {
   private campShared(): Pick<SurvivalShared, 'camp' | 'siege'> {
     const siege = this.story.shared().siege ?? this.camp.siege()
     return { camp: this.camp.shared(), ...(siege ? { siege } : {}) }
+  }
+
+  /** For the admin: raiders come up the east road now. Null when done, or why not. */
+  raid(): string | null {
+    if (this.bandits.raiding) return 'A raid is already on'
+    const haven = this.def.pois.find((p) => p.key === 'haven')
+    if (haven && this.story.besieged(haven)) return 'Haven is under siege'
+    return this.bandits.startRaid() ? null : 'No room for raiders right now'
   }
 
   /** For the admin: tonight is a Red Night, and it's nearly dusk. */

@@ -77,6 +77,8 @@ export const SOUNDS = {
   engine: { variants: 1, recipe: engine },
   /** Haven's dusk horn: one long, low blast that carries across the woods. */
   horn: { variants: 1, recipe: horn },
+  /** The Haven lookout's raid alarm (bandits.ts): short, short, long, higher and rougher. */
+  'horn.raid': { variants: 1, recipe: raidHorn },
   // Kill jingles (game rules pick the set). Variant = streak: 0 kill, 1 double, 2 triple+.
   'jingle.arcade': { variants: 3, recipe: jingleArcade },
   'jingle.fanfare': { variants: 3, recipe: jingleFanfare },
@@ -881,4 +883,37 @@ function horn(rate: number, _v: number): Signal {
     out[i] = (reed + fifth) * swell
   }
   return fadeEdges(normalize(saturate(lowpass(out, rate, 850), 1.4), 0.85), rate, 0.02)
+}
+
+/**
+ * A cow horn blown in a hurry: three blasts (short, short, long) a fourth above the dusk horn,
+ * each scooping up to pitch as the lips catch, breathier and rougher, and thrown back off the
+ * trees. Not the slow call of a Red Night: this one means people, now.
+ */
+function raidHorn(rate: number, _v: number): Signal {
+  const blasts: [start: number, length: number][] = [
+    [0, 0.42],
+    [0.6, 0.42],
+    [1.2, 1.5],
+  ]
+  const seconds = 3.4
+  const out = silence(seconds, rate)
+  const breath = bandpass(noise(seconds, rate, 977), rate, 1400, 0.8)
+  for (const [start, length] of blasts) {
+    let phase = 0
+    const from = Math.floor(start * rate)
+    const to = Math.min(out.length, Math.floor((start + length) * rate))
+    for (let i = from; i < to; i++) {
+      const t = (i - from) / rate
+      const scoop = 1 - 0.09 * Math.exp(-t / 0.06)
+      const sag = 1 - 0.03 * Math.max(0, (t - length + 0.3) / 0.3)
+      const f = 131 * scoop * sag * (1 + 0.006 * Math.sin(2 * Math.PI * 6 * t))
+      phase = (phase + f / rate) % 1
+      const reed = (phase < 0.28 ? 1 : -0.4) + 0.3 * Math.sin(2 * Math.PI * phase)
+      const swell = Math.min(1, t / 0.05) * Math.min(1, (length - t) / 0.12)
+      out[i] = (reed + 0.25 * (breath[i] ?? 0)) * swell
+    }
+  }
+  const dry = saturate(lowpass(out, rate, 1100), 1.8)
+  return fadeEdges(normalize(reflections(dry, rate, 31, 4, 0.18), 0.85), rate, 0.02)
 }

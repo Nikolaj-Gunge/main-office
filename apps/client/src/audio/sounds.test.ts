@@ -9,6 +9,7 @@ const AMBIENCE = new Set<SoundId>([
   'thunder.near',
   'thunder.far',
   'horn',
+  'horn.raid',
   'birdsong',
 ])
 
