@@ -1,5 +1,6 @@
 import {
   Button,
+  heightAt,
   type InputCommand,
   type Poi,
   type Room,
@@ -13,6 +14,7 @@ import {
 import { CLAW_TIMING, ClawAttack } from '../claw-attack.ts'
 import type { ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
+import type { Nav } from './pathing.ts'
 
 /** How many of the dead the server runs at once (they share MAX_PLAYERS with the living). */
 export const POOL = 30
@@ -41,8 +43,19 @@ const EYE = 1.6
 const CHEST = 1.2
 /** Seconds of not seeing you before a chase turns into a search. */
 const LOSE_SIGHT = 5
-/** Seconds of searching before it gives up and wanders again. */
+/** Seconds of looking into a noise before it gives up and wanders again. */
 const SEARCH = 9
+/** Lost you: seconds to get to where it last knew you were, and of sniffing about there. */
+const LOST = 10
+const SNIFF = 4
+/** Playing dead: up when somebody comes this close (m), after a twitch this long (s). */
+const RISE_RANGE = 4
+const TWITCH = 0.9
+/** Share of a place's walkers that lie among the bodies, and of those that only crawl. */
+const PLAY_DEAD = 0.08
+const CRAWLER = 0.35
+/** Seconds between new paths (spread over the ticks by a random bit). */
+const REPLAN = { chase: 0.6, search: 1, wander: 1.6 }
 /** The dead stay this far outside a safe place's clearing (m). */
 const SAFE_MARGIN = 14
 /** Screamers wait this long between screams (s). */
@@ -51,7 +64,13 @@ const SCREAM_EVERY = 16
 const WATCH_RANGE = 55
 const WATCH_COS = Math.cos((40 * Math.PI) / 180)
 
-type Mood = 'idle' | 'wander' | 'search' | 'chase'
+/**
+ * What one of the dead is doing, readable from how it moves: idle (stands about, swaying),
+ * wander, investigate (a slow walk to a noise and a look round), chase (fast and straight at
+ * you), lost (lost sight of you: goes to where you were, stops and sniffs about, gives up) and
+ * dead (lying among the bodies until somebody steps too close).
+ */
+export type Mood = 'idle' | 'wander' | 'investigate' | 'chase' | 'lost' | 'dead'
 
 /** A person as the dead perceive them. */
 export interface Prey {
@@ -82,6 +101,19 @@ export class Zed {
   /** Who it's chasing, and where it last knew them to be. */
   targetId = 0
   lastKnown: Point | null = null
+  /** Playing dead: getting up from this time (it twitches first); a crawler never stands. */
+  risingAt = 0
+  crawler = false
+  /** Lost you: when it got to where you were (and started sniffing about), or 0. */
+  private sniffFrom = 0
+  /** The way it's following (pathing.ts), the next point on it, and when to look again. */
+  private path: Point[] = []
+  private step = 0
+  private planAt = 0
+  private planned: Point | null = null
+  /** The path ends at the goal itself (not just as near as it could get). */
+  private toGoal = false
+  private plannedAt = 0
   private since = 0
   private goal: Point | null = null
   private yaw = 0
@@ -133,6 +165,17 @@ export class Zed {
     this.lastKnown = null
     this.goal = null
     this.since = 0
+    this.sniffFrom = 0
+    this.risingAt = 0
+    this.crawler = false
+    this.path = []
+    this.planAt = 0
+    this.planned = null
+    // Now and then one of a place's walkers lies among the bodies (some of those only crawl).
+    if (!hunter && home >= 0 && kind === ZombieKind.Walker && this.random() < PLAY_DEAD) {
+      this.mood = 'dead'
+      this.crawler = this.random() < CRAWLER
+    }
     this.idleUntil = 0
     this.frozen = false
     this.speed = 0
@@ -143,15 +186,28 @@ export class Zed {
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
   get speedFactor(): number {
     const k = KINDS[this.kind] as KindStats
-    return this.mood === 'chase' || this.mood === 'search' ? k.chase : Math.max(0.2, k.wander)
+    if (this.mood === 'chase' || this.mood === 'lost') return k.chase
+    // Looking into a noise: a careful walk, quicker than a shuffle, nowhere near a run.
+    if (this.mood === 'investigate') return Math.max(0.3, Math.min(k.chase, k.wander * 1.4))
+    return Math.max(0.2, k.wander)
   }
 
   /** Something made a noise there (or a screamer pointed that way): go and look. */
   alert(at: Point, now: number): void {
-    if (this.mood === 'chase') return
-    this.mood = 'search'
+    // Playing dead, it doesn't stir for noise: only for somebody right there.
+    if (this.mood === 'chase' || this.mood === 'dead') return
+    this.mood = 'investigate'
     this.lastKnown = { ...at }
     this.since = now
+    this.sniffFrom = 0
+    this.planAt = 0
+  }
+
+  /** Playing dead: somebody came close. It twitches, then gets up after them. */
+  private rise(p: Prey, now: number): void {
+    if (this.risingAt === 0) this.risingAt = now + TWITCH
+    this.targetId = p.id
+    this.lastKnown = { ...p.pos }
   }
 
   /**
@@ -173,6 +229,13 @@ export class Zed {
     let seen: Prey | null = null
     let seenD = Number.POSITIVE_INFINITY
     let heard: Prey | null = null
+    if (this.mood === 'dead') {
+      if (this.risingAt > 0) return null
+      for (const p of prey) {
+        if (Math.hypot(p.pos.x - me.x, p.pos.z - me.z) < RISE_RANGE) this.rise(p, now)
+      }
+      return null
+    }
     for (const p of prey) {
       const dx = p.pos.x - me.x
       const dz = p.pos.z - me.z
@@ -219,15 +282,30 @@ export class Zed {
       this.since = now
     }
     if (this.mood === 'chase' && now - this.since > LOSE_SIGHT) {
-      this.mood = 'search'
+      // Lost you: off to where it last saw you, then a sniff about.
+      this.mood = 'lost'
       this.since = now
+      this.sniffFrom = 0
       this.targetId = 0
-    } else if (this.mood === 'search' && now - this.since > SEARCH) {
-      this.mood = 'wander'
-      this.lastKnown = null
-      this.goal = null
+    } else if (
+      (this.mood === 'investigate' && now - this.since > SEARCH) ||
+      (this.mood === 'lost' && now - this.since > LOST && !this.sniffing(now))
+    ) {
+      this.giveUp()
     }
     return null
+  }
+
+  private sniffing(now: number): boolean {
+    return this.sniffFrom > 0 && now - this.sniffFrom < SNIFF
+  }
+
+  /** Nothing to go on any more: back to wandering. */
+  private giveUp(): void {
+    this.mood = 'wander'
+    this.lastKnown = null
+    this.goal = null
+    this.sniffFrom = 0
   }
 
   /** Stalkers: stand dead still while anyone is looking at you. */
@@ -263,6 +341,8 @@ export class Zed {
       rooms: readonly Room[]
       /** A boarded-up gap right by `me` with `goal` on its far side, if any. */
       boardedAt?: (me: Point, goal: Point) => { index: number; x: number; z: number } | null
+      /** The way round walls and fences (pathing.ts); without it, straight at the goal. */
+      nav?: Nav
     },
   ): InputCommand {
     const s = self.state
@@ -270,8 +350,26 @@ export class Zed {
     const me = s.pos
     let buttons = 0
     const { def, now } = world
+    // A crawler stays down; anything else lying down gets up (or lies down to play dead).
+    const down = this.mood === 'dead' || this.crawler
+    if (s.prone !== down && s.grounded && !(s.prevButtons & Button.Prone)) {
+      if (this.mood !== 'dead' || this.risingAt === 0 || now >= this.risingAt)
+        buttons |= Button.Prone
+    }
+    if (this.mood === 'dead') {
+      if (this.risingAt === 0) return this.command(buttons, world.tick)
+      if (now < this.risingAt) {
+        // The twitch before it gets up: a jerk of the head and shoulders, then another.
+        if (world.tick % 9 === 0) this.yaw += (this.random() - 0.5) * 0.9
+        return this.command(0, world.tick)
+      }
+      this.mood = 'chase'
+      this.since = now
+      if (this.crawler) buttons = 0
+    }
     const chasing = this.mood === 'chase' && world.target !== null
-    let goal: Point | null = chasing ? world.target : this.mood === 'search' ? this.lastKnown : null
+    const looking = this.mood === 'investigate' || this.mood === 'lost'
+    let goal: Point | null = chasing ? world.target : looking ? this.lastKnown : null
 
     if (!goal) {
       // Nothing to hunt: stand about, then shuffle somewhere nearby (or, for roamers, far).
@@ -279,6 +377,10 @@ export class Zed {
         this.goal = null
         this.mood = 'idle'
         this.idleUntil = now + 2 + this.random() * 9
+      }
+      if (!this.goal && now < this.idleUntil) {
+        // Standing about: swaying on its feet, head lolling.
+        this.yaw += Math.sin(now * 0.8 + self.id * 1.7) * 0.25 * TICK_DT
       }
       if (!this.goal && now >= this.idleUntil && KINDS[this.kind]?.wander) {
         const home: Poi | undefined = def.pois[this.home]
@@ -290,9 +392,18 @@ export class Zed {
         this.mood = 'wander'
       }
       goal = this.goal
-    } else if (this.mood === 'search' && Math.hypot(goal.x - me.x, goal.z - me.z) < 1.5) {
-      // Got to where the noise was: look around.
-      this.yaw += 1.2 * TICK_DT
+    } else if (looking && Math.hypot(goal.x - me.x, goal.z - me.z) < 1.5) {
+      if (this.mood === 'lost') {
+        // Where it last had you: stop, turn this way and that, sniffing; then wander off.
+        if (this.sniffFrom === 0) this.sniffFrom = now
+        const t = now - this.sniffFrom
+        this.yaw += Math.sign(Math.sin(t * 1.3)) * 1.8 * TICK_DT
+        this.pitch = -0.25
+        if (t > SNIFF) this.giveUp()
+      } else {
+        // Got to where the noise was: look around.
+        this.yaw += 1.2 * TICK_DT
+      }
       goal = null
     }
 
@@ -326,11 +437,13 @@ export class Zed {
     let facing = Math.PI
     this.bashing = -1
     if (goal) {
-      // Through the door, if one of us is indoors and the other isn't.
-      const via = doorBetween(world.rooms, me, goal)
+      // The way round whatever's in between (through doors), or else straight on (through the
+      // door, if one of us is indoors and the other isn't).
+      const via = world.nav
+        ? this.route(me, goal, world.nav, world, chasing)
+        : doorBetween(world.rooms, me, goal)
       // A boarded-up door or window between it and what it's after: batter it down.
-      const boarded =
-        chasing || this.mood === 'search' ? (world.boardedAt?.(me, goal) ?? null) : null
+      const boarded = chasing || looking ? (world.boardedAt?.(me, goal) ?? null) : null
       if (boarded) {
         this.turnTowards(Math.atan2(-(boarded.x - me.x), -(boarded.z - me.z)), 0, 6 * TICK_DT)
         this.bashing = boarded.index
@@ -341,7 +454,10 @@ export class Zed {
       const dx = to.x - me.x
       const dz = to.z - me.z
       flat = via ? Number.POSITIVE_INFINITY : Math.hypot(dx, dz)
-      const want = Math.atan2(-dx, -dz)
+      let want = Math.atan2(-dx, -dz)
+      // Trunks in the way: round them.
+      if (world.nav && Math.hypot(dx, dz) > 1.2)
+        want = world.nav.aroundTrees(me, want, Math.hypot(dx, dz))
       const dy = chasing && !via ? goal.y + CHEST - (me.y + EYE * zombieScale(this.kind)) : 0
       const pitch = chasing && !via ? Math.atan2(dy, Math.max(flat, 0.1)) : 0
       const fast = this.kind === ZombieKind.Runner || stalker
@@ -392,14 +508,72 @@ export class Zed {
       this.unstickFor = 0.6
       this.unstickSide = this.random() < 0.5 ? -1 : 1
       buttons |= Button.Jump
-      // Wandering into a wall: pick somewhere else next time.
+      // Wandering into a wall: pick somewhere else next time. Anything else: a fresh path.
       if (!chasing && this.mood === 'wander') this.goal = null
+      this.planAt = 0
     }
     if (this.unstickFor > 0) {
       this.unstickFor -= TICK_DT
       buttons |= this.unstickSide > 0 ? Button.Right : Button.Left
     }
     return this.command(buttons, world.tick)
+  }
+
+  /**
+   * The point to head for on the way to `goal`: the next corner of its path (pathing.ts), or
+   * null to go straight at the goal. A new path now and then (sooner when the goal has moved),
+   * never more than the nav's few per tick.
+   */
+  private route(
+    me: Point,
+    goal: Point,
+    nav: Nav,
+    world: { def: SurvivalDef; now: number; tick: number },
+    chasing: boolean,
+  ): Point | null {
+    const { now } = world
+    const d = Math.hypot(goal.x - me.x, goal.z - me.z)
+    // Upstairs (off the ground the grid is made for), or right there: straight on.
+    if (d < 1.2 || me.y > heightAt(world.def.terrain, me.x, me.z) + 1.6) {
+      this.path = []
+      return null
+    }
+    const moved = this.planned
+      ? Math.hypot(goal.x - this.planned.x, goal.z - this.planned.z)
+      : Number.POSITIVE_INFINITY
+    const every = chasing ? REPLAN.chase : this.mood === 'wander' ? REPLAN.wander : REPLAN.search
+    // A path still being walked to a goal that's hardly moved: keep it (for a few seconds).
+    const keep =
+      this.step < this.path.length && moved < 1.5 && now < this.plannedAt + 4 && this.planAt > 0
+    if (now >= this.planAt && keep) this.planAt = now + every
+    else if (now >= this.planAt || (moved > 3 && now >= this.planAt - 0.4)) {
+      if (nav.clear(me, goal)) {
+        this.path = []
+        this.planAt = now + every * (0.8 + this.random() * 0.4)
+        this.planned = { ...goal }
+      } else if (nav.mayPlan(world.tick)) {
+        this.path = nav.plan(me, goal) ?? []
+        this.step = 0
+        const end = this.path.at(-1)
+        this.toGoal = end?.x === goal.x && end.z === goal.z
+        this.plannedAt = now
+        this.planAt = now + every * (0.8 + this.random() * 0.4)
+        this.planned = { ...goal }
+      }
+    }
+    // Along the path: on to the next corner once at this one (or once the next is in sight).
+    while (this.step < this.path.length) {
+      const p = this.path[this.step] as Point
+      if (Math.hypot(p.x - me.x, p.z - me.z) > 0.6) break
+      this.step++
+    }
+    const next = this.path[this.step + 1]
+    if (next && (world.tick + this.seq) % 10 === 0 && nav.clear(me, next)) this.step++
+    const at = this.path[this.step]
+    if (!at) return null
+    // The path's last point is the goal itself: aim at it as a goal (pitch, claws).
+    if (this.step === this.path.length - 1 && this.toGoal) return null
+    return at
   }
 
   /** True when its speed changed since the last call (the body needs setting up again). */
