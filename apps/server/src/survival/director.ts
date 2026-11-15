@@ -6,6 +6,7 @@ import {
   type Bio,
   BOARD_REACH,
   type Box,
+  bumpLife,
   CRUNCH_NOISE,
   carried,
   cleanBox,
@@ -82,7 +83,9 @@ import {
   syncForest,
   TICK_DT,
   TICK_RATE,
+  TRAITS,
   takeStack,
+  traitFactor,
   unpackAppearance,
   type VehicleNet,
   VICINITY,
@@ -108,6 +111,7 @@ import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { LegacyKeeper } from './legacy.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
@@ -331,6 +335,8 @@ export class SurvivalDirector {
   private readonly storage: Storage
   /** The tension director, the night's mood, the birds and car alarms (rot-world.ts). */
   private readonly rot: RotWorld
+  /** Past lives, legacy traits and the obituary wall (legacy.ts). */
+  readonly legacy: LegacyKeeper
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
@@ -355,6 +361,12 @@ export class SurvivalDirector {
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
     this.evac = new Evac({ ...this.storyHost(), retire: (p) => this.retire(p.player) })
+    this.legacy = new LegacyKeeper({
+      saves: () => game.saves,
+      now: () => this.now,
+      everyone: () => this.survivors.values(),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    })
   }
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
@@ -440,6 +452,7 @@ export class SurvivalDirector {
     this.clearBoards()
     // A new world: the saved one starts over, and every character with it (saves.ts).
     this.game.saves.newWorld()
+    this.legacy.reset()
     this.savedWorld = ''
     this.survivors.clear()
     this.rare = rollRareStock(this.random)
@@ -491,8 +504,9 @@ export class SurvivalDirector {
       locker: cleanBox(saved?.locker, LOCKER_SIZE),
     }
     if (saved) this.resume(sv, saved)
-    else this.legacy(sv)
+    else this.evacKit(sv)
     if (!sv.self.bio) sv.self.bio = this.newBio(player)
+    this.legacy.join(sv)
     this.survivors.set(player.id, sv)
     this.layOut(sv)
     this.story.join(sv, sv.reborn)
@@ -511,6 +525,7 @@ export class SurvivalDirector {
     if (!sv) return
     this.workbench.forget(player)
     this.storage.forget(player)
+    this.legacy.forget(player)
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.rot.forget(player)
@@ -604,6 +619,7 @@ export class SurvivalDirector {
       gates: this.gates,
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
       retired: [...this.evac.retired],
+      wall: this.legacy.wall,
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -619,6 +635,7 @@ export class SurvivalDirector {
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
+    this.legacy.restore(w.wall)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -792,6 +809,8 @@ export class SurvivalDirector {
             `You put ${victim.name} down. Their things lie where they fell.`,
           )
       }
+      const by = this.survivors.get(killer.id)
+      if (by) bumpLife(by.self, 'kills')
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -822,12 +841,24 @@ export class SurvivalDirector {
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
     const turning = sv.turning
+    // Their life goes into the account's journal and onto Haven's wall (legacy.ts).
+    const other = killer !== victim ? this.survivors.get(killer.id) : undefined
+    const left = this.legacy.died(
+      sv,
+      {
+        turning,
+        zombie: this.zeds.get(killer.id)?.kind ?? null,
+        by: other ? (other.self.bio?.name ?? killer.name) : null,
+      },
+      victim.appearance ?? 0,
+    )
     // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
     this.workbench.forget(victim)
     this.storage.forget(victim)
     sv.self = freshSelf()
     sv.self.bio = this.newBio(victim)
-    this.legacy(sv)
+    this.evacKit(sv)
+    this.legacy.newCharacter(sv)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     // Hollis' pistol and knife are on the cabin table again, for somebody new.
@@ -838,25 +869,27 @@ export class SurvivalDirector {
     sv.warned = 0
     sv.dirty = true
     this.story.died(sv)
-    // The new character is who they are now, even if they close the tab before waking.
+    // The new character is who they are now, even if they close the tab before waking (and
+    // the wall has their name).
     this.save(sv)
-    void this.game.saves.flush()
+    this.saveWorld(true)
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
     if (turning) this.rise(victim, stuff, look, at)
     else this.spill(stuff, at)
+    const legacy = left ? `\n\n${was ?? 'They'} left you something: ${TRAITS[left].name}.` : ''
     this.notice(
       victim,
       'story',
       turning
-        ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.\n\nYou wake at Haven: somebody new.`
-        : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.\n\nYou wake at Haven: somebody new.`,
+        ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.${legacy}\n\nYou wake at Haven: somebody new.`
+        : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.${legacy}\n\nYou wake at Haven: somebody new.`,
     )
   }
 
   // --- Evacuation (evac.ts) -----------------------------------------------------------------
 
   /** A new character of an account that got others out: what they left at Haven for them. */
-  private legacy(sv: Survivor): void {
+  private evacKit(sv: Survivor): void {
     const account = sv.player.account
     if (!account) return
     const kit = legacyKit(evacAccount(this.game.saves.account(account)).retired.length)
@@ -888,7 +921,8 @@ export class SurvivalDirector {
     this.vehicles.leave(player)
     sv.self = freshSelf()
     sv.self.bio = this.newBio(player)
-    this.legacy(sv)
+    this.evacKit(sv)
+    this.legacy.newCharacter(sv)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     this.clearStarters(sv)
@@ -1058,7 +1092,7 @@ export class SurvivalDirector {
       this.fieldNotes.attach(sv)
       if (!sv.dirty) continue
       sv.dirty = false
-      this.send(sv.player, { type: ServerMsg.Survival, self: sv.self })
+      this.send(sv.player, { type: ServerMsg.Survival, self: this.legacy.outgoing(sv) })
     }
   }
 
@@ -1070,6 +1104,7 @@ export class SurvivalDirector {
     if (phase === 'dawn') this.rare = rollRareStock(this.random)
     // Still standing when the sun comes up (Field Notes, the journal's first night).
     if (phase === 'dawn') for (const sv of people) if (sv.player.state.alive) this.note(sv, 'dawn')
+    if (phase === 'dawn') this.legacy.dawn(people.filter((sv) => sv.player.state.alive))
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
     // What kind of night it will be: the Haven radio has an idea (rot.ts).
@@ -1090,8 +1125,11 @@ export class SurvivalDirector {
     // Newcomers get hungry and thirsty more slowly (newcomer.ts); needsDrain owns the rate.
     const drain = needsDrain(drainFactor(self.age))
     self.age = (self.age ?? SHIELD_SECONDS) + 1
-    self.hunger = Math.max(0, self.hunger - drain.hunger)
-    self.thirst = Math.max(0, self.thirst - drain.thirst)
+    // Iron Stomach (legacy.ts): a little slower.
+    const stomach = traitFactor(self.trait, 'drain')
+    self.hunger = Math.max(0, self.hunger - drain.hunger * stomach)
+    self.thirst = Math.max(0, self.thirst - drain.thirst * stomach)
+    this.legacy.second(sv, this.vehicles.seatOf(player) !== null)
     if (self.light) {
       self.battery = Math.max(0, self.battery - 100 / BATTERY_SECONDS)
       if (self.battery === 0) {
@@ -1549,6 +1587,7 @@ export class SurvivalDirector {
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
     if (thing.kind === 'board') return void this.story.board(sv)
     if (thing.key === EVAC_RADIO_KEY) return void this.evac.use(sv)
+    if (thing.kind === 'obituary') return void this.legacy.flowers(sv)
     if (thing.kind === 'locker') {
       if (!this.storage.openNear(sv, 'locker')) this.notice(player, 'info', 'Step up to it.')
       return
@@ -1666,6 +1705,8 @@ export class SurvivalDirector {
       case 'cosmetic':
         this.fieldNotes.wear(sv, action.kind, typeof action.id === 'string' ? action.id : null)
         return
+      case 'trait':
+        return void this.legacy.pick(sv, action.id)
     }
   }
 
@@ -1802,6 +1843,10 @@ export class SurvivalDirector {
     if (def.stamina) s.winded = false
     if (def.stopsBleeding) self.bleeding = false
     if (def.kind === 'food' || def.kind === 'drink') this.note(sv, 'eat')
+    // What the life counts towards a legacy trait (legacy.ts).
+    if (def.kind === 'food' && (def.hunger ?? 0) >= 18) bumpLife(self, 'meals')
+    if (def.kind === 'med' && (def.stopsBleeding || (def.health ?? 0) > 0))
+      bumpLife(self, 'patched')
     this.needs.used(sv, def)
     return true
   }

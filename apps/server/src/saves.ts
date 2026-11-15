@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORLD_ID,
+  type ObitWall,
   type Retired,
   type Stored,
   type SurvivalSelf,
@@ -120,6 +121,8 @@ export interface WorldSave {
   boards: [number, number][]
   /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
   retired?: Retired[]
+  /** Haven's obituary wall (legacy.ts); absent in older saves. */
+  wall?: ObitWall
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({
@@ -196,6 +199,12 @@ export class Saves {
    * they're playing here: they may have played in another world since this one last saw them.
    */
   async loadCharacter(account: string): Promise<void> {
+    const loading = this.loadAccount(account)
+    await this.loadCharacterOnly(account)
+    await loading
+  }
+
+  private async loadCharacterOnly(account: string): Promise<void> {
     if (this.online.has(account) || this.dirty.has(characterKey(account))) return
     await this.writing // our own last save of them lands first
     const data = await this.read(characterKey(account), 'character')

@@ -34,6 +34,7 @@ export function havenLife(s: Site): void {
   }
   watchtower(s, 26.8, -26.8)
   watchtower(s, -26.8, 26.8)
+  obituaryWall(s, 21.6, 5)
 }
 
 // --- Parts ------------------------------------------------------------------------------------
@@ -429,4 +430,26 @@ function south(s: Site): void {
     s.deco(x, 0, z, 0.22, 0.2, 0.3, 'plaster')
     s.deco(x, 0.2, z - 0.12, 0.1, 0.1, 0.1, 'plaster')
   }
+}
+
+/**
+ * The obituary wall east of the fire, facing it (legacy.ts, ROADMAP 4.5): a board of planks
+ * between two posts under a little roof, a candle lantern, and a ledge at its foot where people
+ * leave flowers. The names and the flowers are drawn by the client (obituary-wall.ts) in front
+ * of the board's west face.
+ */
+function obituaryWall(s: Site, x: number, z: number): void {
+  for (const e of [-1, 1]) s.block(x, 0, z + e * 1.85, 0.16, 2.5, 0.16, 'log')
+  s.block(x + 0.04, 0.55, z, 0.1, 1.75, 3.55, 'wood')
+  s.deco(x - 0.08, 2.5, z, 0.7, 0.07, 4.1, 'shingle')
+  s.deco(x - 0.25, 0.3, z, 0.3, 0.06, 3.5, 'wood') // the ledge
+  for (const e of [-1, 1]) s.deco(x - 0.25, 0, z + e * 1.6, 0.06, 0.3, 0.06, 'log')
+  s.lantern(x - 0.3, 2.45, z + 1.55, 0.3, {
+    color: 0xffc890,
+    intensity: 5,
+    distance: 6,
+    flicker: 0.3,
+  })
+  s.label(x, 3, z, 'THE LOST')
+  s.interact('haven_obituary', 'obituary', x - 0.04, 1.3, z, 'Leave flowers')
 }

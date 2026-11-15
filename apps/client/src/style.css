@@ -3013,6 +3013,43 @@ body {
   min-height: 28px;
   padding: 3px 8px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* --- Legacy trait pick (hud/trait-pick.ts) ---------------------------------------------------- */
+.sv-traits {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8, 7, 5, 0.82) 0%, rgba(0, 0, 0, 0.6) 70%);
+}
+
+.sv-traits-inner {
+  min-width: min(560px, 90vw);
+  max-width: 680px;
+  padding: 22px 26px;
+  color: #efe8d6;
+  background: #15120e;
+  border: 1px solid #4a4234;
+  box-shadow: 0 8px 0 #000;
+  font-family: monospace;
+}
+
+.sv-traits-head {
+  font-size: 18px;
+  letter-spacing: 4px;
+  color: #d8c8a4;
+  margin-bottom: 14px;
+}
+
+.sv-trait {
+  display: grid;
+  grid-template-columns: 28px 160px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
   border: 1px solid transparent;
   cursor: pointer;
 }
@@ -3118,4 +3155,29 @@ body {
   border: 2px solid #a86a28;
   font-size: 11px;
   letter-spacing: 2px;
+}
+
+.sv-trait:hover,
+.sv-trait.on {
+  border-color: #7a6a4c;
+  background: #221d16;
+}
+
+.sv-trait-key {
+  color: #8a7c62;
+}
+
+.sv-trait-name {
+  color: #f0d8a0;
+}
+
+.sv-trait-desc {
+  color: #b4a88e;
+  font-size: 13px;
+}
+
+.sv-traits-help {
+  margin-top: 14px;
+  color: #6e6450;
+  font-size: 12px;
 }
