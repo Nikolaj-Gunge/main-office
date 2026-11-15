@@ -243,6 +243,7 @@ function placed(parts: BodyPart[], at: THREE.Vector3, yaw: number): BodyPart[] {
 }
 
 interface Person {
+  name: string
   plan: ReturnType<typeof planFolk>
   avatar: Avatar
   gear: number
@@ -279,6 +280,7 @@ export class CampFolk {
       crate.visible = false
       this.root.add(avatar.root, crate)
       return {
+        name: f.name,
         plan: planFolk(f),
         avatar,
         gear: gearLooks(f.gear),
@@ -290,6 +292,14 @@ export class CampFolk {
         swing: 0,
       }
     })
+  }
+
+  /** Haven's people who are gone (camp.ts: walked out, or taken in a Red Night). */
+  private gone: ReadonlySet<string> = new Set()
+
+  setGone(names: readonly string[]): void {
+    if (names.length === this.gone.size && names.every((n) => this.gone.has(n))) return
+    this.gone = new Set(names)
   }
 
   /**
@@ -307,9 +317,10 @@ export class CampFolk {
     const night = time < 0.42 || time > 0.92
     for (const p of this.people) {
       const st = folkAt(p.plan, time * DAY_SECONDS)
-      p.avatar.root.visible = !st.hidden
+      const gone = this.gone.has(p.name)
+      p.avatar.root.visible = !st.hidden && !gone
       p.crate.visible = false
-      if (st.hidden) {
+      if (st.hidden || gone) {
         p.yaw = null
         continue
       }

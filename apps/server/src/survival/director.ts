@@ -17,6 +17,7 @@ import {
   crunchAt,
   DAY_SECONDS,
   type DayPhase,
+  DUSK,
   daylight,
   dayPhase,
   type EquipSlot,
@@ -104,6 +105,7 @@ import {
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
+import { Camp } from './camp.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
@@ -355,7 +357,31 @@ export class SurvivalDirector {
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
     this.evac = new Evac({ ...this.storyHost(), retire: (p) => this.retire(p.player) })
+    this.camp = new Camp({
+      ...this.storyHost(),
+      days: () => this.weatherClock / DAY_SECONDS + START_TIME,
+      time: () => this.time,
+      busy: () => this.story.shared().siege?.poi === 'haven',
+      owner: (p) => p.player.account ?? `name:${p.player.name}`,
+      takeLast: (p) => {
+        // The stack last put away (quest things and the shovel stay with you).
+        const sv = this.survivors.get(p.player.id)
+        const inv = p.self.inv
+        for (let i = inv.length - 1; i >= 0; i--) {
+          const st = inv[i]
+          if (!st || st.item === 'shovel' || ITEMS[st.item]?.kind === 'quest') continue
+          inv.splice(i, 1)
+          if (sv) sv.dirty = true
+          return { item: st.item, n: st.n, ...(st.ammo !== undefined ? { ammo: st.ammo } : {}) }
+        }
+        return null
+      },
+      crouched: (p) => p.player.state.crouched,
+    })
   }
+
+  /** Haven's Red Nights, its morale, the people who leave, and graves (see camp.ts). */
+  readonly camp: Camp
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
   readonly evac: Evac
@@ -434,6 +460,7 @@ export class SurvivalDirector {
     this.places = def.pois.map(() => ({ stocked: -1, kills: [], woken: 0 }))
     this.story.reset()
     this.evac.reset()
+    this.camp.reset()
     this.found = new Set()
     this.gates = 0
     this.game.setGates(0)
@@ -604,6 +631,7 @@ export class SurvivalDirector {
       gates: this.gates,
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
       retired: [...this.evac.retired],
+      camp: this.camp.save(),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -619,6 +647,7 @@ export class SurvivalDirector {
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
+    this.camp.restore(w.camp)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -792,6 +821,9 @@ export class SurvivalDirector {
             `You put ${victim.name} down. Their things lie where they fell.`,
           )
       }
+      // Somebody once (one of you, or one of Haven's gone): their body can be buried by name.
+      const named = victim.name.endsWith(' (turned)') ? victim.name.slice(0, -9) : ''
+      this.camp.downed(named, victim.state.pos)
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -819,6 +851,7 @@ export class SurvivalDirector {
     // Everything goes: backpack, guns, clothes, the pack, the money. Somebody new wakes at Haven.
     const was = sv.self.bio?.name
     const at = { ...victim.state.pos }
+    if (!sv.turning) this.camp.died(was ?? victim.name, at)
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
     const turning = sv.turning
@@ -1032,6 +1065,7 @@ export class SurvivalDirector {
       this.expireLoot()
       this.story.tick(alive)
       this.evac.tick()
+      this.camp.tick()
       this.drops.step()
       this.tickDay(people)
       this.rot.tick()
@@ -1377,6 +1411,8 @@ export class SurvivalDirector {
     }
     if (npc && this.evac.talk(sv, npc)) return
     if (npc) return void this.story.talk(sv, npc)
+    // Crouched with a shovel over somebody who fell, or at a grave (camp.ts).
+    if (this.camp.dig(sv)) return
 
     let thing: Interactable | null = null
     best = 0.2
@@ -1549,6 +1585,7 @@ export class SurvivalDirector {
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
     if (thing.kind === 'board') return void this.story.board(sv)
     if (thing.key === EVAC_RADIO_KEY) return void this.evac.use(sv)
+    if (thing.kind === 'camp') return void this.camp.use(sv, thing.key)
     if (thing.kind === 'locker') {
       if (!this.storage.openNear(sv, 'locker')) this.notice(player, 'info', 'Step up to it.')
       return
@@ -1566,6 +1603,8 @@ export class SurvivalDirector {
 
   private sleep(sv: Survivor, bed: Interactable): void {
     const player = sv.player
+    if (this.camp.noSleep())
+      return void this.notice(player, 'warn', 'Not tonight. Red Night. Everyone is on the wall.')
     const close = this.pool.some(
       (z) => z.state.alive && dist(z.state.pos, { x: bed.pos[0], z: bed.pos[2] }) < 35,
     )
@@ -2043,7 +2082,12 @@ export class SurvivalDirector {
     for (const sv of alive) {
       const s = sv.player.state
       // Nobody is hunted inside a safe place.
-      if (this.def.pois.some((p) => p.safe && !this.story.besieged(p) && dist(s.pos, p) < p.r + 4))
+      if (
+        this.def.pois.some(
+          (p) =>
+            p.safe && !this.story.besieged(p) && !this.camp.besieged(p) && dist(s.pos, p) < p.r + 4,
+        )
+      )
         continue
       const worn = wornStats(sv.self)
       out.push({
@@ -2368,7 +2412,11 @@ export class SurvivalDirector {
   private storyHost(): StoryHost {
     const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
     return {
-      noted: (p, event) => this.note(sv(p), event),
+      noted: (p, event) => {
+        this.note(sv(p), event)
+        this.camp?.noted(event)
+      },
+      camp: () => this.camp.terms(),
       def: () => this.def,
       now: () => this.now,
       random: this.random,
@@ -2555,6 +2603,7 @@ export class SurvivalDirector {
       gates: this.gates,
       ...this.story.shared(),
       ...this.evacShared(),
+      ...this.campShared(),
       found: [...this.found],
       won: this.won,
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
@@ -2567,6 +2616,20 @@ export class SurvivalDirector {
       },
       rot: this.rot.shared(),
     }
+  }
+
+  /** Haven (camp.ts), and a Red Night's bar under the compass unless the story has one up. */
+  private campShared(): Pick<SurvivalShared, 'camp' | 'siege'> {
+    const siege = this.story.shared().siege ?? this.camp.siege()
+    return { camp: this.camp.shared(), ...(siege ? { siege } : {}) }
+  }
+
+  /** For the admin: tonight is a Red Night, and it's nearly dusk. */
+  redNight(): void {
+    // The clock first (it may pass a dawn), then the calendar.
+    this.setTime(DUSK - 0.003)
+    this.camp.tick()
+    this.camp.redTonight()
   }
 
   /** The evacuation under way, and the retired standing about Haven among the walkers. */

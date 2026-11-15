@@ -3119,3 +3119,22 @@ body {
   font-size: 11px;
   letter-spacing: 2px;
 }
+
+/* --- Haven's morale (camp.ts): the bar on the journal's Haven page --- */
+.sv-camp-bar {
+  height: 8px;
+  margin: 6px 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(232, 220, 192, 0.35);
+}
+.sv-camp-fill {
+  display: block;
+  height: 100%;
+  background: #d8c890;
+}
+.sv-camp-fill-low {
+  background: #c85a4a;
+}
+.sv-camp-fill-high {
+  background: #a8c890;
+}

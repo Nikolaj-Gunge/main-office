@@ -108,6 +108,8 @@ export interface StoryHost {
   rare(): Map<string, number>
   /** Something for Field Notes (field-notes.ts): an item handed over, somebody home, a job done. */
   noted?(p: Person, event: 'deliver' | 'rescue' | 'quest'): void
+  /** What Haven's morale does (camp.ts): prices, Lena's fee, what more Gus stocks. */
+  camp?(): { price: number; heal: number; stock: [string, number][] }
 }
 
 interface Walker {
@@ -495,7 +497,8 @@ export class Story {
     if (this.stock(p, key).length > 0) out.push({ id: 'shop', label: "Show me what you've got." })
     if (key === 'lena' && p.player.health < p.player.maxHealth) {
       const free = self.journal.flags.includes('lena_free')
-      out.push({ id: 'heal', label: free ? 'Patch me up.' : 'Patch me up. ($40)' })
+      const fee = this.host.camp?.().heal ?? 40
+      out.push({ id: 'heal', label: free ? 'Patch me up.' : `Patch me up. ($${fee})` })
     }
     if (key === 'dot' && self.journal.flags.includes('dot_meals')) {
       out.push({ id: 'meal', label: 'Anything in the pot?' })
@@ -542,14 +545,15 @@ export class Story {
     }
     if (option === 'heal' && key === 'lena') {
       const free = j.flags.includes('lena_free')
-      if (!free && p.self.money < 40)
+      const fee = this.host.camp?.().heal ?? 40
+      if (!free && p.self.money < fee)
         return void this.say(
           p,
           key,
           "I can't work for nothing. Not any more.",
           this.options(p, key),
         )
-      if (!free) p.self.money -= 40
+      if (!free) p.self.money -= fee
       p.self.bleeding = false
       p.player.health = p.player.maxHealth
       this.host.touch(p)
@@ -645,6 +649,8 @@ export class Story {
       for (const r of RARE_STOCK)
         if ((this.host.rare().get(r.item) ?? 0) > 0) out.push([r.item, r.price])
       for (const id of TRADER_STOCK) out.push([id, 0])
+      for (const extra of this.host.camp?.().stock ?? [])
+        if (!out.some(([id]) => id === extra[0])) out.push(extra)
     }
     for (const s of SHOPS[key] ?? []) if (this.unlocks.includes(s.unlock)) out.push(...s.stock)
     return out.map(([id, price]) => [id, this.price(p, key, id, price)])
@@ -655,7 +661,7 @@ export class Story {
     const base =
       fixed > 0 ? fixed : Math.ceil((def?.value ?? 0) * (def?.kind === 'ammo' ? AMMO_BOX : 1))
     const off = key === 'gus' && p.self.journal.flags.includes('gus_discount') ? 0.8 : 1
-    return Math.ceil(base * off)
+    return Math.ceil(base * off * (this.host.camp?.().price ?? 1))
   }
 
   /**

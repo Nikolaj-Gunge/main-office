@@ -175,6 +175,14 @@ export class Moderation {
     return true
   }
 
+  /** Survival: tonight is a Red Night (camp.ts), and it's nearly dusk. False when not surviving. */
+  redNight(): boolean {
+    const director = this.game.match.survivalDirector
+    if (!director) return false
+    director.redNight()
+    return true
+  }
+
   /** A line from the server to everyone playing (survival's notice feed). */
   broadcast(text: string): void {
     const line = text.trim().slice(0, 200)

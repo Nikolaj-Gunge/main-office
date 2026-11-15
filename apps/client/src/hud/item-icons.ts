@@ -580,6 +580,14 @@ const ICONS: Record<string, Paint> = {
       .rect(p.w - 8, p.h - 6, 3, 3, '#b82a24')
       .outline()
   },
+  shovel: (p) => {
+    p.rect(p.w / 2 - 1, 2, 3, p.h - 14, WOOD)
+      .rect(p.w / 2 - 4, 2, 9, 2, WOOD)
+      .rect(p.w / 2 - 2, p.h - 13, 5, 2, STEEL)
+      .rect(p.w / 2 - 5, p.h - 11, 11, 9, '#8a8e94')
+      .rect(p.w / 2 - 5, p.h - 3, 11, 1, '#b8bcc2')
+      .outline()
+  },
   radio: (p) => {
     p.rect(p.w / 2 - 6, 10, 12, p.h - 12, '#2a2d32')
       .rect(p.w / 2 + 2, 2, 3, 9, '#1a1a1a')

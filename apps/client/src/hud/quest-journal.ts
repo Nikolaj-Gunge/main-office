@@ -1,9 +1,11 @@
 import {
+  type CampShared,
   type CosmeticKind,
   endingOf,
   type FieldNotes,
   ITEMS,
   type Journal,
+  moraleWord,
   noteText,
   noteTitle,
   PEOPLE,
@@ -96,6 +98,9 @@ export class QuestJournal {
     this.tab = JOURNAL_TABS[(i + by + JOURNAL_TABS.length) % JOURNAL_TABS.length] as JournalTab
     this.selected = 0
   }
+
+  /** Haven's state (SurvivalShared.camp), for its page among the people. */
+  camp: CampShared | null = null
 
   draw(
     panel: HTMLElement,
@@ -278,6 +283,54 @@ export class QuestJournal {
     const here = new Set(this.def.npcs.map((n) => n.key))
     if (unlocks.includes('nell')) here.add('nell')
     const out: Entry[] = []
+    // How Haven fares (camp.ts): its morale, Red Nights and who is gone.
+    const camp = this.camp
+    if (camp)
+      out.push({
+        key: 'camp',
+        label: `How Haven fares: ${moraleWord(camp.morale)}`,
+        group: 'Haven',
+        draw: (into) => {
+          el('div', 'sv-page-title', into, 'How Haven fares')
+          el(
+            'div',
+            'sv-page-text',
+            into,
+            `Spirits: ${moraleWord(camp.morale)} (${camp.morale}/100). Day ${camp.day + 1}.`,
+          )
+          const bar = el('div', 'sv-camp-bar', into)
+          const fill = el(
+            'i',
+            camp.morale < 25
+              ? 'sv-camp-fill sv-camp-fill-low'
+              : camp.morale >= 70
+                ? 'sv-camp-fill sv-camp-fill-high'
+                : 'sv-camp-fill',
+            bar,
+          )
+          fill.style.width = `${camp.morale}%`
+          el(
+            'div',
+            'sv-page-text',
+            into,
+            camp.morale >= 70
+              ? 'High spirits: Gus is generous, stocks more, and Lena patches people up cheap.'
+              : camp.morale < 25
+                ? 'Low spirits: prices are up, and people are leaving in the night.'
+                : 'Getting by. Jobs done, people brought home, the dead buried and the walls held keep it up; deaths and lost nights wear it down.',
+          )
+          el(
+            'div',
+            'sv-page-text',
+            into,
+            `${camp.red === 'night' ? 'RED NIGHT. Now.' : camp.redIn === 0 ? 'Red Night: tonight.' : camp.redIn === 1 ? 'Red Night: tomorrow.' : `Red Night in ${camp.redIn} days.`} Held ${camp.wins}, lost ${camp.losses}.`,
+          )
+          if (camp.gone.length > 0)
+            el('div', 'sv-page-text', into, `Gone from Haven: ${camp.gone.join(', ')}.`)
+          if (camp.graves.length > 0)
+            el('div', 'sv-page-text', into, `Graves: ${camp.graves.map((g) => g.name).join(', ')}.`)
+        },
+      })
     for (const [key, who] of Object.entries(PEOPLE)) {
       // Hollis: only once you know who he was.
       if (!here.has(key) && !(key === 'hollis' && j.notes.includes('hollis_locker'))) continue

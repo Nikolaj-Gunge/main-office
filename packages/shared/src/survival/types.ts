@@ -143,6 +143,8 @@ export type InteractKind =
   | 'board'
   /** Your own locker (storage.ts): what's in it outlives you. */
   | 'locker'
+  /** Haven's morale board and donation box (camp.ts). */
+  | 'camp'
 
 /** Something in the world you can use with E. */
 export interface Interactable {

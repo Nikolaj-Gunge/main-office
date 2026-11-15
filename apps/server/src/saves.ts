@@ -1,4 +1,5 @@
 import {
+  type CampSave,
   DEFAULT_WORLD_ID,
   type Retired,
   type Stored,
@@ -120,6 +121,8 @@ export interface WorldSave {
   boards: [number, number][]
   /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
   retired?: Retired[]
+  /** Haven's record: days, Red Nights, morale, who left, graves (camp.ts). Absent in old saves. */
+  camp?: CampSave
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

@@ -418,6 +418,16 @@ add({
   desc: 'Signed and stamped: one seat out, bearer only. The pilot will want to see them.',
 })
 
+// ── Graves (camp.ts): dig one for somebody, and keep a little something with them ──
+add({
+  id: 'shovel',
+  name: 'Shovel',
+  kind: 'tool',
+  weight: 2.2,
+  value: 35,
+  desc: 'Short-handled, the blade worn bright. Stand by somebody who fell and bury them (E).',
+})
+
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),
 )
@@ -547,6 +557,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['planks', 7, 2, 4],
       ['ducttape', 7],
       ['toolkit', 4],
+      ['shovel', 1.5],
       ['electronics', 5],
       ['batteries', 6],
       ['gasoline', 2],

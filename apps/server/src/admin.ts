@@ -151,6 +151,7 @@ export class AdminApi {
       case 'POST /admin/api/teleport':
       case 'POST /admin/api/give':
       case 'POST /admin/api/time':
+      case 'POST /admin/api/red-night':
       case 'POST /admin/api/reset-character':
       case 'POST /admin/api/broadcast': {
         const body = (await request.json().catch(() => undefined)) as Record<string, unknown>
@@ -185,6 +186,8 @@ export class AdminApi {
         return m.give(id, String(body.item ?? ''), Number(body.n ?? 1))
       case 'time':
         return m.setTime(Number(body.time)) ? null : 'Not playing survival (or no time given)'
+      case 'red-night':
+        return m.redNight() ? null : 'Not playing survival'
       case 'reset-character':
         return m.resetCharacter(id)
       case 'broadcast':

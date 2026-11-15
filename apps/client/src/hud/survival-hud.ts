@@ -855,6 +855,7 @@ export class SurvivalHud {
     const self = this.self
     if (!self) return
     this.journal.account = self.notes ?? null
+    this.journal.camp = this.shared?.camp ?? null
     this.journal.draw(
       this.panel,
       self.journal,

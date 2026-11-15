@@ -754,6 +754,16 @@ const MODELS: Record<string, Build> = {
       .box(0.1, 0.002, 0.004, DARK, { y: 0.006, z: 0.01 })
       .box(0.08, 0.002, 0.004, DARK, { y: 0.006, z: 0.03 })
   },
+  // A short shovel lying flat: wooden shaft, a D-grip, a worn steel blade (camp.ts graves).
+  shovel: (k) => {
+    k.box(0.035, 0.035, 0.62, WOOD, { z: -0.08 })
+      .box(0.12, 0.03, 0.025, WOOD, { z: -0.42 })
+      .box(0.025, 0.03, 0.08, WOOD, { x: -0.05, z: -0.38 })
+      .box(0.025, 0.03, 0.08, WOOD, { x: 0.05, z: -0.38 })
+      .box(0.05, 0.04, 0.06, STEEL, { z: 0.25 })
+      .box(0.2, 0.015, 0.26, 0x8a8e94, { z: 0.4 })
+      .box(0.17, 0.016, 0.02, 0xb8bcc2, { z: 0.53 })
+  },
   // A walkie-talkie: black body, grille, a stubby antenna and a little red light.
   radio: (k) => {
     k.box(0.07, 0.16, 0.035, 0x22252a)

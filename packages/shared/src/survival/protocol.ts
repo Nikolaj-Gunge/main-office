@@ -1,3 +1,4 @@
+import type { CampShared } from './camp.ts'
 import type { Bio } from './characters.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
@@ -138,6 +139,8 @@ export interface SurvivalShared {
   rot?: { mood?: RotMood; birds: number[] }
   /** Somebody called in the evacuation helicopter (evac.ts), or none. */
   evac?: EvacShared
+  /** Haven: Red Night, morale, the gone and the graves (camp.ts). */
+  camp?: CampShared
 }
 
 export type SurvivalAction =
