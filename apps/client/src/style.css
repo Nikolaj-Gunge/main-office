@@ -3648,3 +3648,18 @@ body {
 .sv-camp-fill-high {
   background: #a8c890;
 }
+
+/* ---- First visit: one big PLAY (menu.ts menu-first) ---- */
+.menu-first .menu-join {
+  flex-direction: column;
+}
+.menu-first .menu-join input {
+  font-size: 15px;
+  padding: 8px 12px;
+}
+.menu-first .menu .menu-play,
+.menu.menu-first .menu-play {
+  padding: 18px 22px;
+  font-size: 28px;
+  letter-spacing: 4px;
+}

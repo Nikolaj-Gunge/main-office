@@ -126,6 +126,7 @@ import { Camp } from './camp.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
+import { type FirstShotHost, FirstShotLesson } from './first-shot.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { LegacyKeeper } from './legacy.ts'
 import { type LurkerHost, Lurkers } from './lurkers.ts'
@@ -371,6 +372,8 @@ export class SurvivalDirector {
   private readonly storage: Storage
   /** The tension director, the night's mood, the birds and car alarms (rot-world.ts). */
   private readonly rot: RotWorld
+  /** The first gunshot's lesson for newcomers (first-shot.ts). */
+  private readonly firstShot: FirstShotLesson
   /** Past lives, legacy traits and the obituary wall (legacy.ts). */
   readonly legacy: LegacyKeeper
   /** Bandit camps and raiders (bandits.ts). */
@@ -385,6 +388,7 @@ export class SurvivalDirector {
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
     this.rot = new RotWorld(this.rotHost())
     this.bandits = new Bandits(game, this.banditHost())
+    this.firstShot = new FirstShotLesson(this.firstShotHost())
     this.story = new Story(this.storyHost())
     this.needs = new NeedsKeeper({
       world: () => this.def ?? null,
@@ -717,6 +721,7 @@ export class SurvivalDirector {
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.rot.forget(player)
+    this.firstShot.forget(player.id)
     this.story.left(player)
     this.fieldNotes.forget(sv)
     this.save(sv)
@@ -1001,6 +1006,15 @@ export class SurvivalDirector {
     if (!sv) return void this.bandits.onShot(player)
     this.workbench.onShot(sv)
     const noise = WEAPONS[player.state.weapon.id].noise
+    // Somebody new: the first shot is staged (birds, a groan, walkers drifting over, a hint).
+    this.firstShot.onShot({
+      id: player.id,
+      account: player.account,
+      pos: player.state.pos,
+      age: sv.self.age,
+      safe: this.def.pois.some((p) => p.safe && dist(player.state.pos, p) < p.r + 4),
+      noise,
+    })
     this.rot.shot(player)
     if (noise > sv.noise || this.now > sv.noiseUntil) sv.noise = noise
     sv.noiseUntil = this.now + 1.2
@@ -1410,6 +1424,7 @@ export class SurvivalDirector {
     if (tick % 30 === 15) this.populate(alive)
     if (tick % 15 === 11) this.rot.step()
     this.alphas.step()
+    if (tick % 15 === 3) this.firstShot.step()
     this.vehicles.step()
     this.lurkers.step()
     this.workbench.step()
@@ -3113,6 +3128,28 @@ export class SurvivalDirector {
       send: (player, msg) => this.send(player, msg),
       notice: (player, kind, text) => this.notice(player, kind, text),
       broadcast: () => this.game.match.broadcast(),
+    }
+  }
+
+  /** What the first gunshot's lesson (first-shot.ts) gets to do here. */
+  private firstShotHost(): FirstShotHost {
+    const rot = this.rotHost()
+    return {
+      def: () => this.def,
+      random: this.random,
+      now: () => this.now,
+      account: (account) => this.game.saves.account(account),
+      putAccount: (account, key, value) => this.game.saves.putAccount(account, key, value),
+      flocks: () => this.rot.flockList,
+      isAway: (i) => this.rot.isAway(i),
+      scatter: (i) => this.rot.scatter(i),
+      zombies: rot.zombies,
+      spawn: rot.spawn,
+      hidden: (a, b) => !this.game.lineClear(a, b),
+      notice: (id, notice) => {
+        const sv = this.survivors.get(id)
+        if (sv) this.send(sv.player, { type: ServerMsg.Notice, notice })
+      },
     }
   }
 

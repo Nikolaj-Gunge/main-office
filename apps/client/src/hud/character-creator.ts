@@ -255,6 +255,12 @@ export class CharacterCreator {
     return { ...this.look }
   }
 
+  /** Shows this look (picked elsewhere, e.g. at random on a first visit) without reporting it. */
+  setLook(look: Appearance): void {
+    this.look = { ...look }
+    this.refresh()
+  }
+
   /** Shown while the tab is open: the preview only renders then. */
   setActive(active: boolean): void {
     this.preview.setActive(active)

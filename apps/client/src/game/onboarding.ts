@@ -37,6 +37,10 @@ export const HINTS = {
   car: 'E to get in. Engines are loud: they hear you coming.',
   hungry: 'Hungry. Open your pack (Tab) and eat something.',
   board: 'The job board by the gate: E to see who needs a hand.',
+  // Sent by the server after a newcomer's first gunshot (first-shot.ts).
+  gunfire: 'Gunfire carries. They heard that.',
+  // First visit skips the creator: where to change how you look.
+  mirror: 'Not you? Esc → CHARACTER changes how you look.',
 } as const
 export type HintKey = keyof typeof HINTS
 
@@ -121,6 +125,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 export class Onboarding {
   /** Settings → "Hints": off shows none. */
   hintsOn = true
+  /** Joined with a random look (first visit skipped the creator): say where to change it. */
+  offerLook = false
   private readonly def: SurvivalDef
   private readonly audio: AudioEngine
   private readonly card: HTMLDivElement
@@ -176,6 +182,13 @@ export class Onboarding {
     if (isFullNotice(n)) this.pendingFull = true
   }
 
+  /** A hint the server asked for (Notice.hint): shown now, over whatever hint is up. */
+  serverHint(key: HintKey): void {
+    this.sinceHint = HINT_GAP + 1
+    this.hintAge = -1
+    this.show(key)
+  }
+
   /** Shows a hint now (if it's on and not seen before); true if it showed. */
   show(key: HintKey): boolean {
     if (!this.hintsOn || this.seen.has(key)) return false
@@ -226,7 +239,9 @@ export class Onboarding {
         this.pendingFull = false
         this.show('full')
       } else {
-        const key = hintFor(ctx, this.seen)
+        const key =
+          hintFor(ctx, this.seen) ??
+          (this.offerLook && ctx.alive && (ctx.self?.age ?? 0) > 20 ? ('mirror' as const) : null)
         if (key) this.show(key)
       }
     }

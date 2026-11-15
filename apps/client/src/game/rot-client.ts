@@ -70,6 +70,10 @@ export class RotClient {
     if (n.sound === 'birds') {
       if (n.flock !== undefined) this.birds.scatter(n.flock)
       this.audio.playNear('birds', n.at, 1, 400, 18)
+    } else if (n.sound === 'groan') {
+      // Something out there answering your first shot (first-shot.ts): far, low, and a chill.
+      this.audio.playNear('groan', n.at, 1, 160, 14)
+      this.audio.play('dread', { volume: 0.4 })
     } else if (n.sound === 'alarm') {
       this.alarms.push({ at: n.at, until: this.clock + (n.seconds ?? 25), next: this.clock, v: 0 })
     }

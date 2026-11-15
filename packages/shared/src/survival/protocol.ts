@@ -214,10 +214,11 @@ export interface Notice {
   kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note' | 'sound' | 'radio'
   text: string
   /**
-   * `sound` (heard, not shown): birds taking off (flock index in `flock`), a car alarm, or a named
-   * alpha's roar as it charges or leaps (alphas.ts).
+   * `sound` (heard, not shown): birds taking off (flock index in `flock`), a car alarm, a named
+   * alpha's roar as it charges or leaps (alphas.ts), or a groan answering somebody's first
+   * gunshot (first-shot.ts).
    */
-  sound?: 'birds' | 'alarm' | 'roar'
+  sound?: 'birds' | 'alarm' | 'roar' | 'groan'
   /** `radio`: who is on the air (Radio Free Deadwood's DJ, radio.ts on the server). */
   from?: string
   flock?: number
@@ -227,6 +228,8 @@ export interface Notice {
   title?: string
   /** `scream`: where it came from (it is heard, not shown). */
   at?: { x: number; y: number; z: number }
+  /** A one-time hint the client shows as such (onboarding.ts HINTS), not a line in the feed. */
+  hint?: 'gunfire'
 }
 
 /** Something lying in the world to pick up. */
