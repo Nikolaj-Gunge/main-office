@@ -1,3 +1,4 @@
+import type { CampShared } from './camp.ts'
 import type { Bio } from './characters.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
@@ -165,6 +166,8 @@ export interface SurvivalShared {
   horde?: { x: number; z: number; to: string }
   /** Built pieces (building.ts): id, kind, x×10, z×10, turns, battering left, flags, … */
   builds?: number[]
+  /** Haven: Red Night, morale, the gone and the graves (camp.ts). */
+  camp?: CampShared
 }
 
 export type SurvivalAction =

@@ -1,5 +1,6 @@
 import type { MaterialId } from '../maps/types.ts'
 import type { LampOptions, Site } from './kit.ts'
+import { campThings } from './places-camp.ts'
 import { armyTent, cot, drum, fence, logPile, paving, pupTent, sandbags } from './places-kit.ts'
 import { radioBooth } from './places-radio.ts'
 import { crate, table } from './structures.ts'
@@ -38,6 +39,8 @@ export function havenLife(s: Site): void {
   obituaryWall(s, 21.6, 5)
   // Radio Free Deadwood (places-radio.ts).
   radioBooth(s)
+  // The morale board, the donation box and the gate's banner pole (camp.ts).
+  campThings(s)
 }
 
 // --- Parts ------------------------------------------------------------------------------------

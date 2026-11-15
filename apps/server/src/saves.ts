@@ -1,4 +1,5 @@
 import {
+  type CampSave,
   DEFAULT_WORLD_ID,
   type ObitWall,
   type Retired,
@@ -130,6 +131,8 @@ export interface WorldSave {
   turned?: TurnedSave[]
   /** Walls, doors, traps and stash crates people built (survival/building.ts). */
   builds?: SavedPiece[]
+  /** Haven's record: days, Red Nights, morale, who left, graves (camp.ts). Absent in old saves. */
+  camp?: CampSave
 }
 
 /** One of the dead that was one of you, as the world remembers them. */

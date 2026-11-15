@@ -218,6 +218,18 @@ export class Night {
     return this.fog
   }
 
+  /**
+   * Pulls the sky, the fog and the ambient light towards `color` by `k` (0–1), after update
+   * (a Red Night, camp-view.ts). Update sets them afresh each frame, so this never builds up.
+   */
+  tint(color: THREE.Color, k: number): void {
+    if (k <= 0) return
+    this.fog.color.lerp(color, k * 0.3)
+    this.sky?.horizon.lerp(color, k * 0.45)
+    this.sky?.top.lerp(color, k * 0.28)
+    this.hemi.color.lerp(color, k * 0.35)
+  }
+
   /** The weather to light the world for, from the next update on. */
   setWeather(weather: SkyWeather): void {
     this.weather = weather

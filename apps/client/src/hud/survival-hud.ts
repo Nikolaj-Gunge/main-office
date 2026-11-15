@@ -866,6 +866,7 @@ export class SurvivalHud {
     if (!self) return
     this.journal.account = self.notes ?? null
     this.journal.skills = self.skills ?? null
+    this.journal.camp = this.shared?.camp ?? null
     this.journal.draw(
       this.panel,
       self.journal,

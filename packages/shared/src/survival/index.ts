@@ -1,6 +1,7 @@
 export * from './alphas.ts'
 export * from './barricades.ts'
 export * from './building.ts'
+export * from './camp.ts'
 export * from './camp-folk.ts'
 export * from './car-condition.ts'
 export * from './characters.ts'

@@ -147,6 +147,8 @@ export type InteractKind =
   | 'locker'
   /** Haven's obituary wall (legacy.ts): E leaves flowers. */
   | 'obituary'
+  /** Haven's morale board and donation box (camp.ts). */
+  | 'camp'
 
 /** Something in the world you can use with E. */
 export interface Interactable {

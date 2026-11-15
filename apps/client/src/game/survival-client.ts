@@ -27,6 +27,7 @@ import {
   remotePose,
   type ServerMessage,
   ServerMsg,
+  SHOVEL,
   type SurvivalAction,
   type SurvivalDef,
   type SurvivalSelf,
@@ -51,6 +52,7 @@ import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
 import { BuildView } from '../render/builds.ts'
 import { CampFolk } from '../render/camp-folk.ts'
+import { CampView, RED_SKY } from '../render/camp-view.ts'
 import type { Tier, TierSettings } from '../render/device-tier.ts'
 import { EvacView } from '../render/evac-view.ts'
 import { Atmosphere, type FogFrame } from '../render/fog-atmosphere.ts'
@@ -155,6 +157,8 @@ export class SurvivalClient {
   private readonly evac: EvacView
   /** Haven's townsfolk going about their day. */
   private readonly folk: CampFolk
+  /** Haven's banner, morale board, won stalls, graves and Red Night sky (camp-view.ts). */
+  private readonly camp: CampView
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
   readonly weather: WeatherView
   /** The flood, snow falling and lying, footprints (weather-marks.ts). */
@@ -214,6 +218,8 @@ export class SurvivalClient {
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
     this.evac = new EvacView(o.scene, o.audio, o.hudRoot)
     this.folk = new CampFolk(o.def, o.audio)
+    this.camp = new CampView(o.def, o.audio)
+    this.camp.addTo(o.scene)
     o.scene.add(this.folk.root)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
@@ -379,6 +385,8 @@ export class SurvivalClient {
     this.applyBuilds(shared.builds ?? [])
     this.heli.apply(shared.drops)
     this.evac.apply(shared.evac)
+    this.camp.apply(shared.camp)
+    this.folk.setGone(shared.camp?.gone ?? [])
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
     this.rot.setShared(shared.rot)
@@ -440,6 +448,7 @@ export class SurvivalClient {
     this.loot.clear()
     this.heli.clear()
     this.evac.clear()
+    this.camp.clear()
     this.self = null
     this.vehicles.clear()
     this.infection.set(null)
@@ -536,6 +545,8 @@ export class SurvivalClient {
     this.wilds.setFlood(this.marks.flood)
     this.wilds.setSnow(this.marks.snow)
     this.night.update(dt, eye, time, built)
+    this.night.tint(RED_SKY, this.camp.redness(time))
+    this.camp.update(eye)
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
     this.heli.update(dt, eye)
@@ -747,6 +758,10 @@ export class SurvivalClient {
       }
     }
     if (npc) return `Talk to ${npc}`
+    // Crouched with a shovel over a body or at a grave (camp.ts): that comes first.
+    const shovel = countOf(this.self?.inv ?? [], SHOVEL) > 0
+    const dig = this.camp.prompt(state.pos, state.crouched, shovel, true)
+    if (dig) return dig
     let thing: Interactable | null = null
     best = 0.2
     for (const t of this.def.interactables) {
@@ -815,6 +830,8 @@ export class SurvivalClient {
       return `Take ${name}`
     }
     if (thing) return thing.label
+    const grave = this.camp.prompt(state.pos, state.crouched, shovel, false)
+    if (grave) return grave
     const inv = this.self?.inv ?? []
     const car = this.vehicles.prompt(state.pos, (item) => countOf(inv, item) > 0)
     if (car) return car
