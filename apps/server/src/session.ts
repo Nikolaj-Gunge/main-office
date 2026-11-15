@@ -51,6 +51,8 @@ export function createSession(
   /** Hello arrived and their save is being read. */
   let joining = false
   let closed = false
+  /** Their account while they play here (claimed in the saves, see Saves.claim). */
+  let claimed: string | null = null
 
   /** Reads their character (if they have an account) and puts them in the game. */
   async function join(name: string, appearance: number | undefined, token: string | undefined) {
@@ -58,6 +60,8 @@ export function createSession(
     // Already playing in another tab: this one is a guest (one character, one body).
     for (const p of game.players.values()) if (account && p.account === account) account = null
     if (account) await game.saves.loadCharacter(account)
+    // Playing in another world right now (worlds.ts): one character, one body, so a guest here.
+    if (account && game.saves.busyElsewhere(account)) account = null
     if (closed) return
     const id = game.join(
       name,
@@ -71,6 +75,10 @@ export function createSession(
       return
     }
     playerId = id
+    if (account) {
+      claimed = account
+      game.saves.claim(account)
+    }
     moderation.connected(id, { ip, close: (code, reason) => socket.close(code, reason) })
     const joined = game.players.get(id)?.name
     console.log(`[ws] #${id} "${joined}" joined (${game.players.size} online)`)
@@ -158,7 +166,10 @@ export function createSession(
       const id = playerId
       playerId = 0
       moderation.disconnected(id)
+      // Released first, so the save written as they leave says they're no longer here.
+      if (claimed) game.saves.release(claimed)
       game.leave(id)
+      void game.saves.flush()
       console.log(`[ws] #${id} left (${code}, ${game.players.size} online)`)
     },
   }

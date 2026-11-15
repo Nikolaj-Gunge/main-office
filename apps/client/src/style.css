@@ -2862,3 +2862,67 @@ body {
   background: transparent;
   border-color: #3a372c;
 }
+
+/* --- World picker (PLAY tab, survival worlds: world-picker.ts) --------------------------- */
+.world-picker {
+  margin: 10px 0 4px;
+}
+.world-picker-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 6px;
+}
+.world-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.world-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 96px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.world-choice:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.world-choice.chosen {
+  border-color: rgba(230, 190, 120, 0.8);
+  background: rgba(230, 190, 120, 0.12);
+}
+.world-choice.full {
+  opacity: 0.55;
+}
+.world-count {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.world-picker-link {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.world-picker-link[hidden] {
+  display: none;
+}
+.world-picker-link input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}

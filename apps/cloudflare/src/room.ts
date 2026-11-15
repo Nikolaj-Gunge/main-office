@@ -8,10 +8,13 @@ import {
   createPhysicsWorld,
   DEFAULT_MAP_ID,
   DEFAULT_RULES,
+  DEFAULT_WORLD_ID,
   initPhysics,
+  isPrivateWorld,
   loadMap,
   mergeRules,
   TICK_RATE,
+  WORLD_HEADER,
 } from '@office-fps/shared'
 import { vaultStore } from './vault.ts'
 
@@ -25,9 +28,11 @@ const IDLE_PAUSE_MS = 5000
  * once more when the room empties). Each sync is itself a request: 5 min ≈ 0.3% of the budget.
  */
 const BUDGET_SYNC_MS = 5 * 60 * 1000
+/** Joins and leaves within this long are reported to the world list as one head count. */
+const PRESENCE_DELAY_MS = 2000
 
 /**
- * The office room: one Durable Object running the same authoritative `Game` as the Bun server.
+ * A world's room (worlds.ts: one GameRoom instance per world, by name): one Durable Object running the same authoritative `Game` as the Bun server.
  * Lives in memory while anyone is connected; Cloudflare may evict it when the office is empty
  * (scores reset then, which is fine; survival characters and the world are in the vault).
  */
@@ -42,6 +47,10 @@ export class GameRoom extends DurableObject {
   private readonly settings: DurableObjectStub
   private budgetTimer: ReturnType<typeof setInterval> | null = null
   private budgetSyncing = false
+  /** Which world this room runs (the worker says, see worker.ts); its save is read on first use. */
+  private worldId: string | null = null
+  private savesReady: Promise<void> | null = null
+  private presenceTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -89,11 +98,24 @@ export class GameRoom extends DurableObject {
         .then((r) => r.json())
         .catch(() => null)
       this.admin.moderation.loadBans(bans)
-      // Characters and the world live in the vault (after the rules: a mode or map change
-      // starts a new world, which must not wipe the saved one at boot).
-      await this.game.useSaves(vaultStore(env))
       console.log(`[room] map "${this.game.mapId}" ready, ${this.game.spawnPointCount} spawn spots`)
     })
+  }
+
+  /**
+   * Reads this world's save from the vault, once, on the first request (only the worker knows
+   * which world this room is). After the rules: a mode or map change starts a new world, which
+   * must not wipe the saved one at boot. Characters are in the vault too, shared by every world.
+   */
+  private useWorld(game: Game, header: string | null): Promise<void> {
+    if (!this.savesReady) {
+      const worldId = header || DEFAULT_WORLD_ID
+      this.worldId = worldId
+      this.savesReady = game
+        .useSaves(vaultStore(this.env as Env), worldId)
+        .then(() => console.log(`[room] world "${worldId}" loaded`))
+    }
+    return this.savesReady
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -101,6 +123,7 @@ export class GameRoom extends DurableObject {
     const loop = this.loop
     if (!game || !loop || !this.admin) return new Response('Room not ready', { status: 503 })
     this.budget.http()
+    await this.useWorld(game, request.headers.get(WORLD_HEADER))
 
     const { pathname } = new URL(request.url)
     if (pathname.startsWith('/admin/api/')) return this.admin.handle(request)
@@ -109,6 +132,7 @@ export class GameRoom extends DurableObject {
         ok: true,
         // The client builds this map while it loads (saves a reload on join).
         map: game.mapId,
+        world: this.worldId,
         tick: game.tick,
         players: game.players.size,
         connections: this.sockets,
@@ -125,7 +149,11 @@ export class GameRoom extends DurableObject {
     server.binaryType = 'arraybuffer'
     server.accept()
     this.sockets++
-    this.budgetTimer ??= setInterval(() => void this.syncBudget(), BUDGET_SYNC_MS)
+    this.budgetTimer ??= setInterval(() => {
+      void this.syncBudget()
+      this.schedulePresence() // the world list forgets head counts that aren't renewed
+    }, BUDGET_SYNC_MS)
+    this.schedulePresence()
 
     const session = createSession(
       game,
@@ -155,6 +183,7 @@ export class GameRoom extends DurableObject {
       this.sockets--
       session.close(code)
       if (game.players.size === 0) loop.stop()
+      this.schedulePresence()
       if (this.sockets === 0) {
         // Nobody left: save the count now (the room may be evicted) and stop the timer.
         if (this.budgetTimer) clearInterval(this.budgetTimer)
@@ -186,6 +215,36 @@ export class GameRoom extends DurableObject {
       console.warn('[room] budget sync failed:', (err as Error).message)
     } finally {
       this.budgetSyncing = false
+    }
+  }
+
+  /**
+   * Tells the Settings object how many people are here (for the world list), shortly after a
+   * join or leave so a burst is one request. Private worlds aren't listed, so they don't.
+   */
+  private schedulePresence(): void {
+    if (this.presenceTimer || !this.worldId || isPrivateWorld(this.worldId)) return
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null
+      void this.reportPresence()
+    }, PRESENCE_DELAY_MS)
+  }
+
+  private async reportPresence(): Promise<void> {
+    const game = this.game
+    if (!game || !this.worldId) return
+    let players = 0
+    for (const p of game.players.values()) if (!p.zombie && !p.dummy && !p.bot) players++
+    this.budget.http() // this report
+    try {
+      const response = await this.settings.fetch('https://settings/presence', {
+        method: 'POST',
+        body: JSON.stringify({ world: this.worldId, players }),
+      })
+      // The answer is the day's total from every world: keeps the cutoff global between syncs.
+      this.budget.synced((await response.json()) as BudgetCounts | null)
+    } catch (err) {
+      console.warn('[room] presence report failed:', (err as Error).message)
     }
   }
 
