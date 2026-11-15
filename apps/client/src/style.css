@@ -3608,3 +3608,24 @@ body {
   white-space: nowrap;
   text-transform: uppercase;
 }
+
+/* --- Weather that changes the map (weather-marks.ts, weather-world.ts) --- */
+
+/* A horde migrating in the fog: a smudged mark on the compass, never a fix. */
+.sv-compass b.sv-compass-horde {
+  bottom: 14px;
+  opacity: 0.75;
+  color: #b9a37a;
+  font-size: 12px;
+  line-height: 0.7;
+  letter-spacing: -1px;
+}
+
+.sv-compass b.sv-compass-horde::after {
+  content: "?";
+  font-weight: 700;
+}
+
+.sv-compass b.sv-compass-horde::before {
+  content: "≈";
+}

@@ -11,6 +11,9 @@ export const wetUniforms = {
   /** 0 dry … 1 soaked. */
   uWet: { value: 0 },
   uMudColor: { value: new THREE.Color(0x1e1810) },
+  /** Snow lying on the ground, 0 none … 1 covered (weather-effects.ts snowCoverAt). */
+  uSnow: { value: 0 },
+  uSnowColor: { value: new THREE.Color(0xb4bcc8) },
 }
 
 /** The coarse speckle the ground's big patches come from (one ground, one texture). */
@@ -41,7 +44,7 @@ export function wetGroundMaterial(
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying float vMud;\nuniform float uWet;\nuniform vec3 uMudColor;\nuniform sampler2D uPatches;',
+        '#include <common>\nvarying float vMud;\nuniform float uWet;\nuniform vec3 uMudColor;\nuniform sampler2D uPatches;\nuniform float uSnow;\nuniform vec3 uSnowColor;',
       )
       .replace(
         '#include <map_fragment>',
@@ -54,7 +57,10 @@ export function wetGroundMaterial(
         `#include <color_fragment>
         float soak = uWet * (0.55 + 0.45 * vMud);
         diffuseColor.rgb = mix(diffuseColor.rgb, uMudColor, uWet * vMud * 0.45);
-        diffuseColor.rgb *= 1.0 - ${DARKEN.toFixed(2)} * soak;`,
+        diffuseColor.rgb *= 1.0 - ${DARKEN.toFixed(2)} * soak;
+        // Snow settles in patches first (the big texture pattern), then covers everything.
+        float drift = texture2D(map, vMapUv * 0.05 + vec2(0.11, 0.83)).g;
+        diffuseColor.rgb = mix(diffuseColor.rgb, uSnowColor, clamp(uSnow * 1.6 - drift * 0.6, 0.0, 1.0) * 0.92);`,
       )
       .replace(
         '#include <specularmap_fragment>',

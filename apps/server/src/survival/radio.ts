@@ -130,6 +130,10 @@ export const WEATHER_LINES: Record<WeatherKind, string[]> = {
     'Rain coming down hard. Covers your footsteps. Covers theirs too.',
     'Proper rain now. Wet and cold kills slower than teeth, but it kills. Find a roof.',
   ],
+  snow: [
+    'Snow coming down over Deadwood. Pretty, till you see the tracks in it. Theirs and yours.',
+    'Snow on the ridge and settling. Everything you walk leaves a trail. So does everything else.',
+  ],
   storm: [
     "Storm's on top of us. Stay indoors if you've got a door.",
     'Thunder over the valley. Every flash, look round. Every time.',

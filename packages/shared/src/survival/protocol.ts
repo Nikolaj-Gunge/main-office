@@ -158,6 +158,11 @@ export interface SurvivalShared {
   evac?: EvacShared
   /** Who wears an armband or the Oathbreaker mark (pvp.ts packStanding); absent = nobody. */
   standing?: number[]
+  /**
+   * A horde on the move in the fog (weather-world.ts): roughly where the radio says it is (a
+   * rumour, not a fix) and the place it is heading for.
+   */
+  horde?: { x: number; z: number; to: string }
 }
 
 export type SurvivalAction =

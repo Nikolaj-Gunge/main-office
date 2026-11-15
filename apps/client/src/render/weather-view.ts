@@ -12,6 +12,7 @@ import {
   WEATHER_PRESETS,
   type Weather,
   type WeatherKind,
+  type WeatherPast,
   type WeatherShared,
   weatherAt,
 } from '@office-fps/shared'
@@ -417,6 +418,14 @@ export class WeatherView {
   get clock(): number {
     if (!this.shared) return 0
     return this.shared.clock + (performance.now() - this.sharedAt) / 1000
+  }
+
+  /** What the weather has been, up to now (for floods and snow: weather-effects.ts), or null. */
+  past(): WeatherPast | null {
+    if (this.force) return { seed: 0, clock: this.clock, holds: [{ kind: this.force, from: 0 }] }
+    if (!this.shared) return null
+    const { seed, pin, holds } = this.shared
+    return { seed, clock: this.clock, ...(pin ? { pin } : {}), ...(holds ? { holds } : {}) }
   }
 
   private get pin(): WeatherKind | undefined {

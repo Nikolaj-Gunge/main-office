@@ -43,6 +43,9 @@ export interface TierSettings {
   leaves: number
   /** World surfaces' pixel texture density (texels a metre, see textures.ts setTexelDensity). */
   texelsPerMeter: number
+  /** Snowflakes around you in a cold spell, and footprints in the snow at once. */
+  snowflakes: number
+  footprints: number
 }
 
 /** High is the game as it was before tiers. */
@@ -65,6 +68,8 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     campLamps: 9,
     leaves: 260,
     texelsPerMeter: 32,
+    snowflakes: 900,
+    footprints: 420,
   },
   medium: {
     shadowMap: 2048,
@@ -84,6 +89,8 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     campLamps: 7,
     leaves: 180,
     texelsPerMeter: 32,
+    snowflakes: 550,
+    footprints: 260,
   },
   low: {
     shadowMap: 1024,
@@ -103,6 +110,8 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     campLamps: 4,
     leaves: 90,
     texelsPerMeter: 16,
+    snowflakes: 260,
+    footprints: 120,
   },
 }
 
