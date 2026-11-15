@@ -47,6 +47,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
+import { ChalkPick } from '../hud/chalk-pick.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { TraitPick } from '../hud/trait-pick.ts'
 import { Avatar } from '../render/avatar.ts'
@@ -54,9 +55,11 @@ import { BarricadeView } from '../render/barricades.ts'
 import { BuildView } from '../render/builds.ts'
 import { CampFolk } from '../render/camp-folk.ts'
 import { CampView, RED_SKY } from '../render/camp-view.ts'
+import { ChalkMarks } from '../render/chalk-marks.ts'
 import type { Tier, TierSettings } from '../render/device-tier.ts'
 import { EvacView } from '../render/evac-view.ts'
 import { Atmosphere, type FogFrame } from '../render/fog-atmosphere.ts'
+import { HavenGateView } from '../render/haven-gate-view.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
@@ -164,6 +167,11 @@ export class SurvivalClient {
   private readonly camp: CampView
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
   readonly weather: WeatherView
+  /** Haven's gate on its chain, and the winch (haven-gate-view.ts). */
+  private readonly gate: HavenGateView
+  /** Chalk marks left for strangers, and L's picker (chalk-marks.ts, chalk-pick.ts). */
+  private readonly chalk: ChalkMarks
+  readonly chalkPick: ChalkPick
   /** The flood, snow falling and lying, footprints (weather-marks.ts). */
   readonly marks: WeatherMarks
   private readonly projected = new THREE.Vector3()
@@ -224,6 +232,11 @@ export class SurvivalClient {
     this.camp = new CampView(o.def, o.audio)
     this.camp.addTo(o.scene)
     o.scene.add(this.folk.root)
+    this.gate = new HavenGateView(o.def, this.mapObject, o.audio)
+    o.scene.add(this.gate.root)
+    this.chalk = new ChalkMarks()
+    o.scene.add(this.chalk.root)
+    this.chalkPick = new ChalkPick(o.hudRoot, o.send)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
     this.marks = new WeatherMarks(o.def)
@@ -338,6 +351,8 @@ export class SurvivalClient {
         if (!msg.self.legacy && this.self?.legacy) msg.self.legacy = this.self.legacy
         if (!msg.self.wall && this.self?.wall) msg.self.wall = this.self.wall
         if (msg.self.wall) this.obituary.set(msg.self.wall)
+        // The chalk marks come only when they change.
+        if (msg.self.chalk) this.chalk.set(msg.self.chalk)
         this.self = msg.self
         this.infection.set(msg.self.infected ?? null)
         this.rot.setInfected((msg.self.infected ?? null) !== null)
@@ -398,6 +413,7 @@ export class SurvivalClient {
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
     this.rot.setShared(shared.rot)
+    this.gate.apply(shared)
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -426,6 +442,12 @@ export class SurvivalClient {
   }
 
   /** H: into build mode (or the next kit, or out of it). */
+  /** L: the chalk picker (not from a car, nor dead). */
+  toggleChalk(): void {
+    if (this.vehicles.seated) return
+    this.chalkPick.toggle()
+  }
+
   toggleBuild(): void {
     const why = this.building.toggle(this.self)
     if (why) this.hud.notice({ kind: 'warn', text: why })
@@ -611,6 +633,9 @@ export class SurvivalClient {
     }
 
     this.folk.update(dt, time, eye, state.pos)
+    if (this.gate.update(dt, eye)) this.night.shadowsDirty = true
+    this.chalk.update(eye)
+    if (!state.alive) this.chalkPick.close()
     this.moveWalkers(dt, eye)
     if (!state.alive || this.vehicles.seated) this.building.stop()
     const ghost = this.building.update(

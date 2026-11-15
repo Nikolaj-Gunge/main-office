@@ -355,8 +355,16 @@ describe('bandits in a running game', () => {
     run(4)
     const later = Math.hypot(lead.state.pos.x, lead.state.pos.z - 480)
     expect(later).toBeLessThan(start)
-    // One gets to the gate: the stores are robbed.
+    // One gets to the gate. At night it is shut (haven-gate.ts): they can't get in.
     const gate = RAID_ROAD[RAID_ROAD.length - 1] as Point
+    lead.state.pos = { x: gate.x, y: lead.state.pos.y, z: gate.z }
+    expect(director.gate.shut).toBe(true)
+    director.bandits.tick()
+    expect(director.bandits.raiding?.stole).toBe(false)
+    expect(insides.rare.size).toBe(1)
+    // By day it stands open: the stores are robbed.
+    director.setTime(0.6)
+    run(0.1)
     lead.state.pos = { x: gate.x, y: lead.state.pos.y, z: gate.z }
     director.bandits.tick()
     expect(director.bandits.raiding?.stole).toBe(true)

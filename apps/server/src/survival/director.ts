@@ -35,6 +35,9 @@ import {
   gearLooks,
   give,
   groundAt,
+  HAVEN_CRANK_KEY,
+  HAVEN_GATE,
+  HAVEN_KNOCK_KEY,
   type Held,
   hearingScale,
   heightAt,
@@ -127,11 +130,13 @@ import { type AlphaHost, Alphas } from './alphas.ts'
 import { type BanditHost, Bandits } from './bandits.ts'
 import { BASH_BASE, type BuildHost, Building } from './building.ts'
 import { Camp } from './camp.ts'
+import { aimChalk, Chalk } from './chalk.ts'
 import { DawnDesk } from './dawn-report.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { type FirstShotHost, FirstShotLesson } from './first-shot.ts'
+import { HavenGate } from './haven-gate.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { causeOfDeath, LegacyKeeper } from './legacy.ts'
 import { type LurkerHost, Lurkers } from './lurkers.ts'
@@ -474,6 +479,38 @@ export class SurvivalDirector {
       },
       crouched: (p) => p.player.state.crouched,
     })
+    this.gate = new HavenGate({
+      now: () => this.now,
+      time: () => this.time,
+      haven: () => {
+        const h = this.def?.pois.find((p) => p.key === 'haven')
+        return h ? { x: h.x, y: h.y, z: h.z } : null
+      },
+      people: () => [...this.survivors.values()].map((sv) => sv.player),
+      zombies: () => this.pool.filter((z) => z.state.alive),
+      setOpen: () => {
+        this.game.setGates(this.allGates())
+        this.game.match.broadcast()
+      },
+      broadcast: () => this.game.match.broadcast(),
+      alert: (at, metres) => this.alarm(at, metres),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    })
+    this.chalk = new Chalk({
+      now: () => this.now,
+      clock: () => Date.now(),
+      aim: (player) => aimChalk(this.game.world.physics, player.state),
+      owner: (player) => player.account ?? `name:${player.name}`,
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      changed: () => {
+        for (const sv of this.survivors.values()) sv.dirty = true
+      },
+    })
+  }
+
+  /** The story's gates, and Haven's while it is up. */
+  private allGates(): number {
+    return this.gates | (this.gate.open ? 1 << HAVEN_GATE : 0)
   }
 
   /** Radio Free Deadwood: the news, read out to whoever has a radio on (radio.ts). */
@@ -487,6 +524,12 @@ export class SurvivalDirector {
 
   /** Haven's Red Nights, its morale, the people who leave, and graves (see camp.ts). */
   readonly camp: Camp
+
+  /** Haven's gate: shut at night, wound up on the winch (see haven-gate.ts). */
+  readonly gate: HavenGate
+
+  /** Chalk marks left for strangers (see chalk.ts). */
+  readonly chalk: Chalk
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
   readonly evac: Evac
@@ -644,7 +687,7 @@ export class SurvivalDirector {
     this.camp.reset()
     this.found = new Set()
     this.gates = 0
-    this.game.setGates(0)
+    this.game.setGates(this.allGates())
     this.clearBoards()
     // A new world: the saved one starts over, and every character with it (saves.ts).
     this.game.saves.newWorld()
@@ -718,6 +761,8 @@ export class SurvivalDirector {
     this.vehicles.leave(player)
     if (player.npc) return void this.bandits.forget(player)
     this.pvp.forget(player)
+    this.gate.forget(player)
+    this.chalk.forget(player)
     if (player.zombie) {
       // One of the dead gave up its place to somebody joining: forget it (its body is gone).
       this.pool = this.pool.filter((z) => z !== player)
@@ -833,6 +878,7 @@ export class SurvivalDirector {
       camp: this.camp.save(),
       nights: this.dawnDesk.nights,
       ...(this.dawnDesk.report ? { dawn: this.dawnDesk.report } : {}),
+      marks: this.chalk.save(),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -857,8 +903,9 @@ export class SurvivalDirector {
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
-    this.gates |= w.gates
-    this.game.setGates(this.gates)
+    this.gates |= w.gates & ~(1 << HAVEN_GATE)
+    this.game.setGates(this.allGates())
+    this.chalk.restore(w.marks)
     for (const [i, planks] of w.boards)
       if (this.def.spots[i] && planks > 0)
         this.boards.set(i, Math.min(planks, MAX_PLANKS) * PLANK_HP)
@@ -1439,6 +1486,7 @@ export class SurvivalDirector {
       this.radio.tick()
       this.weatherWorld.second()
       this.bandits.tick()
+      if (tick % (60 * TICK_RATE) === 0) this.chalk.prune()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
@@ -1450,6 +1498,7 @@ export class SurvivalDirector {
     this.vehicles.step()
     this.lurkers.step()
     this.workbench.step()
+    this.gate.step(TICK_DT)
     this.story.step(TICK_DT)
     // Somebody walking with you is kept up to date often enough to look like walking.
     if (this.story.moving && tick % 12 === 3) this.game.match.broadcast()
@@ -1466,7 +1515,9 @@ export class SurvivalDirector {
       this.fieldNotes.attach(sv)
       if (!sv.dirty) continue
       sv.dirty = false
-      this.send(sv.player, { type: ServerMsg.Survival, self: this.legacy.outgoing(sv) })
+      const self = this.legacy.outgoing(sv)
+      this.chalk.attach(sv.player, self)
+      this.send(sv.player, { type: ServerMsg.Survival, self })
     }
   }
 
@@ -2017,6 +2068,8 @@ export class SurvivalDirector {
       return void this.story.board(sv)
     }
     if (thing.key === EVAC_RADIO_KEY) return void this.evac.use(sv)
+    if (thing.key === HAVEN_CRANK_KEY) return void this.gate.use(player)
+    if (thing.key === HAVEN_KNOCK_KEY) return void this.gate.knock(player)
     if (thing.kind === 'obituary') return void this.legacy.flowers(sv)
     if (thing.kind === 'camp') return void this.camp.use(sv, thing.key)
     if (thing.kind === 'locker') {
@@ -2140,6 +2193,10 @@ export class SurvivalDirector {
         return
       case 'trait':
         return void this.legacy.pick(sv, action.id)
+      case 'chalk':
+        if (this.vehicles.seatOf(player)) return
+        this.chalk.write(player, action.sym, action.word, action.place)
+        return
       case 'build':
         if (this.vehicles.seatOf(player)) return
         this.building.place(
@@ -3119,7 +3176,7 @@ export class SurvivalDirector {
       wake: (key) => this.wake(key),
       openGate: (i) => {
         this.gates |= 1 << i
-        this.game.setGates(this.gates)
+        this.game.setGates(this.allGates())
       },
       reveal: () => {
         this.def.pois.forEach((p, i) => {
@@ -3257,6 +3314,7 @@ export class SurvivalDirector {
       notice: (player, kind, text) => this.notice(player, kind, text),
       noticeAll: (kind, text) => this.noticeAll(kind, text),
       steal: () => this.rare.clear(),
+      gateShut: () => this.gate.shut,
       raidable: () => {
         const haven = this.def.pois.find((p) => p.key === 'haven')
         return !haven || !this.story.besieged(haven)
@@ -3344,9 +3402,11 @@ export class SurvivalDirector {
   // --- Telling people ------------------------------------------------------------------------
 
   info(): SurvivalShared {
+    const crank = this.gate.shown()
     return {
       time: this.time,
-      gates: this.gates,
+      gates: this.allGates(),
+      ...(crank ? { crank } : {}),
       ...this.story.shared(),
       ...this.evacShared(),
       ...this.campShared(),

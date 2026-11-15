@@ -9,6 +9,7 @@ import {
   type WeaponId,
 } from '@office-fps/shared'
 import type { SavedPiece } from './survival/building.ts'
+import type { ChalkSave } from './survival/chalk.ts'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -138,6 +139,8 @@ export interface WorldSave {
    * older saves: night 1, no report). */
   nights?: number
   dawn?: DawnReport
+  /** Chalk marks left for strangers (survival/chalk.ts); absent in older saves. */
+  marks?: ChalkSave[]
 }
 
 /** One of the dead that was one of you, as the world remembers them. */

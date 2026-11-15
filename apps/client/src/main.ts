@@ -11,6 +11,7 @@ import {
   DebugFlag,
   type GameRules,
   goalZones,
+  HAVEN_GATE,
   HitZone,
   INFECTED_SPEED,
   InputBatcher,
@@ -275,11 +276,11 @@ const survival =
 /** A survival screen that needs the mouse is open (backpack, shop): the menu stays away. */
 let uiOpen = false
 /** Which of those is open: the survival HUD's screens and the trade window come and go apart. */
-const modals = { hud: false, trade: false }
+const modals = { hud: false, trade: false, chalk: false }
 function setModal(which: keyof typeof modals, open: boolean): void {
   modals[which] = open
   const was = uiOpen
-  uiOpen = modals.hud || modals.trade
+  uiOpen = modals.hud || modals.trade || modals.chalk
   if (uiOpen) document.exitPointerLock()
   // Only once the last one closes (closing the backpack mid-trade mustn't grab the mouse back),
   // and not over the Esc menu if that's up.
@@ -287,6 +288,7 @@ function setModal(which: keyof typeof modals, open: boolean): void {
 }
 if (survival) {
   survival.hud.onModalChange = (open) => setModal('hud', open)
+  survival.chalkPick.onModalChange = (open) => setModal('chalk', open)
   survival.hud.onSound = (cue) => {
     if (cue === 'open' || cue === 'close')
       audio.play('reload.in', { bus: 'ui', volume: 0.3, rate: cue === 'open' ? 1.3 : 1 })
@@ -613,7 +615,9 @@ function syncCoop(next: MatchInfo) {
     setGates(physics, isOpen)
     ragdolls.setGates(isOpen)
     for (const child of mapObject.children) {
-      if (child.name.startsWith('gate:')) child.visible = !isOpen(Number(child.name.slice(5)))
+      // Haven's gate rises on its chain instead (haven-gate-view.ts).
+      if (child.name.startsWith('gate:') && child.name !== `gate:${HAVEN_GATE}`)
+        child.visible = !isOpen(Number(child.name.slice(5)))
     }
     pixels.shadows.needsUpdate = true
   }
@@ -878,7 +882,8 @@ window.addEventListener('keydown', (e) => {
   const surviving = survival !== null && joined && match?.mode === 'survival'
   if (surviving && e.code === 'Escape' && party.cancelTrade()) return
   if (surviving && survival && !menu.visible && !party.trade.open) {
-    // The backpack, the shop, the map and conversations get first go at every key.
+    // The chalk picker (L), then the backpack, the shop, the map and conversations get first go.
+    if (survival.chalkPick.key(e.code)) return e.preventDefault()
     if (e.code === 'Escape' ? survival.hud.close() : survival.hud.key(e.code)) {
       e.preventDefault()
       if (!e.repeat && (action === 'scoreboard' || action === 'inventory'))
@@ -897,6 +902,7 @@ window.addEventListener('keydown', (e) => {
       if (action === 'trade') return party.askTrade(facingPlayer())
       // Build mode (build-mode.ts): H in and through the kits, R turns the ghost, E puts it up.
       if (action === 'build') return survival.toggleBuild()
+      if (action === 'chalk') return survival.toggleChalk()
       if (survival.building.active && action === 'reload') return survival.building.rotate()
       if (survival.building.active && action === 'use') return survival.building.place()
     }

@@ -1,4 +1,5 @@
 import type { MaterialId } from '../maps/types.ts'
+import { HAVEN_CRANK, HAVEN_CRANK_KEY, HAVEN_GATE, HAVEN_KNOCK_KEY } from './haven-gate.ts'
 import type { LootTable } from './items.ts'
 import type { Site } from './kit.ts'
 
@@ -346,6 +347,41 @@ function jobBoard(s: Site, x: number, z: number): void {
   s.interact('haven_jobs', 'board', x + 0.1, 1.3, z, 'Read the job board')
 }
 
+/**
+ * Haven's gate (haven-gate.ts): planks on two cross-beams that rise on a chain, and the winch
+ * that lifts it, just inside to the east. The gate's boxes are all gate HAVEN_GATE: shut, they
+ * are solid; open, the colliders go and the client lifts them.
+ */
+function havenGate(s: Site, R: number, width: number): void {
+  const flag = { gate: HAVEN_GATE }
+  const boards = 5
+  const w = width / boards
+  for (let i = 0; i < boards; i++) {
+    const x = -width / 2 + w * (i + 0.5)
+    s.block(x, 0, -R, w - 0.04, i % 2 ? 3.3 : 3.45, 0.3, 'wood', flag)
+  }
+  // Cross-beams on the inside, and iron straps on the outside (drawn only: part of the gate).
+  for (const y of [0.6, 2.5]) {
+    s.block(0, y, -R + 0.22, width - 0.1, 0.24, 0.14, 'log', { ...flag, collide: false })
+    s.block(0, y + 0.04, -R - 0.17, width - 0.3, 0.12, 0.04, 'rust', { ...flag, collide: false })
+  }
+  s.interact(HAVEN_KNOCK_KEY, 'lever', 0, 1.5, -R - 0.6, 'Bang on the gate')
+
+  // The winch: two posts, a drum of logs with chain wound on, a crank (the client turns it).
+  const [cx, cz] = HAVEN_CRANK
+  for (const e of [-1, 1]) s.block(cx + e * 0.5, 0, cz, 0.18, 1.3, 0.18, 'log')
+  s.block(cx, 0, cz, 1.25, 0.12, 0.5, 'wood')
+  s.deco(cx, 0.92, cz, 0.84, 0.3, 0.3, 'log')
+  for (const dx of [-0.25, 0, 0.25]) s.deco(cx + dx, 0.9, cz, 0.08, 0.34, 0.34, 'metal')
+  // The chain: up from the drum to a pulley under the walkway, along it, down to the gate's top.
+  const pulley = 3.5
+  s.deco(cx - 0.3, 1.07, cz - 0.05, 0.06, pulley - 1.07, 0.06, 'metal')
+  s.deco(cx - 0.3, pulley - 0.12, cz - 0.05, 0.2, 0.2, 0.2, 'rust')
+  s.deco((cx - 0.3 + 0.6) / 2, pulley - 0.05, -R + 0.05, cx - 0.3 - 0.6, 0.05, 0.05, 'metal')
+  s.deco(cx - 0.3, pulley - 0.05, (cz - 0.05 - R) / 2, 0.05, 0.05, Math.abs(cz + R), 'metal')
+  s.interact(HAVEN_CRANK_KEY, 'lever', cx + 0.7, 1, cz, 'Turn the winch (hold E)')
+}
+
 export function haven(s: Site): void {
   const R = 30
   // Palisade: log walls on four sides, a gate to the north (towards the road).
@@ -363,7 +399,8 @@ export function haven(s: Site): void {
   }
   s.block(0, 3.6, -R, gate + 1.8, 0.2, 1.2, 'wood')
   s.label(0, 5.2, -R, 'HAVEN')
-  s.npc('ortiz', 'Ortiz', 'guard', gate / 2 + 1.6, -R + 2, 0, 5)
+  havenGate(s, R, gate)
+  s.npc('ortiz', 'Ortiz', 'guard', gate / 2 + 2.6, -R + 2.2, 0, 5)
   jobBoard(s, -4.6, -16)
 
   // The bonfire, and a ring of seats round it (HAVEN_SEATS), open to the north towards Mara.
