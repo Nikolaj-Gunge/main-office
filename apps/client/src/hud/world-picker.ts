@@ -9,11 +9,13 @@ import {
 
 /** How often the menu refreshes the head counts while it's open (each is a metered request). */
 const REFRESH_MS = 30_000
+/** How soon a list that never came (a timeout under load, a server restarting) is asked again. */
+const RETRY_MS = 5_000
 
 /** The world list (GET /worlds), or null if the server doesn't have one (older server). */
 export async function fetchWorlds(): Promise<WorldsReply | null> {
   try {
-    const response = await fetch('/worlds', { signal: AbortSignal.timeout(3000) })
+    const response = await fetch('/worlds', { signal: AbortSignal.timeout(5000) })
     if (!response.ok) return null
     const body = (await response.json()) as WorldsReply
     return Array.isArray(body.worlds) && typeof body.pick === 'string' ? body : null
@@ -92,9 +94,11 @@ export class WorldPicker {
     this.apply()
     void this.refresh()
     setInterval(() => {
-      if (this.isOpen() && !this.joined && document.visibilityState === 'visible') {
-        if (performance.now() - this.lastFetch > REFRESH_MS) void this.refresh()
-      }
+      if (!this.isOpen() || document.visibilityState !== 'visible') return
+      const since = performance.now() - this.lastFetch
+      // No list yet: keep asking (joined or not), or the world buttons never show. Once there is
+      // one, the counts refresh only before joining (each request is metered).
+      if (!this.reply ? since > RETRY_MS : !this.joined && since > REFRESH_MS) void this.refresh()
     }, 1000)
   }
 
