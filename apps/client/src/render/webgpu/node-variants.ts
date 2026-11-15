@@ -105,7 +105,7 @@ export function installNodeVariants(renderer: WebGPURenderer): void {
       ) {
         let sky = skies.get(material)
         if (!sky) {
-          sky = skyNodeMaterial(u as Parameters<typeof skyNodeMaterial>[0])
+          sky = skyNodeMaterial(u as unknown as Parameters<typeof skyNodeMaterial>[0])
           skies.set(material, sky)
         }
         return sky

@@ -10,6 +10,15 @@ import {
 import * as THREE from 'three'
 import { cascadeReaches, cascadeStep, snapToTexel } from './cascades.ts'
 import { flickerLevel } from './lighting.ts'
+import {
+  applyGrade,
+  colourScript,
+  moonDirection,
+  moonLit,
+  moonPhase,
+  type NightSkyUniforms,
+  updateNightSky,
+} from './sky-night.ts'
 import { hangingLightPos, wind } from './wind.ts'
 
 /**
@@ -104,6 +113,8 @@ export class Night {
   private readonly hemi: THREE.HemisphereLight
   /** × the dark's ambient light (Night Owl, legacy.ts: a little more); full day is unchanged. */
   vision = 1
+  /** World days since it began (CampShared.day): the moon's phase. */
+  worldDay = 0
   private readonly moon: THREE.DirectionalLight
   private readonly moonDir: THREE.Vector3
   private readonly lights: readonly MapLight[]
@@ -125,6 +136,9 @@ export class Night {
   private readonly lightDir = new THREE.Vector3()
   private readonly shadowDir = new THREE.Vector3()
   private readonly sky: { top: THREE.Color; horizon: THREE.Color } | null
+  /** The dome's moon and stars (sky-night.ts), when it has them. */
+  private readonly nightSky: NightSkyUniforms | null
+  private readonly grade = colourScript(0)
   private sinceLamps = 1
   /** Lamps count for less in daylight. */
   private lampLevel = 1
@@ -170,6 +184,7 @@ export class Night {
           horizon: uniforms.horizonColor?.value as THREE.Color,
         }
       : null
+    this.nightSky = uniforms?.moonDir ? (uniforms as unknown as NightSkyUniforms) : null
   }
 
   /** What the device tier allows: shadow maps and cascades, lamps, how far the haze lifts. */
@@ -228,6 +243,8 @@ export class Night {
     this.sky?.horizon.lerp(color, k * 0.45)
     this.sky?.top.lerp(color, k * 0.28)
     this.hemi.color.lerp(color, k * 0.35)
+    // A blood moon.
+    this.nightSky?.moonColor.value.lerp(color, k * 0.55)
   }
 
   /** The weather to light the world for, from the next update on. */
@@ -248,15 +265,19 @@ export class Night {
     const w = this.weather
     // Cloud hides the moon and dims the sun; rain greys everything; lightning lights it all up.
     const grey = Math.min(1, w.cloud * 0.6 + w.rain * 0.4)
+    // A full moon lights the night a little more, a new moon leaves the darkest nights of all.
+    const lit = moonLit(moonPhase(this.worldDay))
+    const moonlight = 1 + (0.6 + 0.55 * lit - 1) * (1 - day)
     this.hemi.intensity =
       mix(this.base.ambientIntensity, DAY.ambient, day) *
         (1 - w.rain * 0.2) *
-        (1 + (this.vision - 1) * (1 - day)) +
+        (1 + (this.vision - 1) * (1 - day)) *
+        (1 + (0.9 + 0.16 * lit - 1) * (1 - day)) +
       w.flash * 2.2
     this.hemi.color.copy(this.darkHemiSky).lerp(DAY.hemiSky, day)
     this.hemi.groundColor.copy(this.darkHemiGround).lerp(DAY.hemiGround, day)
     this.moon.intensity =
-      mix(this.base.sunIntensity * MOON, DAY.sunIntensity, day) * (1 - w.cloud * 0.55) +
+      mix(this.base.sunIntensity * MOON * moonlight, DAY.sunIntensity, day) * (1 - w.cloud * 0.55) +
       w.flash * 4.5
     this.moon.color
       .copy(this.moonColor)
@@ -286,7 +307,20 @@ export class Night {
       .lerp(this.fog.color, w.fog * 0.7)
       .lerp(FLASH_SKY, w.flash * 0.75)
 
-    // The sun crosses from east to west by day; at night the moon hangs where the map put it.
+    // The colour script (sky-night.ts): dusk amber, blue night, grey before dawn, warm dawn.
+    // Overcast and fog wash it out; a Red Night (tint) goes on top.
+    const g = colourScript(u, this.grade)
+    const graded = (1 - grey * 0.6) * (1 - w.fog * 0.6) * (1 - w.flash)
+    applyGrade(this.fog.color, g, graded)
+    if (this.sky) {
+      this.sky.horizon.copy(this.fog.color)
+      applyGrade(this.sky.top, g, graded * 0.75)
+    }
+    applyGrade(this.hemi.color, g, graded * 0.5)
+    if (this.nightSky) updateNightSky(this.nightSky, u, day, this.worldDay, w)
+
+    // The sun crosses from east to west by day; at night the moon does (sky-night.ts).
+    moonDirection(u, this.moonDir)
     const p = sunProgress(u)
     if (day > 0.02 && p > 0 && p < 1) {
       const elevation = Math.sin(p * Math.PI) * 0.95 + 0.12

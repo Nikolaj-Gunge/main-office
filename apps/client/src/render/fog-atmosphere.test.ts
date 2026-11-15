@@ -92,4 +92,13 @@ describe('Atmosphere', () => {
     expect(a.frame.density).toBeGreaterThan(plain)
     expect(a.frame.base).toBeCloseTo(-1.5)
   })
+
+  test('mist over water glows a little at night, even under full cloud, not by day', () => {
+    const a = new Atmosphere(() => 0, [])
+    a.setTier('medium')
+    a.update(0.016, new THREE.Vector3(), { ...inputs(0), weather: { cloud: 1, rain: 0, fog: 0 } })
+    expect(a.frame.lakeGlow.b).toBeGreaterThan(0.01)
+    a.update(0.016, new THREE.Vector3(), { ...inputs(0), day: 1 })
+    expect(a.frame.lakeGlow.b).toBe(0)
+  })
 })

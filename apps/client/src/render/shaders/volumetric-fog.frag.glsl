@@ -15,6 +15,7 @@ uniform float mistHeight;
 uniform float far;
 uniform float time;
 uniform vec3 mistColor;
+uniform vec3 lakeGlow;       // extra light in the mist over water (it reads even on a black night)
 uniform vec4 lakes[2];       // x, z, radius (0: none), water height
 uniform vec3 moonDir;        // towards the moon
 uniform vec3 moonLight;
@@ -43,6 +44,8 @@ float bayer(vec2 fragCoord) {
 // Halos come in this many hard steps (dithered at their edges): pixel art, not a soft glow.
 const float BANDS = 5.0;
 
+float lakeMist = 0.0;        // mistAt's share over water, for the last point asked about
+
 float mistAt(vec3 p) {
   // Thick below the mist line (hollows), thinning above it.
   float h = min(3.0, exp(-(p.y - mistBase) / mistHeight));
@@ -55,6 +58,7 @@ float mistAt(vec3 p) {
   }
   // Slow banks drifting through.
   float drift = 0.7 + 0.3 * sin(p.x * 0.045 + time * 0.08) * sin(p.z * 0.039 - time * 0.06);
+  lakeMist = lake / (h + lake + 1e-4);
   return density * (h + lake) * drift;
 }
 
@@ -102,7 +106,7 @@ void main() {
     vec3 p = camPos + rd * t;
     float sigma = mistAt(p);
     if (sigma <= 0.0) continue;
-    vec3 lit = mistColor;
+    vec3 lit = mistColor + lakeGlow * lakeMist;
 #ifdef SHAFTS
     lit += moonLight * phase * moonVisible(p) * shafts;
 #endif
@@ -124,10 +128,16 @@ void main() {
     float seen = (atan((stop - tc) / h) - atan(-tc / h)) / 3.14159;
     // ... a tight core falling off with distance from the ray, thicker in thicker mist.
     float thick = clamp(max(mistAt(lp), density * 0.6) / 0.02, 0.3, 2.0);
-    // Halos stay a few metres across, and a lamp right by your head doesn't fill the view.
+    // Halos stay a few metres across, and a lamp right by your head doesn't fill the view: close
+    // up the halo shrinks with the distance, and one below your eye (a fire at your feet, a
+    // lantern on a table) fades out sooner, so it doesn't stand in front of you as a bright block.
     float away = distance(lp, camPos);
-    float fade = (1.0 - smoothstep(lampPos[i].w * 0.6, lampPos[i].w, away)) * smoothstep(2.0, 6.0, away);
-    float f = seen * min(4.0, pow(0.6 / h, 1.6)) * (1.0 - smoothstep(1.0, 3.0, h)) * thick * 0.6 * fade;
+    float below = clamp((camPos.y - lp.y - 0.3) / 1.2, 0.0, 1.0);
+    float fade = (1.0 - smoothstep(lampPos[i].w * 0.6, lampPos[i].w, away))
+      * smoothstep(3.0, 8.0, away)
+      * mix(1.0, smoothstep(7.0, 16.0, away), below);
+    float reach = clamp(away * 0.22, 0.8, 3.0);
+    float f = seen * min(4.0, pow(0.6 / h, 1.6)) * (1.0 - smoothstep(reach * 0.35, reach, h)) * thick * 0.6 * fade;
     f = min(1.0, floor(min(f, 1.0) * BANDS + b) / BANDS);
     light += lampLight[i] * f;
   }

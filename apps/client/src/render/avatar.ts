@@ -29,6 +29,7 @@ import {
 import { gearBodies, lowerBody, showsUnder } from './gear-looks.ts'
 import { createLabel } from './labels.ts'
 import { build, defaultOutfit, lookFor, type Outfit, personBody, undeadSkin } from './person.ts'
+import { torchCaster } from './torch-shadow.ts'
 import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zombie-bodies.ts'
 
 /**
@@ -136,7 +137,8 @@ const gunGeometry = Object.fromEntries(
 function part(geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0) {
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.set(x, y, z)
-  mesh.castShadow = false
+  // No moon shadow (its maps are drawn seldom), but your torch's beam throws one.
+  torchCaster(mesh)
   return mesh
 }
 

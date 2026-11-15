@@ -101,6 +101,7 @@ import { setMapOutfit } from './render/person.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures, setTexelDensity } from './render/textures.ts'
+import { allowTorchShadows } from './render/torch-shadow.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
 import { WorldItemsView } from './render/world-items.ts'
@@ -155,6 +156,8 @@ const pixels = await createGameRenderer(
 const canvas = pixels.canvas
 // Cascaded shadows are a patch to the WebGL shaders: the WebGPU path keeps one map.
 allowCascades(pixels.backend === 'webgl')
+// So is the torch's shadow (WebGPU would redraw every shadow map with it).
+allowTorchShadows(pixels.backend === 'webgl')
 const scene = new THREE.Scene()
 // Near plane 0.1 m (not closer): doubles depth precision, so far-away surfaces don't flicker.
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
