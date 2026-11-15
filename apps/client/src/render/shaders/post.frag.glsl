@@ -27,6 +27,11 @@ uniform float infectPulse;  // 0–1, peaks on each heartbeat
 uniform float infectTime;   // seconds, for the sway
 uniform float infectMotion; // 0 = hold still (reduced motion), 1 = sway and drift
 
+// Ambient occlusion (pixel-renderer.ts setAmbientOcclusion): taps a pixel, 0 = off.
+uniform int aoSamples;
+uniform vec2 aoProj;        // tan(fov/2) × aspect, tan(fov/2): view-space from depth
+uniform float aoFar;        // AO gone by here (m): lost in the fog
+
 varying vec2 vUv;
 
 const float BAYER4[16] = float[16](
@@ -71,10 +76,59 @@ vec3 nearestPaletteColor(vec3 c) {
   return best;
 }
 
+// View-space position of the world at uv.
+vec3 viewPos(vec2 uv) {
+  float d = viewDepth(uv);
+  return vec3((uv * 2.0 - 1.0) * aoProj * d, -d);
+}
+
+// Ambient occlusion from the depth buffer alone, at game-pixel resolution: a ring of taps
+// (turned per pixel by the 4×4 Bayer grid, like the dither) about half a metre out; each tap
+// in front of this pixel's surface darkens it. Posterised into a few hard steps so it reads as
+// pixel-art shading, not a soft smudge.
+float ambientOcclusion(vec2 uv) {
+  float depth = texture2D(tDepth, uv).x;
+  if (depth >= 1.0) return 1.0;
+  vec3 p = viewPos(uv);
+  float d = -p.z;
+  if (d > aoFar) return 1.0;
+  vec2 texel = 1.0 / resolution;
+  // Normal from the nearer neighbour on each axis (so silhouettes don't smear).
+  vec3 px = viewPos(uv + vec2(texel.x, 0.0)) - p;
+  vec3 nx = p - viewPos(uv - vec2(texel.x, 0.0));
+  vec3 py = viewPos(uv + vec2(0.0, texel.y)) - p;
+  vec3 ny = p - viewPos(uv - vec2(0.0, texel.y));
+  vec3 n = normalize(cross(abs(px.z) < abs(nx.z) ? px : nx, abs(py.z) < abs(ny.z) ? py : ny));
+  const float RADIUS = 0.6;
+  // The radius in pixels at this depth, kept to a sensible span of game pixels.
+  float pixels = clamp(RADIUS / (d * aoProj.y) * resolution.y * 0.5, 2.0, 18.0);
+  float turn = (bayer(gl_FragCoord.xy) + 0.5) * 6.2832;
+  float occlusion = 0.0;
+  float count = 0.0;
+  for (int i = 0; i < 12; i++) {
+    if (i >= aoSamples) break;
+    float f = (float(i) + 0.5) / float(aoSamples);
+    float a = turn + f * 15.708; // 2.5 turns
+    vec2 offset = vec2(cos(a), sin(a)) * pixels * (0.3 + 0.7 * f) * texel;
+    vec3 v = viewPos(uv + offset) - p;
+    float len = length(v);
+    float range = 1.0 - smoothstep(RADIUS, RADIUS * 2.5, len);
+    occlusion += max(0.0, dot(n, v / max(len, 1e-4)) - 0.15) * range;
+    count += 1.0;
+  }
+  float ao = 1.0 - 1.3 * occlusion / max(count, 1.0);
+  ao = mix(ao, 1.0, smoothstep(aoFar * 0.6, aoFar, d));
+  // Posterise: 1, 0.8, 0.6, 0.4 at most.
+  return max(0.4, floor(clamp(ao, 0.0, 1.0) * 5.0 + 0.4) / 5.0);
+}
+
+// The world's occlusion at this pixel (set once in main()).
+float worldAo = 1.0;
+
 // The world, gun and glow at one point (linear, before tone mapping).
 vec3 sceneAt(vec2 uv) {
   vec4 o = texture2D(tOverlay, uv);
-  return texture2D(tColor, uv).rgb * (1.0 - o.a) + o.rgb + texture2D(tBloom, uv).rgb * bloomStrength;
+  return texture2D(tColor, uv).rgb * worldAo * (1.0 - o.a) + o.rgb + texture2D(tBloom, uv).rgb * bloomStrength;
 }
 
 // Late in the turn: the picture sways, softens and doubles (a ghost drifting to one side).
@@ -98,6 +152,7 @@ vec3 infectedScene() {
 
 void main() {
   vec4 overlay = texture2D(tOverlay, vUv);
+  if (aoSamples > 0 && overlay.a < 0.99) worldAo = ambientOcclusion(vUv);
   vec3 color = infection > 0.0 ? infectedScene() : sceneAt(vUv);
   color = linearToSRGB(acesFilm(color * exposure));
 

@@ -77,6 +77,7 @@ import { serverMap, trackPhysicsDownload } from './loading.ts'
 import { Connection } from './net/connection.ts'
 import { AutoQuality } from './render/auto-quality.ts'
 import { Avatar } from './render/avatar.ts'
+import { allowCascades } from './render/cascades.ts'
 import { CoopZoneMarker } from './render/coop-zone.ts'
 import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
@@ -147,6 +148,8 @@ const pixels = await createGameRenderer(
   rendererChoice(settings),
 )
 const canvas = pixels.canvas
+// Cascaded shadows are a patch to the WebGL shaders: the WebGPU path keeps one map.
+allowCascades(pixels.backend === 'webgl')
 const scene = new THREE.Scene()
 // Near plane 0.1 m (not closer): doubles depth precision, so far-away surfaces don't flicker.
 const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
@@ -799,6 +802,7 @@ function applyTier() {
   effects.decalCap = t.decals
   effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
   pixels.maxDpr = t.maxDpr
+  pixels.setAmbientOcclusion(t.ao)
   pixels.resize()
 }
 

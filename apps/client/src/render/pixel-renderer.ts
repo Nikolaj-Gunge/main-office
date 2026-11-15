@@ -119,6 +119,9 @@ function createPostUniforms(
     infectPulse: { value: 0 },
     infectTime: { value: 0 },
     infectMotion: { value: 1 },
+    aoSamples: { value: 0 },
+    aoProj: { value: new THREE.Vector2(1, 1) },
+    aoFar: { value: 120 },
   }
 }
 
@@ -279,6 +282,14 @@ export class PixelRenderer implements GameRenderer {
     }
   }
 
+  /**
+   * Ambient occlusion: `samples` depth taps a pixel at internal resolution (0: off, the Low
+   * tier), darkening corners, contacts and the ground under things in a few hard steps.
+   */
+  setAmbientOcclusion(samples: number): void {
+    this.uniforms.aoSamples.value = Math.max(0, Math.min(12, Math.round(samples)))
+  }
+
   /** Survival's bite on screen (see game/infection.ts); null: none. */
   setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void {
     const u = this.uniforms
@@ -362,6 +373,11 @@ export class PixelRenderer implements GameRenderer {
     this.uniforms.cameraNear.value = camera.near
     this.uniforms.cameraFar.value = camera.far
     this.uniforms.outlineFar.value = outlineFar(scene)
+    // View-space reconstruction for the AO, and where the fog has swallowed it.
+    const tanHalf = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom
+    this.uniforms.aoProj.value.set(tanHalf * camera.aspect, tanHalf)
+    const fog = scene.fog as THREE.Fog | null
+    this.uniforms.aoFar.value = fog && 'far' in fog ? Math.min(160, fog.far * 0.6) : 120
 
     const r = this.renderer
     r.setRenderTarget(this.target)
