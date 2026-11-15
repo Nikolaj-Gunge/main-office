@@ -382,6 +382,15 @@ add({
   value: 20,
   desc: 'An alarm clock taped to a tin of scrap. Wind it and throw it: the dead go to the noise.',
 })
+// ── Voice (voice.ts) ──
+add({
+  id: 'radio',
+  name: 'Two-way radio',
+  kind: 'tool',
+  weight: 0.4,
+  value: 140,
+  desc: 'Carry it and anyone else carrying one hears you, however far (voice chat).',
+})
 
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),
@@ -636,6 +645,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['bandage', 3],
       ['medkit', 1],
       ['batteries', 3],
+      ['radio', 0.8],
     ],
   },
   military: {

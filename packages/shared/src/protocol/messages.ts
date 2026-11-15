@@ -15,6 +15,7 @@ import type {
   SurvivalAction,
   SurvivalSelf,
 } from '../survival/protocol.ts'
+import type { VoiceEvent, VoiceRequest } from '../voice.ts'
 import { BinaryReader, BinaryWriter } from './binary.ts'
 import { decodePitch, decodeYaw, encodePitch, encodeYaw } from './quantize.ts'
 import {
@@ -36,6 +37,8 @@ export const ClientMsg = {
   Action: 0x05,
   /** Chat, a ping, a wave or muting someone (social.ts). */
   Social: 0x06,
+  /** Proximity voice: on/off, a WebRTC handshake step, push-to-talk (voice.ts). */
+  Voice: 0x07,
 } as const
 export type ClientMsg = (typeof ClientMsg)[keyof typeof ClientMsg]
 
@@ -63,6 +66,8 @@ export const ServerMsg = {
   Dialog: 0x93,
   /** Somebody said something, pinged or waved (social.ts). */
   Social: 0x94,
+  /** Proximity voice: who to link with, a handshake step, who's talking (voice.ts). */
+  Voice: 0x95,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -189,6 +194,7 @@ export type ClientMessage =
   | { type: typeof ClientMsg.SetDebug; flags: number }
   | { type: typeof ClientMsg.Action; action: SurvivalAction }
   | { type: typeof ClientMsg.Social; social: SocialRequest }
+  | { type: typeof ClientMsg.Voice; voice: VoiceRequest }
 
 export interface ScoreEntry {
   id: number
@@ -304,6 +310,7 @@ export type ServerMessage =
   /** Survival: somebody talks to you (null closes the conversation). */
   | { type: typeof ServerMsg.Dialog; dialog: Dialog | null }
   | { type: typeof ServerMsg.Social; social: SocialEvent }
+  | { type: typeof ServerMsg.Voice; voice: VoiceEvent }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -658,6 +665,9 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array<ArrayBuffer>
     case ClientMsg.Social:
       w.str16(JSON.stringify(msg.social))
       break
+    case ClientMsg.Voice:
+      w.str16(JSON.stringify(msg.voice))
+      break
   }
   return w.finish()
 }
@@ -701,6 +711,9 @@ export function decodeClientMessage(data: ArrayBuffer | Uint8Array): ClientMessa
     case ClientMsg.Social:
       // Checked field by field on the server (social.ts there): anything could be in here.
       return { type, social: JSON.parse(r.str16()) as SocialRequest }
+    case ClientMsg.Voice:
+      // Checked field by field on the server (voice.ts there).
+      return { type, voice: JSON.parse(r.str16()) as VoiceRequest }
     default:
       throw new Error(`Unknown client message type 0x${type.toString(16)}`)
   }
@@ -794,6 +807,9 @@ export function encodeServerMessage(
       break
     case ServerMsg.Social:
       w.str16(JSON.stringify(msg.social))
+      break
+    case ServerMsg.Voice:
+      w.str16(JSON.stringify(msg.voice))
       break
     case ServerMsg.Loot:
       w.u16(msg.add.length)
@@ -947,6 +963,8 @@ export function decodeServerMessage(
       return { type, dialog: JSON.parse(r.str16()) as Dialog | null }
     case ServerMsg.Social:
       return { type, social: JSON.parse(r.str16()) as SocialEvent }
+    case ServerMsg.Voice:
+      return { type, voice: JSON.parse(r.str16()) as VoiceEvent }
     case ServerMsg.Loot: {
       const add: LootItem[] = []
       for (let i = r.u16(); i > 0; i--) {

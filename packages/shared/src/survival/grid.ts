@@ -148,6 +148,7 @@ const SIZES: Record<string, Size> = {
   research: [2, 2],
   sample: [2, 1],
   flare: [1, 2],
+  radio: [1, 2],
   teddy: [2, 2],
   toolbox: [3, 2],
   // Made things

@@ -37,6 +37,9 @@ const LIMITS: Record<ClientMsg, { rate: number; burst: number }> = {
   [ClientMsg.Action]: { rate: 10, burst: 20 },
   // Chat, pings and waves have their own, stricter limits in social.ts; this only stops floods.
   [ClientMsg.Social]: { rate: 4, burst: 8 },
+  // Voice: a WebRTC handshake trickles a dozen or two ICE candidates at once, then goes quiet;
+  // push-to-talk adds a few a second. Stricter per-kind limits are in voice.ts.
+  [ClientMsg.Voice]: { rate: 10, burst: 40 },
 }
 
 /** Log at most one line per connection this often, however hard it floods. */

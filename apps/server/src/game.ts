@@ -53,6 +53,7 @@ import {
   TICK_RATE,
   USE_PICKUP_RADIUS,
   unpackAppearance,
+  type VoiceRequest,
   WEAPON_TIER,
   WEAPONS,
   WeaponId,
@@ -70,6 +71,7 @@ import { MatchRunner } from './match.ts'
 import { type SaveStore, Saves } from './saves.ts'
 import { SocialRelay } from './social.ts'
 import { SpawnPicker } from './spawning.ts'
+import { VoiceHub } from './voice.ts'
 
 /** What runs a zombie (zombies mode's brain, or one of survival's dead). */
 export interface ZombieMind {
@@ -217,6 +219,8 @@ export class Game {
   saves = new Saves()
   /** Chat, pings and waves. */
   readonly social = new SocialRelay(this)
+  /** Proximity voice: who talks to whom (the sound itself goes peer to peer). */
+  readonly voice = new VoiceHub(this)
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
@@ -481,6 +485,7 @@ export class Game {
     this.players.delete(id)
     this.zombieLooks.delete(id)
     this.social.forget(id)
+    this.voice.forget(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
     if (!player.bot && !player.dummy && !player.zombie) this.syncBots()
@@ -534,6 +539,12 @@ export class Game {
     if (player) this.social.handle(player, req)
   }
 
+  /** Proximity voice: on/off, a handshake step, push-to-talk (checked in voice.ts). */
+  handleVoice(id: number, req: VoiceRequest): void {
+    const player = this.players.get(id)
+    if (player) this.voice.handle(player, req)
+  }
+
   /** One client. */
   sendTo(player: ServerPlayer, msg: ServerMessage): void {
     send(player.client, msg)
@@ -581,6 +592,7 @@ export class Game {
       if (!player.state.alive && !player.out && this.tick >= player.respawnAt) this.respawn(player)
     }
     this.match.step()
+    this.voice.step()
     const t1 = performance.now()
     this.timing.simMs += (t1 - t0 - this.timing.simMs) * 0.05
 
