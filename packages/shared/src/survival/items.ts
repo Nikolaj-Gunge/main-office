@@ -1,4 +1,5 @@
 import { type AmmoType, WEAPONS, WeaponId } from '../sim/weapons.ts'
+import { SKILL_IDS, SKILLS, type SkillId } from './skills.ts'
 
 /**
  * Everything you can carry in survival mode. Items are plain data: the server owns what they
@@ -52,6 +53,8 @@ export interface ItemDef {
   battery?: number
   /** Money: dollars each. */
   cash?: number
+  /** A field manual: reading it speeds up learning this skill for a while (skills.ts). */
+  manual?: SkillId
 }
 
 /** The trader pays this share of an item's value. */
@@ -418,6 +421,35 @@ add({
   desc: 'Signed and stamped: one seat out, bearer only. The pilot will want to see them.',
 })
 
+// ── Field manuals (skills.ts): read one and that skill comes three times as fast for half an hour ──
+const MANUAL_TEXT: Record<SkillId, [string, string]> = {
+  aim: [
+    "Rifleman's handbook",
+    'Army issue. Breathing, trigger, follow-through. Somebody underlined the parts about breathing.',
+  ],
+  melee: [
+    'Self-defence for seniors',
+    'A paperback with photos of a smiling man in a tracksuit. It still has a point.',
+  ],
+  stealth: ["Hunter's field guide", 'Moving downwind, slow feet, stillness. Written for deer.'],
+  medic: ['First aid manual', 'Red Cross, dog-eared. Pressure, elevation, clean hands.'],
+  mechanic: ['Haynes repair manual', 'For a car nobody here owns. Close enough.'],
+  carpentry: ['Weekend carpentry', 'Shelves and birdhouses. The parts on nailing still apply.'],
+  fitness: ['Couch to 5K', 'Nine weeks to run without stopping. You have less time than that.'],
+}
+for (const skill of SKILL_IDS) {
+  const [name, desc] = MANUAL_TEXT[skill]
+  add({
+    id: SKILLS[skill].manual,
+    name,
+    kind: 'tool',
+    weight: 0.4,
+    value: 45,
+    desc: `${desc} Read it (${SKILLS[skill].name}).`,
+    manual: skill,
+  })
+}
+
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),
 )
@@ -673,6 +705,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['batteries', 3],
       ['flaregun', 0.08],
       ['radio', 0.8],
+      ['manual_aim', 1],
+      ['manual_stealth', 0.5],
+      ['manual_medic', 0.4],
     ],
   },
   military: {
@@ -844,6 +879,13 @@ const TABLES: Record<LootTable, TableDef> = {
       ['watch', 1.5],
       ['energybar', 3],
       ['ducttape', 2],
+      ['manual_medic', 0.6],
+      ['manual_aim', 0.4],
+      ['manual_mechanic', 0.6],
+      ['manual_carpentry', 0.6],
+      ['manual_fitness', 0.5],
+      ['manual_stealth', 0.4],
+      ['manual_melee', 0.3],
     ],
   },
   lumber: {

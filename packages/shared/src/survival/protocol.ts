@@ -8,6 +8,7 @@ import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
 import type { Needs } from './needs.ts'
 import type { RotMood } from './rot.ts'
+import type { Skills } from './skills.ts'
 import type { OpenBox } from './storage.ts'
 import type { WeatherShared } from './weather.ts'
 
@@ -61,6 +62,8 @@ export interface SurvivalSelf {
   box?: OpenBox | null
   /** Field Notes, achievements and cosmetics (field-notes.ts): the account's, not the character's. */
   notes?: FieldNotes
+  /** What this character has learned by doing (skills.ts); absent in old saves. */
+  skills?: Skills
 }
 
 export interface QuestState {

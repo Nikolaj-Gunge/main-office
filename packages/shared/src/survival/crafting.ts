@@ -1,4 +1,5 @@
 import { ITEMS, type ItemDef } from './items.ts'
+import { MANUAL_READ_SECONDS } from './skills.ts'
 
 /**
  * Making things out of junk, and how long using things takes. Everything is short (a few
@@ -190,6 +191,7 @@ export function craftPlan(
 /** Seconds using one of something takes (0: at once). */
 export function useSeconds(def: ItemDef): number {
   if (def.battery) return 1
+  if (def.manual) return MANUAL_READ_SECONDS
   if (def.kind === 'food') return 2
   if (def.kind === 'drink') return 1.5
   if (def.kind !== 'med') return 0

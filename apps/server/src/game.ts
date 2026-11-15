@@ -819,6 +819,7 @@ export class Game {
         : Math.round(
             damageAtDistance(weapon, best.distance) *
               rules.damage *
+              this.match.meleeDamage(shooter) *
               (headshot && this.match.meleeHeadBonus(best.victim) ? HEAD_MULTIPLIER : 1),
           )
     this.damage(best.victim, shooter, best.zone, amount, headshot)

@@ -19,6 +19,7 @@ import {
   SPRAIN_SECONDS,
   type Surroundings,
   type SurvivalSelf,
+  skillEffects,
   stepNeeds,
   tuneMovement,
   VOMIT_CHANCE,
@@ -193,14 +194,15 @@ export class NeedsKeeper {
   private tune(sv: NeedsSurvivor, effects: readonly EffectId[]): void {
     const t = this.track(sv)
     const body = sv.player.body
-    const key = movementKey(effects)
+    const fitness = skillEffects(sv.self.skills).sprint
+    const key = movementKey(effects, fitness)
     const replaced = body.config !== t.tuned
     if (!replaced && key === t.moveKey) return
     if (replaced && key === '' && !t.tuned) return
     const base = replaced ? body.config : (t.base ?? body.config)
     t.base = base
     t.moveKey = key
-    t.tuned = tuneMovement(base, effects)
+    t.tuned = tuneMovement(base, effects, fitness)
     body.configure(t.tuned)
   }
 

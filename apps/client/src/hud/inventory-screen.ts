@@ -124,6 +124,7 @@ export function useVerb(def: ItemDef): string | null {
   if (def.kind === 'med') return 'Use'
   if (def.battery) return 'Load torch'
   if (def.id === 'noisemaker') return 'Throw'
+  if (def.manual) return 'Read'
   return null
 }
 

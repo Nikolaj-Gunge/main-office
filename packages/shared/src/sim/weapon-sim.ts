@@ -46,6 +46,10 @@ export interface WeaponRules {
   spreadScale: number
   /** Reloading never uses up spare ammo. */
   infiniteAmmo: boolean
+  /** One player's own hands (survival skills.ts): sights up faster (× speed), less scope sway (×), quicker swings (× time). */
+  aimSpeed?: number
+  swayScale?: number
+  swingTime?: number
 }
 
 export const DEFAULT_WEAPON_RULES: WeaponRules = { spreadScale: 1, infiniteAmmo: false }
@@ -120,12 +124,12 @@ export function currentSpread(w: WeaponState, ctx: WeaponContext): number {
  * breath. It moves where the bullet goes, and the client draws the camera with the same offset,
  * so what you see in the scope is exactly where you'll hit.
  */
-export function weaponSway(w: WeaponState): { yaw: number; pitch: number } {
+export function weaponSway(w: WeaponState, scale = 1): { yaw: number; pitch: number } {
   const def = WEAPONS[w.id]
   if (def.scopeSway === 0) return { yaw: 0, pitch: 0 }
   // Sway grows in over SWAY_RAMP seconds after the scope is fully in.
   const ramp = Math.max(0, Math.min(1, (w.swayTime - def.adsTime) / SWAY_RAMP))
-  const a = ((def.scopeSway * Math.PI) / 180) * ramp * (w.steady ? STEADY_SWAY : 1)
+  const a = ((def.scopeSway * Math.PI) / 180) * ramp * (w.steady ? STEADY_SWAY : 1) * scale
   const t = w.swayTime
   return {
     yaw: a * (Math.sin(t * 0.9) * 0.7 + Math.sin(t * 2.1 + 1) * 0.3),
@@ -199,7 +203,8 @@ export function stepWeapon(
   // Aiming: accuracy (and zoom) build up over adsTime; you can't aim while drawing or reloading.
   const aiming = hasButton(buttons, Button.Aim) && w.draw <= EPS && w.reload === 0
   // Snap the last float-rounding sliver so "fully aimed" lands exactly on the expected tick.
-  w.aimTime = aiming ? Math.min(def.adsTime, w.aimTime + dt + EPS) : 0
+  const aimDt = dt * (ctx.rules?.aimSpeed ?? 1)
+  w.aimTime = aiming ? Math.min(def.adsTime, w.aimTime + aimDt + EPS) : 0
   w.swayTime = aiming ? w.swayTime + dt : 0
   const holdBreath = aiming && def.scopeSway > 0 && hasButton(buttons, Button.Sprint)
   w.steady = holdBreath && w.breath > 0
@@ -242,7 +247,7 @@ export function stepWeapon(
     // cone where you point; the spread decides how wide the pellets fan out (pelletDirections).
     const r = multi ? 0 : spreadRad * Math.sqrt(hash01(w.spreadSeed, w.shotIndex * 2))
     const theta = Math.PI * 2 * hash01(w.spreadSeed, w.shotIndex * 2 + 1)
-    const sway = weaponSway(w)
+    const sway = weaponSway(w, ctx.rules?.swayScale)
     events.shot = {
       yawOffset: r * Math.cos(theta) + sway.yaw,
       pitchOffset: r * Math.sin(theta) + sway.pitch,
@@ -251,7 +256,7 @@ export function stepWeapon(
     }
     if (!melee) w.ammo--
     w.shotIndex++
-    w.cooldown = def.fireInterval
+    w.cooldown = def.fireInterval * (melee ? (ctx.rules?.swingTime ?? 1) : 1)
     w.fireBuffer = 0
   }
   return events

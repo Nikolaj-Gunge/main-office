@@ -7,6 +7,7 @@ function doing(busy: Busy): string {
   const name = def?.name ?? busy.what
   if (def?.kind === 'food') return `Eating: ${name}`
   if (def?.kind === 'drink') return `Drinking: ${name}`
+  if (def?.manual) return `Reading: ${name}`
   return `Using: ${name}`
 }
 
