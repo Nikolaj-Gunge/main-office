@@ -754,6 +754,14 @@ const MODELS: Record<string, Build> = {
       .box(0.1, 0.002, 0.004, DARK, { y: 0.006, z: 0.01 })
       .box(0.08, 0.002, 0.004, DARK, { y: 0.006, z: 0.03 })
   },
+  // A walkie-talkie: black body, grille, a stubby antenna and a little red light.
+  radio: (k) => {
+    k.box(0.07, 0.16, 0.035, 0x22252a)
+      .box(0.05, 0.05, 0.002, 0x3a3e44, { y: 0.07, z: 0.018 })
+      .box(0.05, 0.02, 0.002, 0x7a9a6a, { y: 0.12, z: 0.018 })
+      .box(0.012, 0.09, 0.012, DARK, { x: 0.022, y: 0.16 })
+      .box(0.014, 0.014, 0.014, 0xc8302a, { x: -0.02, y: 0.16 })
+  },
   map_piece: (k) => {
     k.box(0.12, 0.008, 0.2, 0xd8cca0)
       .box(0.002, 0.009, 0.2, 0xb0a480)

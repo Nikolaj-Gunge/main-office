@@ -170,6 +170,15 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Where voice chat plugs in (voice-client.ts): the audio context and the master gain, so the
+   * master volume and mute apply but the effects volume and the low-health muffle don't. Null
+   * until the first click has started the audio.
+   */
+  voiceOutput(): { ctx: AudioContext; out: AudioNode } | null {
+    return this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null
+  }
+
   distanceTo(at: { x: number; y: number; z: number }): number {
     return Math.hypot(at.x - this.listener.x, at.y - this.listener.y, at.z - this.listener.z)
   }

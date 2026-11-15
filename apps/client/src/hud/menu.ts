@@ -191,6 +191,7 @@ export class Menu {
       this.toggle('Text chat', 'chat'),
       this.toggle('Hide swear words in chat', 'chatFilter'),
       this.toggle('Speech bubbles over people', 'chatBubbles'),
+      this.toggle('Voice chat (push to talk; asks for the microphone)', 'voice'),
     )
 
     // --- Controls tab ---
@@ -413,6 +414,7 @@ export class Menu {
       | 'chat'
       | 'chatFilter'
       | 'chatBubbles'
+      | 'voice'
       | 'hints',
   ): HTMLElement {
     const input = h('input', { type: 'checkbox', 'data-setting': key })

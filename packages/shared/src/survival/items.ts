@@ -382,6 +382,15 @@ add({
   value: 20,
   desc: 'An alarm clock taped to a tin of scrap. Wind it and throw it: the dead go to the noise.',
 })
+// ── Voice (voice.ts) ──
+add({
+  id: 'radio',
+  name: 'Two-way radio',
+  kind: 'tool',
+  weight: 0.4,
+  value: 140,
+  desc: 'Carry it and anyone else carrying one hears you, however far (voice chat).',
+})
 
 // ── The way out (evac.ts): the three things the helipad's radio needs. Rare, and worth a lot ──
 add({
@@ -663,6 +672,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['medkit', 1],
       ['batteries', 3],
       ['flaregun', 0.08],
+      ['radio', 0.8],
     ],
   },
   military: {

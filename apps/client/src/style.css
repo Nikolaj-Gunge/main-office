@@ -3076,3 +3076,46 @@ body {
 .sv-tab {
   white-space: nowrap;
 }
+
+/* --- Proximity voice (voice-client.ts) --------------------------------------------------- */
+.hud-voice {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud-voice-tag {
+  position: absolute;
+  transform: translate(-50%, -160%);
+  padding: 1px 5px;
+  background: rgb(20 22 18 / 0.85);
+  color: #d8c890;
+  border: 2px solid #8a7a48;
+  font-size: 11px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.hud-voice-tag.corner {
+  left: 12px;
+  top: calc(40% + var(--row, 0) * 24px);
+  transform: none;
+}
+
+.hud-voice-tag[hidden],
+.hud-voice-self[hidden] {
+  display: none;
+}
+
+.hud-voice-self {
+  position: absolute;
+  left: 50%;
+  bottom: 18%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  background: rgb(20 22 18 / 0.85);
+  color: #e0a040;
+  border: 2px solid #a86a28;
+  font-size: 11px;
+  letter-spacing: 2px;
+}

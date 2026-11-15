@@ -73,6 +73,11 @@ export interface Settings {
   chatFilter: boolean
   /** Speech bubbles over people who talk or wave nearby. */
   chatBubbles: boolean
+  /**
+   * Proximity voice chat, push to talk (voice-client.ts). Off until switched on: the microphone
+   * is asked for only then.
+   */
+  voice: boolean
   keybinds: Keybinds
 }
 
@@ -113,6 +118,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chat: true,
   chatFilter: true,
   chatBubbles: true,
+  voice: false,
   keybinds: withDefaults(undefined),
 }
 

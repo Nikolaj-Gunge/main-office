@@ -2086,6 +2086,24 @@ export class SurvivalDirector {
     return sv ? this.noiseOf(sv, this.weather) : 0
   }
 
+  /** Does this survivor carry `item` (backpack or pockets)? Voice asks about the radio. */
+  carries(player: ServerPlayer, item: string): boolean {
+    const sv = this.survivors.get(player.id)
+    return !!sv && countOf(sv.self.inv, item) > 0
+  }
+
+  /**
+   * Somebody talking out loud (voice chat): the dead within `metres` hear them for a moment,
+   * like nailing a plank. Quieter than what they already make changes nothing.
+   */
+  voiceNoise(player: ServerPlayer, metres: number): void {
+    const sv = this.survivors.get(player.id)
+    if (!sv || metres <= 0) return
+    if (this.now < sv.noiseUntil && metres < sv.noise) return
+    sv.noise = metres
+    sv.noiseUntil = this.now + 1
+  }
+
   /** Each of the dead looks and listens a few times a second (spread over the ticks). */
   private senses(alive: readonly Survivor[]): void {
     const tick = this.game.tick

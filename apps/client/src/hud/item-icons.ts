@@ -580,6 +580,14 @@ const ICONS: Record<string, Paint> = {
       .rect(p.w - 8, p.h - 6, 3, 3, '#b82a24')
       .outline()
   },
+  radio: (p) => {
+    p.rect(p.w / 2 - 6, 10, 12, p.h - 12, '#2a2d32')
+      .rect(p.w / 2 + 2, 2, 3, 9, '#1a1a1a')
+      .rect(p.w / 2 - 4, 13, 8, 5, '#7a9a6a')
+      .rect(p.w / 2 - 4, 21, 8, 10, '#454a52')
+      .rect(p.w / 2 - 5, 7, 3, 3, '#c8302a')
+      .outline()
+  },
   map_piece: box('#d8cca0', { band: '#c02a2a', inset: 2 }),
   // Backpacks
   pack_school: backpack('#2a5aa8', '#1a2a4a'),

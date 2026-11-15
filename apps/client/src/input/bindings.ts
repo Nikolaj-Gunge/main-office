@@ -54,6 +54,8 @@ export const ACTIONS = [
     defaults: ['Mouse1', 'KeyX'],
   },
   { id: 'emote', label: 'Wave (friendly)', button: 0, defaults: ['KeyB'] },
+  // Voice chat (voice-client.ts): only when "Voice chat" is on in the settings.
+  { id: 'talk', label: 'Push to talk (voice chat)', button: 0, defaults: ['KeyV'] },
 ] as const
 
 export type ActionId = (typeof ACTIONS)[number]['id']

@@ -57,6 +57,7 @@ import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
 import { SocialClient } from './game/social-client.ts'
 import { Spectator } from './game/spectator.ts'
+import { VoiceClient } from './game/voice-client.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
@@ -374,6 +375,7 @@ const net = new Connection({
       outgoing.reset()
       if (code === CLOSE_RESTING) showRestingScreen()
       social.reset()
+      voice.setJoined(false)
       remotes.clear()
       roster.clear()
       worldItems.clear()
@@ -394,6 +396,7 @@ const net = new Connection({
   onMessage: (msg) => {
     combat.onMessage(msg)
     if (msg.type === ServerMsg.Social) return social.onEvent(msg.social, performance.now())
+    if (msg.type === ServerMsg.Voice) return voice.onEvent(msg.voice)
     if (survival?.onMessage(msg)) {
       // A Field Notes gun wrap shows on your own guns (field-notes.ts).
       viewmodel.setWrap(cosmeticById(survival.self?.notes?.wear.wrap)?.tint ?? null)
@@ -422,6 +425,7 @@ const net = new Connection({
         itemSoundsFrom = performance.now() + 500
         overlay.setBanner(null)
         everJoined = true
+        voice.setJoined(true)
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
       case ServerMsg.PlayerJoined: {
@@ -625,6 +629,29 @@ const social = new SocialClient({
     else closeMenu()
   },
 })
+// --- Proximity voice, push to talk (voice-client.ts) -------------------------------------
+const voice = new VoiceClient({
+  hudRoot,
+  send: (req) => net.send({ type: ClientMsg.Voice, voice: req }),
+  myId: () => net.playerId,
+  output: () => audio.voiceOutput(),
+  headOf: (id) => remotes.headOf(id),
+  nameOf: (id) => roster.get(id)?.name ?? remotes.nameOf(id),
+  isMuted: (id) => social.isMuted(id),
+  notify: (text) => social.onEvent({ kind: 'system', text }, performance.now()),
+})
+/** Switches voice to match the setting (asks for the microphone when it goes on). */
+function applyVoice(): void {
+  if (settings.voice === voice.enabled) return
+  void voice.setEnabled(settings.voice).then((on) => {
+    if (on || !settings.voice) return
+    // Refused (or no microphone): the setting goes back off.
+    settings.voice = false
+    saveSettings(settings)
+    menu.refresh()
+  })
+}
+window.addEventListener('blur', () => voice.setTalking(false))
 // Ping wheel and the other social keys on mouse buttons (the middle button by default).
 window.addEventListener('mousedown', (e) => {
   if (!look.locked || !joined) return
@@ -759,6 +786,7 @@ function applySettings() {
   stats.dom.style.display = settings.showStats ? '' : 'none'
   overlay.setDebugVisible(settings.showDebug)
   social.apply(settings)
+  applyVoice()
   updateProjection()
   saveSettings(settings)
 }
@@ -777,6 +805,7 @@ window.addEventListener('keyup', (e) => {
   const action = actionFor(settings.keybinds, e.code)
   if (action === 'scoreboard') scoreboardHeld = false
   if (action === 'ping') social.releasePing()
+  if (action === 'talk') voice.setTalking(false)
 })
 window.addEventListener('keydown', (e) => {
   if (menu.isCapturing) return // rebinding a key in the menu
@@ -805,6 +834,11 @@ window.addEventListener('keydown', (e) => {
   if ((action === 'chat' || action === 'ping' || action === 'emote') && joined && !menu.visible) {
     e.preventDefault() // the T that opens the chat isn't typed into it
     if (!e.repeat) socialPress(action)
+    return
+  }
+  // Push to talk (before the V key's car view and free camera, when voice is on).
+  if (action === 'talk' && voice.enabled && joined && !menu.visible) {
+    if (!e.repeat) voice.setTalking(true)
     return
   }
   if (action === 'scoreboard') {
@@ -1082,6 +1116,7 @@ pixels.setAnimationLoop(() => {
   matchHud.tick()
   const stage = match?.coop ? map.coop?.stages[match.coop.stage] : undefined
   social.update(camera, now)
+  voice.update(camera, now)
   objective.update(
     camera,
     joined && !noclip && match?.phase === 'playing'
@@ -1161,6 +1196,7 @@ if (import.meta.env.DEV) {
       damageNumbers,
       survival,
       social,
+      voice,
       autoTier,
     },
   })
