@@ -13,6 +13,13 @@ export const CHAT_NEARBY = 40
 export const PING_RANGE = 150
 /** A wave is seen this far away (m) in survival. */
 export const EMOTE_RANGE = 60
+/**
+ * The emotes: the friendly wave, and hands up (both arms raised, gun pointed at the sky: "don't
+ * shoot", a surrender on Lawless ground). Absent on the wire = a wave.
+ */
+export type EmoteKind = 'wave' | 'hands'
+/** How long hands stay up (s). */
+export const HANDS_SECONDS = 4
 
 /** Who a chat line goes to. Survival: nearby / all; arena modes: all / team. */
 export type ChatChannel = 'nearby' | 'all' | 'team'
@@ -33,7 +40,7 @@ export const PING_LABELS: Record<PingKind, string> = {
 export type SocialRequest =
   | { kind: 'chat'; text: string; channel: ChatChannel }
   | { kind: 'ping'; ping: PingKind; x: number; y: number; z: number }
-  | { kind: 'emote' }
+  | { kind: 'emote'; emote?: EmoteKind }
   /** Stop (or start again) hearing from player `id`: their chat, pings and waves. */
   | { kind: 'mute'; id: number; muted: boolean }
   /** Camps and trading (party.ts). */
@@ -44,7 +51,12 @@ export type SocialRequest =
 export type SocialEvent =
   | { kind: 'chat'; from: number; name: string; text: string; channel: ChatChannel }
   | { kind: 'ping'; from: number; ping: PingKind; x: number; y: number; z: number }
-  | { kind: 'emote'; from: number }
+  | { kind: 'emote'; from: number; emote?: EmoteKind }
+  /**
+   * Survival: a bit of junk (a can, a bucket, a bottle, a tyre: junk.ts) was kicked from where it
+   * lay to (x, z) and lands there after `t` s; `hoop`: it went in Haven's barrel.
+   */
+  | { kind: 'junk'; i: number; x: number; z: number; t: number; hoop?: boolean }
   /** Only to you: "slow down", "muted Ray" and the like. */
   | { kind: 'system'; text: string }
   /** Camps and trading (party.ts). */

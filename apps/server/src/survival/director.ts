@@ -133,6 +133,7 @@ import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { type FirstShotHost, FirstShotLesson } from './first-shot.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { Junk, type JunkHost } from './junk.ts'
 import { causeOfDeath, LegacyKeeper } from './legacy.ts'
 import { type LurkerHost, Lurkers } from './lurkers.ts'
 import { NeedsKeeper } from './needs.ts'
@@ -164,6 +165,8 @@ const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', '
 
 /** Loot is kept (and told to clients) in square cells this wide (m): yours and the 8 around. */
 const LOOT_CELL = 96
+/** Kicked junk is drawn flying for everybody within this (m); further off, it just moves. */
+const JUNK_SEEN = 80
 /** A torch's battery life (s). Hunger and thirst: see needsDrain (needs.ts). */
 const BATTERY_SECONDS = 9 * 60
 const RESPAWN_SECONDS = 6
@@ -355,6 +358,9 @@ export class SurvivalDirector {
   /** Boarded-up gaps: spot index → battering left before the last plank gives. */
   private readonly boards = new Map<number, number>()
   private boardsDirty = false
+  /** Kickable junk moved (junk.ts): the shared state goes out again, at most once a second. */
+  private junkDirty = false
+  private junkSentAt = 0
   private boardsSentAt = 0
   private startTick = 0
   /** Seconds added to the night's clock by sleeping. */
@@ -450,6 +456,7 @@ export class SurvivalDirector {
       },
     })
     this.pvp = new PvpKeeper(this.pvpHost())
+    this.junk = new Junk(this.junkHost())
     this.radio = new Radio(this.radioHost())
     this.alphas = new Alphas(this.alphaHost())
     this.lurkers = new Lurkers(this.lurkerHost())
@@ -496,6 +503,8 @@ export class SurvivalDirector {
 
   /** PvP by choice: who may hurt whom where, reputation, truces (see pvp.ts). */
   readonly pvp: PvpKeeper
+  /** Cans, buckets and tyres to kick about, and Haven's barrel (junk.ts). */
+  readonly junk: Junk
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
@@ -1023,6 +1032,8 @@ export class SurvivalDirector {
     if (!sv) return void this.bandits.onShot(player)
     this.workbench.onShot(sv)
     const noise = WEAPONS[player.state.weapon.id].noise
+    // A swing at junk sends it flying (junk.ts).
+    if (WEAPONS[player.state.weapon.id].slot === 'melee') this.junk.swing(player)
     // Somebody new: the first shot is staged (birds, a groan, walkers drifting over, a hint).
     this.firstShot.onShot({
       id: player.id,
@@ -1059,6 +1070,11 @@ export class SurvivalDirector {
   /** A wave: at somebody close, it offers (or agrees) a truce. */
   onWave(player: ServerPlayer): void {
     this.pvp.onWave(player, this.game.players.values())
+  }
+
+  /** Hands up: a surrender (pvp.ts). */
+  onHandsUp(player: ServerPlayer): void {
+    this.pvp.handsUp(player)
   }
 
   /** How much harder this survivor's swings land (Melee skill), ×. */
@@ -1439,6 +1455,13 @@ export class SurvivalDirector {
       this.radio.tick()
       this.weatherWorld.second()
       this.bandits.tick()
+      this.junk.second(alive.map((sv) => sv.player))
+    }
+    if (tick % 3 === 1) this.junk.step(alive.map((sv) => sv.player))
+    if (this.junkDirty && this.now - this.junkSentAt > 1) {
+      this.junkDirty = false
+      this.junkSentAt = this.now
+      this.game.match.broadcast()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
@@ -2982,6 +3005,42 @@ export class SurvivalDirector {
     }
   }
 
+  /** What the kickable junk (junk.ts) needs. */
+  private junkHost(): JunkHost {
+    return {
+      pois: () => this.def?.pois ?? [],
+      now: () => this.now,
+      lineClear: (a, b) => this.game.lineClear(a, b),
+      tell: (event, at) => {
+        const msg = { type: ServerMsg.Social, social: event } as const
+        for (const sv of this.survivors.values()) {
+          const p = sv.player.state.pos
+          if (Math.hypot(p.x - at.x, p.z - at.z) < JUNK_SEEN) this.send(sv.player, msg)
+        }
+      },
+      alert: (at, r) => {
+        const carries = r * hearingScale(this.weather, true)
+        for (const z of this.pool) {
+          if (z.state.alive && dist(z.state.pos, at) < carries)
+            this.zeds.get(z.id)?.alert(at, this.now)
+        }
+      },
+      scored: (player, tally) => {
+        const sv = this.survivors.get(player.id)
+        if (!sv) return
+        this.note(sv, 'hoop')
+        this.notice(player, 'info', `In the barrel! That's ${tally} on Haven's board.`)
+        for (const other of this.survivors.values()) {
+          if (other === sv || dist(other.player.state.pos, player.state.pos) > 30) continue
+          this.notice(other.player, 'info', `${player.name} got one in the barrel.`)
+        }
+      },
+      changed: () => {
+        this.junkDirty = true
+      },
+    }
+  }
+
   private pvpHost(): PvpHost {
     return {
       pois: () => this.def?.pois ?? [],
@@ -3365,7 +3424,14 @@ export class SurvivalDirector {
       rot: this.rot.shared(),
       ...this.standing(),
       builds: this.building.shared(),
+      ...this.junkShared(),
     }
+  }
+
+  /** Kicked junk and Haven's barrel tally (junk.ts), when there's anything to say. */
+  private junkShared(): Pick<SurvivalShared, 'junk' | 'hoop'> {
+    const junk = this.junk.shared()
+    return { ...(junk ? { junk } : {}), ...(this.junk.tally > 0 ? { hoop: this.junk.tally } : {}) }
   }
 
   /** A horde on the move in the fog, as the radio has it (weather-world.ts). */
