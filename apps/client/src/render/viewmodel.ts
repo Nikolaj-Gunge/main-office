@@ -1,5 +1,6 @@
 import { aimProgress, Spring, WEAPONS, WeaponId, type WeaponState } from '@office-fps/shared'
 import * as THREE from 'three'
+import { HandsUpView } from './hands-up.ts'
 import {
   ALTERNATES,
   KEYS,
@@ -527,6 +528,8 @@ export class Viewmodel {
   private swingLag = 0
   /** Eased: hands busy climbing (gun lowered out of view). */
   private climb = 0
+  /** Your own hands up ("don't shoot", hands-up.ts): the gun drops away while they're up. */
+  readonly handsUp = new HandsUpView()
   private aim = 0
   /** True while looking through a scope: the gun is hidden and the HUD draws the scope. */
   scoped = false
@@ -583,7 +586,7 @@ export class Viewmodel {
     )
     this.flash.visible = false
 
-    this.scene.add(this.root)
+    this.scene.add(this.root, this.handsUp.group)
     this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a3f35, 1.6))
     const key = new THREE.DirectionalLight(0xfff1d6, 1.6)
     key.position.set(0.5, 1, 0.3)
@@ -661,6 +664,7 @@ export class Viewmodel {
 
   /** Recoil and muzzle flash for one shot. */
   onShot(): void {
+    this.handsUp.drop()
     const r = this.active.recoil
     // Less of it while aiming, so the sights stay usable.
     const aimed = 1 - this.aim * 0.55
@@ -714,7 +718,14 @@ export class Viewmodel {
     // bolt: a small rock back.
     const reload = this.reloadPose(weapon, def)
     this.climb += (busy.climb - this.climb) * Math.min(1, dt * 14)
-    const drawT = Math.max(def.drawTime > 0 ? weapon.draw / def.drawTime : 0, this.climb)
+    const now = performance.now()
+    this.handsUp.update(now)
+    if (!alive) this.handsUp.drop()
+    const drawT = Math.max(
+      def.drawTime > 0 ? weapon.draw / def.drawTime : 0,
+      this.climb,
+      this.handsUp.level(now),
+    )
     const boltT =
       def.fireMode === 'bolt' && weapon.cooldown > 0
         ? Math.sin((1 - weapon.cooldown / def.fireInterval) * Math.PI)

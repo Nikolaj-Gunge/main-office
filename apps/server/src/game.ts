@@ -587,6 +587,11 @@ export class Game {
     this.match.onWave(player)
   }
 
+  /** Somebody put their hands up (social.ts): survival takes it as a surrender. */
+  onHandsUp(player: ServerPlayer): void {
+    this.match.survivalDirector?.onHandsUp(player)
+  }
+
   /** One client. */
   sendTo(player: ServerPlayer, msg: ServerMessage): void {
     send(player.client, msg)

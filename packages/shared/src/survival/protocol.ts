@@ -168,6 +168,10 @@ export interface SurvivalShared {
   builds?: number[]
   /** Haven: Red Night, morale, the gone and the graves (camp.ts). */
   camp?: CampShared
+  /** Kicked junk lying away from where it belongs (junk.ts packJunk); absent = all home. */
+  junk?: number[]
+  /** Cans in Haven's barrel so far (junk.ts); absent = none yet. */
+  hoop?: number
 }
 
 export type SurvivalAction =

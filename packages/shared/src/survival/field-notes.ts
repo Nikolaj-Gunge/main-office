@@ -36,6 +36,8 @@ export type NoteEvent =
   | 'death'
   | 'dawn'
   | 'trade'
+  /** A can kicked into Haven's barrel (junk.ts). */
+  | 'hoop'
   /** Every one of a week's seven notes done (counted by recordNote itself). */
   | 'week_full'
 
@@ -58,6 +60,7 @@ export const NOTE_EVENTS: readonly NoteEvent[] = [
   'death',
   'dawn',
   'trade',
+  'hoop',
   'week_full',
 ]
 
@@ -267,6 +270,13 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     title: 'Fed by the fire',
     story: "Haven's fire, a tin plate, somebody else's stories. Enough.",
     stat: 'rest_fire',
+    need: 1,
+  },
+  {
+    id: 'barrel_hoop',
+    title: 'Nothing but barrel',
+    story: 'A tin can, a rusted drum, a cheer from the fire. For a second, nobody was afraid.',
+    stat: 'hoop',
     need: 1,
   },
   {

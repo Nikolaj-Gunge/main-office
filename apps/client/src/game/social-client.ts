@@ -28,6 +28,8 @@ export interface SocialDeps {
   aimPoint: () => THREE.Vector3
   /** Player `id` waves (their avatar). */
   wave: (id: number) => void
+  /** Player `id` puts their hands up (their avatar; your own: the first-person hands). */
+  handsUp?: (id: number) => void
   /** A ping arrived (also on the minimap where there is one). */
   onPing?: (kind: PingKind, at: { x: number; y: number; z: number }) => void
   /** A short sound: a ping, a chat line. */
@@ -125,6 +127,11 @@ export class SocialClient {
     this.deps.send({ kind: 'emote' })
   }
 
+  /** Hands up: "don't shoot" (a surrender on Lawless ground). */
+  handsUp(): void {
+    this.deps.send({ kind: 'emote', emote: 'hands' })
+  }
+
   setMuted(id: number, muted: boolean): void {
     if (id === this.deps.myId()) return
     if (muted) this.muted.add(id)
@@ -158,6 +165,19 @@ export class SocialClient {
       }
       case 'emote': {
         if (this.muted.has(e.from)) return
+        if (e.emote === 'hands') {
+          this.deps.handsUp?.(e.from)
+          if (e.from === me) {
+            if (this.settings.chat)
+              this.chat.add({ from: null, text: 'You put your hands up.', quiet: true })
+            return
+          }
+          if (this.settings.chatBubbles) this.tags.say(e.from, "Don't shoot!", nowMs)
+          const who = this.deps.nameOf(e.from) ?? 'Someone'
+          if (this.settings.chat)
+            this.chat.add({ from: null, text: `${who} puts their hands up.`, quiet: true })
+          return
+        }
         if (e.from === me) {
           if (this.settings.chat) this.chat.add({ from: null, text: 'You wave.', quiet: true })
           return

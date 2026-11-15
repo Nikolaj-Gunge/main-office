@@ -413,6 +413,7 @@ const net = new Connection({
   onMessage: (msg) => {
     combat.onMessage(msg)
     if (msg.type === ServerMsg.Social) {
+      if (msg.social.kind === 'junk') return survival?.junk.onKick(msg.social, performance.now())
       if (party.onEvent(msg.social)) return
       return social.onEvent(msg.social, performance.now())
     }
@@ -645,6 +646,10 @@ const social = new SocialClient({
     return camera.position.clone().addScaledVector(dir, hit ? hit.timeOfImpact : 60)
   },
   wave: (id) => remotes.wave(id, performance.now()),
+  handsUp: (id) =>
+    id === net.playerId
+      ? viewmodel.handsUp.raise(performance.now())
+      : remotes.handsUp(id, performance.now()),
   onPing: (_kind, at) => minimap?.ping(at.x, at.z),
   sound: (cue) =>
     cue === 'ping'
@@ -683,7 +688,7 @@ window.addEventListener('blur', () => voice.setTalking(false))
 window.addEventListener('mousedown', (e) => {
   if (!look.locked || !joined) return
   const action = actionFor(settings.keybinds, `Mouse${e.button}`)
-  if (action === 'ping' || action === 'chat' || action === 'emote') {
+  if (action === 'ping' || action === 'chat' || action === 'emote' || action === 'hands') {
     e.preventDefault() // no autoscroll on a middle click
     socialPress(action)
   }
@@ -691,9 +696,10 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => {
   if (actionFor(settings.keybinds, `Mouse${e.button}`) === 'ping') social.releasePing()
 })
-function socialPress(action: 'ping' | 'chat' | 'emote'): void {
+function socialPress(action: 'ping' | 'chat' | 'emote' | 'hands'): void {
   if (action === 'ping') social.pressPing(performance.now())
   else if (action === 'chat') social.openChat()
+  else if (action === 'hands') social.handsUp()
   else social.emote()
 }
 // Camps and trading (party-client.ts): the invite link, camp-mates' markers, the trade window.
@@ -902,7 +908,11 @@ window.addEventListener('keydown', (e) => {
     }
   }
   // Chat, ping wheel, wave (keys typed into the chat never get here: they stop at its input).
-  if ((action === 'chat' || action === 'ping' || action === 'emote') && joined && !menu.visible) {
+  if (
+    (action === 'chat' || action === 'ping' || action === 'emote' || action === 'hands') &&
+    joined &&
+    !menu.visible
+  ) {
     e.preventDefault() // the T that opens the chat isn't typed into it
     if (!e.repeat) socialPress(action)
     return

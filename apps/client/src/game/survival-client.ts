@@ -58,6 +58,7 @@ import type { Tier, TierSettings } from '../render/device-tier.ts'
 import { EvacView } from '../render/evac-view.ts'
 import { Atmosphere, type FogFrame } from '../render/fog-atmosphere.ts'
 import { HeliView } from '../render/heli.ts'
+import { JunkView } from '../render/junk-view.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { updateMapLod } from '../render/map-mesh.ts'
@@ -133,6 +134,8 @@ export class SurvivalClient {
   readonly traitPick: TraitPick
   /** Radio Free Deadwood's ticker, and the named alphas' name tags (radio-client.ts). */
   readonly radio: RadioClient
+  /** Kickable cans and buckets, and Haven's barrel tally (junk-view.ts). */
+  readonly junk: JunkView
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
@@ -223,6 +226,8 @@ export class SurvivalClient {
     this.folk = new CampFolk(o.def, o.audio)
     this.camp = new CampView(o.def, o.audio)
     this.camp.addTo(o.scene)
+    this.junk = new JunkView(o.def, o.audio)
+    o.scene.add(this.junk.root)
     o.scene.add(this.folk.root)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
     o.scene.add(this.weather.root)
@@ -398,6 +403,7 @@ export class SurvivalClient {
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
     this.rot.setShared(shared.rot)
+    this.junk.setShared(shared.junk, shared.hoop)
   }
 
   /** Planks up and down: what you see, what you bump into, and what you hear. */
@@ -521,6 +527,7 @@ export class SurvivalClient {
   ): boolean {
     const eye = this.camera.position
     const built = this.wilds.update(eye.x, eye.z)
+    this.junk.update(performance.now())
     this.sinceForest += dt
     if (this.sinceForest > 0.3 || built) {
       this.sinceForest = 0

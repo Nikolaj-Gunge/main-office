@@ -1,6 +1,7 @@
 import {
   type Ground,
   groundAt,
+  HANDS_SECONDS,
   LAWLESS_TEXT,
   type Notice,
   OATH_SECONDS,
@@ -74,6 +75,8 @@ export class PvpKeeper {
   /** When each person last earned help or a gift (s). */
   private readonly helpedAt = new Map<number, number>()
   private readonly giftAt = new Map<number, number>()
+  /** When each person last put their hands up (s). */
+  private readonly hands = new Map<number, number>()
   /** Things dropped lately: by whom, what, where, when. */
   private drops: { by: number; item: string; x: number; z: number; at: number }[] = []
 
@@ -109,6 +112,22 @@ export class PvpKeeper {
       return
     }
     if (!isPerson(attacker) || !isPerson(victim)) return
+    // Hands up and then a gun: the oldest trick there is, and everyone will know it.
+    if (this.handsRaised(attacker, now)) {
+      this.hands.delete(attacker.id)
+      const self = this.host.selfOf(attacker)
+      if (self && !self.oath) {
+        self.oath = OATH_SECONDS
+        this.host.notice(
+          attacker,
+          'warn',
+          'Hands up, then a gun. Oathbreaker, they will call you, and they will see it on you.',
+        )
+        this.host.notice(victim, 'warn', `${attacker.name} faked a surrender.`)
+        this.host.touch(attacker)
+        this.tell()
+      }
+    }
     const by = this.hurtBy.get(victim.id) ?? new Map<number, number>()
     by.set(attacker.id, now)
     this.hurtBy.set(victim.id, by)
@@ -130,13 +149,17 @@ export class PvpKeeper {
     const victimSelf = this.host.selfOf(victim)
     if (killerSelf) {
       const shotAt = this.hurtBy.get(killer.id)?.get(victim.id)
-      const provoked = shotAt !== undefined && now - shotAt < PROVOKE_SECONDS
+      // Hands up wipes out the excuse: whatever they did before, they had given up.
+      const surrendered = this.handsRaised(victim, now)
+      const provoked = shotAt !== undefined && now - shotAt < PROVOKE_SECONDS && !surrendered
       // Raiders and oathbreakers are fair game; anybody else who never raised a gun is murdered.
       const fair =
         victimSelf && (standingOf(victimSelf.rep) === 'raider' || (victimSelf.oath ?? 0) > 0)
       if (!provoked && !fair) {
         const was = standingOf(killerSelf.rep)
         this.addRep(killerSelf, -MURDER)
+        if (surrendered)
+          this.host.notice(killer, 'warn', 'Their hands were up. People will remember that.')
         if (was !== 'raider' && standingOf(killerSelf.rep) === 'raider')
           this.host.notice(
             killer,
@@ -186,6 +209,21 @@ export class PvpKeeper {
     }
     this.offers.set(player.id, { to: target.id, at: now })
     this.host.notice(target, 'info', `${player.name} waves at you: a truce. Wave back to agree.`)
+  }
+
+  /**
+   * Hands up ("don't shoot"): for HANDS_SECONDS they have given up. Killing them then is murder
+   * whatever they did before; hurting somebody yourself then makes you an Oathbreaker.
+   */
+  handsUp(player: ServerPlayer): void {
+    if (!isPerson(player) || !player.state.alive) return
+    this.hands.set(player.id, this.host.now())
+  }
+
+  /** Are their hands up right now? */
+  handsRaised(player: ServerPlayer, now = this.host.now()): boolean {
+    const at = this.hands.get(player.id)
+    return at !== undefined && now - at <= HANDS_SECONDS
   }
 
   /** Is there a truce between these two? */
@@ -325,6 +363,7 @@ export class PvpKeeper {
 
   /** A life ended: truces and grudges made in it are gone. */
   private forgetLife(player: ServerPlayer): void {
+    this.hands.delete(player.id)
     this.hurtBy.delete(player.id)
     for (const by of this.hurtBy.values()) by.delete(player.id)
     this.offers.delete(player.id)

@@ -27,6 +27,8 @@ export interface SocialHost {
   mates?(id: number): readonly number[]
   /** Somebody waved (survival: a truce offer to whoever they look at). */
   onWave?(player: ServerPlayer): void
+  /** Somebody put their hands up (survival: a surrender, pvp.ts). */
+  onHandsUp?(player: ServerPlayer): void
   /** A line was said out loud nearby (survival: the mimics listen). */
   spoken?(player: ServerPlayer, text: string): void
 }
@@ -98,6 +100,11 @@ export class SocialRelay {
       case 'emote': {
         if (!from.state.alive || !limits.emote.take(now)) return
         const range = this.survival() ? EMOTE_RANGE : Number.POSITIVE_INFINITY
+        if (req.emote === 'hands') {
+          this.relay(from, { kind: 'emote', from: from.id, emote: 'hands' }, range, false)
+          this.host.onHandsUp?.(from)
+          return
+        }
         this.relay(from, { kind: 'emote', from: from.id }, range, false)
         this.host.onWave?.(from)
         return

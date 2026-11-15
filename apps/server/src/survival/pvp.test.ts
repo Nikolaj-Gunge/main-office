@@ -4,6 +4,7 @@ import {
   DEFAULT_RULES,
   decodeServerMessage,
   groundAt,
+  HANDS_SECONDS,
   initPhysics,
   LAWLESS_RADIUS,
   LAWLESS_TEXT,
@@ -268,5 +269,59 @@ describe('pvp: the Oathbreaker', () => {
     ]
     expect([...unpackStanding(packStanding(tags)).values()]).toEqual(tags)
     expect(unpackStanding(undefined).size).toBe(0)
+  })
+})
+
+describe('pvp: hands up', () => {
+  test('killing somebody with their hands up is murder, even if they shot first', () => {
+    const { game, a, b, sv, player, put, spots, notices } = setup()
+    put(a, spots.lawless.x, spots.lawless.z)
+    put(b, spots.lawless.x + 2, spots.lawless.z)
+    sv(b).self.age = 99999
+    game.hurt(player(a), player(b), 10)
+    game.handleSocial(b, { kind: 'emote', emote: 'hands' })
+    game.hurt(player(b), player(a), 500)
+    expect(player(b).state.alive).toBe(false)
+    expect(sv(a).self.rep).toBe(-MURDER)
+    expect(notices(a)).toContain('Their hands were up. People will remember that.')
+  })
+
+  test('hands up wears off: afterwards shooting back is self-defence again', () => {
+    const { game, a, b, sv, player, put, spots, run } = setup()
+    put(a, spots.lawless.x, spots.lawless.z)
+    put(b, spots.lawless.x + 2, spots.lawless.z)
+    game.handleSocial(b, { kind: 'emote', emote: 'hands' })
+    run(HANDS_SECONDS + 1)
+    put(a, spots.lawless.x, spots.lawless.z)
+    put(b, spots.lawless.x + 2, spots.lawless.z)
+    game.hurt(player(a), player(b), 10)
+    game.hurt(player(b), player(a), 500)
+    expect(sv(a).self.rep ?? 0).toBe(0)
+  })
+
+  test('hands up and then a gun makes you an Oathbreaker; others see the mark', () => {
+    const { game, director, a, b, sv, player, put, spots, notices } = setup()
+    put(a, spots.lawless.x, spots.lawless.z)
+    put(b, spots.lawless.x + 2, spots.lawless.z)
+    game.handleSocial(a, { kind: 'emote', emote: 'hands' })
+    game.hurt(player(b), player(a), 10)
+    expect(sv(a).self.oath).toBe(OATH_SECONDS)
+    expect(notices(b)).toContain('Ada faked a surrender.')
+    expect(unpackStanding(director.info().standing).get(a)?.oathbreaker).toBe(true)
+  })
+
+  test('everyone near sees the hands go up (a wave stays a wave)', () => {
+    const { game, a, b, put, spots } = setup()
+    put(a, spots.woods.x, spots.woods.z)
+    put(b, spots.woods.x + 5, spots.woods.z)
+    const seen: unknown[] = []
+    const inner = game as unknown as { sendTo(p: ServerPlayer, m: ServerMessage): void }
+    const send = inner.sendTo.bind(game)
+    inner.sendTo = (p, m) => {
+      if (m.type === ServerMsg.Social && p.id === b) seen.push(m.social)
+      send(p, m)
+    }
+    game.handleSocial(a, { kind: 'emote', emote: 'hands' })
+    expect(seen).toContainEqual({ kind: 'emote', from: a, emote: 'hands' })
   })
 })

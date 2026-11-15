@@ -1,5 +1,6 @@
 import {
   type Appearance,
+  HANDS_SECONDS,
   type HitPose,
   InterpolationBuffer,
   PLAYER_COLORS,
@@ -15,7 +16,7 @@ import {
 import * as THREE from 'three'
 import { Avatar, type BodyLook } from '../render/avatar.ts'
 import { createLabel } from '../render/labels.ts'
-import { WAVE_SECONDS, waving } from '../render/wave.ts'
+import { handsUp, WAVE_SECONDS, waving } from '../render/wave.ts'
 
 interface Remote {
   name: string
@@ -66,6 +67,8 @@ export class RemotePlayers {
   private readonly poses = new Map<number, HitPose>()
   /** Who is waving (friendly emote) and since when (performance.now ms). */
   private readonly waves = new Map<number, number>()
+  /** Who has their hands up ("don't shoot") and since when (performance.now ms). */
+  private readonly hands = new Map<number, number>()
   /** Game rules: what everyone looks like and how big they are. */
   private skin: SkinId = 'worker'
   private scale = 1
@@ -143,6 +146,7 @@ export class RemotePlayers {
     }
     this.players.delete(id)
     this.waves.delete(id)
+    this.hands.delete(id)
   }
 
   /** Every other player's avatar (survival's armbands and marks are put on them, pvp-client.ts). */
@@ -153,6 +157,13 @@ export class RemotePlayers {
   /** Player `id` waves (friendly emote): their left arm goes up for a couple of seconds. */
   wave(id: number, nowMs: number): void {
     if (this.players.has(id)) this.waves.set(id, nowMs)
+  }
+
+  /** Player `id` puts their hands up: both arms go up for HANDS_SECONDS. */
+  handsUp(id: number, nowMs: number): void {
+    if (!this.players.has(id)) return
+    this.waves.delete(id)
+    this.hands.set(id, nowMs)
   }
 
   /** Just over player `id`'s head as drawn, or null when they aren't drawn (dead, in a car). */
@@ -225,8 +236,14 @@ export class RemotePlayers {
       const size = this.scale * zombieScale(p.kind)
       const waved = this.waves.get(id)
       if (waved !== undefined && (nowMs - waved) / 1000 > WAVE_SECONDS) this.waves.delete(id)
+      const raised = this.hands.get(id)
+      if (raised !== undefined && (nowMs - raised) / 1000 > HANDS_SECONDS) this.hands.delete(id)
       p.avatar.adjust =
-        waved === undefined ? null : (parts, s) => waving(parts, (nowMs - waved) / 1000, s)
+        raised !== undefined
+          ? (parts, s) => handsUp(parts, (nowMs - raised) / 1000, HANDS_SECONDS, s)
+          : waved === undefined
+            ? null
+            : (parts, s) => waving(parts, (nowMs - waved) / 1000, s)
       if (p.shown) p.avatar.update(p.shown, this.poseOf(id, p.shown), nowMs, viewer)
       if (p.tag) {
         // Close enough to make out who it was (not through the whole forest).
