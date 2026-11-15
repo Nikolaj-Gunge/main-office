@@ -32,7 +32,7 @@ export interface CardInfo {
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
 /** Pixel text: drawn at 1/`px` size on a scratch canvas, then scaled up with no smoothing. */
-function pixelText(
+export function pixelText(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,

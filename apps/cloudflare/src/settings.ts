@@ -1,6 +1,13 @@
 import { DurableObject } from 'cloudflare:workers'
 import { addCounts, type BudgetCounts, utcDay } from '@office-fps/server/budget'
-import { type Presence, presenceCounts, reportPresence, worldsReply } from '@office-fps/shared'
+import {
+  PRESENCE_STALE_MS,
+  type Presence,
+  presenceCounts,
+  reportPresence,
+  type WorldGlance,
+  worldsReply,
+} from '@office-fps/shared'
 
 /**
  * Admin settings (game rules, bans), the day's request count and each world's head count, which
@@ -11,6 +18,7 @@ import { type Presence, presenceCounts, reportPresence, worldsReply } from '@off
  *                                                     the new total
  *   POST /presence {world, players} → a room's head count; returns the day's budget total
  *   GET  /worlds → the public worlds with head counts and where to go (worlds.ts)
+ *   GET  /glance?world= → one world's head count and night, for link previews (or null)
  */
 export class Settings extends DurableObject {
   /** /worlds requests answered here and not yet added to the stored budget. */
@@ -26,10 +34,31 @@ export class Settings extends DurableObject {
         headers: { 'Cache-Control': 'no-store' },
       })
     }
+    if (pathname === '/glance') {
+      // A join link's preview (worker.ts): counted here like /worlds. Never wakes a room.
+      this.uncounted++
+      const world = new URL(request.url).searchParams.get('world') ?? ''
+      const p = (await this.ctx.storage.get<Presence>('presence'))?.[world]
+      const fresh = p && Date.now() - p.at < PRESENCE_STALE_MS
+      const glance: WorldGlance | null = p
+        ? { players: fresh ? p.players : 0, ...(p.night ? { night: p.night } : {}) }
+        : null
+      return Response.json(glance, { headers: { 'Cache-Control': 'no-store' } })
+    }
     if (pathname === '/presence' && request.method === 'POST') {
-      const { world, players } = (await request.json()) as { world: string; players: number }
+      const { world, players, night } = (await request.json()) as {
+        world: string
+        players: number
+        night?: number
+      }
       const presence = (await this.ctx.storage.get<Presence>('presence')) ?? {}
-      const next = reportPresence(presence, String(world), Number(players), Date.now())
+      const next = reportPresence(
+        presence,
+        String(world),
+        Number(players),
+        Date.now(),
+        night === undefined ? undefined : Number(night),
+      )
       if (next !== presence) await this.ctx.storage.put('presence', next)
       return Response.json(await this.addBudget(null))
     }

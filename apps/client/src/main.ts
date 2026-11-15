@@ -61,6 +61,7 @@ import { SocialClient } from './game/social-client.ts'
 import { Spectator } from './game/spectator.ts'
 import { VoiceClient } from './game/voice-client.ts'
 import { CombatHud } from './hud/combat-hud.ts'
+import { Keepsakes } from './hud/keepsakes.ts'
 import { MatchHud } from './hud/match-hud.ts'
 import { Menu } from './hud/menu.ts'
 import { Minimap } from './hud/minimap.ts'
@@ -683,6 +684,8 @@ const party = new PartyClient({
   myId: () => net.playerId,
   headOf: (id) => remotes.headOf(id),
   say: (text) => social.onEvent({ kind: 'system', text }, performance.now()),
+  world: () => net.world,
+  myName: () => survival?.self?.bio?.name ?? menu.name ?? null,
   onTradeOpen: (open) => {
     uiOpen = open
     if (open) document.exitPointerLock()
@@ -690,6 +693,12 @@ const party = new PartyClient({
   },
 })
 menu.addToPlay(party.panel.root)
+// The death postcard and the Dawn Report, to save and share (keepsakes.ts).
+const keepsakes = survival ? new Keepsakes(hudRoot, () => net.world) : null
+if (keepsakes && survival) {
+  menu.addToPlay(keepsakes.panel)
+  survival.onNotice = (n) => keepsakes.onNotice(n)
+}
 /** The person in the crosshair (within a few metres), for G: trade. */
 function facingPlayer(): { id: number; distance: number } | null {
   const forward = camera.getWorldDirection(new THREE.Vector3())
@@ -1184,6 +1193,11 @@ pixels.setAnimationLoop(() => {
 
   sky.position.copy(camera.position)
   pixels.render(scene, camera, noclip || seated ? undefined : viewmodel)
+  // The frame is still on the canvas: a death keeps it for the postcard.
+  if (keepsakes && joined) {
+    keepsakes.afterRender(canvas, player.state.alive, survival?.self ?? null, now)
+    keepsakes.setLegacy(survival?.self?.legacy)
+  }
   stats.update()
   if (firstFrame) {
     firstFrame = false
@@ -1242,6 +1256,7 @@ if (import.meta.env.DEV) {
       social,
       voice,
       autoTier,
+      keepsakes,
     },
   })
 }

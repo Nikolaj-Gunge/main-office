@@ -1,4 +1,5 @@
 import {
+  type DawnReport,
   DEFAULT_WORLD_ID,
   type ObitWall,
   type Retired,
@@ -123,6 +124,10 @@ export interface WorldSave {
   retired?: Retired[]
   /** Haven's obituary wall (legacy.ts); absent in older saves. */
   wall?: ObitWall
+  /** Nights this world has seen through to dawn, and the last one's Dawn Report (absent in
+   * older saves: night 1, no report). */
+  nights?: number
+  dawn?: DawnReport
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

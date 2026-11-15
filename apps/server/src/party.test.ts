@@ -70,7 +70,7 @@ describe('camp codes and links', () => {
     expect(cleanPartyCode('ABC')).toBeNull()
     expect(cleanPartyCode('ABCDE0')).toBeNull()
     expect(cleanPartyCode(42)).toBeNull()
-    expect(inviteLink('https://x.dev', 'ABCDEF')).toBe('https://x.dev/?camp=ABCDEF')
+    expect(inviteLink('https://x.dev', 'ABCDEF')).toBe('https://x.dev/join?camp=ABCDEF')
   })
 })
 

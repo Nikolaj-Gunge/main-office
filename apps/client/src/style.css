@@ -3490,3 +3490,80 @@ body {
   color: #f0e4d8;
   font-weight: 900;
 }
+
+/* --- Keepsakes: the death postcard and the Dawn Report (hud/keepsakes.ts) --------------------- */
+.keepsakes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px solid #5a4630;
+  background: rgb(22 18 13 / 0.75);
+}
+
+.keepsakes-panel h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #d88a3a;
+}
+
+.keepsake-canvas {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  image-rendering: pixelated;
+  border: 2px solid #3a3226;
+}
+
+.keepsake-dawn pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: #e8dcc0;
+}
+
+.keepsake-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.keepsake-buttons button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  color: #e8dcc0;
+  background: #33281c;
+  border: 1px solid #8a6a44;
+  cursor: pointer;
+}
+
+.keepsake-pop {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  width: 300px;
+  padding: 6px;
+  background: rgb(13 11 9 / 0.85);
+  border: 2px solid #5a4630;
+  pointer-events: none;
+}
+
+.keepsake-pop img {
+  display: block;
+  width: 100%;
+  image-rendering: pixelated;
+}
+
+.keepsake-pop-text {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d88a3a;
+  text-align: center;
+}

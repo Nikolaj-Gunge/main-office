@@ -104,7 +104,7 @@ export function roomName(worldId: string, protocolVersion: number): string {
 // --- Head counts (the Settings object keeps them for /worlds) -------------------------------
 
 /** Each public world's last reported head count and when it came. */
-export type Presence = Record<string, { players: number; at: number }>
+export type Presence = Record<string, { players: number; at: number; night?: number }>
 
 /**
  * A head count older than this is ignored (a room that was evicted without saying goodbye).
@@ -112,15 +112,21 @@ export type Presence = Record<string, { players: number; at: number }>
  */
 export const PRESENCE_STALE_MS = 15 * 60 * 1000
 
-/** Records a room's head count; private worlds aren't listed, so they aren't kept. */
+/**
+ * Records a room's head count (and which night it is on, for link previews); private worlds
+ * aren't listed, so they aren't kept.
+ */
 export function reportPresence(
   presence: Presence,
   worldId: string,
   players: number,
   now: number,
+  night?: number,
 ): Presence {
   if (!isPublicWorld(worldId)) return presence
-  return { ...presence, [worldId]: { players: Math.max(0, Math.floor(players) || 0), at: now } }
+  const entry: Presence[string] = { players: Math.max(0, Math.floor(players) || 0), at: now }
+  if (night !== undefined && Number.isFinite(night) && night > 0) entry.night = Math.floor(night)
+  return { ...presence, [worldId]: entry }
 }
 
 /** Current head counts by world (stale reports count as empty). */

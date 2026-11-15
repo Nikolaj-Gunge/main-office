@@ -16,7 +16,9 @@ import {
   createPlayerState,
   createWeaponState,
   crunchAt,
+  DAWN_TITLE,
   DAY_SECONDS,
+  type DawnReport,
   type DayPhase,
   daylight,
   dayPhase,
@@ -45,6 +47,7 @@ import {
   infectionStage,
   isItemDest,
   isItemRef,
+  isPublicWorld,
   LOCKER_SIZE,
   type LootItem,
   legacyKit,
@@ -104,17 +107,19 @@ import {
   wakeTime,
   weaponItem,
   weatherAt,
+  worldName,
   wornStats,
   ZombieKind,
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
+import { DawnDesk } from './dawn-report.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
-import { LegacyKeeper } from './legacy.ts'
+import { causeOfDeath, LegacyKeeper } from './legacy.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
@@ -403,6 +408,14 @@ export class SurvivalDirector {
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
 
+  /** The night's log, the Dawn Report and how many nights the world has seen (dawn-report.ts). */
+  readonly dawnDesk = new DawnDesk()
+
+  /** The night the world is on (1 = its first); for link previews (share-preview.ts). */
+  get night(): number {
+    return this.dawnDesk.night
+  }
+
   /** The story and everybody's quests (see story.ts). */
   readonly story: Story
 
@@ -481,6 +494,7 @@ export class SurvivalDirector {
     // A new world: the saved one starts over, and every character with it (saves.ts).
     this.game.saves.newWorld()
     this.legacy.reset()
+    this.dawnDesk.reset()
     this.savedWorld = ''
     this.survivors.clear()
     this.rare = rollRareStock(this.random)
@@ -556,6 +570,7 @@ export class SurvivalDirector {
     this.workbench.forget(player)
     this.storage.forget(player)
     this.legacy.forget(player)
+    this.dawnDesk.forget(player.id)
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.rot.forget(player)
@@ -650,6 +665,8 @@ export class SurvivalDirector {
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
       retired: [...this.evac.retired],
       wall: this.legacy.wall,
+      nights: this.dawnDesk.nights,
+      ...(this.dawnDesk.report ? { dawn: this.dawnDesk.report } : {}),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -666,6 +683,7 @@ export class SurvivalDirector {
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
     this.legacy.restore(w.wall)
+    this.dawnDesk.restore(w.nights, w.dawn)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -890,6 +908,10 @@ export class SurvivalDirector {
       }
       const by = this.survivors.get(killer.id)
       if (by) bumpLife(by.self, 'kills')
+      // For the Dawn Report.
+      const byName = by ? (by.self.bio?.name ?? killer.name) : null
+      this.dawnDesk.putDown(byName)
+      if (was) this.dawnDesk.turnedDown(victim.name, byName)
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -923,15 +945,13 @@ export class SurvivalDirector {
     const turning = sv.turning
     // Their life goes into the account's journal and onto Haven's wall (legacy.ts).
     const other = killer !== victim ? this.survivors.get(killer.id) : undefined
-    const left = this.legacy.died(
-      sv,
-      {
-        turning,
-        zombie: this.zeds.get(killer.id)?.kind ?? null,
-        by: other ? (other.self.bio?.name ?? killer.name) : null,
-      },
-      victim.appearance ?? 0,
-    )
+    const death = {
+      turning,
+      zombie: this.zeds.get(killer.id)?.kind ?? null,
+      by: other ? (other.self.bio?.name ?? killer.name) : null,
+    }
+    this.dawnDesk.died(was ?? victim.name, causeOfDeath(death, sv.self), turning)
+    const left = this.legacy.died(sv, death, victim.appearance ?? 0)
     // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
     this.workbench.forget(victim)
     this.storage.forget(victim)
@@ -991,6 +1011,7 @@ export class SurvivalDirector {
     const sv = this.survivors.get(player.id)
     if (!sv) return
     const was = sv.self.bio?.name ?? player.name
+    this.dawnDesk.out(was)
     if (player.account) {
       const data = this.game.saves.account(player.account)
       const evac = evacAccount(data)
@@ -1192,6 +1213,8 @@ export class SurvivalDirector {
     if (phase === 'dawn') this.legacy.dawn(people.filter((sv) => sv.player.state.alive))
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
+    // The night written up (before the Rot forgets its mood), pinned at Haven and handed out.
+    if (phase === 'dawn') this.postDawnReport(people)
     // What kind of night it will be: the Haven radio has an idea (rot.ts).
     if (phase === 'dawn') this.rot.dawn()
     if (phase === 'dusk') {
@@ -1201,11 +1224,38 @@ export class SurvivalDirector {
     }
   }
 
+  /** Dawn: the night's report (dawn-report.ts) for everybody here and the job board. */
+  private postDawnReport(people: readonly Survivor[]): void {
+    const id = this.game.saves.worldId
+    const world = isPublicWorld(id) ? worldName(id) : 'Deadwood'
+    const report = this.dawnDesk.dawn(world, this.rot.mood)
+    this.saveWorld()
+    if (!report) return
+    for (const sv of people) {
+      this.dawnDesk.markRead(sv.player.id)
+      this.sendDawnReport(sv.player, report)
+    }
+  }
+
+  private sendDawnReport(player: ServerPlayer, report: DawnReport): void {
+    this.send(player, {
+      type: ServerMsg.Notice,
+      notice: {
+        kind: 'note',
+        title: DAWN_TITLE,
+        text: `${report.title}\n\n${report.lines.join('\n')}`,
+        share: report.share,
+      },
+    })
+  }
+
   /** Hunger, thirst, bleeding, the torch's battery — once a second. */
   private tickSurvivor(sv: Survivor): void {
     const { self, player } = sv
     this.storage.check(sv)
     if (!player.state.alive) return
+    // Out there tonight (the Dawn Report counts who was).
+    if (this.phase !== 'day') this.dawnDesk.seen(self.bio?.name ?? player.name)
     const before = [Math.ceil(self.hunger), Math.ceil(self.thirst), Math.ceil(self.battery)]
     // Newcomers get hungry and thirsty more slowly (newcomer.ts); needsDrain owns the rate.
     const drain = needsDrain(drainFactor(self.age))
@@ -1672,7 +1722,12 @@ export class SurvivalDirector {
   private useThing(sv: Survivor, thing: Interactable): void {
     const player = sv.player
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
-    if (thing.kind === 'board') return void this.story.board(sv)
+    if (thing.kind === 'board') {
+      // The Dawn Report is pinned over the jobs, for anybody who hasn't read it.
+      const report = this.dawnDesk.unread(player.id)
+      if (report) this.sendDawnReport(player, report)
+      return void this.story.board(sv)
+    }
     if (thing.key === EVAC_RADIO_KEY) return void this.evac.use(sv)
     if (thing.kind === 'obituary') return void this.legacy.flowers(sv)
     if (thing.kind === 'locker') {

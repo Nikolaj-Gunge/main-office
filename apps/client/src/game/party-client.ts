@@ -1,5 +1,6 @@
 import {
   cleanPartyCode,
+  FROM_PARAM,
   inviteLink,
   makePartyCode,
   PARTY_PARAM,
@@ -26,6 +27,9 @@ export interface PartyDeps {
   say: (text: string) => void
   /** The trade window opened (true) or closed: it needs the mouse. */
   onTradeOpen: (open: boolean) => void
+  /** The world we're in and who we are, for the invite link's preview (share-preview.ts). */
+  world?: () => string | null
+  myName?: () => string | null
 }
 
 /**
@@ -56,6 +60,7 @@ export class PartyClient {
     const invited = cleanPartyCode(url.searchParams.get(PARTY_PARAM))
     if (invited) {
       url.searchParams.delete(PARTY_PARAM)
+      url.searchParams.delete(FROM_PARAM)
       history.replaceState(null, '', url)
     }
     this.code = invited ?? cleanPartyCode(localStorage.getItem(CAMP_KEY)) ?? makePartyCode()
@@ -65,7 +70,10 @@ export class PartyClient {
 
   /** The "join my camp" link. */
   get link(): string {
-    return inviteLink(location.origin, this.code)
+    return inviteLink(location.origin, this.code, {
+      world: this.deps.world?.() ?? null,
+      from: this.deps.myName?.() ?? null,
+    })
   }
 
   /** Everyone in the camp but us. */
