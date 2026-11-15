@@ -4,7 +4,9 @@ import type { SaveStore } from '@office-fps/server/saves'
 /**
  * Characters and the world (see apps/server/src/saves.ts), in one Durable Object's storage that
  * outlives the game rooms: rooms are per protocol version, this isn't, so saves survive deploys,
- * updates and rooms being evicted. Keys: "world" and "char:<account>"; values are JSON.
+ * updates and rooms being evicted. Keys: "world" (the original world),
+ * "world:<id>" (each other world, private ones included) and "char:<account>" (characters belong
+ * to the account, so every world shares them); values are JSON.
  */
 export class SaveVault extends DurableObject {
   async get(key: string): Promise<unknown> {

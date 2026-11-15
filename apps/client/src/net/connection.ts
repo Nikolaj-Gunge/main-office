@@ -8,6 +8,7 @@ import {
   type ServerMessage,
   ServerMsg,
   SnapshotCodec,
+  WORLD_PARAM,
   WS_PATH,
 } from '@office-fps/shared'
 import { accountToken } from './identity.ts'
@@ -50,6 +51,8 @@ export class Connection {
   private name = ''
   /** The character sent with the next Hello (a change applies on the next (re)join). */
   appearance: number | undefined
+  /** The world to join (worlds.ts), or null for the server's default; kept for reconnects. */
+  world: string | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private bytesIn = 0
   private bytesOut = 0
@@ -73,7 +76,8 @@ export class Connection {
     this.name = name
     this.appearance = appearance
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${location.host}${WS_PATH}`)
+    const query = this.world ? `?${WORLD_PARAM}=${encodeURIComponent(this.world)}` : ''
+    const ws = new WebSocket(`${protocol}//${location.host}${WS_PATH}${query}`)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
     this.snapshots.reset()

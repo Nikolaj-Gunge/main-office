@@ -136,6 +136,7 @@ export class Menu {
       'section',
       { class: 'menu-panel' },
       form,
+      this.playExtras,
       this.status,
       h('ul', { class: 'menu-tips' }, this.modeTip, ...this.arenaTips, ...this.survivalTips),
     )
@@ -251,6 +252,14 @@ export class Menu {
       capture: true,
       passive: false,
     })
+  }
+
+  /** Under the join form (the world picker, see world-picker.ts). */
+  private readonly playExtras = h('div', { class: 'menu-play-extras' })
+
+  /** Adds something under the join form on the PLAY tab. */
+  addToPlay(node: HTMLElement): void {
+    this.playExtras.append(node)
   }
 
   /** The name typed in the join form. */

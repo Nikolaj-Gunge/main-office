@@ -64,6 +64,7 @@ import { ObjectiveMarker } from './hud/objective-marker.ts'
 import { Overlay } from './hud/overlay.ts'
 import { showRestingScreen } from './hud/resting-screen.ts'
 import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
+import { WorldPicker } from './hud/world-picker.ts'
 import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
 import { MouseLook } from './input/mouse-look.ts'
@@ -651,6 +652,9 @@ function waypointText(goal: CoopGoal): string {
   return 'GO'
 }
 const goalAt = new THREE.Vector3()
+
+// Survival runs several worlds (worlds.ts): pick one (or a private link) on the PLAY tab.
+if (mapId === SURVIVAL_MAP) menu.addToPlay(new WorldPicker(net, () => menu.visible).root)
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the
 // mouse still needs one click to lock — browsers require it).

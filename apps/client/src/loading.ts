@@ -28,10 +28,15 @@ export function trackPhysicsDownload(onProgress: (fraction: number) => void): vo
   }
 }
 
-/** The map the server is running, or null if it doesn't say within `timeoutMs` (offline). */
+/**
+ * The map the server is running, or null if it doesn't say within `timeoutMs` (offline). Asks
+ * the world named in the page's `?world=`, if any (worlds.ts), so it doesn't wake another room.
+ */
 export async function serverMap(timeoutMs: number): Promise<string | null> {
   try {
-    const response = await fetch('/healthz', { signal: AbortSignal.timeout(timeoutMs) })
+    const world = new URLSearchParams(location.search).get('world')
+    const url = world ? `/healthz?world=${encodeURIComponent(world)}` : '/healthz'
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
     const body = (await response.json()) as { map?: unknown }
     return typeof body.map === 'string' ? body.map : null
   } catch {

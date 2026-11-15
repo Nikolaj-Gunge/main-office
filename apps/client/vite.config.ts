@@ -63,6 +63,7 @@ export default defineConfig({
     proxy: {
       [WS_PATH]: { target: `ws://localhost:${serverPort}`, ws: true },
       '/healthz': `http://localhost:${serverPort}`,
+      '/worlds': `http://localhost:${serverPort}`,
       '/admin/api': `http://localhost:${serverPort}`,
     },
   },

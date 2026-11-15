@@ -1,4 +1,4 @@
-import type { Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
+import { DEFAULT_WORLD_ID, type Stored, type SurvivalSelf, type WeaponId } from '@office-fps/shared'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -91,6 +91,12 @@ export interface CharacterSave {
   pos?: { x: number; y: number; z: number; yaw: number }
   /** What's in their locker at Haven: it belongs to the account, so dying doesn't empty it. */
   locker: Stored[]
+  /** The world (worlds.ts) this was last saved in; missing = the original world. */
+  world?: string
+  /** The world they're playing in right now, if any (see Saves.claim). */
+  live?: string
+  /** When this was last saved (ms since 1970). */
+  at?: number
 }
 
 /** What the world remembers: the story's progress and what people did to the place. */
@@ -117,8 +123,20 @@ export const freshWorld = (epoch = 0): WorldSave => ({
   boards: [],
 })
 
-const WORLD_KEY = 'world'
-const characterKey = (account: string) => `char:${account}`
+/**
+ * Where a world's save is kept: the original world keeps the old key ("world"), so the save from
+ * before there were several worlds carries on there; the others are "world:<id>".
+ */
+export const worldKey = (worldId: string) =>
+  worldId === DEFAULT_WORLD_ID ? 'world' : `world:${worldId}`
+/** Characters belong to the account, not a world: the same key whichever world they play in. */
+export const characterKey = (account: string) => `char:${account}`
+
+/**
+ * A character saved while playing in another world counts as still there for this long after
+ * its last save (saves come every 2 minutes while playing; a crashed room's claim runs out).
+ */
+export const LIVE_MS = 5 * 60 * 1000
 
 /**
  * Saves behind a store: keeps the world and the characters it has loaded, and writes what
@@ -127,37 +145,95 @@ const characterKey = (account: string) => `char:${account}`
  */
 export class Saves {
   readonly store: SaveStore
+  /** Which world (worlds.ts) this is: its own world save, everybody's characters. */
+  readonly worldId: string
   world: WorldSave = freshWorld()
   private readonly characters = new Map<string, CharacterSave>()
-  /** Keys waiting to be written ('world' or char:…). */
+  /** Keys waiting to be written (the world key or char:…). */
   private readonly dirty = new Set<string>()
   private writing: Promise<void> = Promise.resolve()
+  /** Accounts playing in this world right now (claim / release). */
+  private readonly online = new Set<string>()
+  private readonly worldKey: string
 
-  constructor(store: SaveStore = new MemoryStore()) {
+  constructor(
+    store: SaveStore = new MemoryStore(),
+    worldId: string = DEFAULT_WORLD_ID,
+    private readonly now: () => number = Date.now,
+  ) {
     this.store = store
+    this.worldId = worldId
+    this.worldKey = worldKey(worldId)
   }
 
   /** Reads the world (call once before anybody plays). */
   async loadWorld(): Promise<void> {
-    const data = await this.read(WORLD_KEY, 'world')
+    const data = await this.read(this.worldKey, 'world')
     this.world = data ? { ...freshWorld(), ...(data as Partial<WorldSave>) } : freshWorld()
   }
 
-  /** Reads an account's character into memory, if it isn't already (before they join). */
+  /**
+   * Reads an account's character into memory (before they join). Read afresh each time unless
+   * they're playing here: they may have played in another world since this one last saw them.
+   */
   async loadCharacter(account: string): Promise<void> {
-    if (this.characters.has(account)) return
+    if (this.online.has(account) || this.dirty.has(characterKey(account))) return
+    await this.writing // our own last save of them lands first
     const data = await this.read(characterKey(account), 'character')
-    if (data && !this.characters.has(account)) this.characters.set(account, data as never)
+    if (data && !this.online.has(account)) this.characters.set(account, data as never)
   }
 
-  /** An account's character in this world, if it has one (loaded with loadCharacter). */
+  /**
+   * An account's character, if it has one (loaded with loadCharacter). One last saved in this
+   * world must be from its current epoch (a world reset starts its people over); one from
+   * another world walks in from the road, so it wakes at Haven rather than where it stood there.
+   */
   character(account: string): CharacterSave | undefined {
     const save = this.characters.get(account)
-    return save && save.epoch === this.world.epoch ? save : undefined
+    if (!save) return undefined
+    if ((save.world ?? DEFAULT_WORLD_ID) !== this.worldId) {
+      const { pos: _elsewhere, ...rest } = save
+      return rest
+    }
+    return save.epoch === this.world.epoch ? save : undefined
+  }
+
+  /** True if the account's character is being played in another world right now. */
+  busyElsewhere(account: string): boolean {
+    const save = this.characters.get(account)
+    if (!save?.live || save.live === this.worldId) return false
+    return this.now() - (save.at ?? 0) < LIVE_MS
+  }
+
+  /** They're playing here now: their save says so (other worlds turn a second tab into a guest). */
+  claim(account: string): void {
+    this.online.add(account)
+    const save = this.characters.get(account)
+    if (!save) return // nobody yet: their first save says so
+    this.characters.set(account, { ...save, live: this.worldId, at: this.now() })
+    this.dirty.add(characterKey(account))
+    void this.flush()
+  }
+
+  /** They've left: the next save (written as they leave) no longer says they're here. */
+  release(account: string): void {
+    this.online.delete(account)
+    const save = this.characters.get(account)
+    if (!save?.live) return
+    const { live: _gone, ...rest } = save
+    this.characters.set(account, rest)
+    this.dirty.add(characterKey(account))
   }
 
   putCharacter(account: string, save: Omit<CharacterSave, 'epoch'>): void {
-    this.characters.set(account, { ...save, epoch: this.world.epoch })
+    const { live: _old, ...rest } = save
+    this.characters.set(account, {
+      ...rest,
+      epoch: this.world.epoch,
+      world: this.worldId,
+      at: this.now(),
+      ...(this.online.has(account) ? { live: this.worldId } : {}),
+    })
     this.dirty.add(characterKey(account))
   }
 
@@ -170,7 +246,7 @@ export class Saves {
 
   putWorld(world: Omit<WorldSave, 'epoch'>): void {
     this.world = { ...world, epoch: this.world.epoch }
-    this.dirty.add(WORLD_KEY)
+    this.dirty.add(this.worldKey)
   }
 
   /**
@@ -181,7 +257,7 @@ export class Saves {
     this.world = freshWorld(this.world.epoch + 1)
     this.characters.clear()
     this.dirty.clear()
-    this.dirty.add(WORLD_KEY)
+    this.dirty.add(this.worldKey)
   }
 
   /** Writes everything that changed (one write at a time; resolves once it's all stored). */
@@ -203,7 +279,7 @@ export class Saves {
   }
 
   private envelope(key: string): Envelope | null {
-    const data = key === WORLD_KEY ? this.world : this.characters.get(key.slice(5))
+    const data = key === this.worldKey ? this.world : this.characters.get(key.slice(5))
     return data ? { v: SAVE_VERSION, data: structuredClone(data) as never } : null
   }
 

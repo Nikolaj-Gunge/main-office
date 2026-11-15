@@ -235,10 +235,11 @@ export class Game {
 
   /**
    * Keeps characters and the world in this store from now on: reads the world back (call before
-   * anybody joins; a restarted server carries on where it was).
+   * anybody joins; a restarted server carries on where it was). `worldId` picks which world's
+   * save this room plays (worlds.ts); characters are shared by every world.
    */
-  async useSaves(store: SaveStore): Promise<void> {
-    const saves = new Saves(store)
+  async useSaves(store: SaveStore, worldId?: string): Promise<void> {
+    const saves = new Saves(store, worldId)
     await saves.loadWorld()
     this.saves = saves
     this.match.restoreWorld()
