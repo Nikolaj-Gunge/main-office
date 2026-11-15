@@ -4,6 +4,7 @@ import {
   MAX_NAME_LENGTH,
   type ModeId,
   packAppearance,
+  randomAppearance,
 } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
 import type { GraphicsSetting } from '../render/device-tier.ts'
@@ -50,7 +51,8 @@ function h<K extends keyof HTMLElementTagNameMap>(
 /**
  * The game's front door and pause menu (Esc). One screen with four tabs:
  *   PLAY — name, Play/Resume and how to play
- *   CHARACTER — the character creator (shown first on a device that never made one)
+ *   CHARACTER — the character creator (a first visit skips it: PLAY goes straight in with a
+ *     random look, and the creator waits here for later)
  *   SETTINGS — mouse, view, pixel size, sound (applied and saved instantly)
  *   CONTROLS — every action, click to rebind
  * The game keeps running behind it — it's multiplayer, there is no real pause.
@@ -91,6 +93,8 @@ export class Menu {
   private readonly creator: CharacterCreator
   private onCharacterHandler: ((appearance: number) => void) | null = null
   private tab: Tab = 'play'
+  /** This visit joined with a look picked at random (nobody made one yet). */
+  private randomLook = false
 
   constructor(parent: HTMLElement, settings: Settings, onSettingsChange: () => void) {
     this.settings = settings
@@ -158,7 +162,7 @@ export class Menu {
       if (this.joined) this.showTab('play')
       else this.play()
     })
-    this.creator.setMode(this.look === null, false)
+    this.creator.setMode(false, false)
 
     // --- Settings tab ---
     const settingsPanel = h('section', { class: 'menu-panel menu-settings' })
@@ -246,6 +250,9 @@ export class Menu {
     )
     parent.append(this.root)
     this.showTab('play')
+    // Never played here: the name is optional, PLAY is the one thing to press.
+    this.root.classList.toggle('menu-first', this.look === null)
+    this.nameInput.placeholder = this.look === null ? 'Your name (optional)' : 'Your name'
 
     // Rebinding listens on the whole window while waiting for a key.
     window.addEventListener('keydown', (e) => this.captureKey(e, e.code), true)
@@ -298,7 +305,7 @@ export class Menu {
     this.joined = joined
     this.nameInput.disabled = joined
     this.playButton.textContent = joined ? 'RESUME' : 'PLAY'
-    this.creator.setMode(this.look === null && !joined, joined)
+    this.creator.setMode(false, joined)
   }
 
   /** The first tip explains the game mode the server runs. */
@@ -324,11 +331,21 @@ export class Menu {
     this.renderControls()
   }
 
+  /** Joined with a random look this visit: the game offers the creator later (a hint). */
+  get pickedForYou(): boolean {
+    return this.randomLook
+  }
+
   private play(): void {
-    // First time on this device: make a character before the first game.
+    // First time on this device: straight in, as somebody random. The CHARACTER tab is there
+    // whenever they want it (and a hint says so once they've had a look around).
     if (!this.joined && this.look === null) {
-      this.showTab('character')
-      return
+      this.look = randomAppearance()
+      saveAppearance(this.look)
+      this.creator.setLook(this.look)
+      this.randomLook = true
+      this.root.classList.remove('menu-first')
+      this.onCharacterHandler?.(packAppearance(this.look))
     }
     const name = this.nameInput.value.trim()
     localStorage.setItem(NAME_KEY, name)

@@ -1,4 +1,5 @@
-import { statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DEFAULT_SERVER_PORT, WS_PATH } from '@office-fps/shared'
 import { defineConfig, type Plugin } from 'vite'
@@ -53,8 +54,33 @@ function rapierBinaryWasm(): Plugin {
   }
 }
 
+/**
+ * The service worker (src/pwa/sw.js) as /sw.js, with this build's id and its files to fetch
+ * ahead filled in. The id changes whenever any built file does, so every deploy is a new
+ * service worker (and the page offers a reload, see src/pwa/pwa.ts). Builds only: dev has none.
+ */
+function serviceWorker(): Plugin {
+  return {
+    name: 'service-worker',
+    apply: 'build',
+    generateBundle(_, bundle) {
+      const files = Object.keys(bundle)
+        .filter((name) => name.startsWith('assets/') && !name.endsWith('.map'))
+        .sort()
+      const build = createHash('sha256').update(files.join('\n')).digest('hex').slice(0, 12)
+      const source = readFileSync(new URL('src/pwa/sw.js', import.meta.url), 'utf8')
+      const precache = JSON.stringify(files.map((name) => `/${name}`))
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sw.js',
+        source: source.replace('__BUILD__', build).replace("'__PRECACHE__'", `'${precache}'`),
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [rapierBinaryWasm()],
+  plugins: [rapierBinaryWasm(), serviceWorker()],
   // Pre-bundled dependencies skip plugin transforms: keep Rapier out so dev loads the .wasm too.
   optimizeDeps: { exclude: ['@dimforge/rapier3d-compat'] },
   server: {

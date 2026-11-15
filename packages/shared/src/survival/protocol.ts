@@ -198,8 +198,11 @@ export interface Notice {
   /** `story` (and `note`, on paper) is shown big in the middle; the others as a line at the side. */
   kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note' | 'sound'
   text: string
-  /** `sound` (heard, not shown): birds taking off (flock index in `flock`), or a car alarm. */
-  sound?: 'birds' | 'alarm'
+  /**
+   * `sound` (heard, not shown): birds taking off (flock index in `flock`), a car alarm, or a
+   * groan answering somebody's first gunshot (first-shot.ts).
+   */
+  sound?: 'birds' | 'alarm' | 'groan'
   flock?: number
   /** `sound` alarm: how long it goes on (s). */
   seconds?: number
@@ -207,6 +210,8 @@ export interface Notice {
   title?: string
   /** `scream`: where it came from (it is heard, not shown). */
   at?: { x: number; y: number; z: number }
+  /** A one-time hint the client shows as such (onboarding.ts HINTS), not a line in the feed. */
+  hint?: 'gunfire'
 }
 
 /** Something lying in the world to pick up. */

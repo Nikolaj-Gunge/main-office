@@ -318,6 +318,10 @@ export class SurvivalClient {
           return true
         }
         if (this.rot.onNotice(n)) return true
+        if (n.hint) {
+          this.onboarding.serverHint(n.hint)
+          return true
+        }
         if (n.kind === 'scream' && n.at) {
           this.audio.playNear('scream', n.at, 1, 170, 12)
           this.audio.play('dread', { volume: 0.5 })

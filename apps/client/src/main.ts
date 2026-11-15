@@ -75,6 +75,7 @@ import { MouseLook } from './input/mouse-look.ts'
 import { AimState, samplePlayerInput } from './input/player-input.ts'
 import { serverMap, trackPhysicsDownload } from './loading.ts'
 import { Connection } from './net/connection.ts'
+import { registerServiceWorker, wantsServiceWorker } from './pwa/pwa.ts'
 import { AutoQuality } from './render/auto-quality.ts'
 import { Avatar } from './render/avatar.ts'
 import { CoopZoneMarker } from './render/coop-zone.ts'
@@ -119,6 +120,7 @@ const hudRoot = requireElement<HTMLDivElement>('#hud')
 const settings = loadSettings()
 const hud = new CombatHud(hudRoot)
 const overlay = new Overlay(hudRoot)
+let firstGameFrame = false
 const scoreboard = new Scoreboard(hudRoot)
 const menu = new Menu(hudRoot, settings, () => applySettings())
 
@@ -737,6 +739,8 @@ if (sessionStorage.getItem(AUTOJOIN_KEY)) {
 
 menu.onPlay((name) => {
   audio.unlock() // browsers only allow audio after a click
+  // A first visit went in as somebody random: say where to change that (onboarding.ts).
+  if (survival && menu.pickedForYou) survival.onboarding.offerLook = true
   if (net.state === 'idle') net.connect(name, menu.appearance)
   void look.lock()
 })
@@ -1184,6 +1188,11 @@ pixels.setAnimationLoop(() => {
 
   sky.position.copy(camera.position)
   pixels.render(scene, camera, noclip || seated ? undefined : viewmodel)
+  // Time to the first frame in the game (load-time checks read it: performance.getEntriesByName).
+  if (joined && !firstGameFrame) {
+    firstGameFrame = true
+    performance.mark('first-game-frame')
+  }
   stats.update()
   if (firstFrame) {
     firstFrame = false
@@ -1214,6 +1223,15 @@ pixels.setAnimationLoop(() => {
     ].join('\n')
   }
 })
+
+// A built game caches itself for the next visit (pwa/sw.js) and says when a new deploy is ready.
+if (wantsServiceWorker(location.search, import.meta.env.PROD)) {
+  void registerServiceWorker(() => {
+    const text = 'A new version is ready.'
+    overlay.setBanner(text, true)
+    menu.setStatus(`${text} Reload to get it.`)
+  })
+}
 
 // Dev-only handle for debugging from the console and automated visual checks.
 if (import.meta.env.DEV) {
