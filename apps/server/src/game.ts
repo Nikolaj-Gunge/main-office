@@ -534,6 +534,11 @@ export class Game {
     if (player) this.match.onAction(player, action)
   }
 
+  /** A line of nearby chat was said (social.ts): the match may listen (survival's mimics). */
+  spoken(player: ServerPlayer, text: string): void {
+    this.match.onSpoken(player, text)
+  }
+
   /** Chat, a ping, a wave or a mute (checked and rate-limited in social.ts). */
   handleSocial(id: number, req: SocialRequest): void {
     const player = this.players.get(id)

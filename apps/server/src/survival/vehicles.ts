@@ -484,6 +484,13 @@ export class Vehicles {
       .map((c) => ({ x: c.state.x, y: c.state.y, z: c.state.z }))
   }
 
+  /** Every car nobody sits in, wrecked or not, and which way it faces: crawlers hide under them. */
+  hideouts(): (Point & { yaw: number })[] {
+    return this.cars
+      .filter((c) => c.seats.every((s) => s === 0))
+      .map((c) => ({ x: c.state.x, y: c.state.y, z: c.state.z, yaw: c.state.yaw }))
+  }
+
   /** How far a car's engine is heard (m) if `player` sits in one that runs; else 0. */
   noiseOf(player: ServerPlayer): number {
     const at = this.seatOf(player)

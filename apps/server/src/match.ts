@@ -136,6 +136,11 @@ export class MatchRunner {
     this.survival?.onLeave(player)
   }
 
+  /** Something said out loud nearby (chat): survival's mimics remember it. */
+  onSpoken(player: ServerPlayer, text: string): void {
+    this.survival?.onSpoken(player, text)
+  }
+
   /** Survival: the world was read back from the saves (see Game.useSaves). */
   restoreWorld(): void {
     this.survival?.restoreWorld()

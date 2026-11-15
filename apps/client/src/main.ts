@@ -497,6 +497,7 @@ const ZOMBIE_NAMES: Record<number, string> = {
   [ZombieKind.Brute]: 'Brute',
   [ZombieKind.Screamer]: 'Screamer',
   [ZombieKind.Stalker]: '???',
+  [ZombieKind.Mimic]: 'Mimic',
 }
 
 /** Server game rules (admin page): movement, shooting, looks and kill jingles. */
@@ -946,7 +947,7 @@ const outgoing = new InputBatcher()
  * out of sight for the moment, and hidden pooled effects are briefly shown to the compiler.
  */
 async function warmShaders(): Promise<void> {
-  const looks = ['worker', 'zombie', 'runner', 'brute', 'screamer', 'stalker'] as const
+  const looks = ['worker', 'zombie', 'runner', 'brute', 'screamer', 'stalker', 'mimic'] as const
   const bodies = looks.map((look, i) => {
     const body = new Avatar('', i, look)
     body.root.position.set(0, -5000, 0)

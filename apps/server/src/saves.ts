@@ -120,6 +120,20 @@ export interface WorldSave {
   boards: [number, number][]
   /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
   retired?: Retired[]
+  /** Survivors who turned and still walk, with everything they carried (director.ts). */
+  turned?: TurnedSave[]
+}
+
+/** One of the dead that was one of you, as the world remembers them. */
+export interface TurnedSave {
+  name: string
+  appearance?: number | undefined
+  /** Worn gear (gearLooks), so they're drawn in their clothes. */
+  look: number
+  stuff: { item: string; n: number; ammo?: number }[]
+  x: number
+  y: number
+  z: number
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

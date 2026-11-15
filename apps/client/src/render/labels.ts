@@ -4,7 +4,7 @@ import * as THREE from 'three'
 const WORLD_PER_PIXEL = 0.06
 
 /** Small pixel-font text sprite that always faces the camera. */
-export function createLabel(text: string): THREE.Sprite {
+export function createLabel(text: string, color = '#ffffff'): THREE.Sprite {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('2D canvas unavailable')
@@ -20,7 +20,7 @@ export function createLabel(text: string): THREE.Sprite {
   ctx.textBaseline = 'middle'
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
   ctx.fillRect(0, 0, width, height)
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = color
   ctx.fillText(text, 2, height / 2 + 1)
 
   const texture = new THREE.CanvasTexture(canvas)

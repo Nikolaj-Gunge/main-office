@@ -363,6 +363,18 @@ const GAITS: Record<number, Gait> = {
     droop: 0.15,
     arms: 'twitch',
   },
+  // Nearly a person's walk: upright and unhurried, too stiff, the head hanging over to one side.
+  [ZombieKind.Mimic]: {
+    ...PERSON,
+    lean: 0.04,
+    lift: 0.5,
+    bob: 0.6,
+    roll: 0.02,
+    step: 0.95,
+    sway: 0.02,
+    loll: 0.4,
+    droop: 0.1,
+  },
   // A predator's crouch-stalk: low, bent double, head up, hands out ahead.
   [ZombieKind.Stalker]: {
     ...PERSON,

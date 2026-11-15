@@ -116,6 +116,8 @@ export const ZombieKind = {
   Screamer: 4,
   /** Only moves while nobody is looking at it. */
   Stalker: 5,
+  /** Night only and rare: repeats what it heard people say, to bring them closer (lurkers.ts). */
+  Mimic: 6,
 } as const
 export type ZombieKind = (typeof ZombieKind)[keyof typeof ZombieKind]
 

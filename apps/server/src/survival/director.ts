@@ -103,11 +103,12 @@ import {
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
-import type { CharacterSave } from '../saves.ts'
+import type { CharacterSave, TurnedSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { type LurkerHost, Lurkers } from './lurkers.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
@@ -190,6 +191,9 @@ interface Turned {
   stuff: Stack[]
   look: number
 }
+
+/** The name a survivor's turned body goes by (over its head, and in the crosshair). */
+export const turnedName = (name: string) => `${name}, turned`
 
 interface Loot extends LootItem {
   ammo?: number
@@ -304,6 +308,8 @@ export class SurvivalDirector {
   private readonly zeds = new Map<number, Zed>()
   /** The dead who were survivors, by zombie id: what drops when they're put down. */
   private readonly turned = new Map<number, Turned>()
+  /** Turned bodies from the world save, waiting for the pool to get up again (restoreWorld). */
+  private risen: TurnedSave[] = []
   /** What Gus has today besides his usual stock (RARE_STOCK): item → how many. */
   private rare = new Map<string, number>()
   private pool: ServerPlayer[] = []
@@ -355,7 +361,11 @@ export class SurvivalDirector {
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
     this.evac = new Evac({ ...this.storyHost(), retire: (p) => this.retire(p.player) })
+    this.lurkers = new Lurkers(this.lurkerHost())
   }
+
+  /** Crawlers under cars and mimics (see lurkers.ts). */
+  readonly lurkers: Lurkers
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
   readonly evac: Evac
@@ -461,6 +471,8 @@ export class SurvivalDirector {
     this.pool = []
     this.zeds.clear()
     this.turned.clear()
+    this.risen = []
+    this.lurkers.reset()
     this.clearBoards()
     this.vehicles.dispose()
     this.storage.reset()
@@ -604,6 +616,7 @@ export class SurvivalDirector {
       gates: this.gates,
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
       retired: [...this.evac.retired],
+      turned: [...this.turnedSaves(), ...this.risen],
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -619,6 +632,8 @@ export class SurvivalDirector {
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
+    // Those who turned get up again where they were once there's somebody about (populate).
+    this.risen = (w.turned ?? []).filter((t) => t && typeof t.name === 'string')
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -702,7 +717,7 @@ export class SurvivalDirector {
   }
 
   speedFactor(player: ServerPlayer): number {
-    return this.zeds.get(player.id)?.speedFactor ?? 1
+    return this.lurkers.heldSpeed(player) ?? this.zeds.get(player.id)?.speedFactor ?? 1
   }
 
   clawDamage(zombie: ServerPlayer): number {
@@ -780,6 +795,7 @@ export class SurvivalDirector {
     const zed = this.zeds.get(victim.id)
     if (zed) {
       victim.respawnAt = Number.POSITIVE_INFINITY
+      this.lurkers.killed(victim)
       const was = this.turned.get(victim.id)
       if (was) {
         // One of you: everything they carried is still on them.
@@ -821,7 +837,8 @@ export class SurvivalDirector {
     const at = { ...victim.state.pos }
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
-    const turning = sv.turning
+    // Turning (the bite ran its course), or killed by the dead: what's left gets up again.
+    const turning = sv.turning || !!killer.zombie
     // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
     this.workbench.forget(victim)
     this.storage.forget(victim)
@@ -842,12 +859,12 @@ export class SurvivalDirector {
     this.save(sv)
     void this.game.saves.flush()
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
-    if (turning) this.rise(victim, stuff, look, at)
-    else this.spill(stuff, at)
+    const rose = turning && this.rise(victim, stuff, look, at)
+    if (!turning) this.spill(stuff, at)
     this.notice(
       victim,
       'story',
-      turning
+      rose
         ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.\n\nYou wake at Haven: somebody new.`
         : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.\n\nYou wake at Haven: somebody new.`,
     )
@@ -949,9 +966,10 @@ export class SurvivalDirector {
 
   /**
    * The clock ran out: what's left of them gets up where they stood, wearing what they wore and
-   * carrying all they had. Inside Haven the guards see to it first.
+   * carrying all they had, their name over their head. Inside Haven the guards see to it first.
+   * False when nothing got up (their things lie where they fell).
    */
-  private rise(victim: ServerPlayer, stuff: Stack[], look: number, at: Point): void {
+  private rise(victim: ServerPlayer, stuff: Stack[], look: number, at: Point): boolean {
     const safe = this.def.pois.some((p) => p.safe && dist(at, p) < p.r + 6)
     const zombie = safe ? null : this.freeZombie(at)
     const who = victim.name
@@ -965,12 +983,10 @@ export class SurvivalDirector {
           `${who} turned. The guards put them down before they got up.`,
         )
       }
-      return
+      return false
     }
-    this.place(zombie, ZombieKind.Walker, -1, false, at)
+    this.raise(zombie, { name: who, appearance: victim.appearance, look, stuff, ...at })
     zombie.zombie?.face(victim.state.yaw)
-    this.turned.set(zombie.id, { stuff, look })
-    this.game.nameZombie(zombie, `${who} (turned)`, victim.appearance)
     for (const sv of this.survivors.values()) {
       if (sv.player === victim) continue
       const near = dist(sv.player.state.pos, at) < 150
@@ -982,6 +998,35 @@ export class SurvivalDirector {
           : `${who} turned out there. Whatever they carried walks with them now.`,
       )
     }
+    this.saveWorld()
+    return true
+  }
+
+  /** Puts one of you who turned on its feet: their clothes, their name, their things. */
+  private raise(zombie: ServerPlayer, t: TurnedSave): void {
+    this.place(zombie, ZombieKind.Walker, -1, false, t)
+    this.turned.set(zombie.id, { stuff: t.stuff, look: t.look })
+    this.game.nameZombie(zombie, turnedName(t.name), t.appearance)
+  }
+
+  /** The turned who walk right now, for the world save (where they are, what they carry). */
+  private turnedSaves(): TurnedSave[] {
+    const out: TurnedSave[] = []
+    for (const [id, t] of this.turned) {
+      const z = this.game.players.get(id)
+      if (!z?.state.alive) continue
+      const p = z.state.pos
+      out.push({
+        name: z.name.replace(/, turned$/, ''),
+        ...(z.appearance !== undefined ? { appearance: z.appearance } : {}),
+        look: t.look,
+        stuff: t.stuff.map((s) => ({ ...s })),
+        x: Math.round(p.x * 10) / 10,
+        y: Math.round(p.y * 10) / 10,
+        z: Math.round(p.z * 10) / 10,
+      })
+    }
+    return out
   }
 
   /** A zombie to bring out: a free one, or else the one furthest from everybody (not one of you). */
@@ -1042,6 +1087,7 @@ export class SurvivalDirector {
     if (tick % 30 === 15) this.populate(alive)
     if (tick % 15 === 11) this.rot.step()
     this.vehicles.step()
+    this.lurkers.step()
     this.workbench.step()
     this.story.step(TICK_DT)
     // Somebody walking with you is kept up to date often enough to look like walking.
@@ -2187,6 +2233,12 @@ export class SurvivalDirector {
       this.pool.push(zombie)
       this.zeds.set(zombie.id, zombie.zombie as Zed)
     }
+    // The turned from before a restart get up again where they were.
+    for (const t of this.risen.splice(0)) {
+      const zombie = this.freeZombie(t)
+      if (zombie) this.raise(zombie, t)
+      else this.risen.push(t)
+    }
     const free = () => this.pool.find((z) => !z.state.alive)
     const active = this.pool.filter((z) => z.state.alive)
     const dark = this.light < 0.3
@@ -2302,6 +2354,61 @@ export class SurvivalDirector {
     )
     zed.speedChanged()
     this.game.applyRules(zombie)
+  }
+
+  /**
+   * Somebody said something out loud (nearby chat): the mimics remember it, to say it back.
+   */
+  onSpoken(player: ServerPlayer, text: string): void {
+    const sv = this.survivors.get(player.id)
+    if (sv?.player.state.alive) this.lurkers.heard(sv.player.state.pos, text)
+  }
+
+  /** What the crawlers under cars and the mimics (lurkers.ts) get to do here. */
+  private lurkerHost(): LurkerHost {
+    return {
+      now: () => this.now,
+      tick: () => this.game.tick,
+      random: () => this.random(),
+      night: () => this.phase === 'night',
+      people: () => {
+        const out = []
+        for (const sv of this.survivors.values()) {
+          const s = sv.player.state
+          if (!s.alive) continue
+          out.push({
+            player: sv.player,
+            light: sv.self.light,
+            shielded: shielded(sv.self.age),
+            seated: this.vehicles.seatOf(sv.player) !== null,
+            safe: this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 6),
+          })
+        }
+        return out
+      },
+      zed: (id) => this.zeds.get(id),
+      cars: () => this.vehicles.hideouts(),
+      ground: (x, z) => heightAt(this.def.terrain, x, z),
+      ringSpot: (centre, radius) =>
+        this.ringSpot(
+          centre,
+          radius,
+          [...this.survivors.values()].map((sv) => sv.player.state.pos),
+        ),
+      bringOut: (kind, pos, yaw) => {
+        const zombie = this.pool.find((z) => !z.state.alive)
+        if (!zombie) return null
+        this.place(zombie, kind, -1, false, pos)
+        zombie.zombie?.face(yaw)
+        return zombie
+      },
+      retire: (zombie) => this.game.retireZombie(zombie),
+      hurt: (victim, attacker, amount) => this.game.hurt(victim, attacker, amount),
+      rules: (player) => this.game.applyRules(player),
+      clear: (a, b) => this.game.lineClear(a, b),
+      send: (player, msg) => this.send(player, msg),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    }
   }
 
   /** What the story (story.ts) gets to do here. Items go through count/take/give alone. */

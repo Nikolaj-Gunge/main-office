@@ -9,11 +9,13 @@ import { ARM_LENGTH, type Baked, Kit, pickOf, seeded, type Vec } from './body-ki
  *  - brute:    a hunched mountain in torn overalls: neck and back mass, tumours, huge fists, chains;
  *  - screamer: tall skull with the jaw unhinged, a bloated throat sack, long clawed fingers;
  *  - stalker:  glossy black and wiry, spines down the back, long bone claws, slit eyes.
+ *  - mimic:    nearly one of you: plain jacket and jeans, but the arms hang too long, the head
+ *              sits tipped over on its neck and the smile is too wide.
  * Everything is decoration on the hitbox parts (part sizes stay the hit volumes) and is baked per
  * kind and variant into one vertex-coloured mesh per part, cached and shared by every copy.
  */
 
-export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker'
+export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker' | 'mimic'
 
 const H = PART_SIZES.head
 const C = PART_SIZES.chest
@@ -33,6 +35,7 @@ export const EYES: Record<ZombieLook, { x: number; y: number; glow: number }> = 
   brute: { x: 0.07, y: 0.01, glow: 0.22 },
   screamer: { x: 0.055, y: 0.13, glow: 0.15 },
   stalker: { x: 0.065, y: 0.02, glow: 0.1 },
+  mimic: { x: 0.065, y: 0.03, glow: 0.05 },
 }
 
 const cache = new Map<string, Baked>()
@@ -547,7 +550,76 @@ const stalker: Build = (k, v, rnd) => {
   }
 }
 
-const BUILD: Record<ZombieLook, Build> = { zombie: walker, runner, brute, screamer, stalker }
+// --- Mimic: nearly one of you ---------------------------------------------------------------------
+
+const mimic: Build = (k, v) => {
+  const skin = pickOf([0xc9b8a4, 0xb59a84, 0x8c6c58], v)
+  const shade = 0x6e6458
+  const jacket = pickOf([0x3e4a3a, 0x4a3e34, 0x2e3a4a, 0x5a4a3a], v)
+  const shirt = pickOf([0x9a9282, 0x6a6e74], v >> 1)
+  const jeans = pickOf([0x2c3442, 0x3a3830], v >> 1)
+  const hair = pickOf([0x2a2018, 0x5a3b1e, 0x161616], v >> 2)
+  const mouth = 0x1a0c0a
+  const boots = 0x2a2420
+  // The whole head tipped over on the neck (each box turned about the neck, not its own middle).
+  const lean = (v & 1 ? 1 : -1) * 0.42
+  const c = Math.cos(lean)
+  const n = Math.sin(lean)
+  const tipped = (p: Vec): Vec => [
+    p[0] * c - (p[1] + H.y) * n,
+    p[0] * n + (p[1] + H.y) * c - H.y,
+    p[2],
+  ]
+  const head = (color: number | 'eyes', size: Vec, at: Vec = [0, 0, 0]) =>
+    k.box(color, size, tipped(at), [0, 0, lean])
+  const fz = -H.z - 0.006
+
+  k.on('head')
+  head(skin, [H.x * 2, H.y * 2, H.z * 2])
+  head(hair, [H.x * 2 + 0.02, 0.06, H.z * 2 + 0.02], [0, H.y - 0.01, 0.01])
+  head(hair, [H.x * 2 + 0.02, 0.16, 0.05], [0, H.y - 0.09, H.z - 0.01])
+  // Small, dull eyes that hardly catch the light, and a smile a little too wide.
+  for (const s of SIDES) head('eyes', [0.04, 0.025, 0.02], [s * EYES.mimic.x, EYES.mimic.y, fz])
+  head(mouth, [0.2, 0.018, 0.02], [0, -0.08, fz])
+  for (const s of SIDES) head(mouth, [0.025, 0.03, 0.02], [s * 0.1, -0.07, fz])
+
+  // A plain jacket over a shirt, the way anybody out here dresses.
+  const cz = -C.z - 0.006
+  k.on('chest').box(jacket, [C.x * 2, C.y * 2, C.z * 2])
+  k.box(shirt, [0.12, C.y * 2 - 0.02, 0.012], [0, 0, cz])
+  k.box(jacket, [C.x * 2 + 0.03, 0.06, C.z * 2 + 0.03], [0, C.y - 0.02, 0]) // collar
+  k.on('stomach').box(jacket, [S.x * 2, S.y * 2, S.z * 2])
+  k.box(shirt, [0.12, S.y * 2, 0.012], [0, 0, -S.z - 0.006])
+  k.box(shade, [S.x * 2 + 0.012, 0.04, S.z * 2 + 0.012], [0, -S.y + 0.03, 0])
+
+  // The arms: sleeves as long as they should be, then far too much wrist and long grey fingers.
+  const over = 0.3
+  for (const arm of ['armL', 'armR'] as const) {
+    k.on(arm)
+    k.box(jacket, [0.13, L * 0.8, 0.15], [0, -L * 0.1, 0])
+    k.box(skin, [0.08, L * 0.25 + over, 0.09], [0, L * 0.38 + over / 2, 0])
+    for (let i = 0; i < 3; i++) {
+      k.box(shade, [0.022, 0.13, 0.022], [(i - 1) * 0.03, L / 2 + over + 0.05, -0.01])
+    }
+  }
+
+  for (const thigh of ['thighL', 'thighR'] as const) {
+    k.on(thigh).box(jeans, [T.x * 2, T.y * 2, T.z * 2])
+  }
+  for (const shin of ['shinL', 'shinR'] as const) {
+    k.on(shin).box(jeans, [N.x * 2, N.y * 2, N.z * 2])
+    k.box(boots, [0.15, 0.1, 0.24], [0, -N.y + 0.04, -0.04])
+  }
+}
+
+const BUILD: Record<ZombieLook, Build> = {
+  zombie: walker,
+  runner,
+  brute,
+  screamer,
+  stalker,
+  mimic,
+}
 
 /** Glowing eyes per kind (HDR: they bloom, and fog doesn't touch them). */
 export const ZOMBIE_EYES: Record<ZombieLook, THREE.MeshBasicMaterial> = {
@@ -556,6 +628,7 @@ export const ZOMBIE_EYES: Record<ZombieLook, THREE.MeshBasicMaterial> = {
   brute: new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 2.4, 0.1), fog: false }),
   screamer: new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 6, 6.5), fog: false }),
   stalker: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.5, 5.5, 8), fog: false }),
+  mimic: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.3, 1.1), fog: false }),
 }
 /** Colour of the halo round each kind's eyes. */
 export const EYE_HALO: Record<ZombieLook, THREE.Color> = {
@@ -564,4 +637,5 @@ export const EYE_HALO: Record<ZombieLook, THREE.Color> = {
   brute: new THREE.Color(3, 0.8, 0.03),
   screamer: new THREE.Color(1.6, 1.6, 1.7),
   stalker: new THREE.Color(1.0, 1.6, 2.4),
+  mimic: new THREE.Color(0.3, 0.28, 0.24),
 }
