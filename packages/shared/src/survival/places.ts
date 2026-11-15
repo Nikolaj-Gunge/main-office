@@ -1,4 +1,5 @@
 import type { PlaceWorld, Site } from './kit.ts'
+import { banditCamp } from './places-bandits.ts'
 import { camper, house, shed } from './places-homes.ts'
 import { bunker, checkpoint, crash, radio } from './places-military.ts'
 import { farm, gas, motel, quarry, sawmill, trailers } from './places-roadside.ts'
@@ -36,4 +37,5 @@ export const PLACES: Record<Exclude<PoiKind, 'start' | 'cabin' | 'camp'>, PlaceB
   shed,
   treehouse,
   stand,
+  bandits: banditCamp,
 }

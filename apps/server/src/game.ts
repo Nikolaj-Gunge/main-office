@@ -83,6 +83,14 @@ export interface ZombieMind {
   struck?(landed: boolean): void
 }
 
+/**
+ * What runs a server-side person who isn't anybody's player (survival's bandits and raiders,
+ * see survival/bandits.ts): their input each tick, or null to stand still.
+ */
+export interface NpcMind {
+  think(player: ServerPlayer): InputCommand | null
+}
+
 /** Anything that can deliver bytes to one client (a WebSocket, or a fake in tests). */
 export interface GameClient {
   send(bytes: Uint8Array<ArrayBuffer>): void
@@ -145,6 +153,8 @@ interface ServerPlayer {
   dummy?: MapSpawn
   /** Zombies mode: one of the horde (server-run, see zombies.ts). */
   zombie?: ZombieMind
+  /** Survival: a bandit or raider (server-run person, see survival/bandits.ts). */
+  npc?: NpcMind
   /** Health on (re)spawn. */
   maxHealth: number
 }
@@ -399,13 +409,15 @@ export class Game {
     dummy?: MapSpawn,
     zombie?: ZombieMind,
     appearance?: number,
+    npc?: NpcMind,
   ): number | null {
     if (this.players.size >= MAX_PLAYERS) {
-      // A person always gets in: a zombie or a bot gives up its place.
+      // A person always gets in: a zombie, a bandit or a bot gives up its place.
       const bot =
         client === NO_CLIENT
           ? undefined
           : ([...this.players.values()].find((p) => p.zombie) ??
+            [...this.players.values()].find((p) => p.npc) ??
             [...this.players.values()].find((p) => p.bot))
       if (!bot) return null
       this.leave(bot.id)
@@ -449,6 +461,7 @@ export class Game {
       maxHealth: MAX_HEALTH,
       ...(dummy ? { dummy } : {}),
       ...(zombie ? { zombie } : {}),
+      ...(npc ? { npc } : {}),
     }
     this.match.onJoin(player)
     this.applyRules(player)
@@ -489,7 +502,7 @@ export class Game {
     this.voice.forget(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
-    if (!player.bot && !player.dummy && !player.zombie) this.syncBots()
+    if (!player.bot && !player.dummy && !player.zombie && !player.npc) this.syncBots()
     this.match.check()
   }
 
@@ -619,6 +632,14 @@ export class Game {
         const seq = player.lastQueuedSeq + 1
         player.lastQueuedSeq = seq
         player.queue.push({ seq, buttons: 0, yaw: player.dummy.yaw, pitch: 0, viewTick: this.tick })
+        continue
+      }
+      if (player.npc) {
+        const command = player.npc.think(player)
+        if (command) {
+          player.lastQueuedSeq = command.seq
+          player.queue.push(command)
+        }
         continue
       }
       if (player.zombie) {
@@ -983,6 +1004,30 @@ export class Game {
     this.broadcast(joinedMessage(zombie))
   }
 
+  // --- Survival's bandits (survival/bandits.ts) -----------------------------------------------
+
+  /**
+   * Adds a server-run person (dead until `placeNpc`): drawn like anybody, with `appearance`.
+   * Null if the server is full.
+   */
+  addNpc(name: string, appearance: number, mind: NpcMind): ServerPlayer | null {
+    if (this.players.size >= MAX_PLAYERS) return null
+    const id = this.join(name, NO_CLIENT, undefined, undefined, appearance, mind)
+    const npc = id === null ? undefined : this.players.get(id)
+    if (!npc) return null
+    npc.state.alive = false
+    npc.respawnAt = Number.POSITIVE_INFINITY
+    return npc
+  }
+
+  /** Brings a server-run person (back) to life here, with the mode's loadout (freshState). */
+  placeNpc(npc: ServerPlayer, spawn: MapSpawn, health: number): void {
+    npc.maxHealth = health
+    this.applyRules(npc)
+    this.respawn(npc, spawn)
+    npc.respawnAt = Number.POSITIVE_INFINITY
+  }
+
   /** Takes a zombie out quietly (no kill, no score): back into the pool. */
   retireZombie(zombie: ServerPlayer): void {
     zombie.state.alive = false
@@ -1043,7 +1088,9 @@ export class Game {
     player.state.prevButtons = previous.prevButtons
     player.health = player.maxHealth
     player.protectedUntil =
-      player.dummy || player.zombie ? 0 : this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
+      player.dummy || player.zombie || player.npc
+        ? 0
+        : this.tick + SPAWN_PROTECTION_SECONDS * TICK_RATE
   }
 
   /**
@@ -1171,7 +1218,9 @@ export class Game {
     const entities: InterestEntity[] = []
     if (this.map.survival) {
       for (const p of this.players.values()) {
-        entities.push({ id: p.id, x: p.state.pos.x, z: p.state.pos.z, person: !p.zombie })
+        // Bandits are only sent close up, like the dead (they're many, and only matter near).
+        const person = !p.zombie && !p.npc
+        entities.push({ id: p.id, x: p.state.pos.x, z: p.state.pos.z, person })
       }
     }
     const grid = this.map.survival ? new SpatialGrid(entities) : null
@@ -1221,7 +1270,7 @@ export class Game {
     this.broadcast({
       type: ServerMsg.Scoreboard,
       entries: [...this.players.values()]
-        .filter((p) => !p.zombie)
+        .filter((p) => !p.zombie && !p.npc)
         .map((p) => ({
           id: p.id,
           kills: p.kills,

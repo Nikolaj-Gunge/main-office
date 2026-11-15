@@ -84,7 +84,7 @@ export class MatchRunner {
   /** People (and bots) in the game. */
   private get everyone(): ServerPlayer[] {
     // Shooting-range dummies and zombies aren't players: they don't win, score or end rounds.
-    return [...this.game.players.values()].filter((p) => !p.dummy && !p.zombie)
+    return [...this.game.players.values()].filter((p) => !p.dummy && !p.zombie && !p.npc)
   }
 
   // --- What the game asks ----------------------------------------------------------------
@@ -243,7 +243,8 @@ export class MatchRunner {
   // --- What the game tells us ------------------------------------------------------------
 
   onJoin(player: ServerPlayer): void {
-    if (player.dummy) return
+    // Survival's bandits (team 0: everybody's enemy) are the director's, not a player.
+    if (player.dummy || player.npc) return
     if (player.zombie) {
       player.team = 2
       return

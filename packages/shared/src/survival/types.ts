@@ -50,6 +50,8 @@ export type PoiKind =
   | 'shed'
   | 'treehouse'
   | 'stand'
+  /** A bandit camp (places-bandits.ts): living people with guns. */
+  | 'bandits'
 
 /** A place in the world: a clearing of flat ground with something built on it. */
 export interface Poi {
