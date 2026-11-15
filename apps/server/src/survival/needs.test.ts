@@ -114,7 +114,7 @@ describe('needs in the survival game', () => {
     const s = self.inv.find((h) => h.item === 'bandage')
     if (!s) throw new Error('no bandage')
     t.game.handleAction(t.id, { a: 'use', from: { c: s.c, x: s.x, y: s.y } })
-    t.run(1.1)
+    t.run(3.5) // a bandage takes 3 s to put on (crafting.ts)
     expect(self.needs?.sprain).toBe(0)
     expect(t.player().body.config.sprintMultiplier).toBeGreaterThan(1.3)
   })

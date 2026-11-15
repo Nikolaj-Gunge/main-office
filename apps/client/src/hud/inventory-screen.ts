@@ -1,7 +1,10 @@
 import {
+  boxFits,
+  boxStackAt,
   CONTAINERS,
   type ContainerId,
   cellsUsed,
+  craftPlan,
   type EquipSlot,
   fitsAt,
   footprint,
@@ -15,6 +18,8 @@ import {
   infectionWord,
   type LootItem,
   maxStack,
+  RECIPES,
+  type Stored,
   type SurvivalAction,
   type SurvivalSelf,
   sizeOf,
@@ -53,6 +58,8 @@ interface Grab {
   stack?: Held
   slot?: EquipSlot
   ground?: boolean
+  /** In the open container (trunk, locker). */
+  boxed?: Stored
 }
 
 /** A grab in progress: what, how many, which way round, and which of its cells is under the mouse. */
@@ -116,6 +123,7 @@ export function useVerb(def: ItemDef): string | null {
   if (def.kind === 'drink') return 'Drink'
   if (def.kind === 'med') return 'Use'
   if (def.battery) return 'Load torch'
+  if (def.id === 'noisemaker') return 'Throw'
   return null
 }
 
@@ -140,6 +148,8 @@ export class InventoryScreen {
   private stale = false
   private shown = false
   private readonly grabs = new WeakMap<HTMLElement, Grab>()
+  /** What the left column shows: the ground, the open container, or what you can make. */
+  private tab: 'near' | 'box' | 'craft' = 'near'
 
   constructor(
     parent: HTMLElement,
@@ -169,6 +179,7 @@ export class InventoryScreen {
   }
 
   setOpen(on: boolean): void {
+    if (on !== this.shown) this.send({ a: on ? 'open' : 'close' })
     this.shown = on
     this.root.hidden = !on
     if (!on) {
@@ -179,6 +190,9 @@ export class InventoryScreen {
   }
 
   setSelf(self: SurvivalSelf): void {
+    // A container just opened: show it; it closed: back to the ground.
+    if (self.box && !this.self?.box) this.tab = 'box'
+    if (!self.box && this.tab === 'box') this.tab = 'near'
     this.self = self
     this.redraw()
   }
@@ -230,7 +244,7 @@ export class InventoryScreen {
     el('b', '', head, 'INVENTORY')
     el('span', 'sv-panel-money', head, `$${self.money}`)
     const body = el('div', 'sv-inv-body', this.root)
-    this.drawVicinity(el('div', 'sv-inv-col near', body))
+    this.drawLeft(el('div', 'sv-inv-col near', body))
     this.drawEquipment(el('div', 'sv-inv-col equip', body))
     this.drawPockets(el('div', 'sv-inv-col pockets', body))
     el(
@@ -244,8 +258,112 @@ export class InventoryScreen {
     })
   }
 
+  /** The left column: tabs for the ground, the open container and crafting. */
+  private drawLeft(col: HTMLElement): void {
+    const self = this.self as SurvivalSelf
+    const tabs = el('div', 'sv-tabs', col)
+    const tab = (id: 'near' | 'box' | 'craft', label: string) => {
+      const b = el('button', `sv-tab${this.tab === id ? ' on' : ''}`, tabs, label)
+      b.addEventListener('click', () => {
+        this.tab = id
+        this.draw()
+      })
+    }
+    tab('near', 'VICINITY')
+    if (self.box) tab('box', self.box.kind === 'locker' ? 'LOCKER' : 'TRUNK')
+    tab('craft', 'CRAFT')
+    if (this.tab === 'box' && self.box) this.drawBox(col)
+    else if (this.tab === 'craft') this.drawCraft(col)
+    else this.drawVicinity(col)
+  }
+
+  /** The open container: a grid like a pocket's. */
+  private drawBox(col: HTMLElement): void {
+    const box = this.self?.box
+    if (!box) return
+    const head = el('div', 'sv-cont-head', col)
+    el('span', '', head, box.name)
+    let used = 0
+    for (const s of box.items) used += sizeOf(s.item)[0] * sizeOf(s.item)[1]
+    el('span', 'sv-cont-cap', head, `${used}/${box.w * box.h}`)
+    const grid = el('div', 'sv-grid', col)
+    grid.dataset.box = '1'
+    this.sizeGrid(grid, box.w, box.h)
+    for (const s of box.items) {
+      const grab: Grab = {
+        ref: { box: true, x: s.x, y: s.y },
+        item: s.item,
+        n: s.n,
+        r: s.r ?? 0,
+        boxed: s,
+        ...(s.ammo !== undefined ? { ammo: s.ammo } : {}),
+      }
+      this.itemEl(grid, grab, { x: s.x, y: s.y })
+    }
+    el(
+      'div',
+      'sv-box-help',
+      col,
+      box.kind === 'locker'
+        ? 'Yours alone. What you leave here stays, whatever happens to you.'
+        : 'Stays in the car while the car stands.',
+    )
+  }
+
+  /** What you can make with what you carry (greyed, with what's missing, if you can't). */
+  private drawCraft(col: HTMLElement): void {
+    const self = this.self as SurvivalSelf
+    const hands = this.ctx.carried
+      .map((w) => Object.values(ITEMS).find((d) => d.weapon === w.id)?.id)
+      .filter((id): id is string => !!id)
+    const count = (item: string) => {
+      let n = 0
+      for (const s of self.inv) if (s.item === item) n += s.n
+      return n
+    }
+    const have = { count, holds: (item: string) => count(item) > 0 || hands.includes(item) }
+    const plans = RECIPES.map((r) => ({ r, plan: craftPlan(r, have) }))
+    // What you can make first.
+    plans.sort((a, b) => Number(b.plan.ok) - Number(a.plan.ok))
+    const list = el('div', 'sv-craft', col)
+    for (const { r, plan } of plans) {
+      const row = el('div', `sv-craft-row${plan.ok ? '' : ' off'}`, list)
+      const img = el('img', '', row)
+      img.src = iconUrl(r.makes.item, 0)
+      img.draggable = false
+      const text = el('div', 'sv-craft-text', row)
+      el('b', '', text, `${r.name}${r.makes.n > 1 ? ` ×${r.makes.n}` : ''}`)
+      const needs = r.needs
+        .map(
+          (n) =>
+            `${n.n > 1 ? `${n.n}× ` : ''}${n.any.map((id) => ITEMS[id]?.name ?? id).join(' / ')}`,
+        )
+        .join(' + ')
+      const tools = (r.tools ?? []).map((g) => g.map((id) => ITEMS[id]?.name ?? id).join(' / '))
+      el(
+        'div',
+        'sv-craft-needs',
+        text,
+        `${needs}${tools.length ? ` · with ${tools.join(', ')}` : ''}`,
+      )
+      if (!plan.ok) el('div', 'sv-craft-missing', text, `Missing: ${plan.missing.join(', ')}`)
+      const go = el('button', 'sv-craft-go', row, `${r.secs}s`)
+      go.disabled = !plan.ok
+      go.title = plan.ok ? 'Make it (you can walk while you work)' : ''
+      go.addEventListener('click', () => {
+        if (!plan.ok) return void this.sound('deny')
+        this.act({ a: 'craft', recipe: r.id })
+      })
+    }
+    el(
+      'div',
+      'sv-box-help',
+      col,
+      'Takes a few seconds. You can walk; sprinting, jumping or shooting stops it.',
+    )
+  }
+
   private drawVicinity(col: HTMLElement): void {
-    el('div', 'sv-inv-title', col, 'VICINITY')
     const grid = el('div', 'sv-grid near', col)
     grid.dataset.ground = '1'
     // Laid out first-fit, the way they'd lie if you spread them out in front of you.
@@ -464,6 +582,13 @@ export class InventoryScreen {
       return out
     }
     const verb = useVerb(def)
+    const box = this.self?.box
+    if (grab.boxed) {
+      out.push(['Take', () => move({ auto: true })])
+      if (grab.n > 1) out.push(['Take one', () => move({ auto: true }, 1)])
+      return out
+    }
+    if (box && grab.stack) out.push([`Put in ${box.name.toLowerCase()}`, () => move({ box: true })])
     if (grab.ground) {
       out.push([def.kind === 'money' ? `Take $${grab.n}` : 'Take', () => move({ auto: true })])
       if (verb) out.push([verb, use])
@@ -505,7 +630,11 @@ export class InventoryScreen {
   private quick(grab: Grab): void {
     const def = ITEMS[grab.item]
     if (!def) return
-    if (grab.ground && !useVerb(def)) this.act({ a: 'move', from: grab.ref, to: { auto: true } })
+    if (grab.boxed) this.act({ a: 'move', from: grab.ref, to: { auto: true } })
+    else if (grab.stack && this.self?.box && !useVerb(def))
+      this.act({ a: 'move', from: grab.ref, to: { box: true } })
+    else if (grab.ground && !useVerb(def))
+      this.act({ a: 'move', from: grab.ref, to: { auto: true } })
     else if (grab.slot || useVerb(def)) this.act({ a: 'use', from: grab.ref })
     else this.sound('deny')
   }
@@ -581,11 +710,38 @@ export class InventoryScreen {
     const slotNode = under.closest<HTMLElement>('[data-slot]')
     if (slotNode) {
       const slot = slotNode.dataset.slot as EquipSlot
-      return { to: { slot }, ok: drag.slot !== slot && slotFor(drag.item) === slot }
+      return { to: { slot }, ok: !drag.boxed && drag.slot !== slot && slotFor(drag.item) === slot }
     }
     if (under.closest('[data-ground]')) return { to: { ground: true }, ok: !drag.ground }
+    const boxGrid = under.closest<HTMLElement>('[data-box]')
+    const box = self.box
+    if (boxGrid && box) {
+      // Only from pockets (or within the container).
+      if (!drag.stack && !drag.boxed) return { to: { box: true }, ok: false }
+      const rect = boxGrid.getBoundingClientRect()
+      const cx = Math.floor((x - rect.left) / CELL)
+      const cy = Math.floor((y - rect.top) / CELL)
+      const onto = boxStackAt(box, cx, cy)
+      if (onto && onto !== drag.boxed && onto.item === drag.item && maxStack(drag.item) > 1) {
+        return {
+          to: { box: true, x: onto.x, y: onto.y },
+          ok: onto.n < maxStack(drag.item),
+          box: { grid: boxGrid, x: onto.x, y: onto.y },
+        }
+      }
+      const tx = cx - drag.offX
+      const ty = cy - drag.offY
+      const [w, h] = footprint(drag.item, drag.r)
+      const skip = drag.boxed && drag.move === drag.n ? drag.boxed : undefined
+      return {
+        to: { box: true, x: tx, y: ty, ...(drag.r ? { r: 1 } : {}) },
+        ok: boxFits(box, tx, ty, w, h, skip),
+        box: { grid: boxGrid, x: tx, y: ty },
+      }
+    }
     const grid = under.closest<HTMLElement>('[data-c]')
     if (!grid) return null
+    // Out of the container: only into pockets (not onto a slot), checked by the server.
     const c = grid.dataset.c as ContainerId
     const rect = grid.getBoundingClientRect()
     const cx = Math.floor((x - rect.left) / CELL)

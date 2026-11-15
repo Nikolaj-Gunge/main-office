@@ -1,4 +1,4 @@
-import type { SurvivalSelf, WeaponId } from '@office-fps/shared'
+import type { Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -36,11 +36,14 @@ export class MemoryStore implements SaveStore {
  */
 // Additive fields with defaults (e.g. SurvivalSelf.needs, filled in by restoreSelf) need no new
 // version: older saves simply load without them.
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 
 /** Upgrades one saved value from version `from` to `from + 1` (kind: 'character' | 'world'). */
 export type Migration = (kind: SaveKind, data: Record<string, unknown>) => Record<string, unknown>
-export const MIGRATIONS: Record<number, Migration> = {}
+export const MIGRATIONS: Record<number, Migration> = {
+  // 1 → 2: characters got a locker at Haven (empty to begin with).
+  1: (kind, d) => (kind === 'character' ? { ...d, locker: d.locker ?? [] } : d),
+}
 
 export type SaveKind = 'character' | 'world'
 
@@ -86,6 +89,8 @@ export interface CharacterSave {
   health: number
   /** Where they logged off, if it was somewhere to come back to; otherwise they wake at Haven. */
   pos?: { x: number; y: number; z: number; yaw: number }
+  /** What's in their locker at Haven: it belongs to the account, so dying doesn't empty it. */
+  locker: Stored[]
 }
 
 /** What the world remembers: the story's progress and what people did to the place. */

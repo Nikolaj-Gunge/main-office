@@ -141,6 +141,8 @@ export type InteractKind =
   | 'note'
   /** Haven's job board: the side jobs on offer. */
   | 'board'
+  /** Your own locker (storage.ts): what's in it outlives you. */
+  | 'locker'
 
 /** Something in the world you can use with E. */
 export interface Interactable {

@@ -1,9 +1,11 @@
 import type { Bio } from './characters.ts'
+import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
 import type { Needs } from './needs.ts'
+import type { OpenBox } from './storage.ts'
 import type { WeatherShared } from './weather.ts'
 
 /** Some of one item. Weapons never stack (n = 1) and remember what's loaded. */
@@ -50,6 +52,10 @@ export interface SurvivalSelf {
   age?: number
   /** Rested, wet, cold, a sprain, a bad stomach (see needs.ts); absent in old saves. */
   needs?: Needs
+  /** Eating, bandaging or making something right now (see crafting.ts). */
+  busy?: Busy | null
+  /** The container you have open (a car's trunk, your locker), see storage.ts. */
+  box?: OpenBox | null
 }
 
 export interface QuestState {
@@ -141,6 +147,12 @@ export type SurvivalAction =
   | { a: 'light'; on: boolean }
   /** Answer in a conversation. */
   | { a: 'choose'; npc: string; option: string }
+  /** Make something (see RECIPES); `stop` gives up whatever you're busy with. */
+  | { a: 'craft'; recipe: string }
+  | { a: 'stop' }
+  /** The inventory opened: open the container in reach, if any. `close`: it closed. */
+  | { a: 'open' }
+  | { a: 'close' }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

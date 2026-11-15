@@ -20,7 +20,12 @@ export const CONTAINERS: readonly ContainerId[] = ['body', 'legs', 'pack']
 export type EquipSlot = WearSlot | 'pack' | WeaponSlot
 
 /** Where a thing is: a stack in a pocket or the pack (its top-left cell), worn or held, or on the ground nearby (loot id). */
-export type ItemRef = { c: ContainerId; x: number; y: number } | { slot: EquipSlot } | { g: number }
+export type ItemRef =
+  | { c: ContainerId; x: number; y: number }
+  | { slot: EquipSlot }
+  | { g: number }
+  /** In the container you have open (storage.ts). */
+  | { box: true; x: number; y: number }
 
 /** Where to put it: a cell (r = 1 turns it on its side), a slot, the ground, or the first place it fits. */
 export type ItemDest =
@@ -28,6 +33,8 @@ export type ItemDest =
   | { slot: EquipSlot }
   | { ground: true }
   | { auto: true }
+  /** Into the open container: at a cell, or (no x) wherever it fits. */
+  | { box: true; x?: number; y?: number; r?: 0 | 1 }
 
 /** You can take from (and drop onto) the ground this close (m, across; and up or down). */
 export const VICINITY = 2.5
@@ -143,6 +150,8 @@ const SIZES: Record<string, Size> = {
   flare: [1, 2],
   teddy: [2, 2],
   toolbox: [3, 2],
+  // Made things
+  barricadekit: [2, 3],
 }
 
 /** How many go in one stack (everything not listed: one). */
@@ -399,6 +408,7 @@ export function isItemRef(v: unknown): v is ItemRef {
   if (typeof v !== 'object' || v === null) return false
   const o = v as Record<string, unknown>
   if ('g' in o) return isCell(o.g)
+  if ('box' in o) return o.box === true && isCell(o.x) && isCell(o.y)
   if ('slot' in o) return EQUIP_SLOTS.includes(o.slot as EquipSlot)
   return CONTAINERS.includes(o.c as ContainerId) && isCell(o.x) && isCell(o.y)
 }
@@ -407,6 +417,11 @@ export function isItemDest(v: unknown): v is ItemDest {
   if (typeof v !== 'object' || v === null) return false
   const o = v as Record<string, unknown>
   if (o.ground === true || o.auto === true) return true
+  if ('box' in o) {
+    if (o.box !== true) return false
+    if (o.x === undefined && o.y === undefined) return true
+    return isCell(o.x) && isCell(o.y) && (o.r === undefined || o.r === 0 || o.r === 1)
+  }
   if ('slot' in o) return EQUIP_SLOTS.includes(o.slot as EquipSlot)
   return (
     CONTAINERS.includes(o.c as ContainerId) &&

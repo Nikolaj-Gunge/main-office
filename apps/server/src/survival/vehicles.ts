@@ -218,6 +218,31 @@ export class Vehicles {
     return this.cars.find((c) => c.id === id)?.trouble
   }
 
+  /** The car whose middle is nearest `at` within `reach` (m), for its trunk; null if none. */
+  nearest(
+    at: { x: number; y: number; z: number },
+    reach: number,
+  ): { id: number; generation: number } | null {
+    let best: { car: Car; d: number } | null = null
+    for (const car of this.cars) {
+      if (Math.abs(at.y - car.state.y) > 2.5) continue
+      const d = Math.hypot(at.x - car.state.x, at.z - car.state.z)
+      if (d <= reach && (!best || d < best.d)) best = { car, d }
+    }
+    return best ? { id: best.car.id, generation: best.car.generation } : null
+  }
+
+  /** How often car `id` has been replaced (its trunk starts empty each time). */
+  generationOf(id: number): number | undefined {
+    return this.cars.find((c) => c.id === id)?.generation
+  }
+
+  /** Where car `id` is now. */
+  positionOf(id: number): { x: number; y: number; z: number } | null {
+    const car = this.cars.find((c) => c.id === id)
+    return car ? { x: car.state.x, y: car.state.y, z: car.state.z } : null
+  }
+
   private get now(): number {
     return this.game.tick / TICK_RATE
   }

@@ -447,7 +447,7 @@ describe('survival: the night', () => {
     t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(sv.self, 'beans') })
     // The bigger pack goes on; the old one, and everything that was in it, goes in it.
     t.game.handleAction(t.ids[0] ?? 0, { a: 'use', from: cellOf(sv.self, 'pack_hiking') })
-    t.run(0.1)
+    t.run(2.2) // eating takes a moment (workbench.ts)
     const self = t.self()
     expect(self.hunger).toBeGreaterThan(65)
     expect(self.pack).toBe('pack_hiking')
@@ -613,10 +613,12 @@ describe('survival: the bite', () => {
     expect(countOf(sv.self.inv, 'cure')).toBe(1)
     sv.self.infected = 90
     t.game.handleAction(id, { a: 'use', from: cellOf(sv.self, 'adrenaline') })
-    expect(sv.self.infected).toBe(INFECTION_SECONDS)
+    t.run(1.1) // a shot takes a second
+    expect(sv.self.infected).toBeGreaterThan(INFECTION_SECONDS - 3)
     expect(countOf(sv.self.inv, 'adrenaline')).toBe(0)
     sv.self.infected = 30
     t.game.handleAction(id, { a: 'use', from: cellOf(sv.self, 'cure') })
+    t.run(2.1)
     expect(sv.self.infected).toBeNull()
     expect(countOf(sv.self.inv, 'cure')).toBe(0)
     t.run(0.1)
@@ -974,6 +976,31 @@ describe('survival: barricades', () => {
     t.run(60)
     expect(boards()).toBe(0)
     expect(t.game.world.physics.barricades.has(i)).toBe(false)
+  })
+})
+
+describe('survival: barricade kits', () => {
+  test('a barricade kit nails three planks up in one go', () => {
+    const t = setup()
+    t.run(8)
+    const start = t.def.pois[0]
+    const i = t.def.spots.findIndex((p) => p.poi === 0 && p.door)
+    const spot = t.def.spots[i]
+    if (!start || !spot) throw new Error('no door at the start cabin')
+    const inX = Math.sign(start.x - spot.x) * (spot.alongX ? 0 : 1)
+    const inZ = Math.sign(start.z - spot.z) * (spot.alongX ? 1 : 0)
+    t.move(spot.x + inX * 1.3, spot.y + 0.05, spot.z + inZ * 1.3)
+    const me = survivorOf(t).self
+    me.inv = []
+    me.pack = 'pack_school'
+    give(me, 'barricadekit', 1)
+    const c = spotCentre(spot)
+    t.useAt(c.x, c.y, c.z)
+    t.run(0.5)
+    const b = t.match().survival?.boards ?? []
+    const at = b.findIndex((v, k) => k % 2 === 0 && v === i)
+    expect(planksFor(at < 0 ? 0 : (b[at + 1] ?? 0))).toBe(3)
+    expect(countOf(t.self().inv, 'barricadekit')).toBe(0)
   })
 })
 
