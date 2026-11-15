@@ -8,6 +8,7 @@ import {
   valueNoise,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { cascadeReaches, cascadeStep, snapToTexel } from './cascades.ts'
 import { flickerLevel } from './lighting.ts'
 import { hangingLightPos, wind } from './wind.ts'
 
@@ -24,11 +25,21 @@ const CAMP_LAMPS = 9
 /** Lamps further than this (m) are off; they fade in from a little further out. */
 const LAMP_RANGE = 75
 /**
- * The moon's shadows cover this far around you (m, less on slower devices), and are redrawn when
- * you've walked this far.
+ * The moon's shadows cover this far around you (m) until the device tier says otherwise; with
+ * cascades (cascades.ts) the nearest map covers less and further ones more.
  */
 const SHADOW_REACH = 80
-const SHADOW_STEP = 20
+/** Shadow bias along the surface normal (m), at least, and in texels of a coarser cascade. */
+const NORMAL_BIAS = 0.06
+const NORMAL_BIAS_TEXELS = 0.8
+
+/** One shadow cascade: a light that follows you, redrawn after you've walked `step` m. */
+interface Cascade {
+  light: THREE.DirectionalLight
+  reach: number
+  step: number
+  at: THREE.Vector3
+}
 
 /** The moon is this much brighter than the map's (night) sun value says. */
 const MOON = 1.8
@@ -100,7 +111,11 @@ export class Night {
   private readonly camps: { x: number; z: number; r: number }[]
   private readonly pool: { light: THREE.PointLight; source: MapLight | null; index: number }[] = []
   private readonly base: MapDef['lighting']
-  private readonly shadowAt = new THREE.Vector3(1e9, 0, 1e9)
+  /** The moon's shadow, nearest cascade first (the first is the moon itself; see cascades.ts). */
+  private cascades: Cascade[] = []
+  /** Lights made for further cascades, kept when a lower tier hides them. */
+  private readonly spareLights: THREE.DirectionalLight[] = []
+  private readonly snapped = new THREE.Vector3()
   private readonly darkFog: THREE.Color
   private readonly darkSky: THREE.Color
   private readonly darkHemiSky: THREE.Color
@@ -139,16 +154,9 @@ export class Night {
     this.hemi = new THREE.HemisphereLight(l.skyColor, l.groundColor, l.ambientIntensity)
     this.moon = new THREE.DirectionalLight(l.sunColor, l.sunIntensity * MOON)
     this.moonDir = new THREE.Vector3(...l.sunDirection).normalize()
-    this.moon.castShadow = true
-    this.moon.shadow.mapSize.set(2048, 2048)
-    const cam = this.moon.shadow.camera
-    cam.left = cam.bottom = -SHADOW_REACH
-    cam.right = cam.top = SHADOW_REACH
-    cam.near = 1
-    cam.far = 500
-    this.moon.shadow.bias = -0.0008
-    this.moon.shadow.normalBias = 0.06
+    setupShadow(this.moon, 2048, SHADOW_REACH)
     scene.add(this.hemi, this.moon, this.moon.target)
+    this.cascades = [{ light: this.moon, reach: SHADOW_REACH, step: 20, at: far() }]
     for (let i = 0; i < CAMP_LAMPS; i++) {
       const light = new THREE.PointLight(0xffffff, 0, 10, 2)
       light.visible = i < LAMPS
@@ -164,25 +172,34 @@ export class Night {
       : null
   }
 
-  /** What the device tier allows: shadow map size and reach, lamps, how far the haze lifts. */
+  /** What the device tier allows: shadow maps and cascades, lamps, how far the haze lifts. */
   setTier(t: {
     shadowMap: number
     shadowReach: number
+    shadowCascades: readonly number[]
     lamps: number
     campLamps: number
     fogFar: number
   }): void {
-    const shadow = this.moon.shadow
-    if (shadow.mapSize.x !== t.shadowMap) {
-      shadow.mapSize.set(t.shadowMap, t.shadowMap)
-      // A new size wants a new map (made again on the next shadow draw).
-      shadow.map?.dispose()
-      shadow.map = null
+    const reaches = cascadeReaches(t.shadowCascades, t.shadowReach)
+    // The moon is the first cascade; further ones are lights of their own that carry no light.
+    while (this.spareLights.length < reaches.length - 1) {
+      const light = new THREE.DirectionalLight(0xffffff, 0)
+      this.spareLights.push(light)
+      this.scene.add(light, light.target)
     }
-    const cam = shadow.camera
-    cam.left = cam.bottom = -t.shadowReach
-    cam.right = cam.top = t.shadowReach
-    cam.updateProjectionMatrix()
+    this.cascades = reaches.map((reach, k) => {
+      const light = k === 0 ? this.moon : (this.spareLights[k - 1] as THREE.DirectionalLight)
+      setupShadow(light, t.shadowMap, reach)
+      light.visible = true
+      return { light, reach, step: cascadeStep(reach, reaches.length), at: far() }
+    })
+    // (Hiding a light changes the shaders once; three keeps both versions.)
+    for (const light of this.spareLights.slice(reaches.length - 1)) {
+      light.visible = false
+      light.shadow.map?.dispose()
+      light.shadow.map = null
+    }
     this.lamps = Math.min(LAMPS, t.lamps)
     this.campLamps = Math.min(CAMP_LAMPS, t.campLamps)
     this.fogCap = t.fogFar
@@ -273,12 +290,17 @@ export class Night {
       moved = true
     }
 
-    // Shadows: one map around the viewer, redrawn only after walking a while.
-    if (moved || Math.hypot(viewer.x - this.shadowAt.x, viewer.z - this.shadowAt.z) > SHADOW_STEP) {
-      this.shadowAt.copy(viewer)
-      this.moon.target.position.copy(viewer)
-      this.moon.position.copy(viewer).addScaledVector(this.lightDir, 250)
-      this.moon.target.updateMatrixWorld()
+    // Shadows: maps around the viewer, each redrawn only after walking a while (the near one
+    // sooner, the far one seldom), on its own texel grid so edges stay put between redraws.
+    for (const c of this.cascades) {
+      if (!moved && Math.hypot(viewer.x - c.at.x, viewer.z - c.at.z) <= c.step) continue
+      c.at.copy(viewer)
+      const texel = (c.reach * 2) / c.light.shadow.mapSize.x
+      snapToTexel(viewer, this.lightDir, texel, this.snapped)
+      c.light.target.position.copy(this.snapped)
+      c.light.position.copy(this.snapped).addScaledVector(this.lightDir, 250)
+      c.light.target.updateMatrixWorld()
+      c.light.shadow.needsUpdate = true
       this.shadowsDirty = true
     }
 
@@ -340,6 +362,33 @@ export class Night {
 
   dispose(): void {
     this.scene.remove(this.hemi, this.moon, this.moon.target)
+    for (const light of this.spareLights) this.scene.remove(light, light.target)
     for (const slot of this.pool) this.scene.remove(slot.light)
   }
+}
+
+const far = () => new THREE.Vector3(1e9, 0, 1e9)
+
+/**
+ * A cascade's shadow: `size` texels a side covering `reach` m around its target, redrawn only
+ * when asked (Night.update). A new size wants a new map (made again on the next shadow draw).
+ */
+function setupShadow(light: THREE.DirectionalLight, size: number, reach: number): void {
+  light.castShadow = true
+  const shadow = light.shadow
+  if (shadow.mapSize.x !== size) {
+    shadow.mapSize.set(size, size)
+    shadow.map?.dispose()
+    shadow.map = null
+  }
+  const cam = shadow.camera
+  cam.left = cam.bottom = -reach
+  cam.right = cam.top = reach
+  cam.near = 1
+  cam.far = 500
+  cam.updateProjectionMatrix()
+  shadow.bias = -0.0008
+  shadow.normalBias = Math.max(NORMAL_BIAS, ((reach * 2) / size) * NORMAL_BIAS_TEXELS)
+  shadow.autoUpdate = false
+  shadow.needsUpdate = true
 }

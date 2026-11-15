@@ -6,6 +6,7 @@ import { buildCorn } from './corn.ts'
 import { createLabel } from './labels.ts'
 import { planarUVs } from './pixel-textures.ts'
 import { castsShadow, getSurfaceMaterial, isTransparent } from './textures.ts'
+import { AabbGrid, bakeVertexAo } from './vertex-ao.ts'
 import { lampSwing } from './wind.ts'
 
 /** Walls are darkest right at the ground (this much of their colour) … */
@@ -286,6 +287,15 @@ export function buildMapObject(map: MapDef): THREE.Group {
   /** Boxes left out of far tiles (see simplifiedTile). */
   const small = new Set<THREE.BufferGeometry>()
   const corn: MapBox[] = []
+  // Survival: baked ambient occlusion (vertex-ao.ts) against every solid, unrotated box.
+  const occluders = map.survival
+    ? new AabbGrid(
+        bounds.filter((b, i): b is Bounds => {
+          const m = map.boxes[i]?.material
+          return b !== null && m !== undefined && m !== 'corn' && !isTransparent(m) && !glows(m)
+        }),
+      )
+    : null
   map.boxes.forEach((box, i) => {
     if (box.render === false) return
     if (box.material === 'corn') {
@@ -310,6 +320,7 @@ export function buildMapObject(map: MapDef): THREE.Group {
     if (map.survival) {
       const clean = isTransparent(box.material) || glows(box.material)
       applyGrime(geometry, clean ? null : map.survival.terrain)
+      if (occluders && !clean) bakeVertexAo(geometry, occluders)
     }
     const tile = tileOf(center[0], center[2])
     let target = tiles.get(tile) ?? new Map<MaterialId, THREE.BufferGeometry[]>()

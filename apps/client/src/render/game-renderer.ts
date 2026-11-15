@@ -21,6 +21,8 @@ export interface GameRenderer {
   readonly shadows: { autoUpdate: boolean; needsUpdate: boolean }
   applySettings(settings: Settings): void
   setBias(bias: number): void
+  /** Screen-space ambient occlusion samples a pixel (the device tier's); 0: off. */
+  setAmbientOcclusion(samples: number): void
   resize(): void
   maxAnisotropy(): number
   /** Builds the shaders for everything in the scene now (visible or not); await it if async. */
