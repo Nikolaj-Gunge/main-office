@@ -1,5 +1,6 @@
 import GUI from 'lil-gui'
 import { withDefaults } from '../input/bindings.ts'
+import { TIERS } from '../render/device-tier.ts'
 import { PALETTES } from '../render/palettes.ts'
 import { COLOR_MODES, DEFAULT_SETTINGS, RENDERERS, type Settings } from '../settings.ts'
 
@@ -23,6 +24,7 @@ export function createSettingsGui(settings: Settings, onChange: () => void): GUI
   render.add(settings, 'vignette', 0, 1, 0.05)
   render.add(settings, 'exposure', 0.2, 3, 0.05)
   render.add(settings, 'renderer', RENDERERS).name('renderer (reload)')
+  render.add(settings, 'graphics', ['auto', ...TIERS]).name('graphics')
 
   const camera = gui.addFolder('Camera & input')
   camera.add(settings, 'fov', 60, 120, 1).name('fov (horizontal)')

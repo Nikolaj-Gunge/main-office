@@ -13,6 +13,7 @@ import {
   WORLD_HALF,
 } from '@office-fps/shared'
 import * as THREE from 'three'
+import { boundingSphere, type GeometryData, toGeometry } from './geometry-data.ts'
 import { SWAY_VERTEX, windUniforms } from './wind.ts'
 
 /**
@@ -75,15 +76,27 @@ const ODDS: [DetailKind, number, number][] = [
   [DetailKind.Fence, 0.0012, 0],
 ]
 
+/** The common little things a lower ground-detail density leaves out (some of). */
+const THINNED = new Set<DetailKind>([
+  DetailKind.Grass,
+  DetailKind.Clump,
+  DetailKind.Flowers,
+  DetailKind.Pebbles,
+  DetailKind.Twig,
+  DetailKind.Litter,
+  DetailKind.Moss,
+])
+
 /**
  * What lies on the ground in one chunk: never on a road, in a lake or on the flat ground of a
  * place (where the buildings stand); thicker in the forest, grassier in the open.
  */
 export function detailItems(
-  def: SurvivalDef,
+  def: Pick<SurvivalDef, 'seed' | 'terrain' | 'pois' | 'lakes'>,
   roads: RoadGrid,
   cx: number,
   cz: number,
+  density = 1,
 ): DetailItem[] {
   const t = def.terrain
   const out: DetailItem[] = []
@@ -134,6 +147,13 @@ export function detailItems(
         }
       }
       if (kind === null) continue
+      // Slower machines get fewer of the common little things (see device-tier.ts).
+      if (
+        density < 1 &&
+        THINNED.has(kind) &&
+        hash2(cx * CELLS + i, cz * CELLS + j, def.seed + 915) >= density
+      )
+        continue
       out.push({
         kind,
         x,
@@ -364,15 +384,19 @@ class DetailMesh {
     return this.position.length === 0
   }
 
-  build(): THREE.BufferGeometry {
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3))
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.normal, 3))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.color, 3))
-    g.setAttribute('sway', new THREE.Float32BufferAttribute(this.sway, 2))
-    g.setAttribute('anchor', new THREE.Float32BufferAttribute(this.anchor, 3))
-    g.computeBoundingSphere()
-    return g
+  data(): GeometryData {
+    const position = new Float32Array(this.position)
+    return {
+      attributes: [
+        { name: 'position', array: position, itemSize: 3 },
+        { name: 'normal', array: new Float32Array(this.normal), itemSize: 3 },
+        { name: 'color', array: new Float32Array(this.color), itemSize: 3 },
+        { name: 'sway', array: new Float32Array(this.sway), itemSize: 2 },
+        { name: 'anchor', array: new Float32Array(this.anchor), itemSize: 3 },
+      ],
+      index: null,
+      sphere: boundingSphere(position),
+    }
   }
 }
 
@@ -384,6 +408,15 @@ export function buildDetail(
   terrain: SurvivalDef['terrain'],
   items: readonly DetailItem[],
 ): { main: THREE.BufferGeometry | null; glow: THREE.BufferGeometry | null } {
+  const { main, glow } = detailData(terrain, items)
+  return { main: main && toGeometry(main), glow: glow && toGeometry(glow) }
+}
+
+/** The arrays buildDetail wraps (chunk-geometry.ts builds them off the main thread). */
+export function detailData(
+  terrain: SurvivalDef['terrain'],
+  items: readonly DetailItem[],
+): { main: GeometryData | null; glow: GeometryData | null } {
   const m = new DetailMesh()
   const g = new DetailMesh()
   for (const it of items) {
@@ -656,7 +689,7 @@ export function buildDetail(
       }
     }
   }
-  return { main: m.empty ? null : m.build(), glow: g.empty ? null : g.build() }
+  return { main: m.empty ? null : m.data(), glow: g.empty ? null : g.data() }
 }
 
 /** Ground detail shrinks into the ground between these distances from the camera (m). */

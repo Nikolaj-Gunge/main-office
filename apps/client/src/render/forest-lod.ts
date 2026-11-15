@@ -377,6 +377,8 @@ export class FarForest {
   private nears = new Float32Array(0)
   /** The point the far forest was last laid out around. */
   private readonly centre = new THREE.Vector2()
+  /** Cards and coarse ground reach this far (m, at most FAR; less on slower devices). */
+  reach = FAR
   /** How many of the nearest far chunks have their cards drawn (-1: refill). */
   private shownChunks = -1
 
@@ -458,7 +460,7 @@ export class FarForest {
   }
 
   private buildGround(ox: number, oz: number, inner: (cx: number, cz: number) => boolean): void {
-    const reach = FAR + CHUNK / 2
+    const reach = Math.min(FAR, this.reach) + CHUNK / 2
     const steps = GRID / (STEP / CELL)
     const i0 = Math.max(0, Math.floor((ox - reach + WORLD_HALF) / STEP))
     const i1 = Math.min(steps, Math.ceil((ox + reach + WORLD_HALF) / STEP))
@@ -545,12 +547,13 @@ export class FarForest {
   }
 
   private buildCards(ccx: number, ccz: number, inner: (cx: number, cz: number) => boolean): void {
-    const reach = Math.ceil(FAR / CHUNK)
+    const far = Math.min(FAR, this.reach)
+    const reach = Math.ceil(far / CHUNK)
     const keep = new Set<number>()
     this.farChunks = []
     for (let cx = Math.max(0, ccx - reach); cx <= Math.min(CHUNKS - 1, ccx + reach); cx++) {
       for (let cz = Math.max(0, ccz - reach); cz <= Math.min(CHUNKS - 1, ccz + reach); cz++) {
-        if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR || inner(cx, cz)) continue
+        if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > far || inner(cx, cz)) continue
         keep.add(CHUNK_KEY(cx, cz))
         // How near the chunk comes to the centre (its middle, less half its diagonal).
         const near = Math.hypot(cx - ccx, cz - ccz) * CHUNK - CHUNK * Math.SQRT1_2
@@ -564,7 +567,7 @@ export class FarForest {
       if (keep.has(key)) continue
       const cx = Math.floor(key / CHUNKS)
       const cz = key % CHUNKS
-      if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > FAR + CHUNK * 3) this.cache.delete(key)
+      if (Math.hypot(cx - ccx, cz - ccz) * CHUNK > far + CHUNK * 3) this.cache.delete(key)
     }
   }
 

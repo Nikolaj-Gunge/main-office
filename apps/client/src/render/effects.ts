@@ -196,6 +196,7 @@ export class Effects {
   private readonly tracers: Tracer[] = []
   private readonly decals: THREE.Mesh[] = []
   private decalIndex = 0
+  private decalLimit = MAX_DECALS
   private readonly particles: Particle[] = []
   private particleIndex = 0
   private readonly lights: { light: THREE.PointLight; life: number }[] = []
@@ -507,6 +508,20 @@ export class Effects {
     }
   }
 
+  /** How many bullet holes stay at once (fewer on slow machines, see device-tier.ts). */
+  get decalCap(): number {
+    return this.decalLimit
+  }
+
+  set decalCap(cap: number) {
+    this.decalLimit = Math.max(1, Math.min(MAX_DECALS, Math.floor(cap)))
+    this.decalIndex %= this.decalLimit
+    for (let i = this.decalLimit; i < MAX_DECALS; i++) {
+      const d = this.decals[i]
+      if (d) d.visible = false
+    }
+  }
+
   /** Spits a spent casing out of the ejection port. */
   ejectCasing(at: THREE.Vector3, velocity: THREE.Vector3): void {
     const c = this.casings[this.casingIndex++ % this.cap]
@@ -530,7 +545,7 @@ export class Effects {
   }
 
   private decal(at: THREE.Vector3, normal: THREE.Vector3): void {
-    const decal = this.decals[this.decalIndex++ % MAX_DECALS]
+    const decal = this.decals[this.decalIndex++ % this.decalLimit]
     if (!decal) return
     placeFlat(decal, at, normal, 0.005, 1)
     decal.visible = true

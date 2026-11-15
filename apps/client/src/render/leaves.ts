@@ -66,6 +66,11 @@ export class Leaves {
     leaf.spin = (Math.random() - 0.5) * 3
   }
 
+  /** How many leaves fall (up to COUNT; fewer on slower devices). */
+  setCount(n: number): void {
+    this.mesh.count = Math.max(0, Math.min(COUNT, Math.floor(n)))
+  }
+
   update(dt: number, viewer: THREE.Vector3): void {
     if (!this.started) {
       this.started = true
@@ -74,7 +79,9 @@ export class Leaves {
     const t = wind.time
     const push = 0.3 + wind.gust * 2.2
     const half = SPREAD / 2
+    const count = this.mesh.count
     this.leaves.forEach((leaf, i) => {
+      if (i >= count) return
       // Rock side to side (a falling leaf glides, catches, glides back), drift with the wind.
       const swing = Math.sin(t * leaf.rate + leaf.phase)
       leaf.y -= leaf.fall * (0.6 + 0.6 * Math.abs(swing)) * dt

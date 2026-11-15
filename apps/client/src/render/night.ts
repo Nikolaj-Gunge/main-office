@@ -11,7 +11,10 @@ import * as THREE from 'three'
 import { flickerLevel } from './lighting.ts'
 import { hangingLightPos, wind } from './wind.ts'
 
-/** Lamps lit at once: the nearest of the map's (the world has far more than a GPU wants). */
+/**
+ * Lamps lit at once: the nearest of the map's (the world has far more than a GPU wants). The
+ * device tier can light fewer (setTier).
+ */
 const LAMPS = 6
 /**
  * Inside a safe camp (Haven) a few more: it is full of lamps, braziers and the bonfire. The extra
@@ -20,7 +23,10 @@ const LAMPS = 6
 const CAMP_LAMPS = 9
 /** Lamps further than this (m) are off; they fade in from a little further out. */
 const LAMP_RANGE = 75
-/** The moon's shadows cover this far around you (m), and are redrawn when you've walked this far. */
+/**
+ * The moon's shadows cover this far around you (m, less on slower devices), and are redrawn when
+ * you've walked this far.
+ */
 const SHADOW_REACH = 80
 const SHADOW_STEP = 20
 
@@ -106,6 +112,11 @@ export class Night {
   /** Lamps count for less in daylight. */
   private lampLevel = 1
   private weather: SkyWeather = { cloud: 0, rain: 0, fog: 0, flash: 0 }
+  /** Lamps lit at once, out in the woods and in a camp (the device tier's). */
+  private lamps = LAMPS
+  private campLamps = CAMP_LAMPS
+  /** The day's haze reaches no further than this (m). */
+  private fogCap = Number.POSITIVE_INFINITY
 
   constructor(map: MapDef, scene: THREE.Scene, sky: THREE.Mesh | null) {
     this.scene = scene
@@ -151,6 +162,32 @@ export class Night {
       : null
   }
 
+  /** What the device tier allows: shadow map size and reach, lamps, how far the haze lifts. */
+  setTier(t: {
+    shadowMap: number
+    shadowReach: number
+    lamps: number
+    campLamps: number
+    fogFar: number
+  }): void {
+    const shadow = this.moon.shadow
+    if (shadow.mapSize.x !== t.shadowMap) {
+      shadow.mapSize.set(t.shadowMap, t.shadowMap)
+      // A new size wants a new map (made again on the next shadow draw).
+      shadow.map?.dispose()
+      shadow.map = null
+    }
+    const cam = shadow.camera
+    cam.left = cam.bottom = -t.shadowReach
+    cam.right = cam.top = t.shadowReach
+    cam.updateProjectionMatrix()
+    this.lamps = Math.min(LAMPS, t.lamps)
+    this.campLamps = Math.min(CAMP_LAMPS, t.campLamps)
+    this.fogCap = t.fogFar
+    this.sinceLamps = 1
+    this.shadowsDirty = true
+  }
+
   /** The weather to light the world for, from the next update on. */
   setWeather(weather: SkyWeather): void {
     this.weather = weather
@@ -186,7 +223,7 @@ export class Night {
     const thick = (1 - w.fog * (0.5 + 0.25 * bank)) * (1 - w.rain * 0.3)
     // (At night the first few metres stay clear: the fog is out there, not in your face.)
     this.fog.near = mix(this.base.fogNear, DAY.fogNear, day) * (1 - w.fog * mix(0.5, 0.8, day))
-    this.fog.far = mix(this.base.fogFar, DAY.fogFar, day) * thick
+    this.fog.far = Math.min(this.fogCap, mix(this.base.fogFar, DAY.fogFar, day)) * thick
     this.fog.color
       .copy(this.darkFog)
       .lerp(DAY.fog, day)
@@ -261,7 +298,7 @@ export class Night {
     }
     near.sort((a, b) => a.d - b.d)
     const inCamp = this.camps.some((c) => Math.hypot(c.x - viewer.x, c.z - viewer.z) < c.r)
-    const count = inCamp ? CAMP_LAMPS : LAMPS
+    const count = inCamp ? this.campLamps : this.lamps
     const wanted = new Set(near.slice(0, count).map((n) => n.i))
     for (const [k, slot] of this.pool.entries()) {
       // (Turning a light on or off changes the shaders once; three keeps both versions.)

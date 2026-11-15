@@ -6,8 +6,17 @@ import {
   packAppearance,
 } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
+import type { GraphicsSetting } from '../render/device-tier.ts'
 import { loadAppearance, type Settings, saveAppearance } from '../settings.ts'
 import { CharacterCreator } from './character-creator.ts'
+
+/** The menu's graphics choices, in order. */
+const GRAPHICS: [string, GraphicsSetting][] = [
+  ['Auto', 'auto'],
+  ['Low', 'low'],
+  ['Medium', 'medium'],
+  ['High', 'high'],
+]
 
 const NAME_KEY = 'office-fps:name'
 
@@ -162,6 +171,14 @@ export class Menu {
         () => this.settings.pixelHeight,
         (v) => {
           this.settings.pixelHeight = v
+        },
+      ),
+      this.choice(
+        'Graphics',
+        GRAPHICS.map(([label], i) => [label, i]),
+        () => GRAPHICS.findIndex(([, g]) => g === this.settings.graphics),
+        (v) => {
+          this.settings.graphics = GRAPHICS[v]?.[1] ?? 'auto'
         },
       ),
       this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),

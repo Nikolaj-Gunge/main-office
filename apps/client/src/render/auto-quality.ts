@@ -22,6 +22,11 @@ export class AutoQuality {
     this.maxBias = maxBias
   }
 
+  /** No coarser step left (device-tier.ts may then draw less of the world instead). */
+  get coarsest(): boolean {
+    return this.bias >= this.maxBias
+  }
+
   /**
    * One frame took `dt` seconds. Returns true when `bias` changed (resize the renderer).
    * Slow: frames average over 20 ms (under 50 fps). Easy: under 17.5 ms for 20 s running.

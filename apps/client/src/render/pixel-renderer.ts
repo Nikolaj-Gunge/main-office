@@ -137,6 +137,8 @@ export class PixelRenderer implements GameRenderer {
   readonly size = new THREE.Vector2(1, 1)
   /** Screen pixels per game pixel. */
   scale = 1
+  /** Screen pixels per CSS pixel at most (see device-tier.ts). */
+  maxDpr = Number.POSITIVE_INFINITY
 
   private readonly postScene = new THREE.Scene()
   private readonly postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
@@ -325,7 +327,7 @@ export class PixelRenderer implements GameRenderer {
    * the in-between), and automatic quality's steps are a third coarser each instead of a whole.
    */
   resize(): void {
-    const dpr = window.devicePixelRatio || 1
+    const dpr = Math.min(this.maxDpr, window.devicePixelRatio || 1)
     const screenW = Math.round(window.innerWidth * dpr)
     const screenH = Math.round(window.innerHeight * dpr)
     this.scale = this.smooth

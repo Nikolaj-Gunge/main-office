@@ -31,6 +31,8 @@ export class GpuPixelRenderer implements GameRenderer {
   readonly overlayTarget: RenderTarget
   readonly size = new THREE.Vector2(1, 1)
   scale = 1
+  /** Screen pixels per CSS pixel at most (see device-tier.ts). */
+  maxDpr = Number.POSITIVE_INFINITY
   /**
    * Same switches as WebGLRenderer.shadowMap; WebGPU keeps them per light, so they are copied
    * onto every shadow-casting light before a frame (see syncShadows).
@@ -180,7 +182,7 @@ export class GpuPixelRenderer implements GameRenderer {
 
   /** As PixelRenderer.resize. */
   resize(): void {
-    const dpr = window.devicePixelRatio || 1
+    const dpr = Math.min(this.maxDpr, window.devicePixelRatio || 1)
     const screenW = Math.round(window.innerWidth * dpr)
     const screenH = Math.round(window.innerHeight * dpr)
     this.scale = this.smooth
