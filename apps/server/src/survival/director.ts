@@ -89,6 +89,7 @@ import {
   type SurvivalSelf,
   type SurvivalShared,
   secondFind,
+  seeded,
   setBarricades,
   sightScale,
   slotFor,
@@ -344,6 +345,8 @@ export class SurvivalDirector {
   /** How the dead find their way round (pathing.ts). */
   private nav: Nav | null = null
   private readonly random: () => number
+  /** Its own dice for who somebody new was (seeded off the world's once, so tests repeat). */
+  private readonly bioDice: () => number
   private readonly survivors = new Map<number, Survivor>()
   /** The world as last saved (JSON), to save it again only when something changed. */
   private savedWorld = ''
@@ -402,6 +405,7 @@ export class SurvivalDirector {
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
     this.random = random
+    this.bioDice = seeded(Math.floor(random() * 0x7fffffff) + 1)
     this.drops = new Drops(this.dropHost())
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
     this.rot = new RotWorld(this.rotHost())
@@ -814,7 +818,7 @@ export class SurvivalDirector {
   private newBio(player: ServerPlayer): Bio {
     const body = player.appearance === undefined ? 0 : unpackAppearance(player.appearance).body
     // Its own dice: who you were shouldn't change what the world rolls next.
-    return makeBio(Math.floor(Math.random() * 0x7fffffff) + 1, body)
+    return makeBio(Math.floor(this.bioDice() * 0x7fffffff) + 1, body)
   }
 
   /** Every starter thing (indices into def.starter). */
@@ -3387,6 +3391,13 @@ export class SurvivalDirector {
       drop: (item, n, at, ammo) => this.dropAt(item, n, at, ammo, true),
       notice: (player, kind, text) => this.notice(player, kind, text),
       noticeAll: (kind, text) => this.noticeAll(kind, text),
+      horn: (at) => {
+        for (const sv of this.survivors.values())
+          this.send(sv.player, {
+            type: ServerMsg.Notice,
+            notice: { kind: 'sound', text: '', sound: 'horn', at: { ...at } },
+          })
+      },
       steal: () => this.rare.clear(),
       gateShut: () => this.gate.shut,
       raidable: () => {
@@ -3519,6 +3530,14 @@ export class SurvivalDirector {
   private campShared(): Pick<SurvivalShared, 'camp' | 'siege'> {
     const siege = this.story.shared().siege ?? this.camp.siege()
     return { camp: this.camp.shared(), ...(siege ? { siege } : {}) }
+  }
+
+  /** For the admin: raiders come up the east road now. Null when done, or why not. */
+  raid(): string | null {
+    if (this.bandits.raiding) return 'A raid is already on'
+    const haven = this.def.pois.find((p) => p.key === 'haven')
+    if (haven && this.story.besieged(haven)) return 'Haven is under siege'
+    return this.bandits.startRaid() ? null : 'No room for raiders right now'
   }
 
   /** For the admin: tonight is a Red Night, and it's nearly dusk. */

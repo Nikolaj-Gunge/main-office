@@ -126,11 +126,11 @@ export class QuestJournal {
     self?: SurvivalSelf,
   ): void {
     panel.replaceChildren()
-    const head = el('div', 'sv-panel-head', panel)
+    const head = el('div', 'sv-panel-head sv-journal-head', panel)
     el('b', '', head, `JOURNAL · ${STORY_TITLE.toUpperCase()}`)
     // Whose journal it is (the character this time round; characters.ts).
     if (who) el('span', 'sv-journal-who', head, who)
-    const tabs = el('div', 'sv-tabs', head)
+    const tabs = el('div', 'sv-tabs sv-journal-tabs', head)
     JOURNAL_TABS.forEach((tab, i) => {
       const node = el(
         'span',

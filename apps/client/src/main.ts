@@ -390,6 +390,9 @@ const combat = new ClientCombat({
   myId: () => net.playerId,
 })
 
+/** Close code for a client older (or newer) than the server's protocol (session.ts). */
+const CLOSE_OUTDATED = 4000
+
 const net = new Connection({
   onState: (state, reason, code) => {
     if (state === 'closed') {
@@ -405,7 +408,9 @@ const net = new Connection({
       menu.setJoined(false)
       hud.setJoined(false)
       survival?.hud.setVisible(false)
-      const fatal = reason?.includes('Protocol') ?? false
+      // Only a real version mismatch (4000) needs a reload; anything else (a server restart,
+      // a dropped line) reconnects by itself (connection.ts) and the game carries on.
+      const fatal = code === CLOSE_OUTDATED || (reason?.includes('Protocol') ?? false)
       const text = reason
         ? fatal
           ? 'The game was updated — reload to keep playing.'
@@ -1316,7 +1321,9 @@ pixels.setAnimationLoop(() => {
 if (wantsServiceWorker(location.search, import.meta.env.PROD)) {
   void registerServiceWorker(() => {
     const text = 'A new version is ready.'
-    overlay.setBanner(text, true)
+    // Still talking to the server (same protocol): no Reload banner over the game, just a note
+    // on the menu. The banner is for when it's needed (closed with 4000, above).
+    if (!joined) overlay.setBanner(text, true)
     menu.setStatus(`${text} Reload to get it.`)
   })
 }

@@ -218,7 +218,8 @@ export class Game {
   )
   private spawns: SpawnPicker
   items: WorldItems
-  private readonly random: () => number
+  /** The world's dice (seeded in tests): directors roll with these, not Math.random. */
+  readonly random: () => number
   private rulesValue: GameRules = DEFAULT_RULES
   private movement: MovementConfig = movementFor(DEFAULT_RULES)
   private weaponRules: WeaponRules = weaponRulesFor(DEFAULT_RULES)
@@ -995,8 +996,8 @@ export class Game {
   /** Swaps the weapon in a player's hand (gun game level-up), keeping the knife. */
   giveWeapon(player: ServerPlayer, id: WeaponId): void {
     const s = player.state
-    s.weapon = newWeapon(id)
-    s.holstered = id === WeaponId.Knife ? null : newWeapon(WeaponId.Knife)
+    s.weapon = newWeapon(id, this.random)
+    s.holstered = id === WeaponId.Knife ? null : newWeapon(WeaponId.Knife, this.random)
     s.pocket = null
   }
 
@@ -1084,9 +1085,11 @@ export class Game {
     const current = primaryOf(s)
     if (current && WEAPON_TIER[current.id] >= WEAPON_TIER[id]) return
     const others = carried(s).filter((w) => w !== current)
-    const handgun = others.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun)
-    const knife = others.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife)
-    s.weapon = newWeapon(id)
+    const handgun =
+      others.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun, this.random)
+    const knife =
+      others.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife, this.random)
+    s.weapon = newWeapon(id, this.random)
     s.holstered = handgun
     s.pocket = knife
   }
@@ -1141,8 +1144,13 @@ export class Game {
     const forced = this.match.loadout(player)
     if (forced) {
       return forced === WeaponId.Knife || forced === WeaponId.Claws
-        ? createPlayerState(spawn, newWeapon(forced), null, null)
-        : createPlayerState(spawn, newWeapon(forced), newWeapon(WeaponId.Knife), null)
+        ? createPlayerState(spawn, newWeapon(forced, this.random), null, null)
+        : createPlayerState(
+            spawn,
+            newWeapon(forced, this.random),
+            newWeapon(WeaponId.Knife, this.random),
+            null,
+          )
     }
     // Co-op hands out the stage's gun (if it beats the admin's spawn weapon).
     const ruled = spawnPrimary(this.rulesValue.spawnWeapon, this.random)
@@ -1151,10 +1159,10 @@ export class Game {
       armory !== null && (ruled === null || WEAPON_TIER[armory] > WEAPON_TIER[ruled])
         ? armory
         : ruled
-    const handgun = newWeapon(WeaponId.Handgun)
+    const handgun = newWeapon(WeaponId.Handgun, this.random)
     return primary === null
       ? createPlayerState(spawn, handgun, null)
-      : createPlayerState(spawn, newWeapon(primary), handgun)
+      : createPlayerState(spawn, newWeapon(primary, this.random), handgun)
   }
 
   // --- Weapons on the floor ------------------------------------------------------------------
@@ -1184,11 +1192,13 @@ export class Game {
     if (!this.items.take(item.id, this.tick)) return
     const s = player.state
     const items = carried(s)
-    const handgun = items.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun)
-    const knife = items.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife)
+    const handgun =
+      items.find((w) => w.id === WeaponId.Handgun) ?? newWeapon(WeaponId.Handgun, this.random)
+    const knife =
+      items.find((w) => w.id === WeaponId.Knife) ?? newWeapon(WeaponId.Knife, this.random)
     // The new gun goes in your hand; what you were holding becomes "last used" (Q).
     const previous = s.weapon.id === WeaponId.Knife ? knife : handgun
-    s.weapon = newWeapon(item.weapon)
+    s.weapon = newWeapon(item.weapon, this.random)
     s.holstered = previous
     s.pocket = previous === handgun ? knife : handgun
   }
@@ -1211,7 +1221,9 @@ export class Game {
     const rest = carried(s).filter((w) => w !== primary)
     if (s.weapon === primary) {
       s.weapon =
-        rest.find((w) => w.id === WeaponId.Handgun) ?? rest[0] ?? newWeapon(WeaponId.Handgun)
+        rest.find((w) => w.id === WeaponId.Handgun) ??
+        rest[0] ??
+        newWeapon(WeaponId.Handgun, this.random)
     }
     const others = rest.filter((w) => w !== s.weapon)
     s.holstered = others[0] ?? null
@@ -1356,8 +1368,8 @@ function spawnPrimary(rule: SpawnWeapon, random: () => number): WeaponId | null 
 }
 
 /** A weapon fresh off the floor: full magazine and reserve, its own spread seed. */
-function newWeapon(id: WeaponId): WeaponState {
-  return createWeaponState(id, (Math.random() * 0xffffffff) >>> 0)
+function newWeapon(id: WeaponId, random: () => number = Math.random): WeaponState {
+  return createWeaponState(id, (random() * 0xffffffff) >>> 0)
 }
 
 /** The rifle/sniper a player carries (in hand or holstered), or null. */

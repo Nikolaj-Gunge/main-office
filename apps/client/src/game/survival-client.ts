@@ -381,6 +381,11 @@ export class SurvivalClient {
           this.evac.showCard(n.title, n.text)
           return true
         }
+        // The Haven lookout's horn: raiders coming (bandits.ts). Carries across the whole map.
+        if (n.kind === 'sound' && n.sound === 'horn') {
+          this.audio.play('horn.raid', { volume: 0.9 })
+          return true
+        }
         if (this.radio.onNotice(n)) return true
         if (this.rot.onNotice(n)) return true
         if (n.hint) {

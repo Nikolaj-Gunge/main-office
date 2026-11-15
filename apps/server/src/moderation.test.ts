@@ -177,6 +177,22 @@ describe('admin moderation', () => {
     }
   })
 
+  test('sends raiders up the east road, and everyone hears the lookout horn', async () => {
+    const { call, game } = setup()
+    const alice = await connect(game, 'Alice')
+    expect((await call('raid', {})).status).toBe(200)
+    expect([...game.players.values()].filter((p) => p.npc && p.name === 'Raider').length).toBe(
+      game.match.survivalDirector?.bandits.raiding?.members ?? -1,
+    )
+    const notices = alice.inbox.flatMap((m) => (m.type === ServerMsg.Notice ? [m.notice] : []))
+    expect(notices.some((n) => n.kind === 'sound' && n.sound === 'horn' && n.at)).toBe(true)
+    expect(notices.some((n) => n.text.startsWith('A horn from the Haven lookout'))).toBe(true)
+    // One at a time.
+    expect((await call('raid', {})).body.error).toBe('A raid is already on')
+    const office = setup(false)
+    expect((await office.call('raid', {})).status).toBe(400)
+  })
+
   test("starts someone's character over", async () => {
     const { call, game } = setup()
     const alice = await connect(game, 'Alice')

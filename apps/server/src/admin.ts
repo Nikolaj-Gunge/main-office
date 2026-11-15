@@ -54,6 +54,8 @@ export interface AdminOptions {
  *   POST /admin/api/teleport      {"id", "place": key} or {"id", "to": player id}
  *   POST /admin/api/give          {"id", "item", "n"} → survival: into their pockets
  *   POST /admin/api/time          {"time": 0–1} → survival: the day's clock wound forward to it
+ *   POST /admin/api/red-night     {} → survival: tonight is a Red Night, and it's nearly dusk
+ *   POST /admin/api/raid          {} → survival: bandit raiders come up the east road now
  *   POST /admin/api/reset-character {"id"} → survival: their character starts over
  *   POST /admin/api/broadcast     {"text"} → a line from the server to everyone
  *   POST /admin/api/client-error  (no password) a browser's uncaught error, rate-limited
@@ -152,6 +154,7 @@ export class AdminApi {
       case 'POST /admin/api/give':
       case 'POST /admin/api/time':
       case 'POST /admin/api/red-night':
+      case 'POST /admin/api/raid':
       case 'POST /admin/api/reset-character':
       case 'POST /admin/api/broadcast': {
         const body = (await request.json().catch(() => undefined)) as Record<string, unknown>
@@ -188,6 +191,8 @@ export class AdminApi {
         return m.setTime(Number(body.time)) ? null : 'Not playing survival (or no time given)'
       case 'red-night':
         return m.redNight() ? null : 'Not playing survival'
+      case 'raid':
+        return m.raid()
       case 'reset-character':
         return m.resetCharacter(id)
       case 'broadcast':

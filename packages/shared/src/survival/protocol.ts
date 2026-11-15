@@ -238,9 +238,9 @@ export interface Notice {
   /**
    * `sound` (heard, not shown): birds taking off (flock index in `flock`), a car alarm, a named
    * alpha's roar as it charges or leaps (alphas.ts), or a groan answering somebody's first
-   * gunshot (first-shot.ts).
+   * gunshot (first-shot.ts), or the Haven lookout's horn as raiders come (bandits.ts).
    */
-  sound?: 'birds' | 'alarm' | 'roar' | 'groan'
+  sound?: 'birds' | 'alarm' | 'roar' | 'groan' | 'horn'
   /** `radio`: who is on the air (Radio Free Deadwood's DJ, radio.ts on the server). */
   from?: string
   flock?: number

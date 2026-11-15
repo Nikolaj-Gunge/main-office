@@ -131,6 +131,8 @@ export interface BanditHost {
   notice(player: ServerPlayer, kind: Notice['kind'], text: string): void
   /** Everybody playing hears of it (the horn, the stores). */
   noticeAll(kind: Notice['kind'], text: string): void
+  /** Everybody playing hears the lookout's horn, blown at `at` (a raid is coming). */
+  horn?(at: Point): void
   /** Raiders got into Haven's stores: Gus has nothing extra until tomorrow. */
   steal(): void
   /** May raiders come today (not while Haven is under siege)? */
@@ -463,6 +465,7 @@ export class Bandits {
       'warn',
       'A horn from the Haven lookout: raiders on the east road, coming for the stores.',
     )
+    this.host.horn?.(RAID_ROAD[RAID_ROAD.length - 1] as Point)
     return true
   }
 

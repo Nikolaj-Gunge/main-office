@@ -443,7 +443,7 @@ export class MatchRunner {
     const players = this.everyone
     const mode = this.rules.mode
     // Teams: shuffled, then alternated (balanced). Infection: one random patient zero.
-    const shuffled = [...players].sort(() => Math.random() - 0.5)
+    const shuffled = [...players].sort(() => this.game.random() - 0.5)
     const keepScores = mode === 'zombies' && retry > 0
     shuffled.forEach((p, i) => {
       p.team = mode === 'tdm' ? (((i % 2) + 1) as TeamId) : mode === 'infection' ? 1 : 0
@@ -459,14 +459,14 @@ export class MatchRunner {
     if (mode === 'infection' && shuffled[0] && shuffled.length >= 2) shuffled[0].team = 2
     if (mode === 'zombies') {
       for (const p of players) p.team = 1
-      this.zombies ??= new ZombieDirector(this.game)
+      this.zombies ??= new ZombieDirector(this.game, this.game.random)
       this.zombies.startRun(retry)
     } else if (this.zombies) {
       this.zombies.dispose()
       this.zombies = null
     } else if (mode !== 'survival') this.game.setGates(0xffff)
     if (mode === 'survival' && this.game.world.map.survival) {
-      this.survival ??= new SurvivalDirector(this.game)
+      this.survival ??= new SurvivalDirector(this.game, this.game.random)
       this.survival.start()
     } else if (this.survival) {
       this.survival.dispose()
