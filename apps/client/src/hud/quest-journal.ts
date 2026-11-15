@@ -1,5 +1,7 @@
 import {
+  type CosmeticKind,
   endingOf,
+  type FieldNotes,
   ITEMS,
   type Journal,
   noteText,
@@ -15,6 +17,7 @@ import {
   stepApplies,
   UNLOCKS,
 } from '@office-fps/shared'
+import { fieldEntries, recordEntries } from './field-notes-pages.ts'
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -29,11 +32,12 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-export type JournalTab = 'quests' | 'notes' | 'people'
-export const JOURNAL_TABS: JournalTab[] = ['quests', 'notes', 'people']
+export type JournalTab = 'quests' | 'notes' | 'people' | 'field' | 'record'
+export const JOURNAL_TABS: JournalTab[] = ['quests', 'notes', 'people', 'field', 'record']
+const TAB_NAMES: Partial<Record<JournalTab, string>> = { field: 'field notes' }
 
 /** One row in a journal list: what it is, and how it's drawn. */
-interface Entry {
+export interface Entry {
   key: string
   label: string
   group: string
@@ -62,6 +66,12 @@ export class QuestJournal {
   tab: JournalTab = 'quests'
   selected = 0
   private entries: Entry[] = []
+  /** The account's Field Notes and journal (field-notes.ts), when the server has sent them. */
+  account: FieldNotes | null = null
+  /** The player's own name (for the share card). */
+  player = ''
+  /** Puts on or takes off a cosmetic. */
+  wear: (kind: CosmeticKind, id: string | null) => void = () => {}
 
   constructor(private readonly def: SurvivalDef) {}
 
@@ -105,7 +115,7 @@ export class QuestJournal {
         'span',
         tab === this.tab ? 'sv-tab on' : 'sv-tab',
         tabs,
-        `${i + 1} ${tab.toUpperCase()}`,
+        `${i + 1} ${(TAB_NAMES[tab] ?? tab).toUpperCase()}`,
       )
       node.addEventListener('click', () => {
         this.tab = tab
@@ -117,12 +127,21 @@ export class QuestJournal {
     const left = el('div', 'sv-col sv-journal-list', body)
     const right = el('div', 'sv-col sv-journal-page', body)
 
+    const now = Date.now()
     this.entries =
       this.tab === 'quests'
         ? this.questEntries(journal)
         : this.tab === 'notes'
           ? this.noteEntries(journal)
-          : this.peopleEntries(journal, unlocks)
+          : this.tab === 'field'
+            ? this.account
+              ? fieldEntries(this.account, now, this.wear)
+              : []
+            : this.tab === 'record'
+              ? this.account
+                ? recordEntries(this.account, now, who?.split(',')[0] ?? this.player, this.player)
+                : []
+              : this.peopleEntries(journal, unlocks)
     this.selected = Math.max(0, Math.min(this.entries.length - 1, this.selected))
     const list = el('div', 'sv-list', left)
     if (this.entries.length === 0)
@@ -151,7 +170,7 @@ export class QuestJournal {
         redraw()
       })
     })
-    el('div', 'sv-help', left, 'W/S select · A/D or 1–3 tab · J close')
+    el('div', 'sv-help', left, `W/S select · A/D or 1–${JOURNAL_TABS.length} tab · J close`)
     this.entries[this.selected]?.draw(right)
     const picked = list.querySelector('.selected')
     if (picked instanceof HTMLElement && picked.offsetTop + 40 > list.clientHeight)

@@ -2,6 +2,7 @@ import type { Bio } from './characters.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
 import type { EvacShared } from './evac.ts'
+import type { CosmeticKind, FieldNotes } from './field-notes.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
@@ -58,6 +59,8 @@ export interface SurvivalSelf {
   busy?: Busy | null
   /** The container you have open (a car's trunk, your locker), see storage.ts. */
   box?: OpenBox | null
+  /** Field Notes, achievements and cosmetics (field-notes.ts): the account's, not the character's. */
+  notes?: FieldNotes
 }
 
 export interface QuestState {
@@ -159,6 +162,8 @@ export type SurvivalAction =
   /** The inventory opened: open the container in reach, if any. `close`: it closed. */
   | { a: 'open' }
   | { a: 'close' }
+  /** Wear an earned cosmetic (field-notes.ts), or take it off (id null). */
+  | { a: 'cosmetic'; kind: CosmeticKind; id: string | null }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

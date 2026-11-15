@@ -51,7 +51,7 @@ export const MIGRATIONS: Record<number, Migration> = {
   1: (kind, d) => (kind === 'character' ? { ...d, locker: d.locker ?? [] } : d),
 }
 
-export type SaveKind = 'character' | 'world'
+export type SaveKind = 'character' | 'world' | 'account'
 
 /** How every save is stored: the schema version, and the data. */
 interface Envelope {
@@ -286,9 +286,9 @@ export class Saves {
     return this.accounts.get(account) ?? {}
   }
 
-  /** Replaces an account's record (written on the next flush). Outlives characters and worlds. */
-  putAccount(account: string, data: AccountSave): void {
-    this.accounts.set(account, data)
+  /** Sets one feature's part of an account's record (written on the next flush). */
+  putAccount(account: string, key: string, value: unknown): void {
+    this.accounts.set(account, { ...this.account(account), [key]: value })
     this.dirty.add(accountKey(account))
   }
 

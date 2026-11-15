@@ -2980,3 +2980,99 @@ body {
     opacity: 0;
   }
 }
+
+/* --- Field Notes and the Survival Journal (journal tabs 4 and 5; field-notes-pages.ts) --- */
+
+.fn-bar {
+  height: 10px;
+  margin: 10px 0 2px;
+  background: #221d17;
+  border: 1px solid #3a3226;
+}
+
+.fn-bar-fill {
+  height: 100%;
+  background: #d88a3a;
+}
+
+.sv-page-reward.fn-owned {
+  color: #a8c87a;
+}
+
+.fn-wardrobe {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.fn-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.fn-item:hover {
+  border-color: #6a644e;
+}
+
+.fn-item.on {
+  border-color: #d88a3a;
+  background: rgba(216, 138, 58, 0.1);
+}
+
+.fn-item-name {
+  flex: 1;
+}
+
+.fn-item-mark {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #d88a3a;
+}
+
+.fn-chip {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #000;
+}
+
+.fn-swatch {
+  width: 24px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+
+.fn-story {
+  margin: 10px 0;
+  font-size: 15px;
+}
+
+.fn-card {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  margin: 8px 0;
+  aspect-ratio: 1200 / 630;
+  image-rendering: pixelated;
+  border: 1px solid #3a3226;
+}
+
+.fn-download {
+  padding: 6px 14px;
+  font: inherit;
+  letter-spacing: 2px;
+  color: #16130f;
+  background: #d88a3a;
+  border: 0;
+  cursor: pointer;
+}
+
+.sv-tab {
+  white-space: nowrap;
+}

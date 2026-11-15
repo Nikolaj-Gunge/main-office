@@ -52,6 +52,7 @@ import {
   type MapSpawn,
   makeBio,
   maxStack,
+  type NoteEvent,
   type Notice,
   needsDrain,
   PLANK_HP,
@@ -105,6 +106,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
+import { FieldNotesKeeper } from './field-notes.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
@@ -179,6 +181,8 @@ interface Survivor {
   haven?: boolean
   /** Their locker at Haven (storage.ts): the account's, kept through death. */
   locker: Box
+  /** Where they were a second ago at the wheel (Field Notes count the distance). */
+  drove?: Point
 }
 
 /** One of the dead that was one of you: everything they had on them, and how they looked. */
@@ -342,6 +346,11 @@ export class SurvivalDirector {
       random: () => this.random(),
       notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
       seated: (sv) => this.vehicles.seatOf(sv.player as ServerPlayer) !== null,
+      rested: (sv) => this.note(sv as Survivor, 'rest_fire'),
+    })
+    this.fieldNotes = new FieldNotesKeeper({
+      saves: () => this.game.saves,
+      notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
     })
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
@@ -356,6 +365,14 @@ export class SurvivalDirector {
 
   /** The story and everybody's quests (see story.ts). */
   readonly story: Story
+
+  /** Field Notes, achievements and cosmetics (field-notes.ts): the account's, for good. */
+  readonly fieldNotes: FieldNotesKeeper
+
+  /** Counts something for Field Notes and the journal. */
+  private note(sv: Survivor | undefined, event: NoteEvent, n = 1): void {
+    if (sv && isPerson(sv.player)) this.fieldNotes.record(sv, event, n)
+  }
 
   /** Everybody here has seen the story through. */
   get won(): boolean {
@@ -498,6 +515,7 @@ export class SurvivalDirector {
     sv.self.light = false
     this.rot.forget(player)
     this.story.left(player)
+    this.fieldNotes.forget(sv)
     this.save(sv)
     void this.game.saves.flush()
     this.clearStarters(sv)
@@ -560,7 +578,7 @@ export class SurvivalDirector {
       !this.pool.some((z) => z.state.alive && dist(z.state.pos, s.pos) < UNSAFE_NEAR)
     this.game.saves.putCharacter(player.account, {
       name: player.name,
-      self: { ...sv.self, light: false, busy: null, box: null },
+      self: { ...withoutNotes(sv.self), light: false, busy: null, box: null },
       kit: alive ? kitOf(s) : sv.kit,
       reborn: sv.reborn,
       waiting: [...sv.waiting],
@@ -778,6 +796,12 @@ export class SurvivalDirector {
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
       this.story.killed(victim, zed.kind, victim.state.pos, killer)
+      const hunter = this.survivors.get(killer.id)
+      if (hunter) {
+        this.note(hunter, 'kill')
+        if (killer.state.weapon.id === WeaponId.Knife) this.note(hunter, 'kill_knife')
+        if (this.phase === 'night' || this.phase === 'dusk') this.note(hunter, 'kill_night')
+      }
       // Now and then one of them was carrying something.
       if (this.random() < 0.14) {
         const drop = rollLoot(this.random() < 0.5 ? 'bedroom' : 'medical', this.random)
@@ -791,6 +815,7 @@ export class SurvivalDirector {
     if (!sv) return
     // New and unlucky (the first ten minutes): it costs nothing, this once.
     if (keepsLoot(sv.self.age)) return void this.spare(sv)
+    this.note(sv, 'death')
     // Everything goes: backpack, guns, clothes, the pack, the money. Somebody new wakes at Haven.
     const was = sv.self.bio?.name
     const at = { ...victim.state.pos }
@@ -853,9 +878,9 @@ export class SurvivalDirector {
     if (player.account) {
       const data = this.game.saves.account(player.account)
       const evac = evacAccount(data)
-      this.game.saves.putAccount(player.account, {
-        ...data,
-        evac: { ...evac, retired: [...evac.retired, was] },
+      this.game.saves.putAccount(player.account, 'evac', {
+        ...evac,
+        retired: [...evac.retired, was],
       })
     }
     this.workbench.forget(player)
@@ -1001,6 +1026,7 @@ export class SurvivalDirector {
     }
     if (tick % TICK_RATE === 0) {
       for (const sv of people) this.tickSurvivor(sv)
+      for (const sv of people) this.drive(sv)
       this.discover(alive)
       this.stockPlaces(alive)
       this.expireLoot()
@@ -1029,6 +1055,7 @@ export class SurvivalDirector {
     }
 
     for (const sv of people) {
+      this.fieldNotes.attach(sv)
       if (!sv.dirty) continue
       sv.dirty = false
       this.send(sv.player, { type: ServerMsg.Survival, self: sv.self })
@@ -1041,6 +1068,8 @@ export class SurvivalDirector {
     if (phase === this.phase) return
     this.phase = phase
     if (phase === 'dawn') this.rare = rollRareStock(this.random)
+    // Still standing when the sun comes up (Field Notes, the journal's first night).
+    if (phase === 'dawn') for (const sv of people) if (sv.player.state.alive) this.note(sv, 'dawn')
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
     // What kind of night it will be: the Haven radio has an idea (rot.ts).
@@ -1113,6 +1142,18 @@ export class SurvivalDirector {
     ) {
       sv.dirty = true
     }
+  }
+
+  /** At the wheel: the distance driven since a second ago (Field Notes). */
+  private drive(sv: Survivor): void {
+    const at = this.vehicles.seatOf(sv.player)
+    const pos = sv.player.state.pos
+    if (at?.seat !== 0 || !sv.player.state.alive) return void delete sv.drove
+    const was = sv.drove
+    sv.drove = { x: pos.x, y: pos.y, z: pos.z }
+    const metres = was ? dist(was, pos) : 0
+    // Nobody drives faster than this: anything more is a teleport, not a drive.
+    if (metres > 0.5 && metres < 60) this.note(sv, 'drive_m', Math.round(metres))
   }
 
   /** The clock ran out. */
@@ -1463,7 +1504,10 @@ export class SurvivalDirector {
     sv.dirty = true
     sv.noise = Math.max(sv.noise, 24)
     sv.noiseUntil = this.now + (kit ? 2.5 : 1.5)
-    this.setBoard(i, Math.min(MAX_PLANKS, planks + (kit ? KIT_PLANKS : 1)) * PLANK_HP)
+    const added = Math.min(MAX_PLANKS, planks + (kit ? KIT_PLANKS : 1)) - planks
+    this.setBoard(i, (planks + added) * PLANK_HP)
+    this.note(sv, 'board', added)
+    if (this.phase === 'day' || this.phase === 'dawn') this.note(sv, 'board_day', added)
   }
 
   /** The dead at a boarded door batter it, about once a second each. */
@@ -1535,6 +1579,7 @@ export class SurvivalDirector {
     player.health = player.maxHealth
     player.state.stamina = 1
     this.needs.slept(sv)
+    this.note(sv, 'sleep')
     sv.dirty = true
     // Sleeping through the dark: wake at dawn.
     const t = this.time
@@ -1591,6 +1636,7 @@ export class SurvivalDirector {
             each * n,
             def.weapon !== undefined ? WEAPONS[def.weapon].magSize : undefined,
           )
+          this.note(sv, 'trade')
         } else {
           const gus = this.def.npcs.find((p) => p.role === 'trader')
           if (!gus || dist(s.pos, { x: gus.pos[0], z: gus.pos[2] }) > 6) return
@@ -1599,6 +1645,7 @@ export class SurvivalDirector {
           if (!stack) return
           const got = takeStack(self.inv, def.id, def.kind === 'weapon' ? 1 : n)
           self.money += Math.floor(def.value * SELL_RATE * got)
+          if (got > 0) this.note(sv, 'trade')
         }
         return void this.touch(sv)
       }
@@ -1616,6 +1663,9 @@ export class SurvivalDirector {
         return
       case 'close':
         return void this.storage.close(sv)
+      case 'cosmetic':
+        this.fieldNotes.wear(sv, action.kind, typeof action.id === 'string' ? action.id : null)
+        return
     }
   }
 
@@ -1735,6 +1785,7 @@ export class SurvivalDirector {
     if (def.infection && self.infected !== null) {
       const cure = def.infection === 'cure'
       self.infected = cure ? null : INFECTION_SECONDS
+      if (cure) this.note(sv, 'cure')
       this.notice(
         player,
         cure ? 'story' : 'info',
@@ -1750,6 +1801,7 @@ export class SurvivalDirector {
     if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
     if (def.stamina) s.winded = false
     if (def.stopsBleeding) self.bleeding = false
+    if (def.kind === 'food' || def.kind === 'drink') this.note(sv, 'eat')
     this.needs.used(sv, def)
     return true
   }
@@ -2256,7 +2308,11 @@ export class SurvivalDirector {
       },
       giveOrDrop: (w, item, n) => {
         const sv = this.survivors.get(w.player.id)
-        if (sv) this.giveOrDrop(sv, item, n)
+        if (!sv) return
+        this.giveOrDrop(sv, item, n)
+        // Only ever what was just made (workbench.ts).
+        this.note(sv, 'craft')
+        if (item === 'bandage') this.note(sv, 'craft_bandage', n)
       },
       touch: (w) => {
         const sv = this.survivors.get(w.player.id)
@@ -2294,6 +2350,7 @@ export class SurvivalDirector {
   private storyHost(): StoryHost {
     const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
     return {
+      noted: (p, event) => this.note(sv(p), event),
       def: () => this.def,
       now: () => this.now,
       random: this.random,
@@ -2508,7 +2565,7 @@ export class SurvivalDirector {
   /** What someone wears that shows (gear.ts looks, packed for the wire). */
   gearOf(player: ServerPlayer): number {
     const sv = this.survivors.get(player.id)
-    return sv ? gearOf(sv.self) : (this.turned.get(player.id)?.look ?? 0)
+    return sv ? this.fieldNotes.looks(sv, gearOf(sv.self)) : (this.turned.get(player.id)?.look ?? 0)
   }
 
   /** Damage after what someone wears: helmets take head hits, vests and jackets the rest. */
@@ -2544,6 +2601,12 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) =>
   Math.hypot(a.x - b.x, a.z - b.z)
 
 const gearOf = (self: SurvivalSelf) => gearLooks(Object.values(self.wear))
+
+/** A character's backpack without the account's Field Notes (saved with the account instead). */
+function withoutNotes(self: SurvivalSelf): SurvivalSelf {
+  const { notes: _, ...rest } = self
+  return rest
+}
 
 /** Everything somebody has: the backpack, the guns in hand, what they wear, the pack and cash. */
 function belongings(self: SurvivalSelf, state: PlayerState): Stack[] {

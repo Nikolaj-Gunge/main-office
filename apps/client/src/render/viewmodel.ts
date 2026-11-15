@@ -477,6 +477,21 @@ function makeFlashTexture(): THREE.CanvasTexture {
  * of the world: the gun never clips into walls and is pixelated with the same pass. Every motion
  * is spring-driven so kick, sway, bob and reload layer naturally.
  */
+/** Dark parts of the guns (metal, polymer): what a wrap covers. Wood, sights and skin stay. */
+function wrappable(models: GunModel[]): { mat: THREE.MeshLambertMaterial; own: THREE.Color }[] {
+  const out = new Map<THREE.MeshLambertMaterial, THREE.Color>()
+  const keep = new Set([WOOD, SKIN, SLEEVE, SIGHT])
+  for (const model of models)
+    model.group.traverse((o) => {
+      const mat = (o as THREE.Mesh).material
+      if (!(mat instanceof THREE.MeshLambertMaterial) || out.has(mat)) return
+      const hsl = mat.color.getHSL({ h: 0, s: 0, l: 0 })
+      if (keep.has(mat.color.getHex()) || hsl.l > 0.3 || hsl.s > 0.35) return
+      out.set(mat, mat.color.clone())
+    })
+  return [...out].map(([mat, own]) => ({ mat, own }))
+}
+
 export class Viewmodel {
   readonly scene = new THREE.Scene()
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 10)
@@ -515,6 +530,9 @@ export class Viewmodel {
   private aim = 0
   /** True while looking through a scope: the gun is hidden and the HUD draws the scope. */
   scoped = false
+  /** The guns' metal and polymer (their own colours), for a Field Notes gun wrap. */
+  private readonly paintable: { mat: THREE.MeshLambertMaterial; own: THREE.Color }[]
+  private wrap: number | null = null
 
   // Springs: kick back / up / twist / sideways, sway (look lag), each with its own snappiness.
   private readonly kickBack = new Spring(18)
@@ -550,6 +568,7 @@ export class Viewmodel {
       if (model.bolt) model.bolt.userData.rest = model.bolt.position.z
     }
     this.active = this.models[WeaponId.Handgun]
+    this.paintable = wrappable(Object.values(this.models))
 
     this.flash = new THREE.Mesh(
       new THREE.PlaneGeometry(0.09, 0.09),
@@ -583,6 +602,18 @@ export class Viewmodel {
 
   get aimProgress(): number {
     return this.aim
+  }
+
+  /** A gun wrap (field-notes.ts): the guns' dark parts take on `tint`; null takes it off. */
+  setWrap(tint: number | null): void {
+    if (tint === this.wrap) return
+    this.wrap = tint
+    const to = new THREE.Color(tint ?? 0)
+    for (const { mat, own } of this.paintable) {
+      mat.color.copy(own)
+      // Mostly the wrap's colour, keeping a little of the part's own shading.
+      if (tint !== null) mat.color.lerp(to, 0.7)
+    }
   }
 
   setAspect(aspect: number): void {

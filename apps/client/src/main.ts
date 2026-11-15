@@ -5,6 +5,7 @@ import {
   CLOSE_RESTING,
   ClientMsg,
   type CoopGoal,
+  cosmeticById,
   createPhysicsWorld,
   DEFAULT_MAP_ID,
   DebugFlag,
@@ -393,7 +394,11 @@ const net = new Connection({
   onMessage: (msg) => {
     combat.onMessage(msg)
     if (msg.type === ServerMsg.Social) return social.onEvent(msg.social, performance.now())
-    if (survival?.onMessage(msg)) return void player.setEffects(survival.effects)
+    if (survival?.onMessage(msg)) {
+      // A Field Notes gun wrap shows on your own guns (field-notes.ts).
+      viewmodel.setWrap(cosmeticById(survival.self?.notes?.wear.wrap)?.tint ?? null)
+      return void player.setEffects(survival.effects)
+    }
     switch (msg.type) {
       case ServerMsg.Welcome:
         if (msg.mapId !== map.id && MAP_IDS.includes(msg.mapId)) {
