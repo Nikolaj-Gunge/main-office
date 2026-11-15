@@ -20,6 +20,8 @@ import {
   daylight,
   dayPhase,
   type EquipSlot,
+  EVAC_RADIO_KEY,
+  EVAC_TITLE,
   fitsAt,
   flashAt,
   footprint,
@@ -43,6 +45,7 @@ import {
   isItemRef,
   LOCKER_SIZE,
   type LootItem,
+  legacyKit,
   loosen,
   MAX_PLANKS,
   MAX_PLAYERS,
@@ -101,6 +104,7 @@ import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
+import { Evac, evacAccount } from './evac.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
@@ -341,7 +345,11 @@ export class SurvivalDirector {
     })
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
+    this.evac = new Evac({ ...this.storyHost(), retire: (p) => this.retire(p.player) })
   }
+
+  /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
+  readonly evac: Evac
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
@@ -408,6 +416,7 @@ export class SurvivalDirector {
     this.cells.clear()
     this.places = def.pois.map(() => ({ stocked: -1, kills: [], woken: 0 }))
     this.story.reset()
+    this.evac.reset()
     this.found = new Set()
     this.gates = 0
     this.game.setGates(0)
@@ -465,6 +474,7 @@ export class SurvivalDirector {
       locker: cleanBox(saved?.locker, LOCKER_SIZE),
     }
     if (saved) this.resume(sv, saved)
+    else this.legacy(sv)
     if (!sv.self.bio) sv.self.bio = this.newBio(player)
     this.survivors.set(player.id, sv)
     this.layOut(sv)
@@ -575,6 +585,7 @@ export class SurvivalDirector {
       found: [...this.found].map((i) => this.def.pois[i]?.key ?? '').filter(Boolean),
       gates: this.gates,
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
+      retired: [...this.evac.retired],
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -589,6 +600,7 @@ export class SurvivalDirector {
     if (!this.def) return
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
+    this.evac.restore(w.retired)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -790,6 +802,7 @@ export class SurvivalDirector {
     this.storage.forget(victim)
     sv.self = freshSelf()
     sv.self.bio = this.newBio(victim)
+    this.legacy(sv)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     // Hollis' pistol and knife are on the cabin table again, for somebody new.
@@ -813,6 +826,66 @@ export class SurvivalDirector {
         ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.\n\nYou wake at Haven: somebody new.`
         : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.\n\nYou wake at Haven: somebody new.`,
     )
+  }
+
+  // --- Evacuation (evac.ts) -----------------------------------------------------------------
+
+  /** A new character of an account that got others out: what they left at Haven for them. */
+  private legacy(sv: Survivor): void {
+    const account = sv.player.account
+    if (!account) return
+    const kit = legacyKit(evacAccount(this.game.saves.account(account)).retired.length)
+    if (kit.money === 0 && kit.items.length === 0) return
+    sv.self.money += kit.money
+    for (const { item, n } of kit.items) give(sv.self, item, n)
+    sv.dirty = true
+  }
+
+  /**
+   * Got on the evacuation helicopter: the character retires (the account remembers them, the
+   * world keeps them at Haven) and the player wakes at Haven as somebody new, like dying but
+   * keeping nothing behind — they took it all with them.
+   */
+  retire(player: ServerPlayer): void {
+    const sv = this.survivors.get(player.id)
+    if (!sv) return
+    const was = sv.self.bio?.name ?? player.name
+    if (player.account) {
+      const data = this.game.saves.account(player.account)
+      const evac = evacAccount(data)
+      this.game.saves.putAccount(player.account, {
+        ...data,
+        evac: { ...evac, retired: [...evac.retired, was] },
+      })
+    }
+    this.workbench.forget(player)
+    this.storage.forget(player)
+    this.vehicles.leave(player)
+    sv.self = freshSelf()
+    sv.self.bio = this.newBio(player)
+    this.legacy(sv)
+    sv.kit = REBORN_KIT.map((k) => ({ ...k }))
+    sv.reborn = true
+    this.clearStarters(sv)
+    sv.waiting = this.allStarters()
+    this.layOut(sv)
+    sv.turning = false
+    sv.warned = 0
+    sv.dirty = true
+    this.story.died(sv)
+    this.save(sv)
+    this.saveWorld(true)
+    this.send(player, { type: ServerMsg.Dialog, dialog: null })
+    this.send(player, {
+      type: ServerMsg.Notice,
+      notice: {
+        kind: 'story',
+        title: EVAC_TITLE,
+        text: `${was} got out.\n\nThe pad drops away under the skids, the dead still coming out of the trees below. Then only the dark, and the noise of the rotors, and sleep.\n\n${was} lives at Haven now. Whoever you are next will find something they left for you.`,
+      },
+    })
+    // Wakes at Haven as somebody new (spawnFor: reborn).
+    this.game.respawnNow(player)
   }
 
   /**
@@ -932,6 +1005,7 @@ export class SurvivalDirector {
       this.stockPlaces(alive)
       this.expireLoot()
       this.story.tick(alive)
+      this.evac.tick()
       this.drops.step()
       this.tickDay(people)
       this.rot.tick()
@@ -1253,13 +1327,14 @@ export class SurvivalDirector {
     // Somebody to talk to: the people of Haven, or someone walking with you.
     let npc: string | null = null
     let best = 0.3
-    for (const n of [...this.def.npcs, ...this.story.talkables()]) {
+    for (const n of [...this.def.npcs, ...this.story.talkables(), ...this.evac.talkables()]) {
       const score = aimAt(n.pos[0], n.pos[1] + 1.4, n.pos[2], TALK_REACH)
       if (score > best) {
         best = score
         npc = n.key
       }
     }
+    if (npc && this.evac.talk(sv, npc)) return
     if (npc) return void this.story.talk(sv, npc)
 
     let thing: Interactable | null = null
@@ -1429,6 +1504,7 @@ export class SurvivalDirector {
     const player = sv.player
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
     if (thing.kind === 'board') return void this.story.board(sv)
+    if (thing.key === EVAC_RADIO_KEY) return void this.evac.use(sv)
     if (thing.kind === 'locker') {
       if (!this.storage.openNear(sv, 'locker')) this.notice(player, 'info', 'Step up to it.')
       return
@@ -1527,6 +1603,9 @@ export class SurvivalDirector {
         return void this.touch(sv)
       }
       case 'choose':
+        // The retired only say their piece (evac.ts): any answer ends it.
+        if (String(action.npc).startsWith('retired:'))
+          return void this.send(player, { type: ServerMsg.Dialog, dialog: null })
         return void this.story.choose(sv, String(action.npc), String(action.option))
       case 'craft':
         return void this.workbench.startCraft(sv, String(action.recipe))
@@ -2400,6 +2479,7 @@ export class SurvivalDirector {
       time: this.time,
       gates: this.gates,
       ...this.story.shared(),
+      ...this.evacShared(),
       found: [...this.found],
       won: this.won,
       boards: [...this.boards].flatMap(([i, hp]) => [i, Math.round(hp)]),
@@ -2411,6 +2491,17 @@ export class SurvivalDirector {
         ...(this.weatherPin ? { pin: this.weatherPin } : {}),
       },
       rot: this.rot.shared(),
+    }
+  }
+
+  /** The evacuation under way, and the retired standing about Haven among the walkers. */
+  private evacShared(): Pick<SurvivalShared, 'walkers' | 'evac'> {
+    const evac = this.evac.shared()
+    const retired = this.evac.walkers()
+    const walkers = this.story.shared().walkers
+    return {
+      ...(evac ? { evac } : {}),
+      ...(retired.length > 0 ? { walkers: [...(walkers ?? []), ...retired] } : {}),
     }
   }
 

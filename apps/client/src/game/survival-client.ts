@@ -5,6 +5,7 @@ import {
   DAY_SECONDS,
   daylight,
   type EffectId,
+  EVAC_TITLE,
   effectsOf,
   gearLooks,
   heightAt,
@@ -43,6 +44,7 @@ import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
 import { CampFolk } from '../render/camp-folk.ts'
 import type { TierSettings } from '../render/device-tier.ts'
+import { EvacView } from '../render/evac-view.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
@@ -122,6 +124,8 @@ export class SurvivalClient {
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
   private readonly heli: HeliView
+  /** The evacuation helicopter, its flare and countdown (evac-view.ts). */
+  private readonly evac: EvacView
   /** Haven's townsfolk going about their day. */
   private readonly folk: CampFolk
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
@@ -175,6 +179,7 @@ export class SurvivalClient {
     this.boards = new BarricadeView(o.def.spots)
     o.scene.add(this.boards.root)
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
+    this.evac = new EvacView(o.scene, o.audio, o.hudRoot)
     this.folk = new CampFolk(o.def, o.audio)
     o.scene.add(this.folk.root)
     this.weather = new WeatherView(o.def, o.physics, o.audio)
@@ -290,6 +295,11 @@ export class SurvivalClient {
         return true
       case ServerMsg.Notice: {
         const n = msg.notice
+        // Got out on the helicopter: a card of its own, not the usual story line.
+        if (n.kind === 'story' && n.title === EVAC_TITLE) {
+          this.evac.showCard(n.title, n.text)
+          return true
+        }
         if (this.rot.onNotice(n)) return true
         if (n.kind === 'scream' && n.at) {
           this.audio.playNear('scream', n.at, 1, 170, 12)
@@ -322,6 +332,7 @@ export class SurvivalClient {
     this.hud.setShared(shared)
     this.applyBoards(shared.boards ?? [])
     this.heli.apply(shared.drops)
+    this.evac.apply(shared.evac)
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
     this.rot.setShared(shared.rot)
@@ -363,6 +374,7 @@ export class SurvivalClient {
     this.applyWalkers([])
     this.loot.clear()
     this.heli.clear()
+    this.evac.clear()
     this.self = null
     this.vehicles.clear()
     this.infection.set(null)
@@ -437,6 +449,7 @@ export class SurvivalClient {
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
     this.heli.update(dt, eye)
+    this.evac.update(dt, eye)
 
     // Your torch, and the nearest of everyone else's.
     const on = this.self?.light === true && state.alive

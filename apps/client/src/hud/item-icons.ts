@@ -556,6 +556,30 @@ const ICONS: Record<string, Paint> = {
       .rect(p.w - 10, 3, 4, 2, '#c8a040')
       .outline()
   },
+  // The way out (evac.ts)
+  evacbattery: (p) => {
+    p.rect(7, 6, p.w - 14, p.h - 9, '#3e4a30')
+      .rect(7, 6, p.w - 14, 2, 'rgba(255,255,255,0.2)')
+      .rect(12, 3, 4, 3, '#24262a')
+      .rect(10, 14, p.w - 20, 8, '#e8dcc0')
+      .rect(12, 17, p.w - 24, 2, '#24262a')
+      .outline()
+  },
+  flaregun: (p) => {
+    p.rect(9, 3, p.w - 12, 6, '#e0701a')
+      .rect(p.w - 4, 3, 2, 6, '#24262a')
+      .rect(5, 5, 6, 10, '#e0701a')
+      .rect(9, 9, 3, 3, '#c85a14')
+      .outline()
+  },
+  evacpapers: (p) => {
+    p.rect(3, 2, p.w - 6, p.h - 3, '#e8e0c8')
+      .rect(3, 2, p.w - 6, 3, '#3a5a3a')
+      .rect(5, 7, p.w - 10, 1, '#24262a')
+      .rect(5, 9, p.w - 12, 1, '#24262a')
+      .rect(p.w - 8, p.h - 6, 3, 3, '#b82a24')
+      .outline()
+  },
   map_piece: box('#d8cca0', { band: '#c02a2a', inset: 2 }),
   // Backpacks
   pack_school: backpack('#2a5aa8', '#1a2a4a'),

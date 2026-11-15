@@ -69,7 +69,7 @@ const box = (
 }
 
 /** A military helicopter out of boxes: nose towards −z. */
-function buildHeli(): {
+export function buildHeli(): {
   root: THREE.Group
   rotor: THREE.Group
   tail: THREE.Group

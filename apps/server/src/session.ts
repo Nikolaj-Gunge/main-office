@@ -62,6 +62,7 @@ export function createSession(
     if (account) await game.saves.loadCharacter(account)
     // Playing in another world right now (worlds.ts): one character, one body, so a guest here.
     if (account && game.saves.busyElsewhere(account)) account = null
+    if (account) await game.saves.loadAccount(account)
     if (closed) return
     const id = game.join(
       name,
