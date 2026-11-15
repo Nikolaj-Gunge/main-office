@@ -3,6 +3,8 @@
  * server (which enforces them) and the client (which shows the same limits before sending).
  */
 
+import type { PartyEvent, PartyRequest, TradeRequest } from './party.ts'
+
 /** Longest chat line (characters, after cleaning). */
 export const CHAT_MAX = 120
 /** Survival "nearby" chat reaches this far (m). */
@@ -34,6 +36,9 @@ export type SocialRequest =
   | { kind: 'emote' }
   /** Stop (or start again) hearing from player `id`: their chat, pings and waves. */
   | { kind: 'mute'; id: number; muted: boolean }
+  /** Camps and trading (party.ts). */
+  | PartyRequest
+  | TradeRequest
 
 /** Server → client. */
 export type SocialEvent =
@@ -42,6 +47,8 @@ export type SocialEvent =
   | { kind: 'emote'; from: number }
   /** Only to you: "slow down", "muted Ray" and the like. */
   | { kind: 'system'; text: string }
+  /** Camps and trading (party.ts). */
+  | PartyEvent
 
 /** Control characters, zero-width marks and text-direction overrides. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point

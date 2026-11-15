@@ -253,6 +253,11 @@ export class Menu {
     })
   }
 
+  /** Adds a box under the Play tab's tips (the camp panel). */
+  addToPlay(node: HTMLElement): void {
+    this.tabs.get('play')?.panel.append(node)
+  }
+
   /** The name typed in the join form. */
   get name(): string {
     return this.nameInput.value

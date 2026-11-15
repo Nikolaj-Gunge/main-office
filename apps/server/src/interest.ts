@@ -74,6 +74,7 @@ export interface InterestPick {
  * @param known ids the client currently has (sent and not removed)
  * @param people every person in the world (for the far ring; zombies are only ever near)
  * @param snapshot running snapshot count, so far people take turns
+ * @param always people sent every snapshot wherever they are (camp-mates: compass, spectating)
  */
 export function pickInterest(
   viewer: { id: number; x: number; z: number },
@@ -81,6 +82,7 @@ export function pickInterest(
   people: readonly InterestEntity[],
   known: { has(id: number): boolean; keys(): Iterable<number> },
   snapshot: number,
+  always: readonly number[] = [],
 ): InterestPick {
   const send: number[] = []
   const kept = new Set<number>()
@@ -99,6 +101,11 @@ export function pickInterest(
     kept.add(p.id)
     // Someone coming into range shows up straight away; after that they take their turn.
     if (!known.has(p.id) || (snapshot + p.id) % FAR_EVERY === 0) send.push(p.id)
+  }
+  for (const id of always) {
+    if (id === viewer.id || kept.has(id) || !people.some((p) => p.id === id)) continue
+    kept.add(id)
+    send.push(id)
   }
   const removed: number[] = []
   for (const id of known.keys()) if (!kept.has(id)) removed.push(id)

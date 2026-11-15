@@ -23,6 +23,8 @@ export interface SocialHost {
   readonly tick: number
   readonly rules: GameRules
   sendTo(player: ServerPlayer, msg: ServerMessage): void
+  /** The others in `id`'s camp (party.ts): they see each other's pings wherever they are. */
+  mates?(id: number): readonly number[]
 }
 
 /** A ping further than this from whoever placed it is refused (m): nobody sees that far. */
@@ -84,7 +86,8 @@ export class SocialRelay {
         const event: SocialEvent = { kind: 'ping', from: from.id, ping: req.ping, x, y, z }
         // Teams hear their own side's pings wherever they are; otherwise those close by.
         const teams = this.hasTeams()
-        this.relay(from, event, teams ? Number.POSITIVE_INFINITY : PING_RANGE, teams)
+        const mates = new Set(this.host.mates?.(from.id) ?? [])
+        this.relay(from, event, teams ? Number.POSITIVE_INFINITY : PING_RANGE, teams, mates)
         return
       }
       case 'emote': {
@@ -119,14 +122,27 @@ export class SocialRelay {
     for (const set of this.muted.values()) set.delete(id)
   }
 
-  /** Sends `event` to people (the sender included) within `range` of the sender. */
-  private relay(from: ServerPlayer, event: SocialEvent, range: number, teamOnly: boolean): void {
+  /**
+   * Sends `event` to people (the sender included) within `range` of the sender, and to
+   * `anywhere` (camp-mates) however far.
+   */
+  private relay(
+    from: ServerPlayer,
+    event: SocialEvent,
+    range: number,
+    teamOnly: boolean,
+    anywhere: ReadonlySet<number> = new Set(),
+  ): void {
     const msg: ServerMessage = { type: ServerMsg.Social, social: event }
     const a = from.state.pos
     for (const to of this.host.players.values()) {
       if (to.zombie || to.bot || to.dummy) continue
       if (to.id !== from.id) {
         if (this.isMuted(to.id, from.id)) continue
+        if (anywhere.has(to.id)) {
+          this.host.sendTo(to, msg)
+          continue
+        }
         if (teamOnly && to.team !== from.team) continue
         const b = to.state.pos
         if (

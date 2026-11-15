@@ -67,6 +67,7 @@ import { type InterestEntity, pickInterest, SpatialGrid } from './interest.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
+import { Parties } from './party.ts'
 import { type SaveStore, Saves } from './saves.ts'
 import { SocialRelay } from './social.ts'
 import { SpawnPicker } from './spawning.ts'
@@ -217,6 +218,8 @@ export class Game {
   saves = new Saves()
   /** Chat, pings and waves. */
   readonly social = new SocialRelay(this)
+  /** Camps: who plays together (party.ts). */
+  readonly parties = new Parties(this)
 
   constructor(map: MapDef, physics: PhysicsWorld, random: () => number = Math.random) {
     this.map = map
@@ -481,6 +484,7 @@ export class Game {
     this.players.delete(id)
     this.zombieLooks.delete(id)
     this.social.forget(id)
+    this.parties.forget(id)
     this.broadcast({ type: ServerMsg.PlayerLeft, id })
     // A person left: bots may fill up again (after one gave up its place).
     if (!player.bot && !player.dummy && !player.zombie) this.syncBots()
@@ -531,7 +535,21 @@ export class Game {
   /** Chat, a ping, a wave or a mute (checked and rate-limited in social.ts). */
   handleSocial(id: number, req: SocialRequest): void {
     const player = this.players.get(id)
-    if (player) this.social.handle(player, req)
+    if (!player || !req || typeof req !== 'object') return
+    // Camps (party.ts) and trading (survival/trade.ts) ride along on the social message.
+    if (req.kind === 'party') this.parties.handle(player, req)
+    else if (req.kind === 'trade') this.match.survivalDirector?.trades.handle(player, req)
+    else this.social.handle(player, req)
+  }
+
+  /** Somebody joined a camp with others in it: survival may walk a new character over. */
+  campJoined(player: ServerPlayer): void {
+    this.match.survivalDirector?.onCampJoined(player)
+  }
+
+  /** The others in `id`'s camp (pings reach them wherever they are). */
+  mates(id: number): number[] {
+    return this.parties.mates(id)
   }
 
   /** One client. */
@@ -581,6 +599,7 @@ export class Game {
       if (!player.state.alive && !player.out && this.tick >= player.respawnAt) this.respawn(player)
     }
     this.match.step()
+    this.parties.step()
     const t1 = performance.now()
     this.timing.simMs += (t1 - t0 - this.timing.simMs) * 0.05
 
@@ -1175,6 +1194,7 @@ export class Game {
           people,
           codec.known,
           this.snapshotCount,
+          this.parties.mates(player.id),
         )
         players = pick.send.flatMap((id) => everyone.get(id) ?? [])
         removed = pick.removed
