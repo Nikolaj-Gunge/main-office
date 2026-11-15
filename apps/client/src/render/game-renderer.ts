@@ -1,6 +1,7 @@
 import type * as THREE from 'three'
 import type { WebGPURenderer } from 'three/webgpu'
 import type { RendererSetting, Settings } from '../settings.ts'
+import type { FogFrame } from './fog-atmosphere.ts'
 import { PixelRenderer } from './pixel-renderer.ts'
 
 /** What the game needs from a renderer: PixelRenderer (WebGL) or GpuPixelRenderer (WebGPU). */
@@ -27,6 +28,8 @@ export interface GameRenderer {
   setAnimationLoop(callback: (() => void) | null): void
   /** Survival's bite on screen (see game/infection.ts); null: none. */
   setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void
+  /** Survival's mist (fog-atmosphere.ts); renderers without the pass leave it out. */
+  setFog?(frame: FogFrame | null): void
   render(
     scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,

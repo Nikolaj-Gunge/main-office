@@ -26,6 +26,9 @@ uniform float infection;
 uniform float infectPulse;  // 0–1, peaks on each heartbeat
 uniform float infectTime;   // seconds, for the sway
 uniform float infectMotion; // 0 = hold still (reduced motion), 1 = sway and drift
+// Survival's mist (volumetric-fog.ts), coarser than the scene: rgb = its light, a = what shows through.
+uniform sampler2D tFog;
+uniform float fogOn;
 
 varying vec2 vUv;
 
@@ -74,7 +77,12 @@ vec3 nearestPaletteColor(vec3 c) {
 // The world, gun and glow at one point (linear, before tone mapping).
 vec3 sceneAt(vec2 uv) {
   vec4 o = texture2D(tOverlay, uv);
-  return texture2D(tColor, uv).rgb * (1.0 - o.a) + o.rgb + texture2D(tBloom, uv).rgb * bloomStrength;
+  vec3 world = texture2D(tColor, uv).rgb;
+  if (fogOn > 0.5) {
+    vec4 mist = texture2D(tFog, uv);
+    world = world * mist.a + mist.rgb;
+  }
+  return world * (1.0 - o.a) + o.rgb + texture2D(tBloom, uv).rgb * bloomStrength;
 }
 
 // Late in the turn: the picture sways, softens and doubles (a ghost drifting to one side).

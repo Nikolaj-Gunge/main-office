@@ -45,8 +45,9 @@ import { TraitPick } from '../hud/trait-pick.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
 import { CampFolk } from '../render/camp-folk.ts'
-import type { TierSettings } from '../render/device-tier.ts'
+import type { Tier, TierSettings } from '../render/device-tier.ts'
 import { EvacView } from '../render/evac-view.ts'
+import { Atmosphere, type FogFrame } from '../render/fog-atmosphere.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
@@ -124,6 +125,8 @@ export class SurvivalClient {
   private readonly send: (action: SurvivalAction) => void
   private readonly wilds: Wilds
   private readonly night: Night
+  /** The mist in the hollows, its halos and shafts (fog-atmosphere.ts; drawn by the renderer). */
+  private readonly atmosphere: Atmosphere
   /** The map's buildings (main.ts adds them first), for their level of detail. */
   private readonly mapObject: THREE.Object3D | null
   private readonly loot: LootView
@@ -179,6 +182,7 @@ export class SurvivalClient {
     o.scene.add(this.wilds.root)
     this.mapObject = o.scene.getObjectByName(`map:${o.map.id}`) ?? null
     this.night = new Night(o.map, o.scene, o.sky)
+    this.atmosphere = new Atmosphere((x, z) => heightAt(o.def.terrain, x, z), o.def.lakes)
     this.loot = new LootView(o.scene)
     this.leaves = new Leaves(o.def.terrain)
     o.scene.add(this.leaves.mesh)
@@ -417,6 +421,16 @@ export class SurvivalClient {
     this.leaves.setCount(tier.leaves)
   }
 
+  /** The mist's tier (fog-atmosphere.ts). */
+  setFogTier(tier: Tier): void {
+    this.atmosphere.setTier(tier)
+  }
+
+  /** This frame's mist, for the renderer. */
+  get fog(): FogFrame {
+    return this.atmosphere.frame
+  }
+
   /**
    * Builds the ground you start on before the first frame, so the shaders it needs can be
    * compiled with the rest while loading (the chunks around it follow over the next frames).
@@ -472,6 +486,17 @@ export class SurvivalClient {
     const sputter =
       on && (this.self?.battery ?? 100) < 15 && Math.sin(performance.now() / 53) > 0.6 ? 0.35 : 1
     this.torch.intensity = 70 * this.torchLevel * sputter
+    const fog = this.night.distanceFog
+    this.atmosphere.update(dt, eye, {
+      weather: sky,
+      mood: this.rot.fog,
+      day: daylight(time),
+      fogColor: fog.color,
+      fogFar: fog.far,
+      lamps: this.night.litLamps,
+      torch: this.torch,
+      moon: this.night.moonLight,
+    })
     const lit = remotes
       .torches()
       .sort((a, b) => Math.hypot(a.x - eye.x, a.z - eye.z) - Math.hypot(b.x - eye.x, b.z - eye.z))

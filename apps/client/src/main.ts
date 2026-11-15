@@ -796,6 +796,7 @@ function applyTier() {
   tier = next
   const t = TIER_SETTINGS[next]
   survival?.setTier(t)
+  survival?.setFogTier(next)
   effects.decalCap = t.decals
   effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
   pixels.maxDpr = t.maxDpr
@@ -1148,6 +1149,7 @@ pixels.setAnimationLoop(() => {
     pixels.shadows.needsUpdate = true
   }
   pixels.setInfection(survival?.infectionFx ?? null)
+  pixels.setFog?.(survival?.fog ?? null)
   ragdolls.update(dt)
   damageNumbers.update(dt)
   coopZone.update(dt)
