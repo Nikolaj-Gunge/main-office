@@ -560,6 +560,8 @@ export class Game {
   handleSocial(id: number, req: SocialRequest): void {
     const player = this.players.get(id)
     if (!player || !req || typeof req !== 'object') return
+    // Steering their own turned body (survival): only groans come out.
+    if (this.match.survivalDirector?.turnedSelf.social(player, req)) return
     // Camps (party.ts) and trading (survival/trade.ts) ride along on the social message.
     if (req.kind === 'party') this.parties.handle(player, req)
     else if (req.kind === 'trade') this.match.survivalDirector?.trades.handle(player, req)

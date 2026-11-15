@@ -3748,3 +3748,100 @@ body {
 .menu {
   z-index: 90;
 }
+
+/* ── Your turned self (p27-turned) ──────────────────────────────────────────────────────── */
+/* Just turned: take the wheel (P) or wake at Haven (O). */
+.turned-offer {
+  position: absolute;
+  bottom: 3%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 10px 16px;
+  background: rgb(14 10 9 / 0.86);
+  border: 2px solid #6a2e26;
+  color: #d9c9b8;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.turned-offer-title {
+  font-size: 17px;
+  color: #c9584a;
+  margin-bottom: 8px;
+}
+
+.turned-offer-keys {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.turned-offer-keys button {
+  font: inherit;
+  font-size: 14px;
+  padding: 5px 10px;
+  color: #e6d8c8;
+  background: #2a1b17;
+  border: 2px solid #5a3a30;
+  cursor: pointer;
+}
+
+.turned-offer-keys button:hover {
+  border-color: #a9493c;
+}
+
+.turned-key {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 4px;
+  color: #f0b39a;
+}
+
+.turned-offer-count {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8f7b6c;
+}
+
+/* Steering: the world in grey and old blood, the edges dark; nothing of the living's HUD. */
+body.turned-self #game {
+  filter: grayscale(0.85) sepia(0.5) hue-rotate(-28deg) saturate(2.2) contrast(1.15)
+    brightness(0.92);
+}
+
+body.turned-self #hud::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 42%, rgb(70 0 0 / 0.55) 100%);
+}
+
+body.turned-self .sv,
+body.turned-self .hud-death,
+body.turned-self .hud-spectate,
+body.turned-self .hud-health,
+body.turned-self .hud-ammo,
+body.turned-self .hud-scope {
+  display: none;
+}
+
+.turned-bar {
+  position: absolute;
+  top: 9%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 18px;
+  letter-spacing: 1px;
+  color: #c9584a;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.7);
+  pointer-events: none;
+}
+
+.turned-bar-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9c8676;
+}

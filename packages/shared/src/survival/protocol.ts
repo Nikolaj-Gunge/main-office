@@ -80,6 +80,19 @@ export interface SurvivalSelf {
   oath?: number
   /** What this character has learned by doing (skills.ts); absent in old saves. */
   skills?: Skills
+  /** Sent, never saved: what's left of the one you were, if you may (or do) steer it. */
+  turned?: TurnedSelfState
+}
+
+/**
+ * Just turned (the server's turned-self.ts): the body that got up, and either the seconds left
+ * to take the wheel (`offer`) or the seconds left steering it (`left`).
+ */
+export interface TurnedSelfState {
+  /** The player id of the risen body. */
+  body: number
+  offer?: number
+  left?: number
 }
 
 export interface QuestState {
@@ -198,6 +211,8 @@ export type SurvivalAction =
   | { a: 'trait'; id: TraitId | null }
   /** Put up a piece from a kit you carry (building.ts) where you point, turned `rot` eighths. */
   | { a: 'build'; kit: string; x: number; z: number; rot: number }
+  /** Just turned: steer what's left of you for a while (take), or wake at Haven now. */
+  | { a: 'turned'; take: boolean }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

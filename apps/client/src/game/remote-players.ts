@@ -155,6 +155,12 @@ export class RemotePlayers {
     if (this.players.has(id)) this.waves.set(id, nowMs)
   }
 
+  /** Player `id` as drawn this frame (drawn or hidden), or null when unknown or dead. */
+  shownOf(id: number): RemotePlayerState | null {
+    const s = this.players.get(id)?.shown
+    return s?.alive ? s : null
+  }
+
   /** Just over player `id`'s head as drawn, or null when they aren't drawn (dead, in a car). */
   headOf(id: number): THREE.Vector3 | null {
     const p = this.players.get(id)
