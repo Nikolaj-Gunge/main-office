@@ -23,6 +23,8 @@ export interface SocialHost {
   readonly tick: number
   readonly rules: GameRules
   sendTo(player: ServerPlayer, msg: ServerMessage): void
+  /** Somebody waved (survival: a truce offer to whoever they look at). */
+  onWave?(player: ServerPlayer): void
 }
 
 /** A ping further than this from whoever placed it is refused (m): nobody sees that far. */
@@ -91,6 +93,7 @@ export class SocialRelay {
         if (!from.state.alive || !limits.emote.take(now)) return
         const range = this.survival() ? EMOTE_RANGE : Number.POSITIVE_INFINITY
         this.relay(from, { kind: 'emote', from: from.id }, range, false)
+        this.host.onWave?.(from)
         return
       }
       case 'mute': {

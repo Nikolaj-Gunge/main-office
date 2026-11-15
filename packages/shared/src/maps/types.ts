@@ -52,6 +52,8 @@ export const MATERIALS = [
   'trim',
   /** A lit window seen from outside: warm light through a curtain. */
   'windowglow',
+  /** Red paint daubed on bark: the band round the trees along the Lawless border. */
+  'redpaint',
 ] as const
 export type MaterialId = (typeof MATERIALS)[number]
 

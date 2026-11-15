@@ -146,6 +146,20 @@ function paint(
       })
       break
     }
+    case 'lawless': {
+      // The Lawless border (lawless-border.ts): a dirty white board, a red stripe, black letters
+      // stencilled by somebody who meant it.
+      ctx.fillStyle = '#cfc9ba'
+      ctx.fillRect(0, 0, w, h)
+      ctx.fillStyle = '#8e2a1f'
+      ctx.fillRect(0, 0, w, h * 0.12)
+      ctx.fillRect(0, h * 0.88, w, h * 0.12)
+      ctx.fillStyle = '#7d1f17'
+      fitText(ctx, lines[0] ?? '', w / 2, h * 0.36, w * 0.88, h * 0.3, '900')
+      ctx.fillStyle = '#161412'
+      fitText(ctx, lines[1] ?? '', w / 2, h * 0.68, w * 0.84, h * 0.2, '900')
+      break
+    }
   }
   // Weather: rust and dirt specks, and on some, bullet holes.
   const holes = hash2(seed, 2, 8) < 0.45 ? 2 + Math.floor(hash2(seed, 3, 8) * 7) : 0

@@ -16,7 +16,8 @@ import type { Lake, Poi, Road } from './types.ts'
 
 /** A road sign's face (the post is a map box). */
 export interface RoadSign {
-  kind: 'guide' | 'speed' | 'mile' | 'warn' | 'graffiti'
+  /** `lawless`: the warning boards round the Lawless ground (lawless-border.ts). */
+  kind: 'guide' | 'speed' | 'mile' | 'warn' | 'graffiti' | 'lawless'
   /** Centre of the face. */
   pos: Vec3
   /** Which way the face looks (unit vector on the ground plane). */

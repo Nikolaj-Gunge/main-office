@@ -56,6 +56,10 @@ export interface SurvivalSelf {
   busy?: Busy | null
   /** The container you have open (a car's trunk, your locker), see storage.ts. */
   box?: OpenBox | null
+  /** Reputation (pvp.ts: Raider at or below RAIDER_AT, Saint from SAINT_AT); absent = 0. */
+  rep?: number
+  /** Oathbreaker: seconds of play the mark has left (pvp.ts); absent or 0 = none. */
+  oath?: number
 }
 
 export interface QuestState {
@@ -129,6 +133,8 @@ export interface SurvivalShared {
   drops?: SupplyDrop[]
   /** The weather's seed and clock: everything else follows from them (see weather.ts). */
   weather?: WeatherShared
+  /** Who wears an armband or the Oathbreaker mark (pvp.ts packStanding); absent = nobody. */
+  standing?: number[]
 }
 
 export type SurvivalAction =

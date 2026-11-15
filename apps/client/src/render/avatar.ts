@@ -27,6 +27,7 @@ import {
   vertexColored,
 } from './body-kit.ts'
 import { gearBodies, lowerBody, showsUnder } from './gear-looks.ts'
+import { createLabel } from './labels.ts'
 import { build, defaultOutfit, lookFor, type Outfit, personBody, undeadSkin } from './person.ts'
 import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zombie-bodies.ts'
 
@@ -440,6 +441,8 @@ const FLINCH_SHOVE: Partial<Record<PartName, number>> = {
   gun: 0.06,
   stomach: 0.03,
 }
+/** The reputation armband (setStanding): a little proud of the upper arm and any sleeve. */
+const armbandGeometry = new THREE.BoxGeometry(0.165, 0.085, 0.175)
 const flinchTurn = new THREE.Quaternion()
 const flinchAxis = new THREE.Vector3()
 const UP = new THREE.Vector3(0, 1, 0)
@@ -627,6 +630,52 @@ export class Avatar {
     this.place(parts, 1)
   }
 
+  /** Survival standing (pvp.ts): the armband's colour (null: none) and the Oathbreaker tag. */
+  private armband: THREE.Mesh | null = null
+  private armbandColor: number | null = null
+  private oathTag: THREE.Sprite | null = null
+
+  /**
+   * What others see of somebody's reputation: a cloth band round the left upper arm (a Saint's
+   * chalk white, a Raider's old-blood red) and, over the head, OATHBREAKER while it lasts.
+   */
+  setStanding(armband: number | null, oathbreaker: boolean): void {
+    if (armband !== this.armbandColor) {
+      this.armbandColor = armband
+      if (this.armband) {
+        this.armband.removeFromParent()
+        ;(this.armband.material as THREE.Material).dispose()
+        this.armband = null
+      }
+      if (armband !== null) {
+        // Round the upper arm (the upper half of the arm mesh), wide enough to show over sleeves.
+        this.armband = part(
+          armbandGeometry,
+          new THREE.MeshLambertMaterial({ color: armband }),
+          0,
+          -ARM_LENGTH / 4 - 0.03,
+          0,
+        )
+        this.armband.name = 'armband'
+        this.parts.armL.add(this.armband)
+      }
+    }
+    if (oathbreaker !== (this.oathTag !== null)) {
+      if (this.oathTag) {
+        this.oathTag.removeFromParent()
+        ;(this.oathTag.material as THREE.SpriteMaterial).map?.dispose()
+        this.oathTag.material.dispose()
+        this.oathTag = null
+      } else {
+        this.oathTag = createLabel('OATHBREAKER', '#e0503c')
+        // Map labels are read from afar; this one only from close by.
+        this.oathTag.scale.multiplyScalar(0.16)
+        this.oathTag.position.set(0, PART_SIZES.head.y + 0.32, 0)
+        this.parts.head.add(this.oathTag)
+      }
+    }
+  }
+
   /** Team color instead of the player's own (team modes); null = back to their own. */
   setTint(color: number | null, own: number): void {
     this.material.color.setHex(color ?? own)
@@ -639,6 +688,7 @@ export class Avatar {
   }
 
   dispose(): void {
+    this.setStanding(null, false)
     this.material.dispose()
     ;(this.glint.material as THREE.SpriteMaterial).dispose()
   }

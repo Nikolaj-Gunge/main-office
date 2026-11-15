@@ -1,5 +1,6 @@
 import type { MapDef, MapLighting } from '../maps/types.ts'
 import { emptyBuild, Site } from './kit.ts'
+import { markLawless } from './lawless-border.ts'
 import { PLACES } from './places.ts'
 import { havenLife } from './places-haven.ts'
 import { camperName, houseName, shedName } from './places-homes.ts'
@@ -271,6 +272,10 @@ export function buildDeadwood(): MapDef {
   placeLore(build, pois)
   // Along the roads: streetlamps, power lines, signs (after the places, to keep out of them).
   const signs = dressRoads(build, { roads, pois, lakes, groundAt: world.groundAt }, SEED)
+  // The edge of the Lawless ground round Site 7: warning signs and red-painted trees (pvp.ts).
+  signs.push(
+    ...markLawless(build.boxes, { pois, roads, terrain, seed: SEED, groundAt: world.groundAt }),
+  )
 
   const survival: SurvivalDef = {
     seed: SEED,

@@ -55,6 +55,7 @@ import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import { Shiver } from './needs-feel.ts'
 import { Onboarding } from './onboarding.ts'
+import { PvpView } from './pvp-client.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import { VehiclesClient } from './vehicles-client.ts'
 
@@ -106,6 +107,8 @@ export class SurvivalClient {
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
+  /** Lawless ground on the HUD, armbands and Oathbreaker marks on people (pvp-client.ts). */
+  private readonly pvp: PvpView
   private readonly scene: THREE.Scene
   private readonly camera: THREE.PerspectiveCamera
   private readonly physics: PhysicsWorld
@@ -180,6 +183,7 @@ export class SurvivalClient {
     if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
     this.onboarding = new Onboarding(o.hudRoot, o.def, o.audio)
+    this.pvp = new PvpView(o.hudRoot, o.def)
     this.vehicles = new VehiclesClient({
       scene: o.scene,
       physics: o.physics,
@@ -470,6 +474,7 @@ export class SurvivalClient {
     this.moveWalkers(dt, eye)
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
+    this.pvp.update(state.pos, state.alive, remotes, this.shared?.standing)
     this.infectionFx = this.infection.update(dt, state.alive)
     let zombieNear = false
     for (const [id, pose] of remotes.visiblePoses())
