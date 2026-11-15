@@ -1,3 +1,4 @@
+@charset "UTF-8";
 * {
   box-sizing: border-box;
   margin: 0;
@@ -3453,4 +3454,11 @@ body {
 .trade-foot button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ── QA fixes (p25-qa) ───────────────────────────────────────────────────────────────────── */
+/* The survival HUD is built after the menu, so without this the compass, quest tracker and
+   objective markers drew on top of the Esc menu. The menu sits over every HUD layer. */
+.menu {
+  z-index: 90;
 }
