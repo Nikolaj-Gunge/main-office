@@ -18,13 +18,17 @@ export interface PieceChange {
   what: 'built' | 'hit' | 'broke' | 'door'
 }
 
-/** Old boards, a little darker than floorboards; scrap for the metal bits. */
+/**
+ * Old boards, a little darker and greyer than the cabins' wood (the same texture); scrap for the
+ * metal bits. The tint is near grey on purpose: a brown tint multiplies in linear light and
+ * turned the planks orange-red in daylight.
+ */
 const MATERIALS: Partial<Record<MaterialId, THREE.Material>> = {}
 function materialFor(id: MaterialId): THREE.Material {
   let m = MATERIALS[id]
   if (!m) {
     m = (getSurfaceMaterial(id) as THREE.MeshLambertMaterial).clone()
-    if (id === 'wood') (m as THREE.MeshLambertMaterial).color.setHex(0x8a6c50)
+    if (id === 'wood') (m as THREE.MeshLambertMaterial).color.setHex(0x857f78)
     MATERIALS[id] = m
   }
   return m
