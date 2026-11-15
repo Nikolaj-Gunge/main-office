@@ -334,5 +334,8 @@ function lookOf(kind: number, skin: SkinId): BodyLook {
   if (kind === ZombieKind.Brute) return 'brute'
   if (kind === ZombieKind.Screamer) return 'screamer'
   if (kind === ZombieKind.Stalker) return 'stalker'
+  if (kind === ZombieKind.AlphaBrute) return 'sawmill'
+  if (kind === ZombieKind.AlphaChoir) return 'choir'
+  if (kind === ZombieKind.AlphaRunner) return 'teeth'
   return 'zombie'
 }

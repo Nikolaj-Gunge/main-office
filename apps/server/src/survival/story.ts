@@ -111,6 +111,8 @@ export interface StoryHost {
   noted?(p: Person, event: 'deliver' | 'rescue' | 'quest'): void
   /** The others in their camp (party.ts) who are playing, wherever they are. */
   mates?(p: Person): Person[]
+  /** A siege at `poi` is over, held or not (Radio Free Deadwood reads it out). */
+  sieged?(poi: string, held: boolean): void
 }
 
 interface Walker {
@@ -1006,6 +1008,7 @@ export class Story {
     if (!s) return
     this.siege = null
     for (const z of s.zeds) this.host.unsiege(z)
+    this.host.sieged?.(s.poi, held)
     const poi = this.def.pois.find((p) => p.key === s.poi)
     if (!held) {
       this.siegeAgain = this.host.now() + SIEGE_COOLDOWN

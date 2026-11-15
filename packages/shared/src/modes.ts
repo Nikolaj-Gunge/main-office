@@ -116,6 +116,13 @@ export const ZombieKind = {
   Screamer: 4,
   /** Only moves while nobody is looking at it. */
   Stalker: 5,
+  // Named alphas (survival, alphas.ts): one of the kinds above, bigger, worse and with a name.
+  /** The Sawmill Brute: a brute that charges. */
+  AlphaBrute: 6,
+  /** The Choir: a screamer whose scream calls the dead to it. */
+  AlphaChoir: 7,
+  /** Old Teeth: a runner that leaps. */
+  AlphaRunner: 8,
 } as const
 export type ZombieKind = (typeof ZombieKind)[keyof typeof ZombieKind]
 
@@ -124,7 +131,25 @@ export const ZOMBIE_SCALE: Record<number, number> = {
   [ZombieKind.Brute]: 1.38,
   [ZombieKind.Screamer]: 0.92,
   [ZombieKind.Stalker]: 1.12,
+  [ZombieKind.AlphaBrute]: 1.62,
+  [ZombieKind.AlphaChoir]: 1.18,
+  [ZombieKind.AlphaRunner]: 1.22,
 }
+
+/** What each alpha is underneath (how it moves and fights, besides its special move). */
+const ALPHA_BASE: Record<number, ZombieKind> = {
+  [ZombieKind.AlphaBrute]: ZombieKind.Brute,
+  [ZombieKind.AlphaChoir]: ZombieKind.Screamer,
+  [ZombieKind.AlphaRunner]: ZombieKind.Runner,
+}
+/** The ordinary kind an alpha is a bigger version of (any other kind is itself). */
+export function baseKind(kind: number): number {
+  return ALPHA_BASE[kind] ?? kind
+}
+export function isAlpha(kind: number): boolean {
+  return ALPHA_BASE[kind] !== undefined
+}
+
 export function zombieScale(kind: number): number {
   return ZOMBIE_SCALE[kind] ?? 1
 }

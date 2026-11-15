@@ -1,5 +1,6 @@
 import {
   Button,
+  baseKind,
   heightAt,
   type InputCommand,
   type Poi,
@@ -37,6 +38,31 @@ export const KINDS: Record<number, KindStats> = {
   [ZombieKind.Brute]: { health: 1100, claws: 34, wander: 0.26, chase: 0.8, sight: 15, bash: 95 },
   [ZombieKind.Screamer]: { health: 110, claws: 8, wander: 0.3, chase: 0.62, sight: 22, bash: 10 },
   [ZombieKind.Stalker]: { health: 260, claws: 28, wander: 0, chase: 1.5, sight: 60, bash: 35 },
+  // The named alphas (alphas.ts): a lot more of everything.
+  [ZombieKind.AlphaBrute]: {
+    health: 5200,
+    claws: 48,
+    wander: 0.24,
+    chase: 0.85,
+    sight: 22,
+    bash: 160,
+  },
+  [ZombieKind.AlphaChoir]: {
+    health: 1500,
+    claws: 16,
+    wander: 0.3,
+    chase: 0.7,
+    sight: 30,
+    bash: 20,
+  },
+  [ZombieKind.AlphaRunner]: {
+    health: 1700,
+    claws: 22,
+    wander: 0.4,
+    chase: 1.5,
+    sight: 26,
+    bash: 30,
+  },
 }
 
 const EYE = 1.6
@@ -128,6 +154,8 @@ export class Zed {
   private idleUntil = 0
   /** Stalkers: somebody is looking. */
   frozen = false
+  /** Moves this much faster than its kind for now (an alpha's charge or leap, alphas.ts). */
+  boost = 1
   /** The barricade it is battering (spot index), or -1; and when it may strike next. */
   bashing = -1
   nextBash = 0
@@ -178,6 +206,7 @@ export class Zed {
     }
     this.idleUntil = 0
     this.frozen = false
+    this.boost = 1
     this.speed = 0
     this.bashing = -1
     this.attack.reset()
@@ -186,7 +215,7 @@ export class Zed {
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
   get speedFactor(): number {
     const k = KINDS[this.kind] as KindStats
-    if (this.mood === 'chase' || this.mood === 'lost') return k.chase
+    if (this.mood === 'chase' || this.mood === 'lost') return k.chase * this.boost
     // Looking into a noise: a careful walk, quicker than a shuffle, nowhere near a run.
     if (this.mood === 'investigate') return Math.max(0.3, Math.min(k.chase, k.wander * 1.4))
     return Math.max(0.2, k.wander)
@@ -270,7 +299,7 @@ export class Zed {
       this.targetId = seen.id
       this.lastKnown = { ...seen.pos }
       this.since = now
-      if (this.kind === ZombieKind.Screamer && fresh && now >= this.nextScream) {
+      if (baseKind(this.kind) === ZombieKind.Screamer && fresh && now >= this.nextScream) {
         this.nextScream = now + SCREAM_EVERY
         return 'scream'
       }
@@ -460,7 +489,7 @@ export class Zed {
         want = world.nav.aroundTrees(me, want, Math.hypot(dx, dz))
       const dy = chasing && !via ? goal.y + CHEST - (me.y + EYE * zombieScale(this.kind)) : 0
       const pitch = chasing && !via ? Math.atan2(dy, Math.max(flat, 0.1)) : 0
-      const fast = this.kind === ZombieKind.Runner || stalker
+      const fast = baseKind(this.kind) === ZombieKind.Runner || stalker
       // Winding up a blow it can only turn so fast after you; off balance after a miss, not at all.
       this.turnTowards(want, pitch, Math.min((fast ? 10 : 5) * TICK_DT, this.attack.turnLimit ?? 9))
       facing = angleTo(want, this.yaw)
@@ -491,7 +520,8 @@ export class Zed {
         this.kind,
         chasing && flat < reach,
         facing,
-        claws.cooldown + claws.draw <= (CLAW_TIMING[this.kind]?.windup ?? 0.6),
+        claws.cooldown + claws.draw <=
+          ((CLAW_TIMING[this.kind] ?? CLAW_TIMING[baseKind(this.kind)])?.windup ?? 0.6),
       )
     ) {
       buttons |= Button.Fire

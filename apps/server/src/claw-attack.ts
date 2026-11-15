@@ -1,4 +1,4 @@
-import { TICK_DT, ZombieKind } from '@office-fps/shared'
+import { baseKind, TICK_DT, ZombieKind } from '@office-fps/shared'
 
 /** How one kind of zombie attacks: the tell before the blow, and how long a miss leaves it open. */
 export interface ClawTiming {
@@ -90,7 +90,10 @@ export class ClawAttack {
       return true
     }
     if (inReach && ready && Math.abs(facing) < START_ANGLE) {
-      this.timing = CLAW_TIMING[kind] ?? (CLAW_TIMING[ZombieKind.Walker] as ClawTiming)
+      this.timing =
+        CLAW_TIMING[kind] ??
+        CLAW_TIMING[baseKind(kind)] ??
+        (CLAW_TIMING[ZombieKind.Walker] as ClawTiming)
       this.windupLeft = this.timing.windup
     }
     return false

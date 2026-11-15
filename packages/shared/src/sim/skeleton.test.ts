@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { ZombieKind } from '../modes.ts'
+import { baseKind, isAlpha, ZombieKind } from '../modes.ts'
 import { type HitPose, HitZone, poseBounds, poseHitboxes, raycastPose } from './hitboxes.ts'
 import {
   type BodyPart,
@@ -179,7 +179,11 @@ describe('melee and zombies', () => {
   })
 
   test('every kind of zombie moves its own way', () => {
-    const kinds = [0, ...Object.values(ZombieKind)]
+    // The named alphas move like what they're a bigger version of (alphas.ts).
+    const kinds = [0, ...Object.values(ZombieKind).filter((k) => !isAlpha(k))]
+    const shape = (gait: number) =>
+      JSON.stringify(bodyParts({ ...base, weapon: WeaponId.Claws, gait }).map((p) => p.center))
+    for (const k of Object.values(ZombieKind)) expect(shape(k)).toBe(shape(baseKind(k)))
     for (const pose of [
       { ...base, weapon: WeaponId.Claws }, // standing
       { ...base, weapon: WeaponId.Claws, speed: 4, stride: 0.3 }, // on the move

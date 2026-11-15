@@ -123,6 +123,8 @@ export interface WorldSave {
   retired?: Retired[]
   /** Haven's obituary wall (legacy.ts); absent in older saves. */
   wall?: ObitWall
+  /** Named alphas killed (alphas.ts): key → when (ms since 1970); they're back days later. */
+  alphas?: Record<string, number>
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

@@ -44,6 +44,7 @@ import {
   type ItemRef,
   infectionRate,
   infectionStage,
+  isAlpha,
   isItemDest,
   isItemRef,
   LOCKER_SIZE,
@@ -114,6 +115,7 @@ import {
 import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
+import { type AlphaHost, Alphas } from './alphas.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
@@ -133,6 +135,7 @@ import {
 } from './newcomer.ts'
 import { type Nav, navFor } from './pathing.ts'
 import { type PvpHost, PvpKeeper } from './pvp.ts'
+import { Radio, type RadioHost } from './radio.ts'
 import { type RotHost, RotWorld } from './rot-world.ts'
 import { SkillsKeeper } from './skills.ts'
 import { Storage, type StorageHost } from './storage.ts'
@@ -409,7 +412,15 @@ export class SurvivalDirector {
       },
     })
     this.pvp = new PvpKeeper(this.pvpHost())
+    this.radio = new Radio(this.radioHost())
+    this.alphas = new Alphas(this.alphaHost())
   }
+
+  /** Radio Free Deadwood: the news, read out to whoever has a radio on (radio.ts). */
+  readonly radio: Radio
+
+  /** The named alphas at their places (alphas.ts). */
+  readonly alphas: Alphas
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
   readonly evac: Evac
@@ -497,6 +508,8 @@ export class SurvivalDirector {
     this.places = def.pois.map(() => ({ stocked: -1, kills: [], woken: 0 }))
     this.story.reset()
     this.evac.reset()
+    this.radio.reset()
+    this.alphas.reset()
     this.found = new Set()
     this.gates = 0
     this.game.setGates(0)
@@ -673,6 +686,7 @@ export class SurvivalDirector {
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
       retired: [...this.evac.retired],
       wall: this.legacy.wall,
+      alphas: this.alphas.saved(),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -689,6 +703,7 @@ export class SurvivalDirector {
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
     this.legacy.restore(w.wall)
+    this.alphas.restore(w.alphas)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -819,7 +834,13 @@ export class SurvivalDirector {
   /** A knife in the back kills outright only something that hasn't noticed you (never a brute). */
   unaware(zombie: ServerPlayer): boolean {
     const zed = this.zeds.get(zombie.id)
-    return !!zed && zed.mood !== 'chase' && zed.kind !== ZombieKind.Brute && !zed.hunter
+    return (
+      !!zed &&
+      zed.mood !== 'chase' &&
+      zed.kind !== ZombieKind.Brute &&
+      !isAlpha(zed.kind) &&
+      !zed.hunter
+    )
   }
 
   thinkZombie(zombie: ServerPlayer): InputCommand | null {
@@ -921,6 +942,7 @@ export class SurvivalDirector {
     const zed = this.zeds.get(victim.id)
     if (zed) {
       victim.respawnAt = Number.POSITIVE_INFINITY
+      this.alphas.onKill(victim, killer)
       const was = this.turned.get(victim.id)
       if (was) {
         // One of you: everything they carried is still on them.
@@ -962,6 +984,7 @@ export class SurvivalDirector {
     this.note(sv, 'death')
     // Everything goes: backpack, guns, clothes, the pack, the money. Somebody new wakes at Haven.
     const was = sv.self.bio?.name
+    this.radio.say({ kind: 'death', who: was ?? victim.name, turned: sv.turning })
     const at = { ...victim.state.pos }
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
@@ -1036,6 +1059,7 @@ export class SurvivalDirector {
     const sv = this.survivors.get(player.id)
     if (!sv) return
     const was = sv.self.bio?.name ?? player.name
+    this.radio.say({ kind: 'evac', who: was })
     if (player.account) {
       const data = this.game.saves.account(player.account)
       const evac = evacAccount(data)
@@ -1200,12 +1224,15 @@ export class SurvivalDirector {
       this.tickDay(people)
       this.rot.tick()
       this.trades.step()
+      this.alphas.tick()
+      this.radio.tick()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
     if (tick % 15 === 11) this.rot.step()
+    this.alphas.step()
     this.vehicles.step()
     this.workbench.step()
     this.story.step(TICK_DT)
@@ -1241,8 +1268,10 @@ export class SurvivalDirector {
     // What kind of night it will be: the Haven radio has an idea (rot.ts).
     if (phase === 'dawn') this.rot.dawn()
     if (phase === 'dusk') {
-      const news = this.rot.dusk(this.weatherSeed)
-      for (const sv of people) this.notice(sv.player, 'info', news)
+      // Read out on Radio Free Deadwood (radio.ts) to whoever has a radio on.
+      this.rot.dusk(this.weatherSeed)
+      const mood = this.rot.mood
+      if (mood) this.radio.say({ kind: 'mood', mood })
       this.game.match.broadcast()
     }
   }
@@ -2595,10 +2624,94 @@ export class SurvivalDirector {
     }
   }
 
+  /** The name of the place nearest `at` (for the radio: "out by the Quarry"). */
+  private placeNear(at: Point): string {
+    let best = 'the woods'
+    let far = Number.POSITIVE_INFINITY
+    for (const p of this.def.pois) {
+      const d = dist(p, at) - p.r
+      if (d < far && !p.hidden) {
+        far = d
+        best = p.name
+      }
+    }
+    return best
+  }
+
+  /** What Radio Free Deadwood (radio.ts) gets to know. */
+  private radioHost(): RadioHost {
+    return {
+      def: () => this.def,
+      now: () => this.now,
+      random: this.random,
+      listeners: () =>
+        [...this.survivors.values()]
+          .filter((sv) => sv.player.state.alive)
+          .map((sv) => ({
+            player: sv.player,
+            pos: sv.player.state.pos,
+            seated: this.vehicles.seatOf(sv.player) !== null,
+            carrying: countOf(sv.self.inv, 'radio') > 0,
+          })),
+      send: (player, notice) => this.send(player, { type: ServerMsg.Notice, notice }),
+      weather: () => this.weather.kind,
+    }
+  }
+
+  /** What the named alphas (alphas.ts) get to do here. */
+  private alphaHost(): AlphaHost {
+    return {
+      def: () => this.def,
+      now: () => this.now,
+      clock: () => Date.now(),
+      random: this.random,
+      people: () =>
+        [...this.survivors.values()].filter((sv) => sv.player.state.alive).map((sv) => sv.player),
+      spawn: (at, kind, home, name) => {
+        const zombie = this.freeZombie(at)
+        if (!zombie) return null
+        this.place(zombie, kind, home, false, at)
+        this.game.nameZombie(zombie, name)
+        return zombie
+      },
+      zed: (zombie) => this.zeds.get(zombie.id),
+      spawnZombie: (at, kind, goal) => {
+        const zombie = this.pool.find((z) => !z.state.alive)
+        if (!zombie) return false
+        this.place(zombie, kind, -1, false, { ...at, y: heightAt(this.def.terrain, at.x, at.z) })
+        this.zeds.get(zombie.id)?.alert(goal, this.now)
+        return true
+      },
+      alertNear: (at, radius, goal) => {
+        for (const z of this.pool) {
+          if (!z.state.alive || dist(z.state.pos, at) > radius) continue
+          this.zeds.get(z.id)?.alert(goal, this.now)
+        }
+      },
+      send: (player, notice) => this.send(player, { type: ServerMsg.Notice, notice }),
+      drop: (item, n, at) => this.dropAt(item, n, at, undefined, true),
+      unlock: (key) => {
+        if (this.story.unlocks.includes(key)) return false
+        this.story.unlocks.push(key)
+        this.saveWorld()
+        this.game.match.broadcast()
+        return true
+      },
+      radio: (e) => this.radio.say(e),
+      nameOf: (player) => this.survivors.get(player.id)?.self.bio?.name ?? player.name,
+    }
+  }
+
   private storyHost(): StoryHost {
     const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
     return {
       noted: (p, event) => this.note(sv(p), event),
+      sieged: (poi, held) =>
+        this.radio.say({
+          kind: 'siege',
+          place: this.def.pois.find((p) => p.key === poi)?.name ?? 'The camp',
+          held,
+        }),
       def: () => this.def,
       now: () => this.now,
       random: this.random,
@@ -2705,6 +2818,7 @@ export class SurvivalDirector {
   /** What the supply drops (drops.ts) get to do here. */
   private dropHost(): DropHost {
     return {
+      landed: (at) => this.radio.say({ kind: 'drop', near: this.placeNear(at) }),
       def: () => this.def,
       random: this.random,
       now: () => this.now,

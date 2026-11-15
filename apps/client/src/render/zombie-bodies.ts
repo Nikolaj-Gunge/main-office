@@ -13,7 +13,16 @@ import { ARM_LENGTH, type Baked, Kit, pickOf, seeded, type Vec } from './body-ki
  * kind and variant into one vertex-coloured mesh per part, cached and shared by every copy.
  */
 
-export type ZombieLook = 'zombie' | 'runner' | 'brute' | 'screamer' | 'stalker'
+export type ZombieLook =
+  | 'zombie'
+  | 'runner'
+  | 'brute'
+  | 'screamer'
+  | 'stalker'
+  // The named alphas (shared alphas.ts): their kind's body, dressed for where they haunt.
+  | 'sawmill'
+  | 'choir'
+  | 'teeth'
 
 const H = PART_SIZES.head
 const C = PART_SIZES.chest
@@ -33,6 +42,9 @@ export const EYES: Record<ZombieLook, { x: number; y: number; glow: number }> = 
   brute: { x: 0.07, y: 0.01, glow: 0.22 },
   screamer: { x: 0.055, y: 0.13, glow: 0.15 },
   stalker: { x: 0.065, y: 0.02, glow: 0.1 },
+  sawmill: { x: 0.07, y: 0.01, glow: 0.34 },
+  choir: { x: 0.055, y: 0.13, glow: 0.26 },
+  teeth: { x: 0.065, y: 0.03, glow: 0.36 },
 }
 
 const cache = new Map<string, Baked>()
@@ -547,7 +559,57 @@ const stalker: Build = (k, v, rnd) => {
   }
 }
 
-const BUILD: Record<ZombieLook, Build> = { zombie: walker, runner, brute, screamer, stalker }
+// --- The named alphas: an ordinary body, dressed so you know which one it is ------------------
+
+/** The Sawmill Brute: a blaze-orange logger's vest straining over the hump, a hard hat. */
+const sawmill: Build = (k, v, rnd) => {
+  brute(k, v, rnd)
+  const orange = 0xb8561c
+  const band = 0xc8b878
+  k.on('chest').box(orange, [C.x * 2 + 0.05, C.y * 2 - 0.02, C.z * 2 + 0.05])
+  for (const y of [-0.06, 0.08]) k.box(band, [C.x * 2 + 0.07, 0.035, C.z * 2 + 0.07], [0, y, 0])
+  k.on('stomach').box(orange, [S.x * 2 + 0.05, S.y * 2, S.z * 2 + 0.05])
+  k.on('head').box(0xc8a030, [H.x * 2 + 0.06, 0.08, H.z * 2 + 0.06], [0, H.y + 0.02, 0])
+  k.box(0xc8a030, [H.x * 2 + 0.14, 0.02, H.z * 2 + 0.14], [0, H.y - 0.02, -0.02])
+}
+
+/** The Choir: a long choir robe gone grey, a red stole hanging from its neck. */
+const choir: Build = (k, v, rnd) => {
+  screamer(k, v | 1, rnd)
+  const robe = 0xb8b4a2
+  const stole = 0x7a2224
+  k.on('chest').box(robe, [C.x * 2 + 0.04, C.y * 2, C.z * 2 + 0.04])
+  for (const x of [-0.08, 0.08]) k.box(stole, [0.06, C.y * 2 + 0.02, 0.02], [x, 0, -C.z - 0.03])
+  k.on('stomach').box(robe, [S.x * 2 + 0.06, S.y * 2, S.z * 2 + 0.06])
+  for (const x of [-0.08, 0.08]) k.box(stole, [0.06, S.y * 2, 0.02], [x, 0, -S.z - 0.04])
+  for (const thigh of ['thighL', 'thighR'] as const)
+    k.on(thigh).box(robe, [T.x * 2 + 0.08, T.y * 2, T.z * 2 + 0.08])
+  for (const shin of ['shinL', 'shinR'] as const)
+    k.on(shin).box(robe, [N.x * 2 + 0.1, N.y * 1.2, N.z * 2 + 0.1], [0, N.y * 0.4, 0])
+}
+
+/** Old Teeth: a quarry crew's hi-vis jacket in rags, dust-grey skin. */
+const oldTeeth: Build = (k, v, rnd) => {
+  runner(k, v, rnd)
+  const vis = 0xa89a2a
+  const strip = 0xd0d0c0
+  k.on('chest').box(vis, [C.x * 2 + 0.04, C.y * 2, C.z * 2 + 0.04])
+  k.box(strip, [C.x * 2 + 0.06, 0.03, C.z * 2 + 0.06], [0, 0.02, 0])
+  hem(k, vis, C.x + 0.02, C.z + 0.02, -C.y, 8, 0.06, 0.16, rnd)
+  for (const arm of ['armL', 'armR'] as const)
+    k.on(arm).box(vis, [0.13, L * 0.35, 0.13], [0, L * 0.32, 0])
+}
+
+const BUILD: Record<ZombieLook, Build> = {
+  zombie: walker,
+  runner,
+  brute,
+  screamer,
+  stalker,
+  sawmill,
+  choir,
+  teeth: oldTeeth,
+}
 
 /** Glowing eyes per kind (HDR: they bloom, and fog doesn't touch them). */
 export const ZOMBIE_EYES: Record<ZombieLook, THREE.MeshBasicMaterial> = {
@@ -556,6 +618,9 @@ export const ZOMBIE_EYES: Record<ZombieLook, THREE.MeshBasicMaterial> = {
   brute: new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 2.4, 0.1), fog: false }),
   screamer: new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 6, 6.5), fog: false }),
   stalker: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.5, 5.5, 8), fog: false }),
+  sawmill: new THREE.MeshBasicMaterial({ color: new THREE.Color(12, 2.6, 0.2), fog: false }),
+  choir: new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8, 6), fog: false }),
+  teeth: new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 7, 0.4), fog: false }),
 }
 /** Colour of the halo round each kind's eyes. */
 export const EYE_HALO: Record<ZombieLook, THREE.Color> = {
@@ -564,4 +629,7 @@ export const EYE_HALO: Record<ZombieLook, THREE.Color> = {
   brute: new THREE.Color(3, 0.8, 0.03),
   screamer: new THREE.Color(1.6, 1.6, 1.7),
   stalker: new THREE.Color(1.0, 1.6, 2.4),
+  sawmill: new THREE.Color(4, 0.9, 0.05),
+  choir: new THREE.Color(2.6, 2.3, 1.6),
+  teeth: new THREE.Color(3.2, 2.4, 0.1),
 }

@@ -157,6 +157,10 @@ export const UNLOCKS: Record<string, string> = {
   armoury: "Gus stocks the army's leftovers.",
   cure: 'Lena makes the cure at Haven.',
   evac: 'Raven took the serum. The helicopters come more often.',
+  // The named alphas (alphas.ts): killing one opens up a part of the valley.
+  alpha_sawmill: 'The Sawmill Brute is dead. Timber and tools come down the mill road to Gus.',
+  alpha_choir: "The Choir is quiet. Father Abel's people send medicine to Gus.",
+  alpha_teeth: "Old Teeth is dead. The quarry crews' hunting rifles turn up at Gus's.",
 }
 
 /** What people do for you once you've earned it (Journal flags). */
@@ -198,6 +202,10 @@ export const BOSSES: Record<string, { name: string; kind: number; poi: string; n
 
 /** Who the people of Deadwood are (the journal's "People"). */
 export const PEOPLE: Record<string, { name: string; bio: string }> = {
+  wes: {
+    name: 'Wes Harlan',
+    bio: 'Did the night show on a county station nobody listened to. Still does, from a tin booth at Haven: the drops, the weather, the names. Radio Free Deadwood.',
+  },
   mara: {
     name: 'Mara Quill',
     bio: 'Ran the county 911 desk for nineteen years. Took the last call on the first night, and has been answering for everyone since. Runs Haven.',
@@ -1323,6 +1331,33 @@ export function holds(cond: string, journal: Journal, unlocks: readonly string[]
  * must hold, see holds) say how things stand, and are said before the plain ones.
  */
 export const TALK: Record<string, { when?: string; text: string }[]> = {
+  wes: [
+    {
+      text: "Radio Free Deadwood. Fifty watts, a car battery and me. Somebody out there's listening. Has to be.",
+    },
+    {
+      text: 'I read the names. Somebody has to. If you ever hear yours, I got it wrong — come and tell me.',
+    },
+    {
+      text: "Carry a two-way, or sit in a car with the dial up. You'll hear what I hear: the drops, the weather, who didn't come back.",
+    },
+    {
+      when: '!unlock:alpha_sawmill',
+      text: "There's a brute at the mill, bigger than the rest. Charges like a bull. The loggers called it the Sawmill Brute before they stopped calling anything.",
+    },
+    {
+      when: '!unlock:alpha_choir',
+      text: "Something leads the screamers at St. Agnes'. When it opens its mouth, the woods empty towards it. They call it the Choir.",
+    },
+    {
+      when: '!unlock:alpha_teeth',
+      text: "Old Teeth runs the quarry. Lean, fast, and it jumps. Don't let it get above you on the rocks.",
+    },
+    {
+      when: 'unlock:alpha_sawmill,unlock:alpha_choir,unlock:alpha_teeth',
+      text: "All three of them down. They'll be back — they always come back — but tonight I'm playing something with a tune in it.",
+    },
+  ],
   mara: [
     { text: 'Keep the gate in sight when you can. Out there the dark is not empty.' },
     {
@@ -1485,6 +1520,36 @@ export const SHOPS: Record<string, { unlock: string; stock: [string, number][]; 
         ['ammo556', 0],
       ],
       say: 'Army surplus, courtesy of Ortiz.',
+    },
+    // The alphas' places, opened up (alphas.ts).
+    {
+      unlock: 'alpha_sawmill',
+      stock: [
+        ['axe', 0],
+        ['sledge', 0],
+        ['planks', 0],
+        ['barricadekit', 0],
+      ],
+      say: "Timber off the mill road. Nothing's sitting on it any more.",
+    },
+    {
+      unlock: 'alpha_choir',
+      stock: [
+        ['antibiotics', 0],
+        ['painkillers', 0],
+        ['medkit', 0],
+      ],
+      say: "Abel's people send medicine now the singing's stopped.",
+    },
+    {
+      unlock: 'alpha_teeth',
+      stock: [
+        ['hunting', 0],
+        ['lever', 0],
+        ['ammo308', 0],
+        ['ammo357', 0],
+      ],
+      say: "Quarry crews' rifles. They won't be needing them.",
     },
   ],
   ray: [

@@ -13,7 +13,7 @@
  * So the pose the server rewinds to for a hit test is the pose that was on the shooter's screen.
  */
 
-import { ZombieKind } from '../modes.ts'
+import { baseKind, ZombieKind } from '../modes.ts'
 import { DEFAULT_MOVEMENT } from './movement-config.ts'
 import { WEAPONS, WeaponId } from './weapons.ts'
 
@@ -381,7 +381,7 @@ const GAITS: Record<number, Gait> = {
   },
 }
 
-const gaitOf = (gait: number | undefined): Gait => GAITS[gait ?? 0] ?? PERSON
+const gaitOf = (gait: number | undefined): Gait => GAITS[baseKind(gait ?? 0)] ?? PERSON
 
 /**
  * Metres one full walk cycle (two steps) covers at `speed`: longer strides the faster you go,

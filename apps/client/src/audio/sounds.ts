@@ -16,6 +16,7 @@ import {
   sweep,
   tone,
 } from './dsp.ts'
+import { RADIO_SOUNDS } from './radio-sounds.ts'
 import { ROT_SOUNDS } from './rot-sounds.ts'
 
 /**
@@ -82,6 +83,8 @@ export const SOUNDS = {
   'jingle.airhorn': { variants: 3, recipe: jingleAirhorn },
   // The Rot (rot-sounds.ts): birds, birdsong, car alarms, glass underfoot.
   ...ROT_SOUNDS,
+  // Radio Free Deadwood and the named alphas (radio-sounds.ts).
+  ...RADIO_SOUNDS,
 } satisfies Record<string, { variants: number; recipe: (rate: number, v: number) => Signal }>
 
 export type SoundId = keyof typeof SOUNDS

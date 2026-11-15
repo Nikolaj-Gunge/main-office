@@ -1,3 +1,4 @@
+export * from './alphas.ts'
 export * from './barricades.ts'
 export * from './camp-folk.ts'
 export * from './car-condition.ts'
