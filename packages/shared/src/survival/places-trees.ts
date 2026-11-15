@@ -44,7 +44,7 @@ const LADDER_ANGLE = 42
  * look at, and under them a steep ramp you can't see that does the climbing. Returns where its
  * foot is (local z).
  */
-function ladder(s: Site, x: number, edge: number, top: number, width = 0.7): number {
+export function ladder(s: Site, x: number, edge: number, top: number, width = 0.7): number {
   const a = deg(LADDER_ANGLE)
   const run = top / Math.tan(a)
   const foot = edge + run
@@ -96,7 +96,7 @@ function bigTree(s: Site, x: number, z: number, height: number, girth = 1.2): vo
 }
 
 /** The deck of a platform: boards, a rim joist (to grab when climbing) and railings with gaps. */
-function deck(
+export function deck(
   s: Site,
   cx: number,
   cz: number,

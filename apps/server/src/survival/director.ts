@@ -119,6 +119,7 @@ import type { Game, ServerPlayer } from '../game.ts'
 import type { Point } from '../items.ts'
 import type { CharacterSave, TurnedSave } from '../saves.ts'
 import { type AlphaHost, Alphas } from './alphas.ts'
+import { type BanditHost, Bandits } from './bandits.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
@@ -369,6 +370,8 @@ export class SurvivalDirector {
   private readonly rot: RotWorld
   /** Past lives, legacy traits and the obituary wall (legacy.ts). */
   readonly legacy: LegacyKeeper
+  /** Bandit camps and raiders (bandits.ts). */
+  readonly bandits: Bandits
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
@@ -376,6 +379,7 @@ export class SurvivalDirector {
     this.drops = new Drops(this.dropHost())
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
     this.rot = new RotWorld(this.rotHost())
+    this.bandits = new Bandits(game, this.banditHost())
     this.story = new Story(this.storyHost())
     this.needs = new NeedsKeeper({
       world: () => this.def ?? null,
@@ -611,10 +615,12 @@ export class SurvivalDirector {
       if (zombie) this.pool.push(zombie)
     }
     for (const z of this.pool) this.zeds.set(z.id, z.zombie as Zed)
+    this.bandits.reset(def)
     this.saveAll()
   }
 
   dispose(): void {
+    this.bandits.dispose()
     for (const z of this.pool) this.game.leave(z.id)
     this.pool = []
     this.zeds.clear()
@@ -661,6 +667,7 @@ export class SurvivalDirector {
 
   onLeave(player: ServerPlayer): void {
     this.vehicles.leave(player)
+    if (player.npc) return void this.bandits.forget(player)
     this.pvp.forget(player)
     if (player.zombie) {
       // One of the dead gave up its place to somebody joining: forget it (its body is gone).
@@ -875,6 +882,7 @@ export class SurvivalDirector {
 
   /** What you wake up with: the weapons you carried, loaded as they were. */
   freshState(player: ServerPlayer, spawn: MapSpawn): PlayerState | null {
+    if (player.npc) return this.bandits.loadout(player, spawn)
     const sv = this.survivors.get(player.id)
     if (!sv) return null
     const weapons = sv.kit.map((k) => {
@@ -954,19 +962,25 @@ export class SurvivalDirector {
   /** A gun went off: everything in earshot comes to look. */
   onShot(player: ServerPlayer): void {
     const sv = this.survivors.get(player.id)
-    if (!sv) return
+    if (!sv) return void this.bandits.onShot(player)
     this.workbench.onShot(sv)
     const noise = WEAPONS[player.state.weapon.id].noise
     this.rot.shot(player)
     if (noise > sv.noise || this.now > sv.noiseUntil) sv.noise = noise
     sv.noiseUntil = this.now + 1.2
+    this.bandits.heard(player.state.pos, noise)
+    this.alarm(player.state.pos, noise)
+  }
+
+  /** A gun went off at `at`: everything in earshot comes to look. */
+  private alarm(at: Point, noise: number): void {
     if (noise < 20) return
     // Rain drowns a shot out a little; the dead further off don't hear it.
     const carries = noise * hearingScale(this.weather, true)
     for (const z of this.pool) {
       if (!z.state.alive) continue
-      const d = Math.hypot(z.state.pos.x - player.state.pos.x, z.state.pos.z - player.state.pos.z)
-      if (d < carries) this.zeds.get(z.id)?.alert(player.state.pos, this.now)
+      const d = Math.hypot(z.state.pos.x - at.x, z.state.pos.z - at.z)
+      if (d < carries) this.zeds.get(z.id)?.alert(at, this.now)
     }
   }
 
@@ -996,7 +1010,7 @@ export class SurvivalDirector {
     this.pvp.onDamage(victim, attacker, amount)
     const zed = this.zeds.get(victim.id)
     // Shot from the dark: it comes for whoever did it.
-    if (zed && isPerson(attacker)) zed.alert(attacker.state.pos, this.now)
+    if (zed && (isPerson(attacker) || attacker.npc)) zed.alert(attacker.state.pos, this.now)
     // Learning by doing: a hit on one of the dead (not with a car) teaches Aim or Melee.
     const hitter = zed && amount > 0 ? this.survivors.get(attacker.id) : undefined
     if (hitter && !this.vehicles.seatOf(attacker)) {
@@ -1007,6 +1021,7 @@ export class SurvivalDirector {
         melee ? SKILL_GAIN.meleeHit : SKILL_GAIN.gunHit,
       )
     }
+    this.bandits.onDamage(victim, attacker)
     const sv = this.survivors.get(victim.id)
     if (sv && amount > 0) this.rot.hurt(victim, amount)
     // One bite that draws blood is all it takes (and more bites don't make it faster).
@@ -1024,6 +1039,7 @@ export class SurvivalDirector {
 
   onKill(victim: ServerPlayer, killer: ServerPlayer): void {
     this.vehicles.leave(victim)
+    if (victim.npc) return void this.bandits.onKill(victim)
     this.pvp.onKill(victim, killer)
     const zed = this.zeds.get(victim.id)
     if (zed) {
@@ -1324,10 +1340,10 @@ export class SurvivalDirector {
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
-      syncForest(
-        this.game.world.physics,
-        alive.map((sv) => sv.player.state.pos),
-      )
+      syncForest(this.game.world.physics, [
+        ...alive.map((sv) => sv.player.state.pos),
+        ...this.bandits.positions(),
+      ])
     }
     if (tick % TICK_RATE === 0) {
       for (const sv of people) this.tickSurvivor(sv)
@@ -1345,6 +1361,7 @@ export class SurvivalDirector {
       this.alphas.tick()
       this.radio.tick()
       this.weatherWorld.second()
+      this.bandits.tick()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
@@ -2410,6 +2427,8 @@ export class SurvivalDirector {
         hidden: worn.stealth + this.skills.effects(sv).hidden,
       })
     }
+    // Bandits are flesh too.
+    out.push(...this.bandits.prey())
     return out
   }
 
@@ -2997,6 +3016,55 @@ export class SurvivalDirector {
   }
 
   /** What the supply drops (drops.ts) get to do here. */
+  private banditHost(): BanditHost {
+    return {
+      def: () => this.def,
+      random: () => this.random(),
+      now: () => this.now,
+      clock: () => this.weatherClock,
+      light: () => this.light,
+      phase: () => dayPhase(this.time),
+      people: () => {
+        const out: ReturnType<BanditHost['people']> = []
+        for (const sv of this.survivors.values()) {
+          const s = sv.player.state
+          if (!s.alive) continue
+          // Nobody gets shot at inside a safe place (they never go in, nor shoot in).
+          if (this.def.pois.some((p) => p.safe && dist(s.pos, p) < p.r + 2)) continue
+          out.push({
+            player: sv.player,
+            threat: {
+              id: sv.player.id,
+              pos: s.pos,
+              zombie: false,
+              lit: sv.self.light,
+              crouched: s.crouched || s.prone,
+              hidden: wornStats(sv.self).stealth,
+            },
+          })
+        }
+        return out
+      },
+      zombies: () => this.pool,
+      clear: (a, b) => this.game.lineClear(a, b),
+      alarm: (at, metres) => this.alarm(at, metres),
+      makeRoom: () => {
+        const spare = this.pool.find((z) => !z.state.alive && !this.turned.has(z.id))
+        if (!spare) return false
+        this.game.leave(spare.id)
+        return true
+      },
+      drop: (item, n, at, ammo) => this.dropAt(item, n, at, ammo, true),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      noticeAll: (kind, text) => this.noticeAll(kind, text),
+      steal: () => this.rare.clear(),
+      raidable: () => {
+        const haven = this.def.pois.find((p) => p.key === 'haven')
+        return !haven || !this.story.besieged(haven)
+      },
+    }
+  }
+
   private dropHost(): DropHost {
     return {
       landed: (at) => this.radio.say({ kind: 'drop', near: this.placeNear(at) }),
@@ -3125,7 +3193,8 @@ export class SurvivalDirector {
   /** What someone wears that shows (gear.ts looks, packed for the wire). */
   gearOf(player: ServerPlayer): number {
     const sv = this.survivors.get(player.id)
-    return sv ? this.fieldNotes.looks(sv, gearOf(sv.self)) : (this.turned.get(player.id)?.look ?? 0)
+    if (sv) return this.fieldNotes.looks(sv, gearOf(sv.self))
+    return this.bandits.gearOf(player) ?? this.turned.get(player.id)?.look ?? 0
   }
 
   /** Damage after what someone wears: helmets take head hits, vests and jackets the rest. */
@@ -3139,7 +3208,7 @@ export class SurvivalDirector {
 
   /** Is this player's torch on (others see it, and so do the dead)? */
   lightOn(player: ServerPlayer): boolean {
-    return this.survivors.get(player.id)?.self.light ?? false
+    return this.survivors.get(player.id)?.self.light ?? this.bandits.lightOn(player)
   }
 
   private send(player: ServerPlayer, msg: Parameters<Game['sendTo']>[1]): void {
@@ -3155,7 +3224,7 @@ export class SurvivalDirector {
   }
 }
 
-const isPerson = (p: ServerPlayer) => !p.zombie && !p.dummy
+const isPerson = (p: ServerPlayer) => !p.zombie && !p.dummy && !p.npc
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) =>
   Math.hypot(a.x - b.x, a.z - b.z)

@@ -56,7 +56,7 @@ const GIFT_SECONDS = 120
 /** Reputation drifts back towards nothing by one point per this (s of play). */
 export const REP_DRIFT_SECONDS = 15 * 60
 
-const isPerson = (p: ServerPlayer) => !p.zombie && !p.dummy
+const isPerson = (p: ServerPlayer) => !p.zombie && !p.dummy && !p.npc
 const pair = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`)
 
 export class PvpKeeper {

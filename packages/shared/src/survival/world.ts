@@ -77,6 +77,15 @@ const CAMPSITES: [number, number][] = [
   [1080, 1320],
   [-420, 480],
 ]
+/**
+ * Bandit camps (places-bandits.ts): deep in the trees, well away from Haven, Hollis' cabin and
+ * the roads. Added after everything else so the scattered places stay where they always were.
+ */
+const BANDIT_CAMPS: [number, number, string][] = [
+  [-300, -560, "Crow's camp"],
+  [-700, -60, 'Burnt Hollow camp'],
+  [1250, 250, 'Rook Ridge camp'],
+]
 const CACHES: [number, number][] = [
   [-1330, 1300],
   [1340, -1330],
@@ -215,7 +224,10 @@ const ALL_PLANS: Plan[] = (() => {
       { turn: p.turn, wooded: p.wooded, hidden: true },
     )
   })
-  return [...PLANS, ...scattered]
+  const bandits = BANDIT_CAMPS.map(([x, z, name], i) =>
+    place(`bandits_${i + 1}`, 'bandits', name, x, z, 16, 0, { hidden: true }),
+  )
+  return [...PLANS, ...scattered, ...bandits]
 })()
 
 /**
