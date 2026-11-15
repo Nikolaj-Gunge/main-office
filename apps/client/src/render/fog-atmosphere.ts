@@ -101,6 +101,8 @@ export interface FogFrame {
   far: number
   /** The dim light the mist scatters everywhere (linear). */
   color: THREE.Color
+  /** More of it over the lakes (linear): pale water mist that shows even under a black sky. */
+  lakeGlow: THREE.Color
   /** Lamps lit near you (night.ts's pool): each gets a halo. */
   lamps: readonly THREE.PointLight[]
   /** Your torch (null: none). */
@@ -119,6 +121,12 @@ const MIST_LIFT = 1.8
 const MOON_GLOW = 0.03
 /** The mist line is looked for again this often (s), and eases towards it. */
 const LINE_EVERY = 0.5
+
+/**
+ * Light the mist over water gives back at night, whatever the cloud (open water holds what
+ * little light there is): enough to show as a pale bank, not to light anything.
+ */
+export const LAKE_GLOW = new THREE.Color(0.016, 0.019, 0.024)
 
 const moonGlow = new THREE.Color()
 
@@ -139,6 +147,7 @@ export class Atmosphere {
       height: MIST_HEIGHT,
       far: 120,
       color: new THREE.Color(),
+      lakeGlow: new THREE.Color(),
       lamps: [],
       torch: null,
       moon: null,
@@ -189,5 +198,7 @@ export class Atmosphere {
     f.moonLevel = (1 - Math.min(1, o.day) * 0.7) * (1 - o.weather.cloud * 0.7)
     moonGlow.copy(o.moon.color).multiplyScalar(o.moon.intensity * MOON_GLOW * f.moonLevel)
     f.color.copy(o.fogColor).multiplyScalar(MIST_LIFT).add(moonGlow)
+    // By day the haze is lit anyway; under heavy fog the whole world is mist already.
+    f.lakeGlow.copy(LAKE_GLOW).multiplyScalar((1 - Math.min(1, o.day)) * (1 - o.weather.fog * 0.6))
   }
 }

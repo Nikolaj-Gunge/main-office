@@ -64,6 +64,7 @@ import { updateMapLod } from '../render/map-mesh.ts'
 import { Night } from '../render/night.ts'
 import { ObituaryView } from '../render/obituary-wall.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
+import { TorchShadow } from '../render/torch-shadow.ts'
 import { WeatherMarks } from '../render/weather-marks.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
@@ -176,6 +177,8 @@ export class SurvivalClient {
     { avatar: Avatar; state: RemotePlayerState; to: WalkerState }
   >()
   private readonly torch = torch()
+  /** Its shadow (Medium and High; torch-shadow.ts). */
+  private readonly torchShadow = new TorchShadow(this.torch)
   private readonly others: THREE.SpotLight[] = []
   private torchLevel = 0
   private sinceForest = 1
@@ -246,9 +249,10 @@ export class SurvivalClient {
       hudRoot: o.hudRoot,
     })
 
-    // The torch rides on the camera, a little to the right, like a hand holding it.
+    // The torch rides on the camera, a little to the right and low, like a hand holding it (far
+    // enough off your eye that its shadows show beside what throws them).
     o.scene.add(o.camera)
-    this.torch.position.set(0.22, -0.18, 0.1)
+    this.torch.position.set(0.3, -0.26, 0.1)
     this.torch.target.position.set(0, -0.4, -10)
     o.camera.add(this.torch, this.torch.target)
     for (let i = 0; i < TORCHES; i++) {
@@ -492,6 +496,7 @@ export class SurvivalClient {
   /** The mist's tier (fog-atmosphere.ts). */
   setFogTier(tier: Tier): void {
     this.atmosphere.setTier(tier)
+    this.torchShadow.setTier(tier)
   }
 
   /** This frame's mist, for the renderer. */
@@ -552,6 +557,8 @@ export class SurvivalClient {
     )
     this.wilds.setFlood(this.marks.flood)
     this.wilds.setSnow(this.marks.snow)
+    // The moon's phase goes by Haven's day count (sky-night.ts).
+    this.night.worldDay = this.shared?.camp?.day ?? 0
     this.night.update(dt, eye, time, built)
     this.night.tint(RED_SKY, this.camp.redness(time))
     this.camp.update(eye)
@@ -665,7 +672,9 @@ export class SurvivalClient {
     })
     const dirty = this.night.shadowsDirty
     this.night.shadowsDirty = false
-    return dirty
+    // The torch's shadow is redrawn on its own (the moon's maps stay as they are).
+    const beam = this.torchShadow.update(dt, this.torch.intensity > 0.5)
+    return dirty || beam
   }
 
   /**

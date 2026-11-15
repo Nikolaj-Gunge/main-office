@@ -48,6 +48,7 @@ export class VolumetricFog {
     far: { value: 120 },
     time: { value: 0 },
     mistColor: { value: new THREE.Color() },
+    lakeGlow: { value: new THREE.Color() },
     lakes: { value: [new THREE.Vector4(), new THREE.Vector4()] },
     moonDir: { value: new THREE.Vector3(0, 1, 0) },
     moonLight: { value: new THREE.Color() },
@@ -108,6 +109,7 @@ export class VolumetricFog {
     u.far.value = f.far
     u.time.value = f.time
     u.mistColor.value.copy(f.color)
+    u.lakeGlow.value.copy(f.lakeGlow)
     u.lakes.value.forEach((v, i) => {
       const l = f.lakes[i]
       if (l) v.set(l.x, l.z, l.r, l.y)

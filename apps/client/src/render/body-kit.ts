@@ -1,6 +1,7 @@
 import { PART_SIZES, type PartName } from '@office-fps/shared'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { torchCaster } from './torch-shadow.ts'
 
 /**
  * A little modelling kit for bodies: boxes, cones and lumps placed in a part's own space and
@@ -121,7 +122,7 @@ export function attachBaked(
   for (const [part, meshes] of Object.entries(baked) as [BodyPartKey, Baked[BodyPartKey]][]) {
     for (const [slot, geometry] of meshes ?? []) {
       const mesh = new THREE.Mesh(geometry, resolve(slot))
-      mesh.castShadow = false
+      torchCaster(mesh)
       groups[part].add(mesh)
       made.push(mesh)
     }
