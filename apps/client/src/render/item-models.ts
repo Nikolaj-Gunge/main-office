@@ -564,6 +564,22 @@ const MODELS: Record<string, Build> = {
       .cyl(0.022, 0.14, 0x1e1e20, { x: 0.15, y: 0.022, z: 0.08, ry: -0.9 }, 'x')
       .cyl(0.026, 0.02, STEEL, { x: -0.12, y: 0.022, z: 0.05, ry: 0.4 }, 'x')
   },
+  // Trophies off the named alphas (shared alphas.ts).
+  trophy_chain: (k) => {
+    for (let i = 0; i < 5; i++)
+      k.box(0.07, 0.03, 0.04, 0x55555a, { x: -0.14 + i * 0.07, y: 0, ry: i % 2 ? 0.3 : -0.2 })
+    k.box(0.06, 0.07, 0.03, BRASS, { x: 0.2, y: 0 })
+  },
+  trophy_hymnal: (k) => {
+    k.box(0.16, 0.04, 0.22, 0x3a1a1c).box(0.15, 0.035, 0.21, CREAM, { x: 0.006, y: 0.003 })
+    k.box(0.02, 0.002, 0.08, BRASS, { y: 0.041 }).box(0.06, 0.002, 0.02, BRASS, { y: 0.041 })
+  },
+  trophy_jaw: (k) => {
+    k.box(0.14, 0.035, 0.03, 0xd8ccaa, { z: -0.04 })
+    for (const e of [-1, 1]) k.box(0.03, 0.035, 0.08, 0xd8ccaa, { x: e * 0.06 })
+    for (let i = 0; i < 7; i++)
+      k.box(0.012, 0.025, 0.012, 0xf0ead0, { x: -0.05 + i * 0.017, y: 0.035, z: -0.045 })
+  },
   ducttape: (k) => {
     k.ring(0.055, 0.034, 0.05, 0x8a8e94).ring(0.034, 0.03, 0.05, 0xa08060)
   },

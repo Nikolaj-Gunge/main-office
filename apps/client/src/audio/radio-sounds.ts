@@ -20,7 +20,7 @@ import {
  */
 export const RADIO_SOUNDS = {
   /** A burst of static, a click, and two soft notes: somebody's on the air. */
-  'radio.on': { variants: 2, recipe: radioOn },
+  'radio.on': { variants: 1, recipe: radioOn },
   /** A huge, ragged bellow (an alpha charging or leaping). */
   roar: { variants: 2, recipe: roar },
 } satisfies Record<string, { variants: number; recipe: (rate: number, v: number) => Signal }>

@@ -471,6 +471,24 @@ const ICONS: Record<string, Paint> = {
       .rect(4, 20, 8, 6, '#7a4a3a')
       .outline()
   },
+  // Trophies off the named alphas (shared alphas.ts).
+  trophy_chain: (p) => {
+    for (let i = 0; i < 5; i++) p.rect(2 + i * 5, 10 + (i % 2) * 2, 5, 4, '#55555a')
+    p.rect(p.w - 6, 9, 4, 7, '#c8a040').outline()
+  },
+  trophy_hymnal: (p) => {
+    p.rect(4, 3, p.w - 8, p.h - 6, '#3a1a1c')
+      .rect(p.w / 2 - 1, 6, 2, 9, '#c8a040')
+      .rect(p.w / 2 - 3, 8, 6, 2, '#c8a040')
+      .outline()
+  },
+  trophy_jaw: (p) => {
+    p.rect(4, 8, p.w - 8, 4, '#d8ccaa')
+      .rect(4, 8, 3, 12, '#d8ccaa')
+      .rect(p.w - 7, 8, 3, 12, '#d8ccaa')
+    for (let x = 6; x < p.w - 6; x += 3) p.rect(x, 12, 2, 3, '#f0ead0')
+    p.outline()
+  },
   ducttape: (p) => {
     p.blob(p.w / 2, p.h / 2, 6, 6, '#8a8e94')
       .blob(p.w / 2, p.h / 2, 2.5, 2.5, '#2a2c30')
