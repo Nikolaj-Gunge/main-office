@@ -17,7 +17,6 @@ export class BirdsView {
   readonly root = new THREE.Group()
   private readonly bodies: THREE.InstancedMesh
   private readonly heads: THREE.InstancedMesh
-  private readonly ground: number[]
   /** Flocks the server says are away. */
   private away = new Set<number>()
   /** Flocks taking off right now: index → seconds since. */
@@ -31,9 +30,9 @@ export class BirdsView {
 
   constructor(
     private readonly flocks: readonly Flock[],
-    terrain: Terrain,
+    private readonly terrain: Terrain,
   ) {
-    const material = new THREE.MeshLambertMaterial({ color: 0x15151a })
+    const material = new THREE.MeshLambertMaterial({ color: 0x24242a })
     this.bodies = new THREE.InstancedMesh(
       new THREE.BoxGeometry(0.16, 0.14, 0.3),
       material,
@@ -45,7 +44,6 @@ export class BirdsView {
       mesh.count = 0
       this.root.add(mesh)
     }
-    this.ground = flocks.map((f) => heightAt(terrain, f.x, f.z))
   }
 
   /** The server's list of flocks that are away (SurvivalShared.rot.birds). */
@@ -71,7 +69,6 @@ export class BirdsView {
       if (Math.abs(f.x - eye.x) > SHOWN || Math.abs(f.z - eye.z) > SHOWN) return
       const flight = this.flying.get(i)
       if (this.away.has(i) && flight === undefined) return
-      const y0 = this.ground[i] ?? 0
       for (let b = 0; b < f.n && n < MAX_BIRDS; b++, n++) {
         // Each bird has its own spot, heading and peck, from its index.
         const h = Math.sin(i * 12.9898 + b * 78.233) * 43758.5453
@@ -80,7 +77,8 @@ export class BirdsView {
         const d = 0.6 + ((r * 7) % 1) * 2.4
         let x = f.x + Math.cos(a) * d
         let z = f.z + Math.sin(a) * d
-        let y = y0 + 0.07
+        // On the ground right there (a flock sits across a slope).
+        let y = heightAt(this.terrain, x, z) + 0.07
         let yaw = a * 3
         let pitch = 0
         let wing = 1
