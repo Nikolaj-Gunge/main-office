@@ -8,6 +8,7 @@ import {
   type SurvivalSelf,
   survivedText,
 } from '@office-fps/shared'
+import { CLIP_CAPTIONS, type Clip, developClip, previewBlob } from './clip-buffer.ts'
 import { CARD_H, CARD_W, pixelText } from './share-card.ts'
 
 /**
@@ -116,6 +117,16 @@ function savePng(canvas: HTMLCanvasElement, name: string): void {
   a.click()
 }
 
+/** Downloads a file. */
+function saveBlob(blob: Blob, name: string): void {
+  const a = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 /** Copies a canvas as an image (or hands it to the phone's share sheet). */
 async function copyPng(canvas: HTMLCanvasElement): Promise<boolean> {
   const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'))
@@ -179,6 +190,12 @@ export class Keepsakes {
   private newestLife = 0
   private legacy: Legacy | undefined
   private share = ''
+  /** The newest kept clip (clip-buffer.ts), its preview and caption. */
+  private clip: Clip | null = null
+  private clipBox: HTMLElement | null = null
+  private readonly clipVideo = document.createElement('video')
+  private readonly clipCaption = document.createElement('div')
+  private clipUrl = ''
 
   constructor(
     hudRoot: HTMLElement,
@@ -224,6 +241,56 @@ export class Keepsakes {
     this.popText.className = 'keepsake-pop-text'
     this.pop.append(this.popImg, this.popText)
     hudRoot.append(this.pop)
+  }
+
+  /**
+   * Shows a kept clip (the newest replaces the last): a looping preview, small and pixelated,
+   * and SAVE CLIP, which develops it at twice the size and downloads the WebM.
+   */
+  showClip(clip: Clip, key: string): void {
+    if (!this.clipBox) {
+      this.clipBox = document.createElement('div')
+      this.clipBox.className = 'keepsake-clip'
+      this.clipVideo.className = 'keepsake-canvas'
+      this.clipVideo.muted = true
+      this.clipVideo.loop = true
+      this.clipVideo.playsInline = true
+      this.clipVideo.autoplay = true
+      this.clipCaption.className = 'keepsake-clip-caption'
+      const row = document.createElement('div')
+      row.className = 'keepsake-buttons'
+      button(row, 'SAVE CLIP', (b) => {
+        const c = this.clip
+        if (!c || b.disabled) return
+        b.disabled = true
+        b.textContent = 'DEVELOPING…'
+        developClip(c)
+          .catch(() => previewBlob(c))
+          .then((blob) => saveBlob(blob, `deadwood-${c.moment}-clip.webm`))
+          .finally(() => {
+            b.disabled = false
+            b.textContent = 'SAVE CLIP'
+          })
+      })
+      this.clipBox.append(this.clipVideo, this.clipCaption, row)
+      this.panel.insertBefore(this.clipBox, this.cardBox)
+    }
+    this.clip = clip
+    if (this.clipUrl) URL.revokeObjectURL(this.clipUrl)
+    this.clipUrl = URL.createObjectURL(previewBlob(clip))
+    this.clipVideo.src = this.clipUrl
+    const first = clip.frames[0]?.timestamp ?? 0
+    const last = clip.frames[clip.frames.length - 1]?.timestamp ?? first
+    const secs = Math.max(1, Math.round((last - first) / 1e6))
+    this.clipCaption.textContent = `CLIP · ${secs} s · ${CLIP_CAPTIONS[clip.moment]}`
+    this.panel.hidden = false
+    // A death's own pop is the postcard; the others say where the clip went.
+    if (clip.moment !== 'death') {
+      this.popImg.hidden = true
+      this.popText.textContent = `Clip kept (${key}). Esc to save it.`
+      this.pop.hidden = false
+      this.popUntil = performance.now() + 5000
+    }
   }
 
   /**
@@ -323,6 +390,7 @@ export class Keepsakes {
     this.panel.hidden = false
     this.popImg.src = this.card.toDataURL('image/jpeg', 0.85)
     if (popUp) {
+      this.popImg.hidden = false
       this.popText.textContent = 'Esc: save or copy your postcard'
       this.pop.hidden = false
       this.popUntil = performance.now() + POP_SECONDS * 1000

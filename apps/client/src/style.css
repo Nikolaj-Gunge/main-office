@@ -3748,3 +3748,20 @@ body {
 .menu {
   z-index: 90;
 }
+
+/* --- Clip buffer: a kept clip in the keepsakes panel (hud/clip-buffer.ts) -------------------- */
+.keepsake-clip video {
+  background: #0d0b09;
+}
+
+.keepsake-clip-caption {
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #d88a3a;
+}
+
+.keepsake-buttons button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

@@ -8,7 +8,7 @@ import {
 } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
 import type { GraphicsSetting } from '../render/device-tier.ts'
-import { loadAppearance, type Settings, saveAppearance } from '../settings.ts'
+import { CLIP_SETTINGS, loadAppearance, type Settings, saveAppearance } from '../settings.ts'
 import { CharacterCreator } from './character-creator.ts'
 
 /** The menu's graphics choices, in order. */
@@ -165,6 +165,19 @@ export class Menu {
     this.creator.setMode(false, false)
 
     // --- Settings tab ---
+    this.clipsRow = this.choice(
+      'Clip buffer (K keeps the last 20 s)',
+      [
+        ['Auto', 0],
+        ['On', 1],
+        ['Off', 2],
+      ],
+      () => CLIP_SETTINGS.indexOf(this.settings.clips),
+      (v) => {
+        this.settings.clips = CLIP_SETTINGS[v] ?? 'auto'
+      },
+    )
+    this.clipsRow.hidden = true
     const settingsPanel = h('section', { class: 'menu-panel menu-settings' })
     settingsPanel.append(
       this.slider('Mouse sensitivity', 'sensitivity', 0.2, 8, 0.05, (v) => v.toFixed(2)),
@@ -196,6 +209,7 @@ export class Menu {
       this.toggle('Hide swear words in chat', 'chatFilter'),
       this.toggle('Speech bubbles over people', 'chatBubbles'),
       this.toggle('Voice chat (push to talk; asks for the microphone)', 'voice'),
+      this.clipsRow,
     )
 
     // --- Controls tab ---
@@ -265,6 +279,11 @@ export class Menu {
 
   /** Under the join form (the world picker, see world-picker.ts). */
   private readonly playExtras = h('div', { class: 'menu-play-extras' })
+  /**
+   * The clip buffer's setting (hud/clip-buffer.ts). Hidden until the browser is known to have
+   * what it needs (main.ts shows it).
+   */
+  readonly clipsRow: HTMLElement
 
   /** Adds something under the join form on the PLAY tab. */
   addToPlay(node: HTMLElement): void {

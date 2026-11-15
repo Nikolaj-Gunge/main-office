@@ -61,6 +61,7 @@ import { ScreenShake } from './game/screen-shake.ts'
 import { SocialClient } from './game/social-client.ts'
 import { Spectator } from './game/spectator.ts'
 import { VoiceClient } from './game/voice-client.ts'
+import { ClipBuffer, clipMoment, clipsSupported } from './hud/clip-buffer.ts'
 import { CombatHud } from './hud/combat-hud.ts'
 import { Keepsakes } from './hud/keepsakes.ts'
 import { MatchHud } from './hud/match-hud.ts'
@@ -712,7 +713,30 @@ menu.addToPlay(party.panel.root)
 const keepsakes = survival ? new Keepsakes(hudRoot, () => net.world) : null
 if (keepsakes && survival) {
   menu.addToPlay(keepsakes.panel)
-  survival.onNotice = (n) => keepsakes.onNotice(n)
+  survival.onNotice = (n) => {
+    keepsakes.onNotice(n)
+    const moment = clipMoment(n)
+    if (moment) clips?.mark(moment, performance.now())
+  }
+}
+// The clip buffer (clip-buffer.ts): the last ~20 s, kept on K, a death, an alpha or Haven held.
+// Only where the browser can (WebCodecs VP8); `auto` leaves low-tier machines alone.
+const clips = keepsakes ? new ClipBuffer() : null
+let clipsOk = false
+if (clips && keepsakes) {
+  clips.onClip = (c) => keepsakes.showClip(c, keyLabel(settings.keybinds.clip[0] ?? 'KeyK'))
+  void clipsSupported().then((ok) => {
+    clipsOk = ok
+    menu.clipsRow.hidden = !ok
+  })
+}
+/** Turns the clip buffer on or off for the setting and the device tier. */
+function applyClips(): void {
+  if (!clips) return
+  const on = clipsOk && (settings.clips === 'on' || (settings.clips === 'auto' && tier !== 'low'))
+  if (on === clips.enabled) return
+  clips.enabled = on
+  if (!on) clips.stop()
 }
 /** The person in the crosshair (within a few metres), for G: trade. */
 function facingPlayer(): { id: number; distance: number } | null {
@@ -944,6 +968,10 @@ window.addEventListener('keydown', (e) => {
     applySettings()
     menu.refresh()
     for (const c of gui.controllersRecursive()) c.updateDisplay()
+  }
+  if (action === 'clip' && clips?.enabled && joined) {
+    if (!clips.keep()) overlay.flash('Nothing recorded yet')
+    return
   }
   if (action === 'mute' || action === 'map') {
     audio.muted = !audio.muted
@@ -1231,6 +1259,8 @@ pixels.setAnimationLoop(() => {
   if (keepsakes && joined) {
     keepsakes.afterRender(canvas, player.state.alive, survival?.self ?? null, now)
     keepsakes.setLegacy(survival?.self?.legacy)
+    applyClips()
+    clips?.capture(canvas, player.state.alive, now)
   }
   stats.update()
   if (firstFrame) {
@@ -1300,6 +1330,7 @@ if (import.meta.env.DEV) {
       voice,
       autoTier,
       keepsakes,
+      clips,
     },
   })
 }
