@@ -138,6 +138,8 @@ export interface SurvivalShared {
   rot?: { mood?: RotMood; birds: number[] }
   /** Somebody called in the evacuation helicopter (evac.ts), or none. */
   evac?: EvacShared
+  /** Built pieces (building.ts): id, kind, x×10, z×10, turns, battering left, flags, … */
+  builds?: number[]
 }
 
 export type SurvivalAction =
@@ -164,6 +166,8 @@ export type SurvivalAction =
   | { a: 'close' }
   /** Wear an earned cosmetic (field-notes.ts), or take it off (id null). */
   | { a: 'cosmetic'; kind: CosmeticKind; id: string | null }
+  /** Put up a piece from a kit you carry (building.ts) where you point, turned `rot` eighths. */
+  | { a: 'build'; kit: string; x: number; z: number; rot: number }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

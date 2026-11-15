@@ -5,6 +5,7 @@ import {
   type SurvivalSelf,
   type WeaponId,
 } from '@office-fps/shared'
+import type { SavedPiece } from './survival/building.ts'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -120,6 +121,8 @@ export interface WorldSave {
   boards: [number, number][]
   /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
   retired?: Retired[]
+  /** Walls, doors, traps and stash crates people built (survival/building.ts). */
+  builds?: SavedPiece[]
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

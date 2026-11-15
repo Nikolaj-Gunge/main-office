@@ -16,8 +16,12 @@ import {
   type MapDef,
   type Npc,
   type PhysicsWorld,
+  PIECES,
+  type Piece,
   PLANK_ITEM,
   type PlayerState,
+  pieceAim,
+  pieceBase,
   type RemotePlayerState,
   randomAppearance,
   remotePose,
@@ -29,6 +33,7 @@ import {
   type SurvivalShared,
   seeded,
   setBarricades,
+  setBuilds,
   spotCentre,
   syncForest,
   VICINITY,
@@ -42,6 +47,7 @@ import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
+import { BuildView } from '../render/builds.ts'
 import { CampFolk } from '../render/camp-folk.ts'
 import type { TierSettings } from '../render/device-tier.ts'
 import { EvacView } from '../render/evac-view.ts'
@@ -53,6 +59,7 @@ import { Night } from '../render/night.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
+import { BuildMode } from './build-mode.ts'
 import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import { Shiver } from './needs-feel.ts'
@@ -123,6 +130,9 @@ export class SurvivalClient {
   private readonly loot: LootView
   private readonly leaves: Leaves
   private readonly boards: BarricadeView
+  /** Walls, doors, spikes and stashes people built (builds.ts), and G's build mode. */
+  private readonly builds: BuildView
+  readonly building: BuildMode
   private readonly heli: HeliView
   /** The evacuation helicopter, its flare and countdown (evac-view.ts). */
   private readonly evac: EvacView
@@ -178,6 +188,9 @@ export class SurvivalClient {
     o.scene.add(this.leaves.mesh)
     this.boards = new BarricadeView(o.def.spots)
     o.scene.add(this.boards.root)
+    this.builds = new BuildView(o.def)
+    o.scene.add(this.builds.root)
+    this.building = new BuildMode(o.def, o.scene, o.physics, o.send)
     this.heli = new HeliView(o.scene, o.audio, (x, z) => heightAt(o.def.terrain, x, z))
     this.evac = new EvacView(o.scene, o.audio, o.hudRoot)
     this.folk = new CampFolk(o.def, o.audio)
@@ -331,6 +344,7 @@ export class SurvivalClient {
     this.clockAt = performance.now()
     this.hud.setShared(shared)
     this.applyBoards(shared.boards ?? [])
+    this.applyBuilds(shared.builds ?? [])
     this.heli.apply(shared.drops)
     this.evac.apply(shared.evac)
     this.weather.setShared(shared.weather)
@@ -349,6 +363,24 @@ export class SurvivalClient {
       else if (what === 'hit') this.audio.play('bang', { at, volume: 1 })
       else this.audio.play('splinter', { at, volume: 1 })
     }
+  }
+
+  /** Built pieces: what you see, what you bump into, and what you hear. */
+  private applyBuilds(flat: readonly number[]): void {
+    const changes = this.builds.apply(flat)
+    setBuilds(this.physics, this.def, this.builds.pieces)
+    for (const { at, what } of changes) {
+      if (what === 'built') this.audio.play('hammer', { at, volume: 0.8 })
+      else if (what === 'hit') this.audio.play('bang', { at, volume: 1 })
+      else if (what === 'door') this.audio.play('bang', { at, volume: 0.3, rate: 1.6 })
+      else this.audio.play('splinter', { at, volume: 1 })
+    }
+  }
+
+  /** G: into build mode (or the next kit, or out of it). */
+  toggleBuild(): void {
+    const why = this.building.toggle(this.self)
+    if (why) this.hud.notice({ kind: 'warn', text: why })
   }
 
   private readonly shivers = new Shiver()
@@ -379,6 +411,8 @@ export class SurvivalClient {
     this.vehicles.clear()
     this.infection.set(null)
     this.applyBoards([])
+    this.applyBuilds([])
+    this.building.stop()
   }
 
   /** The day's clock now: the server's, run on since it last said. */
@@ -492,7 +526,15 @@ export class SurvivalClient {
 
     this.folk.update(dt, time, eye, state.pos)
     this.moveWalkers(dt, eye)
-    this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
+    if (!state.alive || this.vehicles.seated) this.building.stop()
+    const ghost = this.building.update(
+      this.self,
+      this.builds.pieces,
+      { x: state.pos.x, y: state.pos.y + 1.6, z: state.pos.z },
+      eyeYaw,
+      eyePitch,
+    )
+    this.prompt = state.alive ? (ghost ?? this.findPrompt(state, eyeYaw, eyePitch)) : null
     this.ambience(dt, remotes, eye)
     this.rot.update(dt, time, eye, remotes, this.weather.indoors)
     this.infectionFx = this.infection.update(dt, state.alive)
@@ -654,6 +696,25 @@ export class SurvivalClient {
         loot = l
       }
     }
+    // Something somebody built (the server picks it first when you're looking at it).
+    let piece: Piece | null = null
+    let pieceScore = 0.5
+    for (const p of this.builds.pieces) {
+      if (Math.abs(p.x - ex) > 6 || Math.abs(p.z - ez) > 6) continue
+      const score = pieceAim(
+        p,
+        pieceBase(this.def, p),
+        { x: ex, y: ey, z: ez },
+        { x: fx, y: fy, z: fz },
+      )
+      if (score > pieceScore) {
+        pieceScore = score
+        piece = p
+      }
+    }
+    if (piece && pieceScore >= Math.max(thing ? best : 0, loot ? lootScore : 0)) {
+      return piecePrompt(piece, state.crouched, countOf(this.self?.inv ?? [], PLANK_ITEM))
+    }
     // A doorway or window to board up.
     let spot = -1
     let spotScore = 0.35
@@ -693,6 +754,19 @@ export class SurvivalClient {
     }
     return null
   }
+}
+
+/** What E does at a built piece (the server's choice in building.ts). */
+function piecePrompt(p: Piece, crouched: boolean, planks: number): string {
+  const def = PIECES[p.kind]
+  const name = def.name.toLowerCase()
+  if (crouched) return `Take the ${name} down (if it's yours)`
+  const worn = p.kind === 'door' || p.kind === 'stash' ? p.hp < def.hp * 0.75 : p.hp < def.hp - 1
+  const pct = Math.round((p.hp / def.hp) * 100)
+  if (worn && planks > 0) return `Mend the ${name} with a plank (${pct}%)`
+  if (p.kind === 'door') return p.open ? 'Shut the door' : 'Open the door'
+  if (p.kind === 'stash') return 'Open the stash crate'
+  return `${def.name} (${pct}%${worn ? ': planks mend it' : ''})`
 }
 
 /** Somebody standing still with empty hands (the people of Haven, and those who walk). */

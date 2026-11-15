@@ -270,7 +270,11 @@ export class InventoryScreen {
       })
     }
     tab('near', 'VICINITY')
-    if (self.box) tab('box', self.box.kind === 'locker' ? 'LOCKER' : 'TRUNK')
+    if (self.box)
+      tab(
+        'box',
+        self.box.kind === 'locker' ? 'LOCKER' : self.box.kind === 'stash' ? 'STASH' : 'TRUNK',
+      )
     tab('craft', 'CRAFT')
     if (this.tab === 'box' && self.box) this.drawBox(col)
     else if (this.tab === 'craft') this.drawCraft(col)
@@ -306,7 +310,9 @@ export class InventoryScreen {
       col,
       box.kind === 'locker'
         ? 'Yours alone. What you leave here stays, whatever happens to you.'
-        : 'Stays in the car while the car stands.',
+        : box.kind === 'stash'
+          ? 'Only you open it. It rots with the planks around it: keep it mended.'
+          : 'Stays in the car while the car stands.',
     )
   }
 

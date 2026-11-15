@@ -382,6 +382,39 @@ add({
   value: 20,
   desc: 'An alarm clock taped to a tin of scrap. Wind it and throw it: the dead go to the noise.',
 })
+// Building kits (building.ts): G with one on you shows where it would go.
+add({
+  id: 'wallkit',
+  name: 'Plank wall kit',
+  kind: 'tool',
+  weight: 6,
+  value: 40,
+  desc: 'Planks, two posts and a fistful of bent nails. Two metres of wall (G to build).',
+})
+add({
+  id: 'doorkit',
+  name: 'Door kit',
+  kind: 'tool',
+  weight: 7,
+  value: 55,
+  desc: 'A frame and a door on taped hinges. It shuts, which is the point (G to build).',
+})
+add({
+  id: 'spikekit',
+  name: 'Spike trap kit',
+  kind: 'tool',
+  weight: 4,
+  value: 35,
+  desc: 'Sharpened stakes and scrap on a board. Slows them, hurts them, wears out (G to build).',
+})
+add({
+  id: 'stashkit',
+  name: 'Stash crate kit',
+  kind: 'tool',
+  weight: 5,
+  value: 45,
+  desc: 'A crate with a hasp. Only you open it, but it rots like anything else (G to build).',
+})
 // ── Voice (voice.ts) ──
 add({
   id: 'radio',

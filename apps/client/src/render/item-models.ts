@@ -726,6 +726,28 @@ const MODELS: Record<string, Build> = {
       .box(0.4, 0.02, 0.05, 0x8a8e94, { y: 0.025, z: 0.22 })
     for (const x of [-0.13, 0, 0.13]) k.cyl(0.004, 0.03, STEEL, { x, y: 0.045, z: -0.22 })
   },
+  // Building kits (building.ts): a bundle of planks, tied, with what goes with them.
+  wallkit: (k) => {
+    for (const x of [-0.12, 0, 0.12]) k.box(0.11, 0.025, 0.8, x === 0 ? WOOD : WOOD_LIGHT, { x })
+    k.box(0.08, 0.08, 0.85, WOOD, { y: 0.05 })
+    k.box(0.4, 0.02, 0.04, 0x8a8e94, { y: 0.03, z: -0.25 }).box(0.4, 0.02, 0.04, 0x8a8e94, {
+      y: 0.03,
+      z: 0.25,
+    })
+  },
+  doorkit: (k) => {
+    k.box(0.45, 0.04, 0.8, WOOD).box(0.4, 0.02, 0.74, WOOD_LIGHT, { y: 0.03 })
+    k.box(0.06, 0.02, 0.1, STEEL, { x: -0.2, y: 0.05, z: -0.25 })
+    k.box(0.06, 0.02, 0.1, STEEL, { x: -0.2, y: 0.05, z: 0.25 })
+  },
+  spikekit: (k) => {
+    k.box(0.5, 0.03, 0.12, WOOD)
+    for (const x of [-0.18, -0.06, 0.06, 0.18]) k.box(0.025, 0.025, 0.4, WOOD_LIGHT, { x, y: 0.03 })
+  },
+  stashkit: (k) => {
+    k.box(0.5, 0.03, 0.35, WOOD).box(0.5, 0.03, 0.35, WOOD_LIGHT, { y: 0.035 })
+    k.box(0.06, 0.02, 0.04, STEEL, { y: 0.06 })
+  },
   noisemaker: (k) => {
     k.cyl(0.04, 0.07, 0x9a9ea4)
       .box(0.09, 0.07, 0.035, 0xb8302a, { y: 0.07 })

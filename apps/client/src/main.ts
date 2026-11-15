@@ -828,6 +828,10 @@ window.addEventListener('keydown', (e) => {
       if (action === 'map') return survival.hud.toggleMap()
       if (action === 'journal') return survival.hud.toggleJournal()
       if (action === 'light') return survival.toggleTorch()
+      // Build mode (build-mode.ts): G in and through the kits, R turns the ghost, E puts it up.
+      if (action === 'build') return survival.toggleBuild()
+      if (survival.building.active && action === 'reload') return survival.building.rotate()
+      if (survival.building.active && action === 'use') return survival.building.place()
     }
   }
   // Chat, ping wheel, wave (keys typed into the chat never get here: they stop at its input).
@@ -1008,6 +1012,8 @@ pixels.setAnimationLoop(() => {
     if (uiOpen || social.chat.isOpen) sampled.buttons = 0
     else if (survival?.hud.inDialog)
       sampled.buttons &= ~(Button.Slot1 | Button.Slot2 | Button.Slot3)
+    // Building: E and R work the ghost, and nobody fires a gun by accident.
+    if (survival?.building.active) sampled.buttons &= ~(Button.Use | Button.Reload | Button.Fire)
     const input = noclip ? { buttons: 0, yaw: look.yaw, pitch: look.pitch } : sampled
     // In a car your legs stay put; at the wheel the same input drives (predicted alike).
     player.predictor.seated = survival?.vehicles.seated ?? false

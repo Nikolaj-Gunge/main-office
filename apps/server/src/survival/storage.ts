@@ -45,12 +45,15 @@ export interface StorageHost {
   drop(w: Keeper, stack: Stack): void
   touch(w: Keeper): void
   notice(player: ServerPlayer, kind: Notice['kind'], text: string): void
+  /** A stash crate built out in the woods (building.ts): what's in it, and where it stands. */
+  stash?(id: number): { box: Box; at: Point } | null
 }
 
 interface Opened {
   kind: BoxKind
-  /** Trunks: which car. */
+  /** Trunks: which car. Stash crates: which piece. */
   car?: number
+  stash?: number
 }
 
 interface Trunk {
@@ -58,7 +61,11 @@ interface Trunk {
   box: Box
 }
 
-const NAMES: Record<BoxKind, string> = { locker: 'Your locker', trunk: 'Trunk' }
+const NAMES: Record<BoxKind, string> = {
+  locker: 'Your locker',
+  trunk: 'Trunk',
+  stash: 'Your stash crate',
+}
 
 /**
  * Putting things into containers (see storage.ts in shared): car trunks, which keep what's in
@@ -110,6 +117,13 @@ export class Storage {
     return true
   }
 
+  /** Opens a stash crate (building.ts has checked it's theirs and in reach). */
+  openStash(w: Keeper, id: number): void {
+    if (this.host.seated(w.player) || !this.host.stash?.(id)) return
+    this.open.set(w.player.id, { kind: 'stash', stash: id })
+    this.show(w)
+  }
+
   close(w: Keeper): void {
     if (!this.open.delete(w.player.id) && !w.self.box) return
     w.self.box = null
@@ -125,6 +139,7 @@ export class Storage {
     const o = this.open.get(w.player.id)
     if (!o) return null
     if (o.kind === 'locker') return w.locker
+    if (o.kind === 'stash') return this.host.stash?.(o.stash ?? -1)?.box ?? null
     return o.car === undefined ? null : this.trunk(o.car)
   }
 
@@ -145,8 +160,13 @@ export class Storage {
     const o = this.open.get(w.player.id)
     if (!o) return
     const pos = w.player.state.pos
-    const at = o.kind === 'locker' ? this.host.locker() : this.host.carAt(o.car ?? 0)
-    const reach = o.kind === 'locker' ? BOX_REACH + 0.6 : TRUNK_REACH + 0.6
+    const at =
+      o.kind === 'locker'
+        ? this.host.locker()
+        : o.kind === 'stash'
+          ? (this.host.stash?.(o.stash ?? -1)?.at ?? null)
+          : this.host.carAt(o.car ?? 0)
+    const reach = o.kind === 'trunk' ? TRUNK_REACH + 0.6 : BOX_REACH + 0.6
     if (!w.player.state.alive || !at || !near(pos, at, reach) || this.host.seated(w.player)) {
       this.close(w)
       return

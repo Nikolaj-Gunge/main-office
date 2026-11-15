@@ -90,6 +90,50 @@ export const RECIPES: readonly Recipe[] = [
     ],
     makes: { item: 'barricadekit', n: 1 },
   },
+  // Building (building.ts): scrap for nails and fittings, tape for hinges and hasps.
+  {
+    id: 'wallkit',
+    name: 'Plank wall kit',
+    secs: 6,
+    needs: [
+      { any: ['planks'], n: 3 },
+      { any: ['scrap'], n: 1 },
+    ],
+    makes: { item: 'wallkit', n: 1 },
+  },
+  {
+    id: 'doorkit',
+    name: 'Door kit',
+    secs: 8,
+    needs: [
+      { any: ['planks'], n: 4 },
+      { any: ['scrap'], n: 1 },
+      { any: ['ducttape'], n: 1 },
+    ],
+    makes: { item: 'doorkit', n: 1 },
+  },
+  {
+    id: 'spikekit',
+    name: 'Spike trap kit',
+    secs: 6,
+    needs: [
+      { any: ['planks'], n: 2 },
+      { any: ['scrap'], n: 2 },
+    ],
+    tools: [BLADES],
+    makes: { item: 'spikekit', n: 1 },
+  },
+  {
+    id: 'stashkit',
+    name: 'Stash crate kit',
+    secs: 7,
+    needs: [
+      { any: ['planks'], n: 3 },
+      { any: ['scrap'], n: 1 },
+      { any: ['ducttape'], n: 1 },
+    ],
+    makes: { item: 'stashkit', n: 1 },
+  },
   {
     id: 'batteries',
     name: 'Rewired batteries',

@@ -548,6 +548,34 @@ const ICONS: Record<string, Paint> = {
       .rect(2, p.h - 14, p.w - 4, 3, STEEL)
       .outline()
   },
+  // Building kits (building.ts)
+  wallkit: (p) => {
+    for (let k = 0; k < 4; k++) p.rect(3, 4 + k * 7, p.w - 6, 5, k % 2 ? WOOD : WOOD_LIGHT)
+    p.rect(5, 2, 3, p.h - 4, WOOD)
+      .rect(p.w - 8, 2, 3, p.h - 4, WOOD)
+      .outline()
+  },
+  doorkit: (p) => {
+    p.rect(3, 2, p.w - 6, p.h - 4, WOOD)
+      .rect(6, 5, p.w - 12, p.h - 10, WOOD_LIGHT)
+      .rect(p.w - 11, p.h / 2, 3, 4, STEEL)
+      .rect(4, 8, 4, 3, STEEL)
+      .rect(4, p.h - 12, 4, 3, STEEL)
+      .outline()
+  },
+  spikekit: (p) => {
+    p.rect(2, p.h - 8, p.w - 4, 5, WOOD)
+    for (let k = 0; k < 4; k++)
+      p.rect(5 + k * 6, 4 + (k % 2) * 3, 3, p.h - 12, k % 2 ? STEEL : WOOD_LIGHT)
+    p.outline()
+  },
+  stashkit: (p) => {
+    p.rect(2, 3, p.w - 4, p.h - 6, WOOD)
+      .rect(2, 7, p.w - 4, 2, WOOD_LIGHT)
+      .rect(2, p.h - 9, p.w - 4, 2, WOOD_LIGHT)
+      .rect(p.w / 2 - 2, 4, 4, 6, STEEL)
+      .outline()
+  },
   noisemaker: (p) => {
     p.rect(5, 12, p.w - 10, p.h - 14, '#8a8e94')
       .rect(6, 5, p.w - 12, 9, '#b8302a')

@@ -4,6 +4,7 @@ import {
   type InputCommand,
   type Poi,
   type Room,
+  SPIKE_SLOW,
   type SurvivalDef,
   TICK_DT,
   WEAPONS,
@@ -131,6 +132,8 @@ export class Zed {
   /** The barricade it is battering (spot index), or -1; and when it may strike next. */
   bashing = -1
   nextBash = 0
+  /** Caught on a spike trap (building.ts): it moves at SPIKE_SLOW of its speed. */
+  slowed = false
   private speed = 0
   /** Winding up, clawing and (after a miss) recovering. */
   private readonly attack = new ClawAttack()
@@ -180,11 +183,16 @@ export class Zed {
     this.frozen = false
     this.speed = 0
     this.bashing = -1
+    this.slowed = false
     this.attack.reset()
   }
 
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
   get speedFactor(): number {
+    return this.pace * (this.slowed ? SPIKE_SLOW : 1)
+  }
+
+  private get pace(): number {
     const k = KINDS[this.kind] as KindStats
     if (this.mood === 'chase' || this.mood === 'lost') return k.chase
     // Looking into a noise: a careful walk, quicker than a shuffle, nowhere near a run.

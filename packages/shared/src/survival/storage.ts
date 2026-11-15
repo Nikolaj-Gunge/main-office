@@ -15,7 +15,8 @@ export interface Stored extends Stack {
   r?: 1
 }
 
-export type BoxKind = 'locker' | 'trunk'
+/** A stash crate is one somebody built out in the woods (building.ts): only they open it. */
+export type BoxKind = 'locker' | 'trunk' | 'stash'
 
 /** One container's grid and what's in it. */
 export interface Box {

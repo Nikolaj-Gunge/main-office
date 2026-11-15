@@ -1,4 +1,5 @@
 export * from './barricades.ts'
+export * from './building.ts'
 export * from './camp-folk.ts'
 export * from './car-condition.ts'
 export * from './characters.ts'
