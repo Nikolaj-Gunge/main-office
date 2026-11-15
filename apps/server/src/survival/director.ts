@@ -89,6 +89,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { type Nav, navFor } from './pathing.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Vehicles } from './vehicles.ts'
 
@@ -243,6 +244,8 @@ const SHORT_OF_BREATH: Record<number, number> = { 3: 0.8, 4: 1.6 }
 export class SurvivalDirector {
   private readonly game: Game
   private def!: SurvivalDef
+  /** How the dead find their way round (pathing.ts). */
+  private nav: Nav | null = null
   private readonly random: () => number
   private readonly survivors = new Map<number, Survivor>()
   /** The world as last saved (JSON), to save it again only when something changed. */
@@ -336,6 +339,7 @@ export class SurvivalDirector {
     const def = this.game.world.map.survival
     if (!def) return
     this.def = def
+    this.nav = navFor(this.game.world.map)
     this.dispose()
     this.startTick = this.game.tick
     this.slept = 0
@@ -622,6 +626,7 @@ export class SurvivalDirector {
       crowd,
       rooms: this.def.rooms,
       boardedAt: (me, goal) => this.boardedAt(me, goal),
+      ...(this.nav ? { nav: this.nav } : {}),
     })
     if (zed.speedChanged()) this.game.applyRules(zombie)
     return command
