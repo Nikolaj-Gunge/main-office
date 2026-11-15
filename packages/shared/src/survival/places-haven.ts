@@ -1,6 +1,7 @@
 import type { MaterialId } from '../maps/types.ts'
 import type { LampOptions, Site } from './kit.ts'
 import { armyTent, cot, drum, fence, logPile, paving, pupTent, sandbags } from './places-kit.ts'
+import { radioBooth } from './places-radio.ts'
 import { crate, table } from './structures.ts'
 
 /**
@@ -34,6 +35,8 @@ export function havenLife(s: Site): void {
   }
   watchtower(s, 26.8, -26.8)
   watchtower(s, -26.8, 26.8)
+  // Radio Free Deadwood (places-radio.ts).
+  radioBooth(s)
 }
 
 // --- Parts ------------------------------------------------------------------------------------

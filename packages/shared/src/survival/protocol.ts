@@ -177,10 +177,15 @@ export interface Dialog {
 
 export interface Notice {
   /** `story` (and `note`, on paper) is shown big in the middle; the others as a line at the side. */
-  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note' | 'sound'
+  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note' | 'sound' | 'radio'
   text: string
-  /** `sound` (heard, not shown): birds taking off (flock index in `flock`), or a car alarm. */
-  sound?: 'birds' | 'alarm'
+  /**
+   * `sound` (heard, not shown): birds taking off (flock index in `flock`), a car alarm, or a named
+   * alpha's roar as it charges or leaps (alphas.ts).
+   */
+  sound?: 'birds' | 'alarm' | 'roar'
+  /** `radio`: who is on the air (Radio Free Deadwood's DJ, radio.ts on the server). */
+  from?: string
   flock?: number
   /** `sound` alarm: how long it goes on (s). */
   seconds?: number

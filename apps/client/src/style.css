@@ -3119,3 +3119,60 @@ body {
   font-size: 11px;
   letter-spacing: 2px;
 }
+
+/* --- Radio Free Deadwood (radio-client.ts) and the named alphas' name tags ------------------- */
+
+.radio-ticker {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(560px, 70vw);
+  padding: 5px 10px 6px;
+  background: rgb(18 20 16 / 0.82);
+  border: 2px solid #6a5a34;
+  color: #d8cfa8;
+  font-size: 13px;
+  line-height: 1.35;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+  transition: opacity 0.8s;
+}
+
+.radio-ticker[hidden] {
+  display: none;
+}
+
+.radio-ticker.fading {
+  opacity: 0;
+}
+
+.radio-from {
+  color: #c08a3a;
+  font-size: 10px;
+  letter-spacing: 2px;
+  margin-bottom: 2px;
+}
+
+.radio-text {
+  min-height: 1.35em;
+}
+
+.alpha-tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.alpha-tag {
+  position: absolute;
+  transform: translate(-50%, -170%);
+  padding: 1px 6px;
+  background: rgb(30 12 10 / 0.8);
+  color: #e0b080;
+  border: 2px solid #7a3a22;
+  font-size: 12px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  text-transform: uppercase;
+}

@@ -120,6 +120,8 @@ export interface WorldSave {
   boards: [number, number][]
   /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
   retired?: Retired[]
+  /** Named alphas killed (alphas.ts): key → when (ms since 1970); they're back days later. */
+  alphas?: Record<string, number>
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({

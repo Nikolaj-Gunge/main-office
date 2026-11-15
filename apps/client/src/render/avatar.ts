@@ -39,7 +39,16 @@ import { EYE_HALO, EYES, ZOMBIE_EYES, type ZombieLook, zombieBody } from './zomb
 export type BodyLook = SkinId | ZombieLook
 export type { ZombieLook }
 
-const ZOMBIE_LOOKS: readonly string[] = ['zombie', 'runner', 'brute', 'screamer', 'stalker']
+const ZOMBIE_LOOKS: readonly string[] = [
+  'zombie',
+  'runner',
+  'brute',
+  'screamer',
+  'stalker',
+  'sawmill',
+  'choir',
+  'teeth',
+]
 const isZombie = (skin: BodyLook): skin is ZombieLook => ZOMBIE_LOOKS.includes(skin)
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d)

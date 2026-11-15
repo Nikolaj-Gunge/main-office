@@ -108,6 +108,8 @@ export interface StoryHost {
   rare(): Map<string, number>
   /** Something for Field Notes (field-notes.ts): an item handed over, somebody home, a job done. */
   noted?(p: Person, event: 'deliver' | 'rescue' | 'quest'): void
+  /** A siege at `poi` is over, held or not (Radio Free Deadwood reads it out). */
+  sieged?(poi: string, held: boolean): void
 }
 
 interface Walker {
@@ -983,6 +985,7 @@ export class Story {
     if (!s) return
     this.siege = null
     for (const z of s.zeds) this.host.unsiege(z)
+    this.host.sieged?.(s.poi, held)
     const poi = this.def.pois.find((p) => p.key === s.poi)
     if (!held) {
       this.siegeAgain = this.host.now() + SIEGE_COOLDOWN

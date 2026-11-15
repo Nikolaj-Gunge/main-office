@@ -392,6 +392,32 @@ add({
   desc: 'Carry it and anyone else carrying one hears you, however far (voice chat).',
 })
 
+// ── Trophies off the named alphas (alphas.ts): proof, and worth a lot to Gus ──
+add({
+  id: 'trophy_chain',
+  name: "The Brute's chain",
+  kind: 'junk',
+  weight: 3,
+  value: 900,
+  desc: 'A logging chain, padlocked round its neck by somebody, once. Gus will want to see it.',
+})
+add({
+  id: 'trophy_hymnal',
+  name: "The Choir's hymnal",
+  kind: 'junk',
+  weight: 0.6,
+  value: 700,
+  desc: "St. Agnes' hymn book, the pages stuck together. It was holding it when it sang.",
+})
+add({
+  id: 'trophy_jaw',
+  name: "Old Teeth's jaw",
+  kind: 'junk',
+  weight: 0.8,
+  value: 800,
+  desc: 'More teeth than a jaw should have. People at Haven will pay just to have seen it.',
+})
+
 // ── The way out (evac.ts): the three things the helipad's radio needs. Rare, and worth a lot ──
 add({
   id: 'evacbattery',

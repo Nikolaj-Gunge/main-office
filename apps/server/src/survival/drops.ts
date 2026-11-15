@@ -55,6 +55,8 @@ export interface DropHost {
   tell(kind: Notice['kind'], text: (at: Point) => string): void
   /** Something everybody sees changed: send the shared state now. */
   broadcast(): void
+  /** A crate came down at `at` (Radio Free Deadwood reads it out). */
+  landed?(at: Point): void
 }
 
 interface Drop {
@@ -258,6 +260,7 @@ export class Drops {
       const where = far < 40 ? 'right by you' : `to the ${compassWord(p, d)}`
       return `Something came down on a parachute ${where}. A red flare is burning there.`
     })
+    this.host.landed?.(d)
   }
 }
 

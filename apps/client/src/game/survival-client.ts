@@ -57,6 +57,7 @@ import { pickupPitch } from './game-feel.ts'
 import { Infection, type InfectionFx } from './infection.ts'
 import { Shiver } from './needs-feel.ts'
 import { Onboarding } from './onboarding.ts'
+import { RadioClient } from './radio-client.ts'
 import type { RemotePlayers } from './remote-players.ts'
 import { RotClient } from './rot-client.ts'
 import { VehiclesClient } from './vehicles-client.ts'
@@ -74,6 +75,7 @@ const NPC_GEAR: Partial<Record<Npc['role'], string[]>> = {
   cook: ['bandana', 'jeans', 'sneakers'],
   hunter: ['beanie', 'camojacket', 'camopants', 'boots'],
   kid: ['hoodie', 'jeans', 'sneakers'],
+  radio: ['beanie', 'flannel', 'worktrousers', 'boots'],
 }
 
 /** Before the night has made its fog. */
@@ -108,6 +110,8 @@ export class SurvivalClient {
   readonly onboarding: Onboarding
   /** The Rot: music by tension, birds, birdsong, car alarms, crunchy ground (rot-client.ts). */
   readonly rot: RotClient
+  /** Radio Free Deadwood's ticker, and the named alphas' name tags (radio-client.ts). */
+  readonly radio: RadioClient
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
@@ -189,6 +193,7 @@ export class SurvivalClient {
     this.infection = new Infection(o.audio)
     this.onboarding = new Onboarding(o.hudRoot, o.def, o.audio)
     this.rot = new RotClient(o.def, o.audio, o.scene)
+    this.radio = new RadioClient(o.hudRoot, o.audio, o.camera)
     this.vehicles = new VehiclesClient({
       scene: o.scene,
       physics: o.physics,
@@ -300,6 +305,7 @@ export class SurvivalClient {
           this.evac.showCard(n.title, n.text)
           return true
         }
+        if (this.radio.onNotice(n)) return true
         if (this.rot.onNotice(n)) return true
         if (n.kind === 'scream' && n.at) {
           this.audio.playNear('scream', n.at, 1, 170, 12)
@@ -371,6 +377,7 @@ export class SurvivalClient {
 
   /** Joined a (new) game: forget what the last one said. */
   reset(): void {
+    this.radio.reset()
     this.applyWalkers([])
     this.loot.clear()
     this.heli.clear()
@@ -495,6 +502,7 @@ export class SurvivalClient {
     this.prompt = state.alive ? this.findPrompt(state, eyeYaw, eyePitch) : null
     this.ambience(dt, remotes, eye)
     this.rot.update(dt, time, eye, remotes, this.weather.indoors)
+    this.radio.update(dt, remotes)
     this.infectionFx = this.infection.update(dt, state.alive)
     let zombieNear = false
     for (const [id, pose] of remotes.visiblePoses())
