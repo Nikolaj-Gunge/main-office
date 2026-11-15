@@ -25,6 +25,7 @@ import {
   ServerMsg,
   SURVIVAL_MAP,
   setGates,
+  skillEffects,
   syncForest,
   TEAMS,
   TICK_DT,
@@ -406,6 +407,9 @@ const net = new Connection({
     if (survival?.onMessage(msg)) {
       // A Field Notes gun wrap shows on your own guns (field-notes.ts).
       viewmodel.setWrap(cosmeticById(survival.self?.notes?.wear.wrap)?.tint ?? null)
+      // Learned skills (skills.ts): steadier aim, more breath — predicted like the server's.
+      player.setSkills(survival.self?.skills)
+      recoil.steady = skillEffects(survival.self?.skills).recoil
       return void player.setEffects(survival.effects)
     }
     switch (msg.type) {
@@ -428,6 +432,8 @@ const net = new Connection({
         worldItems.clear()
         survival?.reset()
         player.setEffects([])
+        player.setSkills(undefined)
+        recoil.steady = 1
         itemSoundsFrom = performance.now() + 500
         overlay.setBanner(null)
         everJoined = true
@@ -1085,7 +1091,9 @@ pixels.setAnimationLoop(() => {
     // In a car: the camera rides with it instead (and no gun sways in front of you).
     seated = survival?.drive(dt, accumulator / TICK_DT, remotes.renderTick, look) === true && joined
     // Scope sway: the view drifts exactly as much as the bullet will (shared weaponSway).
-    const sway = seated ? { yaw: 0, pitch: 0 } : weaponSway(player.state.weapon)
+    const sway = seated
+      ? { yaw: 0, pitch: 0 }
+      : weaponSway(player.state.weapon, player.body.weaponRules.swayScale)
     camera.rotation.x += sway.pitch
     camera.rotation.y += sway.yaw
     const s = shake.update(dt)

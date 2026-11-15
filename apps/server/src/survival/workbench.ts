@@ -42,6 +42,10 @@ export interface WorkbenchHost {
   alert(at: Point, r: number): void
   /** The ground's height (to land something thrown on). */
   groundAt(x: number, z: number): number
+  /** How long using or making this takes them (× seconds; skills.ts). */
+  pace?(w: Worker, kind: Busy['kind'], what: string): number
+  /** They finished making this recipe. */
+  made?(w: Worker, recipe: string): void
 }
 
 interface Job {
@@ -118,6 +122,7 @@ export class Workbench {
 
   private begin(w: Worker, kind: Busy['kind'], what: string, secs: number, ref?: ItemRef): void {
     this.jobs.delete(w.player.id)
+    secs *= this.host.pace?.(w, kind, what) ?? 1
     const tick = this.host.tick
     const job: Job = { w, kind, what, from: tick, ends: tick + Math.round(secs * TICK_RATE) }
     if (ref) job.ref = ref
@@ -202,6 +207,7 @@ export class Workbench {
     bumpLife(w.self, 'crafted')
     const made = recipe.makes
     this.host.giveOrDrop(w, made.item, made.n)
+    this.host.made?.(w, recipe.id)
     this.host.notice(
       w.player,
       'loot',

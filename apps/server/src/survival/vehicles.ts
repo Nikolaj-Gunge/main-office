@@ -119,6 +119,8 @@ export interface Trouble {
 interface Job {
   player: number
   fix: CarFix
+  /** Seconds it takes this pair of hands (the fix's own time, by Mechanic skill). */
+  secs: number
   started: number
   at: { x: number; z: number }
   pack: Pack
@@ -168,6 +170,12 @@ export class Vehicles {
   private cars: Car[] = []
   /** The physics world the cars' bodies live in (a new map frees it under us). */
   private physics: Game['world']['physics'] | null = null
+  /** Mechanic skill (skills.ts): how fast somebody fixes (× s), how hard their car is hurt (×). */
+  skills?: {
+    fixTime(player: ServerPlayer): number
+    carDamage(player: ServerPlayer): number
+    fixed(player: ServerPlayer): void
+  }
 
   constructor(game: Game, say: Say) {
     this.game = game
@@ -366,7 +374,8 @@ export class Vehicles {
     const t = car.trouble
     const fix = carFixFor({ needs: t.needs & t.known, fuel: t.fuel }, (item) => pack.has(item))
     if (!fix) return false
-    car.job = { player: player.id, fix, started: this.now, at: { ...s.pos }, pack }
+    const secs = fix.seconds * (this.skills?.fixTime(player) ?? 1)
+    car.job = { player: player.id, fix, secs, started: this.now, at: { ...s.pos }, pack }
     this.say(player, 'info', `${fix.label}… (hold E)`)
     return true
   }
@@ -389,7 +398,7 @@ export class Vehicles {
       if (p?.state.alive) this.say(p, 'info', 'You stop working on the car.')
       return
     }
-    if (this.now - job.started < job.fix.seconds) return
+    if (this.now - job.started < job.secs) return
     car.job = null
     if (!job.pack.has(job.fix.item)) return
     job.pack.take(job.fix.item)
@@ -405,6 +414,7 @@ export class Vehicles {
       t.breakAt = fix.patch ? t.odometer + roll(car.random) : Number.POSITIVE_INFINITY
     }
     this.say(p, 'info', fix.done)
+    this.skills?.fixed(p)
   }
 
   /**
@@ -525,7 +535,7 @@ export class Vehicles {
       needs: t.needs & t.known,
       top: t.top,
       pull: t.pull,
-      work: job ? Math.min(1, (this.now - job.started) / job.fix.seconds) : 0,
+      work: job ? Math.min(1, (this.now - job.started) / job.secs) : 0,
     }
   }
 
@@ -658,6 +668,9 @@ export class Vehicles {
 
   private damage(car: Car, amount: number): void {
     if (car.wrecked) return
+    // A driver who knows cars nurses this one along (Mechanic skill).
+    const driver = car.seats[0] ? this.game.players.get(car.seats[0]) : undefined
+    if (driver && this.skills) amount *= this.skills.carDamage(driver)
     car.health = Math.max(0, car.health - amount)
     if (car.health > 0) return
     // Wrecked: everybody out, and it isn't going anywhere any more.

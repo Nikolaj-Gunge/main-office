@@ -16,10 +16,13 @@ import {
   type PlayerInput,
   type PlayerState,
   Predictor,
+  type Skills,
   type StepEvents,
+  skillEffects,
   TICK_DT,
   tuneMovement,
   WeaponId,
+  type WeaponRules,
   weaponRulesFor,
 } from '@office-fps/shared'
 import type { PerspectiveCamera } from 'three'
@@ -66,13 +69,40 @@ export class LocalPlayer {
   /** Movement as the rules have it, before survival's buffs and statuses (tuneMovement). */
   private baseMovement: MovementConfig = { ...DEFAULT_MOVEMENT }
   private effects: readonly EffectId[] = []
+  private baseWeapon: WeaponRules | null = null
+  /** Survival skills (skills.ts): what they change about running and weapon handling. */
+  private skills = skillEffects(undefined)
 
   /** Server game rules: movement (gravity, speed, size…) and shooting (spread, ammo). */
   applyRules(rules: GameRules): void {
+    this.baseWeapon = weaponRulesFor(rules)
     this.baseMovement = movementFor(rules)
-    Object.assign(this.movement, tuneMovement(this.baseMovement, this.effects))
+    Object.assign(this.movement, tuneMovement(this.baseMovement, this.effects, this.skills.sprint))
     this.body.configure(this.movement)
-    this.body.weaponRules = weaponRulesFor(rules)
+    this.applyWeaponRules()
+  }
+
+  /** The rules' weapon handling, with this character's Aim and Melee (as the server has it). */
+  private applyWeaponRules(): void {
+    const fx = this.skills
+    this.body.weaponRules = {
+      ...(this.baseWeapon ?? this.body.weaponRules),
+      aimSpeed: fx.aimSpeed,
+      swayScale: fx.sway,
+      swingTime: fx.swingTime,
+    }
+  }
+
+  /** What a survival character has learned: predict running and handling the way the server does. */
+  setSkills(skills: Skills | undefined): void {
+    const fx = skillEffects(skills)
+    const was = this.skills
+    if (fx.sprint === was.sprint && fx.aimSpeed === was.aimSpeed && fx.swingTime === was.swingTime)
+      return
+    this.skills = fx
+    this.applyWeaponRules()
+    Object.assign(this.movement, tuneMovement(this.baseMovement, this.effects, fx.sprint))
+    this.body.configure(this.movement)
   }
 
   /**
@@ -82,7 +112,7 @@ export class LocalPlayer {
   setEffects(effects: readonly EffectId[]): void {
     if (movementKey(effects) === movementKey(this.effects)) return
     this.effects = effects
-    Object.assign(this.movement, tuneMovement(this.baseMovement, effects))
+    Object.assign(this.movement, tuneMovement(this.baseMovement, effects, this.skills.sprint))
     this.body.configure(this.movement)
   }
 

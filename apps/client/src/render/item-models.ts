@@ -1,4 +1,4 @@
-import { ITEMS, type ItemKind } from '@office-fps/shared'
+import { ITEMS, type ItemKind, SKILL_IDS, SKILLS } from '@office-fps/shared'
 import * as THREE from 'three'
 import { buildGunModel } from './gun-models.ts'
 
@@ -816,6 +816,19 @@ const MODELS: Record<string, Build> = {
         .cyl(0.006, 0.025, 0x9aa0a8, { x: 0.19, y: -0.002, z }, 'x')
     }
   },
+}
+
+// Field manuals (skills.ts): a closed paperback, cover in its skill's colour.
+for (const id of SKILL_IDS)
+  MODELS[SKILLS[id].manual] = book(Number.parseInt(SKILLS[id].cover.slice(1), 16))
+
+function book(cover: number): Build {
+  return (k) => {
+    k.box(0.15, 0.03, 0.21, cover)
+      .box(0.14, 0.024, 0.2, CREAM, { x: 0.006 })
+      .box(0.012, 0.031, 0.21, darker(cover), { x: -0.07 })
+      .box(0.09, 0.001, 0.03, 0xe8e0c8, { y: 0.03, z: -0.05 })
+  }
 }
 
 function keycard(color: number, lanyard: number): Build {

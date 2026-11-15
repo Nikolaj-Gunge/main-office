@@ -262,19 +262,26 @@ export function infectionRate(needs: Needs | undefined): number {
 }
 
 /** The effects that change how you move, as one string (to notice when it changes). */
-export function movementKey(effects: readonly EffectId[]): string {
-  return effects.filter((e) => MOVES.has(e)).join(',')
+export function movementKey(effects: readonly EffectId[], fitness = 1): string {
+  const key = effects.filter((e) => MOVES.has(e)).join(',')
+  return fitness === 1 ? key : `${key}|${fitness}`
 }
 const MOVES = new Set<EffectId>(['fed', 'hydrated', 'rested', 'cold', 'sprain', 'sick'])
 
 /**
  * How someone moves with these effects (a new config; `base` is left alone). Breath for sprinting
  * lasts longer Hydrated or Rested and comes back faster Well fed, slower Cold or sick; a sprained
- * ankle barely runs. Server and client both apply it, so prediction agrees.
+ * ankle barely runs; the Fitness skill (skills.ts) adds breath. Server and client both apply it, so
+ * prediction agrees.
  */
-export function tuneMovement(base: MovementConfig, effects: readonly EffectId[]): MovementConfig {
+export function tuneMovement(
+  base: MovementConfig,
+  effects: readonly EffectId[],
+  fitness = 1,
+): MovementConfig {
   const has = new Set(effects)
-  let sprint = 1
+  // Fitness (skills.ts): more breath for running, × seconds.
+  let sprint = fitness
   let breath = 1
   if (has.has('hydrated')) sprint *= 1.25
   if (has.has('rested')) sprint *= 1.15

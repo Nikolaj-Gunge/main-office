@@ -204,6 +204,11 @@ export class MatchRunner {
     return this.survival?.gearOf(player) ?? 0
   }
 
+  /** How much harder this player's melee lands (survival's Melee skill), ×. */
+  meleeDamage(player: ServerPlayer): number {
+    return this.survival ? this.survival.meleeDamage(player) : 1
+  }
+
   /** Damage after armour (survival gear); unchanged elsewhere. */
   armour(victim: ServerPlayer, head: boolean, amount: number): number {
     return this.survival ? this.survival.armour(victim, head, amount) : amount

@@ -10,6 +10,7 @@ import {
   CRUNCH_NOISE,
   carried,
   cleanBox,
+  cleanSkills,
   cloneBag,
   containerOf,
   countOf,
@@ -54,6 +55,7 @@ import {
   MAX_PLAYERS,
   type MapSpawn,
   makeBio,
+  manualSkill,
   maxStack,
   type NoteEvent,
   type Notice,
@@ -63,12 +65,14 @@ import {
   type PlayerState,
   type PoiKind,
   planksFor,
+  recipeOf,
   regive,
   rollLoot,
   rollRareStock,
   roomFor,
   SELL_RATE,
   ServerMsg,
+  SKILL_GAIN,
   START_TIME,
   type Stack,
   type SurvivalAction,
@@ -130,6 +134,7 @@ import {
 import { type Nav, navFor } from './pathing.ts'
 import { type PvpHost, PvpKeeper } from './pvp.ts'
 import { type RotHost, RotWorld } from './rot-world.ts'
+import { SkillsKeeper } from './skills.ts'
 import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Trades } from './trade.ts'
@@ -271,6 +276,7 @@ function restoreSelf(saved: SurvivalSelf): SurvivalSelf {
   if (typeof saved.age !== 'number') self.age = SHIELD_SECONDS
   // Saves from before needs.ts have none: they start fresh.
   self.needs = { ...freshNeeds(), ...self.needs }
+  self.skills = cleanSkills(saved.skills)
   self.busy = null
   self.box = null
   return self
@@ -363,6 +369,20 @@ export class SurvivalDirector {
       seated: (sv) => this.vehicles.seatOf(sv.player as ServerPlayer) !== null,
       rested: (sv) => this.note(sv as Survivor, 'rest_fire'),
     })
+    this.skills = new SkillsKeeper({
+      notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
+      unawareNear: (sv, r) => this.unawareNear(sv.player.state.pos, r),
+      seated: (sv) => this.vehicles.seatOf(sv.player as ServerPlayer) !== null,
+      retune: (sv) => this.needs.changed(sv as Survivor),
+    })
+    this.vehicles.skills = {
+      fixTime: (p) => this.skills.effects(this.survivors.get(p.id)).fixTime,
+      carDamage: (p) => this.skills.effects(this.survivors.get(p.id)).carDamage,
+      fixed: (p) => {
+        const sv = this.survivors.get(p.id)
+        if (sv) this.skills.gain(sv, 'mechanic', SKILL_GAIN.carFix)
+      },
+    }
     this.fieldNotes = new FieldNotesKeeper({
       saves: () => this.game.saves,
       notice: (sv, kind, text) => this.notice(sv.player as ServerPlayer, kind, text),
@@ -402,6 +422,9 @@ export class SurvivalDirector {
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
+
+  /** Learn-by-doing skills (skills.ts): the character's, lost with them. */
+  readonly skills: SkillsKeeper
 
   /** The story and everybody's quests (see story.ts). */
   readonly story: Story
@@ -850,11 +873,33 @@ export class SurvivalDirector {
     this.pvp.onWave(player, this.game.players.values())
   }
 
+  /** How much harder this survivor's swings land (Melee skill), ×. */
+  meleeDamage(player: ServerPlayer): number {
+    return this.skills.effects(this.survivors.get(player.id)).meleeDamage
+  }
+
+  /** One of the dead within `r` m of a point that hasn't noticed anybody (Stealth). */
+  private unawareNear(at: Point, r: number): boolean {
+    return this.pool.some(
+      (z) => z.state.alive && this.zeds.get(z.id)?.mood !== 'chase' && dist(z.state.pos, at) < r,
+    )
+  }
+
   onDamage(victim: ServerPlayer, attacker: ServerPlayer, amount: number): void {
     this.pvp.onDamage(victim, attacker, amount)
     const zed = this.zeds.get(victim.id)
     // Shot from the dark: it comes for whoever did it.
     if (zed && isPerson(attacker)) zed.alert(attacker.state.pos, this.now)
+    // Learning by doing: a hit on one of the dead (not with a car) teaches Aim or Melee.
+    const hitter = zed && amount > 0 ? this.survivors.get(attacker.id) : undefined
+    if (hitter && !this.vehicles.seatOf(attacker)) {
+      const melee = WEAPONS[attacker.state.weapon.id].slot === 'melee'
+      this.skills.gain(
+        hitter,
+        melee ? 'melee' : 'aim',
+        melee ? SKILL_GAIN.meleeHit : SKILL_GAIN.gunHit,
+      )
+    }
     const sv = this.survivors.get(victim.id)
     if (sv && amount > 0) this.rot.hurt(victim, amount)
     // One bite that draws blood is all it takes (and more bites don't make it faster).
@@ -1133,6 +1178,7 @@ export class SurvivalDirector {
     for (const sv of alive) this.settleAmmo(sv)
     for (const sv of alive) this.shortOfBreath(sv)
     for (const sv of alive) this.needs.watch(sv)
+    for (const sv of alive) this.skills.watch(sv)
 
     if (tick % 20 === 0) {
       // The forest is solid around the living (and where the dead walk near them).
@@ -1251,6 +1297,7 @@ export class SurvivalDirector {
         player.health = Math.min(player.maxHealth, player.health + 1)
     }
     this.needs.second(sv)
+    this.skills.second(sv)
     const warn = (bit: number, low: boolean, text: string) => {
       if (low && !(sv.warned & bit)) this.notice(player, 'warn', text)
       sv.warned = low ? sv.warned | bit : sv.warned & ~bit
@@ -1573,7 +1620,10 @@ export class SurvivalDirector {
   private setBoard(i: number, hp: number): void {
     const before = this.planksAt(i)
     if (hp > 0) this.boards.set(i, hp)
-    else this.boards.delete(i)
+    else {
+      this.boards.delete(i)
+      this.skills.cleared(i)
+    }
     // Every blow is sent (the client hears it land); the colliders change only with the planks.
     this.boardsDirty = true
     if (this.planksAt(i) === before) return
@@ -1588,7 +1638,7 @@ export class SurvivalDirector {
     const { player, self } = sv
     const spot = this.def.spots[i]
     if (!spot || this.now < sv.boardAt) return
-    sv.boardAt = this.now + 0.45
+    sv.boardAt = this.now + 0.45 * this.skills.effects(sv).buildTime
     const planks = this.planksAt(i)
     if (player.state.crouched) {
       if (planks === 0) return void this.notice(player, 'info', 'Nothing nailed up here.')
@@ -1631,6 +1681,8 @@ export class SurvivalDirector {
     sv.noiseUntil = this.now + (kit ? 2.5 : 1.5)
     const added = Math.min(MAX_PLANKS, planks + (kit ? KIT_PLANKS : 1)) - planks
     this.setBoard(i, (planks + added) * PLANK_HP)
+    this.skills.nailed(sv, i)
+    this.skills.gain(sv, 'carpentry', SKILL_GAIN.plank * added)
     this.note(sv, 'board', added)
     if (this.phase === 'day' || this.phase === 'dawn') this.note(sv, 'board_day', added)
   }
@@ -1643,7 +1695,8 @@ export class SurvivalDirector {
       const hp = this.boards.get(zed.bashing) ?? 0
       if (hp <= 0) continue
       zed.nextBash = this.now + 0.9 + this.random() * 0.4
-      this.setBoard(zed.bashing, hp - (KINDS[zed.kind]?.bash ?? 20))
+      const bash = (KINDS[zed.kind]?.bash ?? 20) * this.skills.boardDamage(zed.bashing)
+      this.setBoard(zed.bashing, hp - bash)
     }
   }
 
@@ -1875,7 +1928,13 @@ export class SurvivalDirector {
       this.notice(sv.player, 'info', "You're not infected. Keep it: you will be.")
       return false
     }
-    return !!def.battery || def.kind === 'food' || def.kind === 'drink' || def.kind === 'med'
+    return (
+      !!def.battery ||
+      !!def.manual ||
+      def.kind === 'food' ||
+      def.kind === 'drink' ||
+      def.kind === 'med'
+    )
   }
 
   /** Uses one of something at once (or picks it up, if it's no use). */
@@ -1909,6 +1968,11 @@ export class SurvivalDirector {
       self.battery = Math.min(100, self.battery + def.battery)
       return true
     }
+    const manual = manualSkill(def.id)
+    if (manual) {
+      this.skills.read(sv, manual)
+      return true
+    }
     if (def.kind !== 'food' && def.kind !== 'drink' && def.kind !== 'med') return false
     if (def.infection && self.infected !== null) {
       const cure = def.infection === 'cure'
@@ -1922,8 +1986,13 @@ export class SurvivalDirector {
           : 'The adrenaline burns through you. The fever backs off. For now.',
       )
     }
-    if (def.health)
-      player.health = Math.max(1, Math.min(player.maxHealth, player.health + def.health))
+    if (def.health) {
+      // Medic: a practised hand gets more out of the same bandage.
+      const heal = Math.round(def.health * this.skills.effects(sv).medHeal)
+      player.health = Math.max(1, Math.min(player.maxHealth, player.health + heal))
+    }
+    if (def.kind === 'med')
+      this.skills.gain(sv, 'medic', SKILL_GAIN.medUse + (def.health ?? 0) / SKILL_GAIN.medPerHealth)
     if (def.hunger) self.hunger = Math.max(0, Math.min(100, self.hunger + def.hunger))
     if (def.thirst) self.thirst = Math.max(0, Math.min(100, self.thirst + def.thirst))
     if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
@@ -2189,7 +2258,7 @@ export class SurvivalDirector {
         prone: s.prone,
         noise: this.noiseOf(sv, weather),
         light: sv.self.light,
-        hidden: worn.stealth,
+        hidden: worn.stealth + this.skills.effects(sv).hidden,
       })
     }
     return out
@@ -2207,7 +2276,10 @@ export class SurvivalDirector {
     if (speed > 1 && !s.prone && s.grounded && crunchAt(this.def, s.pos.x, s.pos.z))
       steps = s.crouched ? CRUNCH_NOISE.crouch : speed > 6 ? CRUNCH_NOISE.sprint : CRUNCH_NOISE.walk
     return Math.max(
-      steps * (1 - wornStats(sv.self).quiet) * hearingScale(weather),
+      steps *
+        (1 - wornStats(sv.self).quiet) *
+        this.skills.effects(sv).stepNoise *
+        hearingScale(weather),
       this.now < sv.noiseUntil ? sv.noise * hearingScale(weather, true) : 0,
       // A running engine carries.
       this.vehicles.noiseOf(sv.player) * hearingScale(weather, true),
@@ -2457,6 +2529,15 @@ export class SurvivalDirector {
         if (!sv || !src || !def || src.item !== item) return false
         this.useNow(sv, src, def)
         return true
+      },
+      pace: (w, kind, what) => {
+        const fx = this.skills.effects(this.survivors.get(w.player.id))
+        if (kind === 'use') return ITEMS[what]?.kind === 'med' ? fx.medTime : 1
+        return usesPlanks(what) ? fx.buildTime : 1
+      },
+      made: (w, recipe) => {
+        const sv = this.survivors.get(w.player.id)
+        if (sv && usesPlanks(recipe)) this.skills.gain(sv, 'carpentry', SKILL_GAIN.plankCraft)
       },
       giveOrDrop: (w, item, n) => {
         const sv = this.survivors.get(w.player.id)
@@ -2823,4 +2904,9 @@ function replaceCarried(s: PlayerState, old: WeaponState, w: WeaponState): void 
   if (s.weapon === old) s.weapon = w
   else if (s.holstered === old) s.holstered = w
   else if (s.pocket === old) s.pocket = w
+}
+
+/** A recipe that takes planks (Carpentry learns from it and speeds it up). */
+function usesPlanks(recipe: string): boolean {
+  return !!recipeOf(recipe)?.needs.some((n) => n.any.includes(PLANK_ITEM))
 }

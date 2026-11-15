@@ -9,6 +9,7 @@ import { ITEMS } from './items.ts'
 import type { Legacy, LifeStats, ObitWall, TraitId } from './legacy.ts'
 import type { Needs } from './needs.ts'
 import type { RotMood } from './rot.ts'
+import type { Skills } from './skills.ts'
 import type { OpenBox } from './storage.ts'
 import type { WeatherShared } from './weather.ts'
 
@@ -76,6 +77,8 @@ export interface SurvivalSelf {
   rep?: number
   /** Oathbreaker: seconds of play the mark has left (pvp.ts); absent or 0 = none. */
   oath?: number
+  /** What this character has learned by doing (skills.ts); absent in old saves. */
+  skills?: Skills
 }
 
 export interface QuestState {

@@ -12,6 +12,7 @@ import {
   type QuestDef,
   type QuestState,
   type Reward,
+  type Skills,
   STORY_TITLE,
   type SurvivalDef,
   type SurvivalSelf,
@@ -21,6 +22,7 @@ import {
   UNLOCKS,
 } from '@office-fps/shared'
 import { fieldEntries, recordEntries } from './field-notes-pages.ts'
+import { skillEntries } from './skills-page.ts'
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -35,8 +37,16 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-export type JournalTab = 'quests' | 'notes' | 'people' | 'field' | 'record' | 'lives'
-export const JOURNAL_TABS: JournalTab[] = ['quests', 'notes', 'people', 'field', 'record', 'lives']
+export type JournalTab = 'quests' | 'notes' | 'people' | 'skills' | 'field' | 'record' | 'lives'
+export const JOURNAL_TABS: JournalTab[] = [
+  'quests',
+  'notes',
+  'people',
+  'skills',
+  'field',
+  'record',
+  'lives',
+]
 const TAB_NAMES: Partial<Record<JournalTab, string>> = { field: 'field notes' }
 
 /** One row in a journal list: what it is, and how it's drawn. */
@@ -71,6 +81,8 @@ export class QuestJournal {
   private entries: Entry[] = []
   /** The account's Field Notes and journal (field-notes.ts), when the server has sent them. */
   account: FieldNotes | null = null
+  /** What this character has learned (skills.ts). */
+  skills: Skills | null = null
   /** The player's own name (for the share card). */
   player = ''
   /** Puts on or takes off a cosmetic. */
@@ -137,17 +149,19 @@ export class QuestJournal {
         ? this.questEntries(journal)
         : this.tab === 'notes'
           ? this.noteEntries(journal)
-          : this.tab === 'field'
-            ? this.account
-              ? fieldEntries(this.account, now, this.wear)
-              : []
-            : this.tab === 'record'
+          : this.tab === 'skills'
+            ? skillEntries(this.skills)
+            : this.tab === 'field'
               ? this.account
-                ? recordEntries(this.account, now, who?.split(',')[0] ?? this.player, this.player)
+                ? fieldEntries(this.account, now, this.wear)
                 : []
-              : this.tab === 'people'
-                ? this.peopleEntries(journal, unlocks)
-                : livesEntries(self)
+              : this.tab === 'record'
+                ? this.account
+                  ? recordEntries(this.account, now, who?.split(',')[0] ?? this.player, this.player)
+                  : []
+                : this.tab === 'people'
+                  ? this.peopleEntries(journal, unlocks)
+                  : livesEntries(self)
     this.selected = Math.max(0, Math.min(this.entries.length - 1, this.selected))
     const list = el('div', 'sv-list', left)
     if (this.entries.length === 0)

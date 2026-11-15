@@ -1,4 +1,4 @@
-import { ITEMS, sizeOf, WEAPONS, WeaponId } from '@office-fps/shared'
+import { ITEMS, SKILL_IDS, SKILLS, sizeOf, WEAPONS, WeaponId } from '@office-fps/shared'
 
 /**
  * Little blocky pictures of everything you can carry, for the inventory grid: drawn once per
@@ -616,6 +616,20 @@ const ICONS: Record<string, Paint> = {
   sneakers: boots('#e8e8e8', '#3a3a3a', 0.3),
   boots: boots('#6a4a2a', '#2a1a10', 0.5),
   militaryboots: boots('#2a2a26', '#111', 0.65),
+}
+
+// Field manuals (skills.ts): a paperback in its skill's colour, pages showing at the edge.
+for (const id of SKILL_IDS) ICONS[SKILLS[id].manual] = book(SKILLS[id].cover)
+
+function book(cover: string): Paint {
+  return (p) => {
+    p.rect(5, 3, p.w - 9, p.h - 5, cover)
+      .rect(p.w - 6, 4, 2, p.h - 7, '#e8e0c8')
+      .rect(5, 3, 2, p.h - 5, 'rgba(0,0,0,0.3)')
+      .rect(9, 8, p.w - 16, 3, 'rgba(255,255,255,0.55)')
+      .rect(9, 13, p.w - 19, 2, 'rgba(255,255,255,0.35)')
+      .outline()
+  }
 }
 
 /** What a kind of ammunition looks like: brass and a tip, or a shell. */
