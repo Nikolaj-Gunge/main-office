@@ -45,7 +45,7 @@ export const MIGRATIONS: Record<number, Migration> = {
   1: (kind, d) => (kind === 'character' ? { ...d, locker: d.locker ?? [] } : d),
 }
 
-export type SaveKind = 'character' | 'world'
+export type SaveKind = 'character' | 'world' | 'account'
 
 /** How every save is stored: the schema version, and the data. */
 interface Envelope {
@@ -119,6 +119,15 @@ export const freshWorld = (epoch = 0): WorldSave => ({
 
 const WORLD_KEY = 'world'
 const characterKey = (account: string) => `char:${account}`
+const ACCOUNT_PREFIX = 'account:'
+const accountKey = (account: string) => `${ACCOUNT_PREFIX}${account}`
+
+/**
+ * What belongs to a player for good, whoever their character is and whatever world it is: one
+ * loose object per account where each feature keeps its own sub-key (notes, legacy, cosmetics…).
+ * It outlives deaths and world resets.
+ */
+export type AccountSave = Record<string, unknown>
 
 /**
  * Saves behind a store: keeps the world and the characters it has loaded, and writes what
@@ -129,6 +138,7 @@ export class Saves {
   readonly store: SaveStore
   world: WorldSave = freshWorld()
   private readonly characters = new Map<string, CharacterSave>()
+  private readonly accounts = new Map<string, AccountSave>()
   /** Keys waiting to be written ('world' or char:…). */
   private readonly dirty = new Set<string>()
   private writing: Promise<void> = Promise.resolve()
@@ -168,6 +178,24 @@ export class Saves {
     void this.store.delete(characterKey(account))
   }
 
+  /** Reads an account's record into memory, if it isn't already (before they join). */
+  async loadAccount(account: string): Promise<void> {
+    if (this.accounts.has(account)) return
+    const data = await this.read(accountKey(account), 'account')
+    if (!this.accounts.has(account)) this.accounts.set(account, data ?? {})
+  }
+
+  /** An account's record (empty if it has none or it wasn't loaded). Each feature owns a key. */
+  account(account: string): AccountSave {
+    return this.accounts.get(account) ?? {}
+  }
+
+  /** Sets one feature's part of an account's record (written on the next flush). */
+  putAccount(account: string, key: string, value: unknown): void {
+    this.accounts.set(account, { ...this.account(account), [key]: value })
+    this.dirty.add(accountKey(account))
+  }
+
   putWorld(world: Omit<WorldSave, 'epoch'>): void {
     this.world = { ...world, epoch: this.world.epoch }
     this.dirty.add(WORLD_KEY)
@@ -180,7 +208,8 @@ export class Saves {
   newWorld(): void {
     this.world = freshWorld(this.world.epoch + 1)
     this.characters.clear()
-    this.dirty.clear()
+    // Account records outlive worlds: whatever of theirs was waiting is still written.
+    for (const key of [...this.dirty]) if (!key.startsWith(ACCOUNT_PREFIX)) this.dirty.delete(key)
     this.dirty.add(WORLD_KEY)
   }
 
@@ -203,7 +232,12 @@ export class Saves {
   }
 
   private envelope(key: string): Envelope | null {
-    const data = key === WORLD_KEY ? this.world : this.characters.get(key.slice(5))
+    const data =
+      key === WORLD_KEY
+        ? this.world
+        : key.startsWith(ACCOUNT_PREFIX)
+          ? this.accounts.get(key.slice(ACCOUNT_PREFIX.length))
+          : this.characters.get(key.slice(5))
     return data ? { v: SAVE_VERSION, data: structuredClone(data) as never } : null
   }
 

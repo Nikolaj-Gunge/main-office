@@ -272,6 +272,7 @@ export class SurvivalHud {
     this.siege = el('div', 'sv-siege', this.root)
     this.siege.hidden = true
     this.journal = new QuestJournal(def)
+    this.journal.wear = (kind, id) => this.send({ a: 'cosmetic', kind, id })
 
     this.compass = el('div', 'sv-compass', this.root)
     for (const [i, name] of ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].entries()) {
@@ -853,6 +854,7 @@ export class SurvivalHud {
   private drawJournal(): void {
     const self = this.self
     if (!self) return
+    this.journal.account = self.notes ?? null
     this.journal.draw(
       this.panel,
       self.journal,

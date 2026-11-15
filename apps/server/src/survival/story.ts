@@ -106,6 +106,8 @@ export interface StoryHost {
   zombies(): ServerPlayer[]
   /** What Gus has today besides his usual stock. */
   rare(): Map<string, number>
+  /** Something for Field Notes (field-notes.ts): an item handed over, somebody home, a job done. */
+  noted?(p: Person, event: 'deliver' | 'rescue' | 'quest'): void
 }
 
 interface Walker {
@@ -328,6 +330,7 @@ export class Story {
     j.done.push(def.id)
     if (q.pick !== undefined) j.flags.push(`${def.id}:${q.pick}`)
     if (!this.done.includes(def.id)) this.done.push(def.id)
+    this.host.noted?.(p, 'quest')
     const { done, reward } = endingOf(def, q.pick)
     const got = this.pay(p, reward)
     this.host.notice(p.player, 'story', `${done}${got.length > 0 ? `\n\n+ ${got.join(', ')}` : ''}`)
@@ -437,6 +440,7 @@ export class Story {
           return
         }
         this.host.take(p, step.item, step.n)
+        this.host.noted?.(p, 'deliver')
       }
       if (step.kind === 'talk') for (const [item, n] of step.gives ?? []) this.host.give(p, item, n)
       this.say(p, key, step.say, this.options(p, key))
@@ -905,6 +909,7 @@ export class Story {
         this.walkers.delete(w.key)
         if (UNLOCKS[w.who] && !this.unlocks.includes(w.who)) this.unlocks.push(w.who)
         this.settle(w.who)
+        this.host.noted?.(owner, 'rescue')
         this.advance(owner, q)
       }
     }

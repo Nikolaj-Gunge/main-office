@@ -58,6 +58,7 @@ export function createSession(
     // Already playing in another tab: this one is a guest (one character, one body).
     for (const p of game.players.values()) if (account && p.account === account) account = null
     if (account) await game.saves.loadCharacter(account)
+    if (account) await game.saves.loadAccount(account)
     if (closed) return
     const id = game.join(
       name,

@@ -46,6 +46,8 @@ export interface NeedsHost {
   notice(sv: NeedsSurvivor, kind: Notice['kind'], text: string): void
   /** Sitting in a car (falls don't count). */
   seated(sv: NeedsSurvivor): boolean
+  /** Warmed through by a fire (Field Notes count it). */
+  rested?(sv: NeedsSurvivor): void
 }
 
 /** What we keep on each survivor between ticks. */
@@ -146,6 +148,7 @@ export class NeedsKeeper {
     const at = this.surroundings(sv)
     if (stepNeeds(n, at, wornWarmth(sv.self.wear), 1)) {
       this.host.notice(sv, 'info', 'The fire warms you through. You feel rested.')
+      this.host.rested?.(sv)
     }
     if (n.sick > 0 && this.host.random() < VOMIT_CHANCE) {
       sv.self.hunger = Math.max(0, sv.self.hunger - VOMIT_HUNGER)

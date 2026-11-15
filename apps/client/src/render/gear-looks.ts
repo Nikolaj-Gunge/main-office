@@ -1,6 +1,8 @@
 import {
   BODY_LOOKS,
   bodyLook,
+  COSMETIC_BODY,
+  COSMETIC_HEAD,
   FEET_LOOKS,
   feetLook,
   HEAD_LOOKS,
@@ -159,6 +161,39 @@ const HEAD: Record<number, Build> = {
     k.add(0x4a5236, canister, [0, -0.11, fz - 0.07], [Math.PI / 2 - 0.4, 0, 0])
     k.box(0x2a2e1e, [0.08, 0.02, 0.08], [0, -0.13, fz - 0.115], [-0.4, 0, 0])
   },
+  // --- Field Notes cosmetics (field-notes.ts): looks no item gives -----------------------
+  [COSMETIC_HEAD.trapper]: (k) => {
+    const fur = 0x6a5038
+    const hide = 0x3e2c1e
+    k.on('head').box(hide, [0.34, 0.12, 0.34], [0, H.y + 0.04, 0])
+    k.box(fur, [0.36, 0.05, 0.36], [0, H.y - 0.01, 0]) // fur band
+    for (const s of SIDES) k.box(fur, [0.04, 0.17, 0.2], [s * 0.18, -0.03, 0.02]) // ear flaps
+    k.box(fur, [0.24, 0.07, 0.04], [0, H.y + 0.02, -H.z - 0.03], [-0.5, 0, 0]) // turned-up front
+  },
+  [COSMETIC_HEAD.flatcap]: (k) => {
+    const tweed = 0x5a5448
+    k.on('head').box(tweed, [0.34, 0.07, 0.34], [0, H.y + 0.02, 0.01])
+    k.box(tweed, [0.32, 0.03, 0.14], [0, H.y + 0.0, -H.z - 0.04], [-0.15, 0, 0]) // peak
+    k.box(0x48443a, [0.3, 0.012, 0.3], [0, H.y + 0.06, 0.015])
+  },
+  [COSMETIC_HEAD.ranger]: (k) => {
+    const felt = 0x5a4a2c
+    k.on('head').box(felt, [0.56, 0.02, 0.56], [0, H.y + 0.02, 0]) // flat wide brim
+    k.box(felt, [0.27, 0.14, 0.27], [0, H.y + 0.1, 0])
+    k.box(0x3a2e1a, [0.28, 0.03, 0.28], [0, H.y + 0.04, 0]) // band
+    for (const s of SIDES) k.box(0x4a3c24, [0.05, 0.05, 0.27], [s * 0.07, H.y + 0.17, 0]) // pinch
+  },
+  [COSMETIC_HEAD.bucket]: (k) => {
+    const cloth = 0x6e7258
+    k.on('head').box(cloth, [0.32, 0.12, 0.32], [0, H.y + 0.04, 0])
+    k.box(cloth, [0.44, 0.02, 0.44], [0, H.y - 0.02, 0], [0.08, 0, 0]) // floppy brim, tipped
+    k.box(0x2a2a20, [0.04, 0.03, 0.03], [0.1, H.y + 0.06, -0.17]) // fly hook
+  },
+  [COSMETIC_HEAD.stripe]: (k) => {
+    k.on('head').box(0xd8d0c0, [0.33, 0.16, 0.33], [0, H.y + 0.04, 0])
+    for (const y of [-0.01, 0.05, 0.11]) k.box(0x8a2a24, [0.335, 0.025, 0.335], [0, H.y + y, 0])
+    k.box(0x8a2a24, [0.09, 0.07, 0.09], [0, H.y + 0.15, 0]) // bobble
+  },
 }
 
 /** A shell over chest, stomach and both sleeves in one colour. */
@@ -314,6 +349,54 @@ const BODY: Record<number, Build> = {
       for (const y of [-0.18, -0.04, 0.1]) k.box(dark, [0.146, 0.03, 0.166], [0, y, 0])
       k.box(dark, [0.026, L - 0.08, 0.166], [0, SLEEVE_Y, 0])
     }
+  },
+  // --- Field Notes cosmetics (field-notes.ts) -------------------------------------------
+  [COSMETIC_BODY.hunter]: (k) => {
+    // A blaze-orange vest over a brown shirt.
+    shells(k, 0x5a4434)
+    const blaze = 0xd8641c
+    k.on('chest').box(blaze, [SHELL_CHEST[0] + 0.01, SHELL_CHEST[1], SHELL_CHEST[2] + 0.01])
+    k.on('stomach').box(blaze, [SHELL_STOMACH[0] + 0.01, SHELL_STOMACH[1], SHELL_STOMACH[2] + 0.01])
+    for (const s of SIDES) k.box(0xa84c14, [0.1, 0.06, 0.012], [s * 0.12, 0.02, SZ - 0.01]) // pockets
+  },
+  [COSMETIC_BODY.parka]: (k) => {
+    const olive = 0x4e5238
+    shells(k, olive)
+    k.on('chest').box(0x8a7a5a, [0.4, 0.1, 0.18], [0, C.y + 0.03, C.z + 0.04]) // fur-lined hood
+    k.box(0x2e2e26, [0.012, SHELL_CHEST[1], 0.012], [0, 0, CZ - 0.004]) // zip
+    k.on('stomach').box(olive, [0.48, 0.2, 0.3], [0, -S.y - 0.07, 0]) // long hem
+    for (const s of SIDES) k.box(0x3e4230, [0.12, 0.08, 0.014], [s * 0.12, -0.02, SZ - 0.006])
+  },
+  [COSMETIC_BODY.denim]: (k) => {
+    const denim = 0x3a5478
+    const seam = 0x2a3e5a
+    shells(k, denim)
+    k.on('chest').box(seam, [SHELL_CHEST[0] + 0.004, 0.02, SHELL_CHEST[2] + 0.004], [0, 0.05, 0]) // yoke
+    for (const s of SIDES) k.box(seam, [0.09, 0.07, 0.012], [s * 0.1, 0.0, CZ - 0.006]) // pockets
+    k.box(0xd8d0c0, [0.3, 0.05, 0.06], [0, C.y - 0.0, C.z + 0.02]) // sherpa collar
+    k.on('stomach').box(seam, [S.x * 2 + 0.035, 0.05, S.z * 2 + 0.035], [0, -S.y + 0.025, 0])
+  },
+  [COSMETIC_BODY.poncho]: (k) => {
+    const wool = 0x7a4a2e
+    k.on('chest').box(wool, [0.62, 0.05, 0.36], [0, C.y - 0.01, 0]) // over the shoulders
+    k.box(wool, [0.6, SHELL_CHEST[1], 0.34], [0, -0.02, 0])
+    for (const y of [-0.06, 0.06]) k.box(0xd8b878, [0.605, 0.02, 0.345], [0, y, 0]) // stripes
+    k.on('stomach').box(wool, [0.58, 0.24, 0.32], [0, -S.y - 0.04, 0])
+    k.box(0x2a1a10, [0.6, 0.02, 0.325], [0, -S.y - 0.15, 0]) // fringe edge
+  },
+  [COSMETIC_BODY.quilted]: (k) => {
+    const navy = 0x262e40
+    shells(k, navy)
+    for (const [part, [w, h, d]] of [
+      ['chest', SHELL_CHEST],
+      ['stomach', SHELL_STOMACH],
+    ] as const) {
+      k.on(part)
+      for (let y = -h / 2 + 0.05; y < h / 2; y += 0.07)
+        k.box(0x1c2230, [w + 0.006, 0.012, d + 0.006], [0, y, 0]) // stitched bands
+    }
+    k.on('chest').box(0x6a4a2a, [0.34, 0.05, 0.06], [0, C.y - 0.0, CZ + 0.02]) // cord collar
+    for (const arm of ARMS) k.on(arm).box(0x1c2230, [0.146, 0.012, 0.166], [0, 0, 0])
   },
 }
 
