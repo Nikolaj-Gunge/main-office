@@ -6,6 +6,7 @@ import {
   type SurvivalSelf,
   type WeaponId,
 } from '@office-fps/shared'
+import type { SavedPiece } from './survival/building.ts'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -127,6 +128,8 @@ export interface WorldSave {
   alphas?: Record<string, number>
   /** Survivors who turned and still walk, with everything they carried (director.ts). */
   turned?: TurnedSave[]
+  /** Walls, doors, traps and stash crates people built (survival/building.ts). */
+  builds?: SavedPiece[]
 }
 
 /** One of the dead that was one of you, as the world remembers them. */

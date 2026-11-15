@@ -176,6 +176,25 @@ describe('crafting', () => {
       ['planks', 3],
       ['scrap', 1],
     ],
+    wallkit: [
+      ['planks', 3],
+      ['scrap', 1],
+    ],
+    doorkit: [
+      ['planks', 4],
+      ['scrap', 1],
+      ['ducttape', 1],
+    ],
+    spikekit: [
+      ['planks', 2],
+      ['scrap', 2],
+      ['knife', 1],
+    ],
+    stashkit: [
+      ['planks', 3],
+      ['scrap', 1],
+      ['ducttape', 1],
+    ],
     batteries: [
       ['electronics', 2],
       ['ducttape', 1],

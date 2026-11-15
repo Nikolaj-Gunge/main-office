@@ -163,6 +163,8 @@ export interface SurvivalShared {
    * rumour, not a fix) and the place it is heading for.
    */
   horde?: { x: number; z: number; to: string }
+  /** Built pieces (building.ts): id, kind, x×10, z×10, turns, battering left, flags, … */
+  builds?: number[]
 }
 
 export type SurvivalAction =
@@ -191,6 +193,8 @@ export type SurvivalAction =
   | { a: 'cosmetic'; kind: CosmeticKind; id: string | null }
   /** A new character picks which earned trait to carry (legacy.ts; null: none). */
   | { a: 'trait'; id: TraitId | null }
+  /** Put up a piece from a kit you carry (building.ts) where you point, turned `rot` eighths. */
+  | { a: 'build'; kit: string; x: number; z: number; rot: number }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

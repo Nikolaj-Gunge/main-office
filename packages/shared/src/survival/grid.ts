@@ -153,6 +153,10 @@ const SIZES: Record<string, Size> = {
   toolbox: [3, 2],
   // Made things
   barricadekit: [2, 3],
+  wallkit: [2, 4],
+  doorkit: [2, 4],
+  spikekit: [2, 3],
+  stashkit: [3, 2],
   // The way out (evac.ts)
   evacbattery: [2, 2],
   flaregun: [2, 1],

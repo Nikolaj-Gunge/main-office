@@ -120,6 +120,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave, TurnedSave } from '../saves.ts'
 import { type AlphaHost, Alphas } from './alphas.ts'
 import { type BanditHost, Bandits } from './bandits.ts'
+import { BASH_BASE, type BuildHost, Building } from './building.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
@@ -372,6 +373,8 @@ export class SurvivalDirector {
   readonly legacy: LegacyKeeper
   /** Bandit camps and raiders (bandits.ts). */
   readonly bandits: Bandits
+  /** Walls, doors, spike traps and stash crates people put up (building.ts). */
+  private readonly building: Building
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
@@ -415,6 +418,7 @@ export class SurvivalDirector {
     })
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
+    this.building = new Building(this.buildHost())
     this.evac = new Evac({ ...this.storyHost(), retire: (p) => this.retire(p.player) })
     this.legacy = new LegacyKeeper({
       saves: () => game.saves,
@@ -633,6 +637,7 @@ export class SurvivalDirector {
   }
 
   private clearBoards(): void {
+    this.building.reset()
     this.boards.clear()
     if (this.def) setBarricades(this.game.world.physics, this.def.spots, () => 0)
   }
@@ -778,6 +783,7 @@ export class SurvivalDirector {
       wall: this.legacy.wall,
       alphas: this.alphas.saved(),
       turned: [...this.turnedSaves(), ...this.risen],
+      builds: this.building.save(),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -806,6 +812,7 @@ export class SurvivalDirector {
       if (this.def.spots[i] && planks > 0)
         this.boards.set(i, Math.min(planks, MAX_PLANKS) * PLANK_HP)
     setBarricades(this.game.world.physics, this.def.spots, (j) => this.planksAt(j))
+    this.building.restore(w.builds)
     this.boardsDirty = true
     this.savedWorld = ''
     this.saveWorld()
@@ -1377,6 +1384,7 @@ export class SurvivalDirector {
     if (this.story.moving && tick % 12 === 3) this.game.match.broadcast()
     this.senses(alive)
     this.batter()
+    this.building.step(this.pool)
     if (this.boardsDirty && this.now - this.boardsSentAt > 0.2) {
       this.boardsDirty = false
       this.boardsSentAt = this.now
@@ -1749,6 +1757,10 @@ export class SurvivalDirector {
         spot = i
       }
     })
+    // Something somebody built: a door, a stash, a wall to mend (building.ts).
+    const built = this.building.aimed(eye, { x: fx, y: fy, z: fz })
+    if (built && built.score >= Math.max(thing ? best : 0, loot ? lootScore : 0, spotScore))
+      return void this.building.use(sv, built.piece.id)
     if (loot && (!thing || lootScore >= best) && (spot < 0 || lootScore >= spotScore)) {
       return void this.take(sv, loot)
     }
@@ -1858,6 +1870,11 @@ export class SurvivalDirector {
     for (const zombie of this.pool) {
       const zed = this.zeds.get(zombie.id)
       if (!zed || !zombie.state.alive || zed.bashing < 0 || this.now < zed.nextBash) continue
+      if (zed.bashing >= BASH_BASE) {
+        zed.nextBash = this.now + 0.9 + this.random() * 0.4
+        this.building.bash(zed.bashing, KINDS[zed.kind]?.bash ?? 20)
+        continue
+      }
       const hp = this.boards.get(zed.bashing) ?? 0
       if (hp <= 0) continue
       zed.nextBash = this.now + 0.9 + this.random() * 0.4
@@ -1880,7 +1897,7 @@ export class SurvivalDirector {
       if (Math.sign(goalAcross) === Math.sign(across)) continue
       return { index: i, x: spot.x, z: spot.z }
     }
-    return null
+    return this.building.blocking(me, goal)
   }
 
   /** E on something lying about: into your hands, on you, or into your pockets. */
@@ -2013,6 +2030,16 @@ export class SurvivalDirector {
         return
       case 'trait':
         return void this.legacy.pick(sv, action.id)
+      case 'build':
+        if (this.vehicles.seatOf(player)) return
+        this.building.place(
+          sv,
+          String(action.kit),
+          Number(action.x),
+          Number(action.z),
+          Number(action.rot),
+        )
+        return
     }
   }
 
@@ -2790,8 +2817,39 @@ export class SurvivalDirector {
     }
   }
 
+  private buildHost(): BuildHost {
+    const sv = (w: { player: ServerPlayer }) => this.survivors.get(w.player.id)
+    return {
+      def: () => this.def,
+      physics: () => this.game.world.physics,
+      now: () => this.now,
+      players: () => this.game.players.values(),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      touch: (w) => {
+        const s = sv(w)
+        if (s) this.touch(s)
+      },
+      hurt: (victim, by, amount) => this.game.hurt(victim, by, amount),
+      drop: (item, n, at, ammo) => this.dropAt(item, n, at, ammo, true),
+      openStash: (w, id) => {
+        const s = sv(w)
+        if (s) this.storage.openStash(s, id)
+      },
+      noise: (w, loud, seconds) => {
+        const s = sv(w)
+        if (!s) return
+        s.noise = Math.max(s.noise, loud)
+        s.noiseUntil = this.now + seconds
+      },
+      changed: () => {
+        this.boardsDirty = true
+      },
+    }
+  }
+
   private storageHost(): StorageHost {
     return {
+      stash: (id) => this.building.stash(id),
       locker: () => {
         const t = this.def?.interactables.find((i) => i.kind === 'locker')
         return t ? { x: t.pos[0], y: t.pos[1] - 1, z: t.pos[2] } : null
@@ -3164,6 +3222,7 @@ export class SurvivalDirector {
       ...this.hordeShared(),
       rot: this.rot.shared(),
       ...this.standing(),
+      builds: this.building.shared(),
     }
   }
 

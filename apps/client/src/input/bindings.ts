@@ -45,6 +45,7 @@ export const ACTIONS = [
   { id: 'journal', label: 'Journal (survival)', button: 0, defaults: ['KeyJ'] },
   { id: 'light', label: 'Torch (survival)', button: 0, defaults: ['KeyF'] },
   { id: 'trade', label: 'Trade with who you face (survival)', button: 0, defaults: ['KeyG'] },
+  { id: 'build', label: 'Build mode (survival, with a kit)', button: 0, defaults: ['KeyH'] },
   { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyN'] },
   // Talking without a microphone (social/).
   { id: 'chat', label: 'Chat (Tab switches channel)', button: 0, defaults: ['Enter', 'KeyT'] },
