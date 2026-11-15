@@ -96,7 +96,7 @@ import { buildMapObject, swingLamps } from './render/map-mesh.ts'
 import { setMapOutfit } from './render/person.ts'
 import { Ragdolls } from './render/ragdoll.ts'
 import { createSky, createSkyline } from './render/sky.ts'
-import { setSmoothTextures } from './render/textures.ts'
+import { setSmoothTextures, setTexelDensity } from './render/textures.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
 import { WorldItemsView } from './render/world-items.ts'
@@ -806,6 +806,7 @@ function applyTier() {
   effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
   pixels.maxDpr = t.maxDpr
   pixels.resize()
+  setTexelDensity(t.texelsPerMeter)
 }
 
 function applySettings() {

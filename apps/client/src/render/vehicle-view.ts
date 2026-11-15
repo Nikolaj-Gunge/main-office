@@ -1,5 +1,7 @@
 import { seeded } from '@office-fps/shared'
 import * as THREE from 'three'
+import { dataTexture, paintSheetMetal, planarUVs } from './pixel-textures.ts'
+import { filterTexture } from './textures.ts'
 
 /** Paint, by a car's look: tired, muted colours (the cars of a county that ended a while ago). */
 const PAINTS = [0x5a3832, 0x3a4854, 0x5b5a4e, 0x9c998e, 0x3b4134, 0x6e5d3a, 0x47474b]
@@ -24,6 +26,25 @@ export interface CarPose {
   steer: number
 }
 
+/** Texels a metre of the cars' worn sheet metal, and the texture's size (m). */
+const WEAR_PX = 32
+const WEAR_METERS = 1
+let wearTexture: THREE.Texture | null = null
+/**
+ * Chips, scratches and grime over every car's paint and metal: one small texture shared by all
+ * of them (a multiplier, so each part keeps its colour). Same seed, same wear on every client.
+ */
+function wear(): THREE.Texture {
+  if (wearTexture) return wearTexture
+  const size = WEAR_PX * WEAR_METERS
+  wearTexture = dataTexture(paintSheetMetal(size, 0x5ca2), size, WEAR_METERS)
+  filterTexture(wearTexture)
+  return wearTexture
+}
+/** A car part's material: its colour over the worn metal. */
+const worn = (color: THREE.ColorRepresentation) =>
+  new THREE.MeshLambertMaterial({ color, map: wear() })
+
 const box = (
   w: number,
   h: number,
@@ -33,7 +54,10 @@ const box = (
   y: number,
   z: number,
 ): THREE.Mesh => {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material)
+  const geometry = new THREE.BoxGeometry(w, h, d)
+  // Metric UVs: the wear has the same texel size on a bonnet as on a bumper.
+  planarUVs(geometry)
+  const mesh = new THREE.Mesh(geometry, material)
   mesh.position.set(x, y, z)
   mesh.castShadow = true
   return mesh
@@ -101,9 +125,9 @@ export class CarView {
 
   constructor(look: number) {
     this.paintColor = new THREE.Color(PAINTS[look % PAINTS.length] ?? PAINTS[0])
-    this.paint = new THREE.MeshLambertMaterial({ color: this.paintColor })
+    this.paint = worn(this.paintColor)
     this.glass = new THREE.MeshLambertMaterial({ color: 0x1a232b, emissive: 0x05080a })
-    const dark = new THREE.MeshLambertMaterial({ color: 0x1e1e1e })
+    const dark = worn(0x1e1e1e)
     this.lamps = new THREE.MeshLambertMaterial({ color: 0xd8d2c4, emissive: 0x000000 })
     this.tails = new THREE.MeshLambertMaterial({ color: 0x5a1712, emissive: 0x000000 })
     const t = this.tilt
@@ -135,9 +159,11 @@ export class CarView {
     const tyre = new THREE.CylinderGeometry(0.34, 0.34, 0.26, 8)
     tyre.rotateZ(Math.PI / 2)
     const hub = new THREE.BoxGeometry(0.27, 0.16, 0.16)
-    const rubber = new THREE.MeshLambertMaterial({ color: 0x161616 })
-    const steel = new THREE.MeshLambertMaterial({ color: 0x6d6d6a })
-    const bare = new THREE.MeshLambertMaterial({ color: 0x3a2e26 })
+    planarUVs(tyre)
+    planarUVs(hub)
+    const rubber = worn(0x161616)
+    const steel = worn(0x6d6d6a)
+    const bare = worn(0x3a2e26)
     for (const [x, z] of [
       [-0.86, -1.4],
       [0.86, -1.4],
@@ -181,7 +207,7 @@ export class CarView {
    */
   private runDown(random: () => number, pickup: boolean): void {
     const t = this.tilt
-    const lambert = (color: number) => new THREE.MeshLambertMaterial({ color })
+    const lambert = (color: number) => worn(color)
     const side = () => (random() < 0.5 ? -1 : 1)
     const rust = lambert(RUST[Math.floor(random() * RUST.length)] ?? 0x6b3a1e)
     const dent = lambert(this.paintColor.clone().multiplyScalar(0.62).getHex())

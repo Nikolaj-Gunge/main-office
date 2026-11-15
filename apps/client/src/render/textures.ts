@@ -1,19 +1,15 @@
 import type { MaterialId } from '@office-fps/shared'
 import * as THREE from 'three'
+import { decimate, mulberry32, quantizePalette } from './pixel-textures.ts'
 
-/** Texel density for world surfaces: 32 texels per metre. A texture covers `meters` × `meters`. */
+/**
+ * Texel density world surfaces are painted at: 32 texels per metre. A texture covers `meters` ×
+ * `meters`. The Low device tier shows them at half that (see setTexelDensity).
+ */
 export const TEXELS_PER_METER = 32
-
-/** Deterministic PRNG so textures look identical on every client. */
-function mulberry32(seed: number) {
-  let a = seed
-  return () => {
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+/** Shades a lit surface is snapped to, at full density and at half (see quantizePalette). */
+const PALETTE_FULL = 8
+const PALETTE_HALF = 6
 
 type Painter = (ctx: CanvasRenderingContext2D, size: number, rand: () => number) => void
 
@@ -870,7 +866,15 @@ const STYLES: Record<MaterialId, SurfaceStyle> = {
   },
 }
 
-function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
+/** Texels a metre shown now: TEXELS_PER_METER, or half of it on the Low tier. */
+let texelDensity = TEXELS_PER_METER
+
+/**
+ * Paints a surface: always at TEXELS_PER_METER (painters measure in texels), jittered, snapped
+ * to a few shades (lit surfaces: crisp flat colours, not noise), then thinned to the density
+ * shown. Same seed, same canvas.
+ */
+function paintSurface(style: SurfaceStyle, seed: number): HTMLCanvasElement {
   const size = Math.max(8, Math.round(style.meters * TEXELS_PER_METER))
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
@@ -880,18 +884,31 @@ function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
   const rand = mulberry32(seed)
   style.paint(ctx, size, rand)
 
+  const img = ctx.getImageData(0, 0, size, size)
   if (style.noise > 0) {
-    const img = ctx.getImageData(0, 0, size, size)
     for (let i = 0; i < img.data.length; i += 4) {
       const k = 1 + (rand() * 2 - 1) * style.noise
       img.data[i] = Math.min(255, (img.data[i] ?? 0) * k)
       img.data[i + 1] = Math.min(255, (img.data[i + 1] ?? 0) * k)
       img.data[i + 2] = Math.min(255, (img.data[i + 2] ?? 0) * k)
     }
+  }
+  const factor = Math.max(1, Math.round(TEXELS_PER_METER / texelDensity))
+  if (!style.kind || style.kind === 'lit') {
+    quantizePalette(img.data, factor > 1 ? PALETTE_HALF : PALETTE_FULL)
+  }
+  if (factor > 1 && size / factor >= 4) {
+    const small = Math.floor(size / factor)
+    canvas.width = canvas.height = small
+    ctx.putImageData(new ImageData(decimate(img.data, size, factor), small, small), 0, 0)
+  } else {
     ctx.putImageData(img, 0, 0)
   }
+  return canvas
+}
 
-  const texture = new THREE.CanvasTexture(canvas)
+function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(paintSurface(style, seed))
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping
   // Crisp or smooth, as the look asks (see setSmoothTextures).
@@ -901,6 +918,40 @@ function makeTexture(style: SurfaceStyle, seed: number): THREE.CanvasTexture {
   texture.repeat.set(1 / style.meters, 1 / style.meters)
   return texture
 }
+
+/**
+ * Texels a metre for world surfaces: TEXELS_PER_METER, or half that (Low tier: a quarter of
+ * the texture memory, fewer shades). Repaints the surfaces made so far in place: the materials
+ * (and their draw calls) stay the same.
+ */
+export function setTexelDensity(texelsPerMeter: number): void {
+  const next = Math.min(TEXELS_PER_METER, Math.max(8, texelsPerMeter))
+  if (next === texelDensity) return
+  texelDensity = next
+  for (const [id, material] of cache) {
+    const map = (material as THREE.MeshLambertMaterial).map
+    if (!map) continue
+    map.image = paintSurface(STYLES[id], surfaceSeed(id))
+    // A new size: let the renderer allocate the texture afresh.
+    map.dispose()
+    map.needsUpdate = true
+  }
+  for (const listener of densityListeners) listener(next)
+}
+
+/** Texels a metre world surfaces are shown at now. */
+export function texelsPerMeter(): number {
+  return texelDensity
+}
+
+const densityListeners: ((texelsPerMeter: number) => void)[] = []
+/** Called whenever setTexelDensity changes the density (for textures painted elsewhere). */
+export function onTexelDensity(listener: (texelsPerMeter: number) => void): void {
+  densityListeners.push(listener)
+}
+
+const surfaceSeed = (id: MaterialId) =>
+  [...id].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261)
 
 const cache = new Map<MaterialId, THREE.Material>()
 
@@ -944,8 +995,7 @@ export function getSurfaceMaterial(id: MaterialId): THREE.Material {
   let material = cache.get(id)
   if (material) return material
   const style = STYLES[id]
-  const seed = [...id].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261)
-  const map = makeTexture(style, seed)
+  const map = makeTexture(style, surfaceSeed(id))
   if (style.kind === 'glass') {
     material = new THREE.MeshPhongMaterial({
       map,

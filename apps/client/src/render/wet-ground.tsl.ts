@@ -27,7 +27,7 @@ import {
   type NodeBuilder,
   PhongLightingModel,
 } from 'three/webgpu'
-import { DARKEN, wetUniforms } from './wet-ground.ts'
+import { DARKEN, groundPatches, wetUniforms } from './wet-ground.ts'
 
 /*
  * TSL twin of wetGroundMaterial's patch (wet-ground.ts) for the WebGPU renderer: the big soft
@@ -78,13 +78,14 @@ class WetPhong extends PhongLightingModel {
 
 export function wetGround(m: MeshPhongNodeMaterial): void {
   const map = (m as MeshPhongNodeMaterial & { map: THREE.Texture | null }).map
-  if (!map) return
+  const patchMap = groundPatches.texture ?? map
+  if (!map || !patchMap) return
   // Vertex colours are folded in below, before the mud and the soak (as color_fragment is).
   m.vertexColors = false
   m.colorNode = Fn(() => {
     const vMud = mud()
-    // Big soft patches from the same texture, so the small repeat never lines up.
-    const patches = mix(0.8, 1.22, texture(map, uv().mul(0.09).add(vec2(0.37, 0.61))).g)
+    // Big soft patches from the coarse speckle, so the small repeat never lines up.
+    const patches = mix(0.8, 1.22, texture(patchMap, uv().mul(0.09).add(vec2(0.37, 0.61))).g)
     const base = materialColor.rgb.mul(patches).mul(vertexColor().rgb)
     const soak = wet.mul(vMud.mul(0.45).add(0.55))
     const rgb = mix(base, mudColor, wet.mul(vMud).mul(0.45)).mul(soak.mul(-DARKEN).add(1))
