@@ -523,6 +523,8 @@ export class Viewmodel {
   private readonly kickSide = new Spring(16)
   /** Seconds since the last shot (drives the slide / charging handle). */
   private sinceShot = Number.POSITIVE_INFINITY
+  /** × how far the gun lags behind the view (Steady Hands, legacy.ts: a little less). */
+  steady = 1
   private readonly swayX = new Spring(10)
   private readonly swayY = new Spring(10)
 
@@ -667,8 +669,8 @@ export class Viewmodel {
     this.root.visible = alive && !this.scoped
     const hipWeight = 1 - this.aim * 0.85
 
-    this.swayX.impulse(-look.yaw * 1.5 * hipWeight)
-    this.swayY.impulse(look.pitch * 1.5 * hipWeight)
+    this.swayX.impulse(-look.yaw * 1.5 * hipWeight * this.steady)
+    this.swayY.impulse(look.pitch * 1.5 * hipWeight * this.steady)
     this.kickBack.update(dt)
     this.kickUp.update(dt)
     this.kickRoll.update(dt)

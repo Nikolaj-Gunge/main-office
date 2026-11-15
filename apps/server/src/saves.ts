@@ -1,4 +1,4 @@
-import type { Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
+import type { ObitWall, Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -45,7 +45,7 @@ export const MIGRATIONS: Record<number, Migration> = {
   1: (kind, d) => (kind === 'character' ? { ...d, locker: d.locker ?? [] } : d),
 }
 
-export type SaveKind = 'character' | 'world'
+export type SaveKind = 'character' | 'world' | 'account'
 
 /** How every save is stored: the schema version, and the data. */
 interface Envelope {
@@ -106,7 +106,16 @@ export interface WorldSave {
   gates: number
   /** Boarded-up gaps: [spot index, planks]. */
   boards: [number, number][]
+  /** Haven's obituary wall (legacy.ts); absent in older saves. */
+  wall?: ObitWall
 }
+
+/**
+ * What an account keeps whatever happens to its characters, and through world resets: a loose
+ * record where each feature owns its own sub-key (legacy, notes, cosmetics…) and reads it
+ * defensively, so features can be added without a new SAVE_VERSION.
+ */
+export type AccountSave = Record<string, unknown>
 
 export const freshWorld = (epoch = 0): WorldSave => ({
   epoch,
@@ -119,6 +128,7 @@ export const freshWorld = (epoch = 0): WorldSave => ({
 
 const WORLD_KEY = 'world'
 const characterKey = (account: string) => `char:${account}`
+const accountKey = (account: string) => `account:${account}`
 
 /**
  * Saves behind a store: keeps the world and the characters it has loaded, and writes what
@@ -129,7 +139,8 @@ export class Saves {
   readonly store: SaveStore
   world: WorldSave = freshWorld()
   private readonly characters = new Map<string, CharacterSave>()
-  /** Keys waiting to be written ('world' or char:…). */
+  private readonly accounts = new Map<string, AccountSave>()
+  /** Keys waiting to be written ('world', char:… or account:…). */
   private readonly dirty = new Set<string>()
   private writing: Promise<void> = Promise.resolve()
 
@@ -143,11 +154,35 @@ export class Saves {
     this.world = data ? { ...freshWorld(), ...(data as Partial<WorldSave>) } : freshWorld()
   }
 
-  /** Reads an account's character into memory, if it isn't already (before they join). */
+  /**
+   * Reads an account's character into memory, if it isn't already (before they join), and the
+   * account's own record with it.
+   */
   async loadCharacter(account: string): Promise<void> {
-    if (this.characters.has(account)) return
-    const data = await this.read(characterKey(account), 'character')
-    if (data && !this.characters.has(account)) this.characters.set(account, data as never)
+    const loading = this.loadAccount(account)
+    if (!this.characters.has(account)) {
+      const data = await this.read(characterKey(account), 'character')
+      if (data && !this.characters.has(account)) this.characters.set(account, data as never)
+    }
+    await loading
+  }
+
+  /** Reads an account's record into memory, if it isn't already. */
+  async loadAccount(account: string): Promise<void> {
+    if (this.accounts.has(account)) return
+    const data = await this.read(accountKey(account), 'account')
+    if (!this.accounts.has(account)) this.accounts.set(account, data ?? {})
+  }
+
+  /** An account's record (empty if it has none, or wasn't loaded). Don't change it in place. */
+  account(account: string): AccountSave {
+    return this.accounts.get(account) ?? {}
+  }
+
+  /** Replaces one feature's part of an account's record (written on the next flush). */
+  putAccount(account: string, key: string, value: unknown): void {
+    this.accounts.set(account, { ...this.account(account), [key]: value })
+    this.dirty.add(accountKey(account))
   }
 
   /** An account's character in this world, if it has one (loaded with loadCharacter). */
@@ -180,7 +215,8 @@ export class Saves {
   newWorld(): void {
     this.world = freshWorld(this.world.epoch + 1)
     this.characters.clear()
-    this.dirty.clear()
+    // Accounts outlive worlds: what's waiting to be written of them still is.
+    for (const key of this.dirty) if (!key.startsWith('account:')) this.dirty.delete(key)
     this.dirty.add(WORLD_KEY)
   }
 
@@ -203,7 +239,12 @@ export class Saves {
   }
 
   private envelope(key: string): Envelope | null {
-    const data = key === WORLD_KEY ? this.world : this.characters.get(key.slice(5))
+    const data =
+      key === WORLD_KEY
+        ? this.world
+        : key.startsWith('account:')
+          ? this.accounts.get(key.slice(8))
+          : this.characters.get(key.slice(5))
     return data ? { v: SAVE_VERSION, data: structuredClone(data) as never } : null
   }
 

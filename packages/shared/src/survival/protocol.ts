@@ -4,6 +4,7 @@ import type { SupplyDrop } from './drops.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
+import type { Legacy, LifeStats, ObitWall, TraitId } from './legacy.ts'
 import type { Needs } from './needs.ts'
 import type { OpenBox } from './storage.ts'
 import type { WeatherShared } from './weather.ts'
@@ -56,6 +57,16 @@ export interface SurvivalSelf {
   busy?: Busy | null
   /** The container you have open (a car's trunk, your locker), see storage.ts. */
   box?: OpenBox | null
+  /** What this character has done with their life so far (legacy.ts); absent in old saves. */
+  life?: LifeStats
+  /** The trait a past life left them (legacy.ts), if they carry one. */
+  trait?: TraitId | null
+  /**
+   * Sent, never saved: the account's past lives and earned traits (only when they change),
+   * and Haven's obituary wall (only when it changes). Absent: as last sent.
+   */
+  legacy?: Legacy
+  wall?: ObitWall
 }
 
 export interface QuestState {
@@ -153,6 +164,8 @@ export type SurvivalAction =
   /** The inventory opened: open the container in reach, if any. `close`: it closed. */
   | { a: 'open' }
   | { a: 'close' }
+  /** A new character picks which earned trait to carry (legacy.ts; null: none). */
+  | { a: 'trait'; id: TraitId | null }
 
 /** What somebody says to you, and what you can say back. */
 export interface Dialog {

@@ -6,6 +6,7 @@ import {
   type Bio,
   BOARD_REACH,
   type Box,
+  bumpLife,
   carried,
   cleanBox,
   cloneBag,
@@ -76,7 +77,9 @@ import {
   syncForest,
   TICK_DT,
   TICK_RATE,
+  TRAITS,
   takeStack,
+  traitFactor,
   unpackAppearance,
   type VehicleNet,
   VICINITY,
@@ -100,6 +103,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { LegacyKeeper } from './legacy.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
@@ -318,6 +322,8 @@ export class SurvivalDirector {
   private readonly workbench: Workbench
   /** Trunks and lockers (storage.ts). */
   private readonly storage: Storage
+  /** Past lives, legacy traits and the obituary wall (legacy.ts). */
+  readonly legacy: LegacyKeeper
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
@@ -335,6 +341,12 @@ export class SurvivalDirector {
     })
     this.workbench = new Workbench(this.workbenchHost())
     this.storage = new Storage(this.storageHost())
+    this.legacy = new LegacyKeeper({
+      saves: () => game.saves,
+      now: () => this.now,
+      everyone: () => this.survivors.values(),
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    })
   }
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
@@ -408,6 +420,7 @@ export class SurvivalDirector {
     this.clearBoards()
     // A new world: the saved one starts over, and every character with it (saves.ts).
     this.game.saves.newWorld()
+    this.legacy.reset()
     this.savedWorld = ''
     this.survivors.clear()
     this.rare = rollRareStock(this.random)
@@ -458,6 +471,7 @@ export class SurvivalDirector {
     }
     if (saved) this.resume(sv, saved)
     if (!sv.self.bio) sv.self.bio = this.newBio(player)
+    this.legacy.join(sv)
     this.survivors.set(player.id, sv)
     this.layOut(sv)
     this.story.join(sv, sv.reborn)
@@ -476,6 +490,7 @@ export class SurvivalDirector {
     if (!sv) return
     this.workbench.forget(player)
     this.storage.forget(player)
+    this.legacy.forget(player)
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.story.left(player)
@@ -566,6 +581,7 @@ export class SurvivalDirector {
       found: [...this.found].map((i) => this.def.pois[i]?.key ?? '').filter(Boolean),
       gates: this.gates,
       boards: [...this.boards.keys()].map((i): [number, number] => [i, this.planksAt(i)]),
+      wall: this.legacy.wall,
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -580,6 +596,7 @@ export class SurvivalDirector {
     if (!this.def) return
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
+    this.legacy.restore(w.wall)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
     })
@@ -751,6 +768,8 @@ export class SurvivalDirector {
             `You put ${victim.name} down. Their things lie where they fell.`,
           )
       }
+      const by = this.survivors.get(killer.id)
+      if (by) bumpLife(by.self, 'kills')
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -774,11 +793,23 @@ export class SurvivalDirector {
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
     const turning = sv.turning
+    // Their life goes into the account's journal and onto Haven's wall (legacy.ts).
+    const other = killer !== victim ? this.survivors.get(killer.id) : undefined
+    const left = this.legacy.died(
+      sv,
+      {
+        turning,
+        zombie: this.zeds.get(killer.id)?.kind ?? null,
+        by: other ? (other.self.bio?.name ?? killer.name) : null,
+      },
+      victim.appearance ?? 0,
+    )
     // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
     this.workbench.forget(victim)
     this.storage.forget(victim)
     sv.self = freshSelf()
     sv.self.bio = this.newBio(victim)
+    this.legacy.newCharacter(sv)
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
     // Hollis' pistol and knife are on the cabin table again, for somebody new.
@@ -789,18 +820,20 @@ export class SurvivalDirector {
     sv.warned = 0
     sv.dirty = true
     this.story.died(sv)
-    // The new character is who they are now, even if they close the tab before waking.
+    // The new character is who they are now, even if they close the tab before waking (and
+    // the wall has their name).
     this.save(sv)
-    void this.game.saves.flush()
+    this.saveWorld(true)
     this.send(victim, { type: ServerMsg.Dialog, dialog: null })
     if (turning) this.rise(victim, stuff, look, at)
     else this.spill(stuff, at)
+    const legacy = left ? `\n\n${was ?? 'They'} left you something: ${TRAITS[left].name}.` : ''
     this.notice(
       victim,
       'story',
       turning
-        ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.\n\nYou wake at Haven: somebody new.`
-        : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.\n\nYou wake at Haven: somebody new.`,
+        ? `${was ?? 'You'} turned.\n\nWhat is left walks the woods with everything carried.${legacy}\n\nYou wake at Haven: somebody new.`
+        : `${was ?? 'You'} died.\n\nEverything carried lies where it fell.${legacy}\n\nYou wake at Haven: somebody new.`,
     )
   }
 
@@ -944,7 +977,7 @@ export class SurvivalDirector {
     for (const sv of people) {
       if (!sv.dirty) continue
       sv.dirty = false
-      this.send(sv.player, { type: ServerMsg.Survival, self: sv.self })
+      this.send(sv.player, { type: ServerMsg.Survival, self: this.legacy.outgoing(sv) })
     }
   }
 
@@ -954,6 +987,7 @@ export class SurvivalDirector {
     if (phase === this.phase) return
     this.phase = phase
     if (phase === 'dawn') this.rare = rollRareStock(this.random)
+    if (phase === 'dawn') this.legacy.dawn(people.filter((sv) => sv.player.state.alive))
     const text = DAY_NEWS[phase]
     for (const sv of people) this.notice(sv.player, phase === 'dusk' ? 'warn' : 'info', text)
   }
@@ -967,8 +1001,11 @@ export class SurvivalDirector {
     // Newcomers get hungry and thirsty more slowly (newcomer.ts); needsDrain owns the rate.
     const drain = needsDrain(drainFactor(self.age))
     self.age = (self.age ?? SHIELD_SECONDS) + 1
-    self.hunger = Math.max(0, self.hunger - drain.hunger)
-    self.thirst = Math.max(0, self.thirst - drain.thirst)
+    // Iron Stomach (legacy.ts): a little slower.
+    const stomach = traitFactor(self.trait, 'drain')
+    self.hunger = Math.max(0, self.hunger - drain.hunger * stomach)
+    self.thirst = Math.max(0, self.thirst - drain.thirst * stomach)
+    this.legacy.second(sv, this.vehicles.seatOf(player) !== null)
     if (self.light) {
       self.battery = Math.max(0, self.battery - 100 / BATTERY_SECONDS)
       if (self.battery === 0) {
@@ -1409,6 +1446,7 @@ export class SurvivalDirector {
     const player = sv.player
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
     if (thing.kind === 'board') return void this.story.board(sv)
+    if (thing.kind === 'obituary') return void this.legacy.flowers(sv)
     if (thing.kind === 'locker') {
       if (!this.storage.openNear(sv, 'locker')) this.notice(player, 'info', 'Step up to it.')
       return
@@ -1517,6 +1555,8 @@ export class SurvivalDirector {
         return
       case 'close':
         return void this.storage.close(sv)
+      case 'trait':
+        return void this.legacy.pick(sv, action.id)
     }
   }
 
@@ -1651,6 +1691,10 @@ export class SurvivalDirector {
     if (def.stamina) s.stamina = Math.min(1, s.stamina + def.stamina / 100)
     if (def.stamina) s.winded = false
     if (def.stopsBleeding) self.bleeding = false
+    // What the life counts towards a legacy trait (legacy.ts).
+    if (def.kind === 'food' && (def.hunger ?? 0) >= 18) bumpLife(self, 'meals')
+    if (def.kind === 'med' && (def.stopsBleeding || (def.health ?? 0) > 0))
+      bumpLife(self, 'patched')
     this.needs.used(sv, def)
     return true
   }

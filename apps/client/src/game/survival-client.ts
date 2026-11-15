@@ -30,6 +30,7 @@ import {
   setBarricades,
   spotCentre,
   syncForest,
+  traitFactor,
   VICINITY,
   VICINITY_UP,
   WALKERS,
@@ -39,6 +40,7 @@ import {
 import * as THREE from 'three'
 import type { AudioEngine } from '../audio/audio-engine.ts'
 import { SurvivalHud } from '../hud/survival-hud.ts'
+import { TraitPick } from '../hud/trait-pick.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
 import { CampFolk } from '../render/camp-folk.ts'
@@ -48,6 +50,7 @@ import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
 import { updateMapLod } from '../render/map-mesh.ts'
 import { Night } from '../render/night.ts'
+import { ObituaryView } from '../render/obituary-wall.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
 import { WeatherView } from '../render/weather-view.ts'
 import { Wilds } from '../render/wilds.ts'
@@ -103,6 +106,9 @@ export class SurvivalClient {
   readonly vehicles: VehiclesClient
   /** The character card, first-time hints and the dusk horn (onboarding.ts). */
   readonly onboarding: Onboarding
+  /** Haven's obituary wall, and the legacy trait pick for a new character (legacy.ts). */
+  private readonly obituary: ObituaryView
+  readonly traitPick: TraitPick
   private readonly myId: () => number
 
   private readonly def: SurvivalDef
@@ -180,6 +186,9 @@ export class SurvivalClient {
     if (o.me) this.hud.me = o.me
     this.infection = new Infection(o.audio)
     this.onboarding = new Onboarding(o.hudRoot, o.def, o.audio)
+    this.obituary = new ObituaryView(o.def.interactables)
+    o.scene.add(this.obituary.root)
+    this.traitPick = new TraitPick(o.hudRoot, o.send)
     this.vehicles = new VehiclesClient({
       scene: o.scene,
       physics: o.physics,
@@ -276,6 +285,10 @@ export class SurvivalClient {
         // Clean again (cured, dead or turned): the bite's story card goes, even mid-way.
         if ((this.self?.infected ?? null) !== null && (msg.self.infected ?? null) === null)
           this.hud.dropStory(BITTEN_STORY)
+        // The account's legacy and the wall come only when they change: keep the last ones.
+        if (!msg.self.legacy && this.self?.legacy) msg.self.legacy = this.self.legacy
+        if (!msg.self.wall && this.self?.wall) msg.self.wall = this.self.wall
+        if (msg.self.wall) this.obituary.set(msg.self.wall)
         this.self = msg.self
         this.infection.set(msg.self.infected ?? null)
         this.hud.setSelf(msg.self)
@@ -422,6 +435,8 @@ export class SurvivalClient {
       ),
     )
     this.wilds.setWetness(this.weather.wet)
+    // Night Owl (legacy.ts): the dark gives up a little more.
+    this.night.vision = traitFactor(this.self?.trait, 'night')
     this.night.update(dt, eye, time, built)
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
@@ -475,6 +490,7 @@ export class SurvivalClient {
     for (const [id, pose] of remotes.visiblePoses())
       if (remotes.kindOf(id) !== 0 && Math.hypot(pose.x - eye.x, pose.z - eye.z) < 30)
         zombieNear = true
+    this.traitPick.update(dt, this.self, state.alive, this.onboarding.showingCard)
     this.onboarding.update(
       dt,
       {

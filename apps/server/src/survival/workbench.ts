@@ -1,5 +1,6 @@
 import {
   type Busy,
+  bumpLife,
   countOf,
   craftPlan,
   type Have,
@@ -11,6 +12,7 @@ import {
   type SurvivalSelf,
   TICK_RATE,
   takeStack,
+  traitFactor,
   useSeconds,
 } from '@office-fps/shared'
 import type { ServerPlayer } from '../game.ts'
@@ -95,7 +97,9 @@ export class Workbench {
   startUse(w: Worker, ref: ItemRef, def: ItemDef): boolean {
     const secs = useSeconds(def)
     if (secs <= 0) return false
-    this.begin(w, 'use', def.id, secs, ref)
+    // Field Medic (legacy.ts): bandages and pills go on a little quicker.
+    const medic = def.kind === 'med' ? traitFactor(w.self.trait, 'patch') : 1
+    this.begin(w, 'use', def.id, secs * medic, ref)
     return true
   }
 
@@ -108,7 +112,8 @@ export class Workbench {
       this.host.notice(w.player, 'warn', `You need ${plan.missing.join(', ')}.`)
       return
     }
-    this.begin(w, 'craft', recipe.id, recipe.secs)
+    // Handy (legacy.ts): a little quicker at it.
+    this.begin(w, 'craft', recipe.id, recipe.secs * traitFactor(w.self.trait, 'craft'))
   }
 
   private begin(w: Worker, kind: Busy['kind'], what: string, secs: number, ref?: ItemRef): void {
@@ -194,6 +199,7 @@ export class Workbench {
       return
     }
     for (const [item, n] of plan.use) takeStack(w.self.inv, item, n)
+    bumpLife(w.self, 'crafted')
     const made = recipe.makes
     this.host.giveOrDrop(w, made.item, made.n)
     this.host.notice(

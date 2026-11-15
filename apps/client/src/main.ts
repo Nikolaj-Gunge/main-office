@@ -27,6 +27,7 @@ import {
   syncForest,
   TEAMS,
   TICK_DT,
+  traitFactor,
   WEAPONS,
   WeaponId,
   weaponLook,
@@ -1082,6 +1083,8 @@ pixels.setAnimationLoop(() => {
   minimap?.update(dt, player.state.pos, look.yaw)
   minimap?.setVisible(joined && !noclip)
   scoreboard.show(scoreboardHeld && joined, roster, net.playerId)
+  // Steady Hands (legacy.ts): the gun lags a little less behind the view.
+  viewmodel.steady = traitFactor(survival?.self?.trait, 'sway')
   combat.update(
     dt,
     player.state,

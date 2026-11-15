@@ -859,6 +859,7 @@ export class SurvivalHud {
       this.shared?.unlocks ?? [],
       () => this.drawJournal(),
       self.bio ? bioLine(self.bio) : undefined,
+      self,
     )
   }
 

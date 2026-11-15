@@ -91,6 +91,8 @@ export class Night {
   private readonly scene: THREE.Scene
   private readonly fog: THREE.Fog
   private readonly hemi: THREE.HemisphereLight
+  /** × the dark's ambient light (Night Owl, legacy.ts: a little more); full day is unchanged. */
+  vision = 1
   private readonly moon: THREE.DirectionalLight
   private readonly moonDir: THREE.Vector3
   private readonly lights: readonly MapLight[]
@@ -207,7 +209,10 @@ export class Night {
     // Cloud hides the moon and dims the sun; rain greys everything; lightning lights it all up.
     const grey = Math.min(1, w.cloud * 0.6 + w.rain * 0.4)
     this.hemi.intensity =
-      mix(this.base.ambientIntensity, DAY.ambient, day) * (1 - w.rain * 0.2) + w.flash * 2.2
+      mix(this.base.ambientIntensity, DAY.ambient, day) *
+        (1 - w.rain * 0.2) *
+        (1 + (this.vision - 1) * (1 - day)) +
+      w.flash * 2.2
     this.hemi.color.copy(this.darkHemiSky).lerp(DAY.hemiSky, day)
     this.hemi.groundColor.copy(this.darkHemiGround).lerp(DAY.hemiGround, day)
     this.moon.intensity =

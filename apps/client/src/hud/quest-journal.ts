@@ -12,7 +12,10 @@ import {
   type Reward,
   STORY_TITLE,
   type SurvivalDef,
+  type SurvivalSelf,
   stepApplies,
+  survivedText,
+  TRAITS,
   UNLOCKS,
 } from '@office-fps/shared'
 
@@ -29,8 +32,8 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-export type JournalTab = 'quests' | 'notes' | 'people'
-export const JOURNAL_TABS: JournalTab[] = ['quests', 'notes', 'people']
+export type JournalTab = 'quests' | 'notes' | 'people' | 'lives'
+export const JOURNAL_TABS: JournalTab[] = ['quests', 'notes', 'people', 'lives']
 
 /** One row in a journal list: what it is, and how it's drawn. */
 interface Entry {
@@ -93,6 +96,7 @@ export class QuestJournal {
     unlocks: readonly string[],
     redraw: () => void,
     who?: string,
+    self?: SurvivalSelf,
   ): void {
     panel.replaceChildren()
     const head = el('div', 'sv-panel-head', panel)
@@ -122,7 +126,9 @@ export class QuestJournal {
         ? this.questEntries(journal)
         : this.tab === 'notes'
           ? this.noteEntries(journal)
-          : this.peopleEntries(journal, unlocks)
+          : this.tab === 'people'
+            ? this.peopleEntries(journal, unlocks)
+            : livesEntries(self)
     this.selected = Math.max(0, Math.min(this.entries.length - 1, this.selected))
     const list = el('div', 'sv-list', left)
     if (this.entries.length === 0)
@@ -151,7 +157,7 @@ export class QuestJournal {
         redraw()
       })
     })
-    el('div', 'sv-help', left, 'W/S select · A/D or 1–3 tab · J close')
+    el('div', 'sv-help', left, 'W/S select · A/D or 1–4 tab · J close')
     this.entries[this.selected]?.draw(right)
     const picked = list.querySelector('.selected')
     if (picked instanceof HTMLElement && picked.offsetTop + 40 > list.clientHeight)
@@ -311,4 +317,84 @@ export class QuestJournal {
       })
     return out
   }
+}
+
+// --- Past lives (legacy.ts) ------------------------------------------------------------------
+
+/** "12 Nov": when somebody died, said short. */
+const dayOf = (ms: number) =>
+  new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+
+/**
+ * Who you are now and what you've done, who came before you (the account's journal of past
+ * lives) and the traits they left; and plainly, what dying takes and what it leaves.
+ */
+export function livesEntries(self: SurvivalSelf | undefined): Entry[] {
+  if (!self) return []
+  const legacy = self.legacy ?? { lives: [], traits: [] }
+  const out: Entry[] = []
+  const life = self.life
+  out.push({
+    key: 'now',
+    label: self.bio?.name ?? 'You',
+    group: 'Now',
+    state: 'active',
+    draw: (into) => {
+      el('div', 'sv-page-kind', into, 'THIS LIFE')
+      el('div', 'sv-page-title', into, self.bio?.name ?? 'You')
+      if (self.bio) el('div', 'sv-page-from', into, `${self.bio.age}, ${self.bio.past}`)
+      el('div', 'sv-step now', into, `▸ Alive ${survivedText(self.age ?? 0)}`)
+      el('div', 'sv-step now', into, `▸ ${life?.kills ?? 0} of the dead put down`)
+      el('div', 'sv-step now', into, `▸ ${life?.nights ?? 0} dawns seen`)
+      el('div', 'sv-step now', into, `▸ ${((life?.walked ?? 0) / 1000).toFixed(1)} km walked`)
+      el('div', 'sv-step now', into, `▸ ${life?.crafted ?? 0} things made`)
+      const trait = self.trait ? TRAITS[self.trait] : null
+      el(
+        'div',
+        'sv-page-reward',
+        into,
+        trait ? `Carrying: ${trait.name} — ${trait.desc}` : 'Carrying nothing from before.',
+      )
+      el(
+        'div',
+        'sv-page-hint',
+        into,
+        'When you die you lose this person, what they could do and everything they carried. ' +
+          'Your locker at Haven, this journal and the traits the dead leave you stay.',
+      )
+    },
+  })
+  for (const [i, l] of legacy.lives.entries())
+    out.push({
+      key: `life:${i}`,
+      label: l.name,
+      group: 'Before you',
+      state: 'done',
+      draw: (into) => {
+        el('div', 'sv-page-kind', into, `DIED ${dayOf(l.at).toUpperCase()}`)
+        el('div', 'sv-page-title', into, l.name)
+        if (l.past) el('div', 'sv-page-from', into, l.past)
+        el('div', 'sv-step done', into, `✓ Lasted ${survivedText(l.alive)}`)
+        el('div', 'sv-step done', into, `✓ ${l.kills} of the dead put down`)
+        el('div', 'sv-page-text ending', into, `${l.cause}.`)
+        const t = l.trait ? TRAITS[l.trait] : null
+        el('div', 'sv-page-reward', into, t ? `Left you: ${t.name}` : 'Left nothing behind.')
+      },
+    })
+  for (const id of legacy.traits) {
+    const t = TRAITS[id]
+    out.push({
+      key: `trait:${id}`,
+      label: t.name,
+      group: 'What they left',
+      draw: (into) => {
+        el('div', 'sv-page-kind', into, 'LEGACY TRAIT')
+        el('div', 'sv-page-title', into, t.name)
+        el('div', 'sv-page-text', into, t.desc)
+        el('div', 'sv-page-hint', into, `Earned by somebody who ${t.how}.`)
+        if (self.trait === id) el('div', 'sv-page-reward', into, 'You carry this one.')
+      },
+    })
+  }
+  return out
 }
