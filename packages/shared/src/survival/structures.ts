@@ -404,6 +404,10 @@ export function haven(s: Site): void {
   bed(bunks, 3.4, 1.9, true, 'bed_haven_3')
   bed(bunks, -3.7, -1.9, true, 'bed_haven_4')
   bunks.lantern(0, 2.6, 0, 0.45, { color: 0xffb870, intensity: 8, distance: 9 })
+  // Your own locker against the east wall: what you put in it stays, whatever happens to you.
+  bunks.block(4.6, FLOOR, 0.2, 0.5, 1.8, 0.9, 'metal')
+  bunks.deco(4.34, FLOOR + 1.2, 0.2, 0.02, 0.06, 0.5, 'metal')
+  bunks.interact('haven_locker', 'locker', 4.25, FLOOR + 1.1, 0.2, 'Open your locker')
   litWindow(bunks, true, -2.5, -3 + 0.1)
   bunks.label(2, 3.4, -3.2, 'BUNKHOUSE')
 

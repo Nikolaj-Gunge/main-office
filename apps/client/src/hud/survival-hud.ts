@@ -31,6 +31,7 @@ import {
   WORLD_HALF,
   WORLD_SIZE,
 } from '@office-fps/shared'
+import { BusyRing } from './busy-ring.ts'
 import { InventoryScreen } from './inventory-screen.ts'
 import { effectText } from './item-text.ts'
 import { markerSpot } from './objective-marker.ts'
@@ -217,6 +218,8 @@ export class SurvivalHud {
   private shop: Dialog | null = null
   /** The inventory grid (Tab / I). */
   private readonly inventory: InventoryScreen
+  /** The ring that fills while you eat, bandage or make something. */
+  private readonly busy: BusyRing
   private selected = 0
   /** Scroll the selected row into view on the next draw (only after W/S, never on a refresh). */
   private revealPick = false
@@ -288,6 +291,7 @@ export class SurvivalHud {
     this.panel = el('div', 'sv-panel', this.root)
     this.panel.hidden = true
     this.inventory = new InventoryScreen(this.root, send, (cue) => this.onSound?.(cue))
+    this.busy = new BusyRing(this.root)
     this.map = el('canvas', 'sv-map', this.root)
     this.map.hidden = true
     window.addEventListener('keydown', (e) => {
@@ -321,7 +325,11 @@ export class SurvivalHud {
   }
 
   setSelf(self: SurvivalSelf): void {
+    // E at your locker opened it: show the inventory.
+    const opened = !!self.box && !this.self?.box
+    this.busy.set(self.busy ?? null)
     this.self = self
+    if (opened && this.screen === 'none') this.setScreen('pack')
     this.refreshTracker()
     this.inventory.setSelf(self)
     if (this.screen === 'shop') this.drawScreen()
@@ -469,6 +477,7 @@ export class SurvivalHud {
     if (!this.visible) return
     this.ctx = ctx
     this.clock += dt
+    this.busy.update()
     if (this.screen === 'pack') {
       this.inventory.setContext({
         carried: ctx.carried,

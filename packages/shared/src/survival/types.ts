@@ -139,6 +139,8 @@ export type InteractKind =
   | 'flare'
   | 'search'
   | 'note'
+  /** Your own locker (storage.ts): what's in it outlives you. */
+  | 'locker'
 
 /** Something in the world you can use with E. */
 export interface Interactable {

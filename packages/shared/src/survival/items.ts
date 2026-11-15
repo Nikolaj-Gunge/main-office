@@ -349,6 +349,24 @@ quest('cashbox', "Gus's cash box", 2, 'Locked. Heavier than money ought to be.')
 quest('recipes', "Dot's recipe tin", 0.4, 'Thirty years of index cards, in pencil.')
 quest('vial', 'Penicillin', 0.05, 'One vial. Maybe the last in the county.')
 
+// ── Made things (see crafting.ts) ──
+add({
+  id: 'barricadekit',
+  name: 'Barricade kit',
+  kind: 'tool',
+  weight: 3.6,
+  value: 30,
+  desc: 'Three planks cut to size, the nails already started. Boards up a gap in one go (E).',
+})
+add({
+  id: 'noisemaker',
+  name: 'Noise maker',
+  kind: 'tool',
+  weight: 0.4,
+  value: 20,
+  desc: 'An alarm clock taped to a tin of scrap. Wind it and throw it: the dead go to the noise.',
+})
+
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),
 )

@@ -539,6 +539,23 @@ const ICONS: Record<string, Paint> = {
   insulin: bottle('#e0f0f0', '#e0a030', 0.5),
   seeds: box('#c8a868', { band: '#5a9a3a', inset: 3 }),
   toolbox: box('#2a4ab0', { band: '#2a2a2a' }),
+  // Made things (crafting.ts)
+  barricadekit: (p) => {
+    p.rect(3, 2, 8, p.h - 4, WOOD_LIGHT)
+      .rect(12, 3, 8, p.h - 6, WOOD)
+      .rect(21, 2, 8, p.h - 4, WOOD_LIGHT)
+      .rect(2, 10, p.w - 4, 3, STEEL)
+      .rect(2, p.h - 14, p.w - 4, 3, STEEL)
+      .outline()
+  },
+  noisemaker: (p) => {
+    p.rect(5, 12, p.w - 10, p.h - 14, '#8a8e94')
+      .rect(6, 5, p.w - 12, 9, '#b8302a')
+      .rect(9, 7, p.w - 18, 5, '#f0e8d0')
+      .rect(6, 3, 4, 2, '#c8a040')
+      .rect(p.w - 10, 3, 4, 2, '#c8a040')
+      .outline()
+  },
   map_piece: box('#d8cca0', { band: '#c02a2a', inset: 2 }),
   // Backpacks
   pack_school: backpack('#2a5aa8', '#1a2a4a'),

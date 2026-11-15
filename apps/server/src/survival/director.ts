@@ -4,7 +4,9 @@ import {
   ammoItem,
   BITTEN_STORY,
   BOARD_REACH,
+  type Box,
   carried,
+  cleanBox,
   cloneBag,
   containerOf,
   countOf,
@@ -34,6 +36,7 @@ import {
   infectionStage,
   isItemDest,
   isItemRef,
+  LOCKER_SIZE,
   type LootItem,
   loosen,
   MAX_PLANKS,
@@ -89,8 +92,10 @@ import type { Point } from '../items.ts'
 import type { CharacterSave } from '../saves.ts'
 import { type DropHost, Drops } from './drops.ts'
 import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
+import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
 import { Vehicles } from './vehicles.ts'
+import { Workbench, type WorkbenchHost } from './workbench.ts'
 
 /** Small places that go on the map without a "Found:" for everyone. */
 const QUIET_FINDS: readonly PoiKind[] = ['cabin', 'campsite', 'start', 'shed', 'stand']
@@ -114,6 +119,9 @@ const RESTOCK_SECONDS = 25 * 60
 /** Things players dropped (or died with) lie this long (s). */
 const DROPPED_SECONDS = 20 * 60
 const REACH = 2.4
+/** A barricade kit (crafting.ts) nails this many planks up at once. */
+const KIT_ITEM = 'barricadekit'
+const KIT_PLANKS = 3
 const TALK_REACH = 3
 /** The dead exist only within this of somebody (m). */
 const ZED_RANGE = 185
@@ -143,6 +151,8 @@ interface Survivor {
   health?: number
   /** Back from a save with nowhere safe to resume: they wake at Haven. */
   haven?: boolean
+  /** Their locker at Haven (storage.ts): the account's, kept through death. */
+  locker: Box
 }
 
 /** One of the dead that was one of you: everything they had on them, and how they looked. */
@@ -212,6 +222,8 @@ function restoreSelf(saved: SurvivalSelf): SurvivalSelf {
   for (const [slot, item] of Object.entries(self.wear))
     if (!ITEMS[item]) delete self.wear[slot as WearSlot]
   self.journal = { ...freshJournal(), ...self.journal }
+  self.busy = null
+  self.box = null
   return self
 }
 
@@ -275,6 +287,10 @@ export class SurvivalDirector {
   private readonly drops: Drops
   /** The cars parked about the woods, and who sits in them. */
   private readonly vehicles: Vehicles
+  /** Use timers and crafting (workbench.ts). */
+  private readonly workbench: Workbench
+  /** Trunks and lockers (storage.ts). */
+  private readonly storage: Storage
 
   constructor(game: Game, random: () => number = Math.random) {
     this.game = game
@@ -282,6 +298,8 @@ export class SurvivalDirector {
     this.drops = new Drops(this.dropHost())
     this.vehicles = new Vehicles(game, (player, kind, text) => this.notice(player, kind, text))
     this.story = new Story(this.storyHost())
+    this.workbench = new Workbench(this.workbenchHost())
+    this.storage = new Storage(this.storageHost())
   }
 
   /** The story and everybody's quests (see story.ts). */
@@ -372,6 +390,7 @@ export class SurvivalDirector {
     this.turned.clear()
     this.clearBoards()
     this.vehicles.dispose()
+    this.storage.reset()
   }
 
   private clearBoards(): void {
@@ -396,6 +415,7 @@ export class SurvivalDirector {
       reborn: saved?.reborn ?? false,
       turning: false,
       waiting: saved ? saved.waiting.filter((i) => this.def?.starter[i]) : this.allStarters(),
+      locker: cleanBox(saved?.locker, LOCKER_SIZE),
     }
     if (saved) this.resume(sv, saved)
     this.survivors.set(player.id, sv)
@@ -414,6 +434,8 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(player.id)
     if (!sv) return
+    this.workbench.forget(player)
+    this.storage.forget(player)
     if (player.state.alive) sv.kit = kitOf(player.state)
     sv.self.light = false
     this.story.left(player)
@@ -472,11 +494,12 @@ export class SurvivalDirector {
       !this.pool.some((z) => z.state.alive && dist(z.state.pos, s.pos) < UNSAFE_NEAR)
     this.game.saves.putCharacter(player.account, {
       name: player.name,
-      self: { ...sv.self, light: false },
+      self: { ...sv.self, light: false, busy: null, box: null },
       kit: alive ? kitOf(s) : sv.kit,
       reborn: sv.reborn,
       waiting: [...sv.waiting],
       health: alive ? Math.ceil(player.health) : player.maxHealth,
+      locker: structuredClone(sv.locker.items),
       ...(safe ? { pos: { x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw } } : {}),
     })
   }
@@ -631,6 +654,7 @@ export class SurvivalDirector {
   onShot(player: ServerPlayer): void {
     const sv = this.survivors.get(player.id)
     if (!sv) return
+    this.workbench.onShot(sv)
     const noise = WEAPONS[player.state.weapon.id].noise
     if (noise > sv.noise || this.now > sv.noiseUntil) sv.noise = noise
     sv.noiseUntil = this.now + 1.2
@@ -699,6 +723,9 @@ export class SurvivalDirector {
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
     const turning = sv.turning
+    // Whatever they were doing stops; their locker stays as it is, for whoever they are next.
+    this.workbench.forget(victim)
+    this.storage.forget(victim)
     sv.self = freshSelf()
     sv.kit = REBORN_KIT.map((k) => ({ ...k }))
     sv.reborn = true
@@ -825,6 +852,7 @@ export class SurvivalDirector {
     if (tick % 30 === 7) for (const sv of people) this.subscribe(sv)
     if (tick % 30 === 15) this.populate(alive)
     this.vehicles.step()
+    this.workbench.step()
     this.story.step(TICK_DT)
     // Somebody walking with you is kept up to date often enough to look like walking.
     if (this.story.moving && tick % 12 === 3) this.game.match.broadcast()
@@ -856,6 +884,7 @@ export class SurvivalDirector {
   /** Hunger, thirst, bleeding, the torch's battery — once a second. */
   private tickSurvivor(sv: Survivor): void {
     const { self, player } = sv
+    this.storage.check(sv)
     if (!player.state.alive) return
     const before = [Math.ceil(self.hunger), Math.ceil(self.thirst), Math.ceil(self.battery)]
     self.hunger = Math.max(0, self.hunger - 100 / HUNGER_SECONDS)
@@ -1231,7 +1260,8 @@ export class SurvivalDirector {
         'Boarded up as well as it gets. (Crouch and E to pull a plank off.)',
       )
     }
-    if (countOf(self.inv, PLANK_ITEM) < 1) {
+    const kit = countOf(self.inv, KIT_ITEM) > 0
+    if (!kit && countOf(self.inv, PLANK_ITEM) < 1) {
       return void this.notice(player, 'warn', 'You need planks to board this up.')
     }
     // Nobody standing in the gap (they'd be nailed into the wall).
@@ -1248,11 +1278,12 @@ export class SurvivalDirector {
         return void this.notice(player, 'warn', "Something's in the way.")
       }
     }
-    takeStack(self.inv, PLANK_ITEM, 1)
+    // A barricade kit goes up in one go: three planks at once.
+    takeStack(self.inv, kit ? KIT_ITEM : PLANK_ITEM, 1)
     sv.dirty = true
     sv.noise = Math.max(sv.noise, 24)
-    sv.noiseUntil = this.now + 1.5
-    this.setBoard(i, (planks + 1) * PLANK_HP)
+    sv.noiseUntil = this.now + (kit ? 2.5 : 1.5)
+    this.setBoard(i, Math.min(MAX_PLANKS, planks + (kit ? KIT_PLANKS : 1)) * PLANK_HP)
   }
 
   /** The dead at a boarded door batter it, about once a second each. */
@@ -1292,6 +1323,10 @@ export class SurvivalDirector {
   private useThing(sv: Survivor, thing: Interactable): void {
     const player = sv.player
     if (thing.kind === 'bed') return void this.sleep(sv, thing)
+    if (thing.kind === 'locker') {
+      if (!this.storage.openNear(sv, 'locker')) this.notice(player, 'info', 'Step up to it.')
+      return
+    }
     if (thing.kind === 'water') {
       sv.self.thirst = 100
       sv.dirty = true
@@ -1386,6 +1421,15 @@ export class SurvivalDirector {
       }
       case 'choose':
         return void this.story.choose(sv, String(action.npc), String(action.option))
+      case 'craft':
+        return void this.workbench.startCraft(sv, String(action.recipe))
+      case 'stop':
+        return void this.workbench.stop(sv)
+      case 'open':
+        this.storage.openNear(sv)
+        return
+      case 'close':
+        return void this.storage.close(sv)
     }
   }
 
@@ -1413,6 +1457,7 @@ export class SurvivalDirector {
   /** What a reference points at, or null if there's nothing there (or it's out of reach). */
   private source(sv: Survivor, ref: ItemRef, reached: boolean): Source | null {
     const { self } = sv
+    if ('box' in ref) return null
     if ('g' in ref) {
       const loot = this.loot.get(ref.g)
       if (!loot || !sees(sv, loot) || (!reached && !this.within(sv, loot))) return null
@@ -1451,11 +1496,36 @@ export class SurvivalDirector {
     if (src.kind === 'worn' || src.kind === 'hand') return void this.move(sv, from, { auto: true })
     const slot = slotFor(def.id)
     if (slot) return void this.move(sv, from, { slot })
+    if (def.id === 'noisemaker') {
+      this.useUp(sv, src)
+      return void this.workbench.throwLure(sv)
+    }
+    // Eating, bandaging and the like take a moment (workbench.ts): done when the time is up.
+    if (this.consumable(sv, def) && this.workbench.startUse(sv, from, def)) return
+    this.useNow(sv, src, def)
+  }
+
+  /** Could this be eaten, drunk or used (now)? Says why not, if it's the cure. */
+  private consumable(sv: Survivor, def: ItemDef): boolean {
+    if (def.infection === 'cure' && sv.self.infected === null) {
+      this.notice(sv.player, 'info', "You're not infected. Keep it: you will be.")
+      return false
+    }
+    return !!def.battery || def.kind === 'food' || def.kind === 'drink' || def.kind === 'med'
+  }
+
+  /** Uses one of something at once (or picks it up, if it's no use). */
+  private useNow(sv: Survivor, src: Source, def: ItemDef): void {
     if (!this.consume(sv, def)) {
       // Nothing to do with it but carry it.
-      if (src.kind === 'ground') this.move(sv, from, { auto: true })
+      if (src.kind === 'ground') this.move(sv, { g: src.loot.id }, { auto: true })
       return
     }
+    this.useUp(sv, src)
+  }
+
+  /** One fewer of a thing in a pocket or on the ground. */
+  private useUp(sv: Survivor, src: Source): void {
     if (src.kind === 'grid') {
       src.stack.n--
       if (src.stack.n <= 0) sv.self.inv.splice(sv.self.inv.indexOf(src.stack), 1)
@@ -1512,6 +1582,7 @@ export class SurvivalDirector {
    * @param reached  the player is looking right at it (E): no need to check how far it is
    */
   private move(sv: Survivor, from: ItemRef, to: ItemDest, want?: number, reached = false): boolean {
+    if ('box' in from || 'box' in to) return this.storage.move(sv, from, to, want)
     const { self, player } = sv
     const s = player.state
     const src = this.source(sv, from, reached)
@@ -1943,6 +2014,62 @@ export class SurvivalDirector {
   }
 
   /** What the story (story.ts) gets to do here. Items go through count/take/give alone. */
+  private workbenchHost(): WorkbenchHost {
+    const game = this.game
+    return {
+      get tick() {
+        return game.tick
+      },
+      inHands: (player) =>
+        carried(player.state)
+          .filter((w) => w.id !== WeaponId.Fists)
+          .map((w) => weaponItem(w.id)),
+      seated: (player) => this.vehicles.seatOf(player) !== null,
+      finishUse: (w, ref, item) => {
+        const sv = this.survivors.get(w.player.id)
+        const src = sv ? this.source(sv, ref, false) : null
+        const def = ITEMS[item]
+        if (!sv || !src || !def || src.item !== item) return false
+        this.useNow(sv, src, def)
+        return true
+      },
+      giveOrDrop: (w, item, n) => {
+        const sv = this.survivors.get(w.player.id)
+        if (sv) this.giveOrDrop(sv, item, n)
+      },
+      touch: (w) => {
+        const sv = this.survivors.get(w.player.id)
+        if (sv) this.touch(sv)
+      },
+      notice: (player, kind, text) => this.notice(player, kind, text),
+      alert: (at, r) => {
+        for (const z of this.pool) {
+          if (z.state.alive && dist(z.state.pos, at) < r) this.zeds.get(z.id)?.alert(at, this.now)
+        }
+      },
+      groundAt: (x, z) => heightAt(this.def.terrain, x, z),
+    }
+  }
+
+  private storageHost(): StorageHost {
+    return {
+      locker: () => {
+        const t = this.def?.interactables.find((i) => i.kind === 'locker')
+        return t ? { x: t.pos[0], y: t.pos[1] - 1, z: t.pos[2] } : null
+      },
+      car: (at, reach) => this.vehicles.nearest(at, reach),
+      generation: (id) => this.vehicles.generationOf(id),
+      carAt: (id) => this.vehicles.positionOf(id),
+      seated: (player) => this.vehicles.seatOf(player) !== null,
+      drop: (w, s) => this.dropAt(s.item, s.n, w.player.state.pos, s.ammo),
+      touch: (w) => {
+        const sv = this.survivors.get(w.player.id)
+        if (sv) this.touch(sv)
+      },
+      notice: (player, kind, text) => this.notice(player, kind, text),
+    }
+  }
+
   private storyHost(): StoryHost {
     const sv = (p: { player: ServerPlayer }) => this.survivors.get(p.player.id)
     return {
