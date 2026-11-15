@@ -6,6 +6,7 @@ import {
 } from '@office-fps/shared'
 import { prefersReducedMotion } from './game/game-feel.ts'
 import { type Keybinds, withDefaults } from './input/bindings.ts'
+import type { GraphicsSetting } from './render/device-tier.ts'
 
 export const COLOR_MODES = { off: 0, levels: 1, palette: 2 } as const
 export type ColorMode = keyof typeof COLOR_MODES
@@ -19,6 +20,11 @@ export interface Settings {
   pixelHeight: number
   /** Make pixels coarser by itself when frames get slow, finer again when there's room. */
   autoQuality: boolean
+  /**
+   * How much of the world is drawn (shadows, forest distance, ground detail…): a device tier, or
+   * `auto` to work it out for this machine (see device-tier.ts).
+   */
+  graphics: GraphicsSetting
   /** Soft pixels: smooth upscaling, anti-aliased edges and filtered textures (else crisp squares). */
   smoothPixels: boolean
   colorMode: ColorMode
@@ -78,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // filtered textures, barely any banding or dither, thin outlines.
   pixelHeight: 900,
   autoQuality: true,
+  graphics: 'auto',
   smoothPixels: true,
   colorMode: 'levels',
   colorLevels: 160,

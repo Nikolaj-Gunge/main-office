@@ -42,6 +42,7 @@ import { SurvivalHud } from '../hud/survival-hud.ts'
 import { Avatar } from '../render/avatar.ts'
 import { BarricadeView } from '../render/barricades.ts'
 import { CampFolk } from '../render/camp-folk.ts'
+import type { TierSettings } from '../render/device-tier.ts'
 import { HeliView } from '../render/heli.ts'
 import { Leaves } from '../render/leaves.ts'
 import { LootView } from '../render/loot-view.ts'
@@ -372,6 +373,13 @@ export class SurvivalClient {
     }
     this.send({ a: 'light', on: !this.self.light })
     this.audio.play('dryfire', { volume: 0.5, rate: 1.4 })
+  }
+
+  /** How much of the world to draw (device-tier.ts): forest distances, shadows, lamps, leaves. */
+  setTier(tier: TierSettings): void {
+    this.wilds.setTier(tier)
+    this.night.setTier(tier)
+    this.leaves.setCount(tier.leaves)
   }
 
   /**

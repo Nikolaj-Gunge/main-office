@@ -14,6 +14,8 @@ export interface GameRenderer {
   readonly size: THREE.Vector2
   /** Screen pixels per game pixel. */
   readonly scale: number
+  /** Screen pixels per CSS pixel at most (the device tier's; takes effect on resize()). */
+  maxDpr: number
   /** Shadow redraw switches, as WebGLRenderer.shadowMap. */
   readonly shadows: { autoUpdate: boolean; needsUpdate: boolean }
   applySettings(settings: Settings): void

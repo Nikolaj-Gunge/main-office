@@ -76,6 +76,13 @@ import { CoopZoneMarker } from './render/coop-zone.ts'
 import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
 import { DebugHitboxes } from './render/debug-hitboxes.ts'
+import {
+  AutoTier,
+  effectiveTier,
+  readDevice,
+  TIER_SETTINGS,
+  type Tier,
+} from './render/device-tier.ts'
 import { Effects } from './render/effects.ts'
 import { createGameRenderer, rendererChoice } from './render/game-renderer.ts'
 import { createLighting, gradeLighting } from './render/lighting.ts'
@@ -695,6 +702,30 @@ canvas.addEventListener('click', () => {
 const autoQuality = new AutoQuality()
 let qualityFor = ''
 
+/** What this machine is (asked once, on a scratch context: works for either renderer). */
+function deviceInfo() {
+  const gl = document.createElement('canvas').getContext('webgl')
+  const info = readDevice(gl)
+  gl?.getExtension('WEBGL_lose_context')?.loseContext()
+  return info
+}
+// Device tier: how much of the world to draw. Auto works it out once and remembers it.
+const autoTier = new AutoTier(deviceInfo(), localStorage)
+let tier: Tier | null = null
+
+/** Applies the graphics setting's tier (when it changed). */
+function applyTier() {
+  const next = effectiveTier(settings.graphics, autoTier.tier)
+  if (next === tier) return
+  tier = next
+  const t = TIER_SETTINGS[next]
+  survival?.setTier(t)
+  effects.decalCap = t.decals
+  effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
+  pixels.maxDpr = t.maxDpr
+  pixels.resize()
+}
+
 function applySettings() {
   // A new pixel size (or auto quality switched off) starts from the player's choice again.
   const quality = `${settings.pixelHeight}/${settings.autoQuality}`
@@ -705,6 +736,7 @@ function applySettings() {
   }
   setSmoothTextures(settings.smoothPixels, Math.min(8, pixels.maxAnisotropy()))
   pixels.applySettings(settings)
+  applyTier()
   look.sensitivity = settings.sensitivity
   shake.scale = settings.screenShake
   audio.setVolumes(settings.masterVolume, settings.sfxVolume)
@@ -909,7 +941,14 @@ pixels.setAnimationLoop(() => {
   // Automatic quality: coarser pixels when frames run slow, finer again when there's room.
   if (settings.autoQuality && autoQuality.frame(dt)) {
     pixels.setBias(autoQuality.bias)
-    effects.casingCap = casingCap(autoQuality.bias)
+    effects.casingCap = Math.min(TIER_SETTINGS[tier ?? 'high'].casings, casingCap(autoQuality.bias))
+  }
+  // Auto graphics: time the first seconds of play, and draw less if the machine still struggles
+  // at the coarsest pixels.
+  const coarsest = settings.autoQuality && autoQuality.coarsest
+  if (joined && settings.graphics === 'auto' && autoTier.frame(dt, coarsest)) {
+    applyTier()
+    updateProjection()
   }
 
   // The player keeps simulating in noclip while online (standing still), so the server and
@@ -1064,7 +1103,7 @@ pixels.setAnimationLoop(() => {
     const deg = 180 / Math.PI
     const kb = (b: number) => (b / 1024).toFixed(1)
     overlay.debug.textContent = [
-      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale.toFixed(2)} · ${pixels.backend}`,
+      `${fpsSmoothed.toFixed(0)} fps · ${pixels.size.x}×${pixels.size.y} ×${pixels.scale.toFixed(2)} · ${pixels.backend} · ${tier}${settings.graphics === 'auto' ? ' (auto)' : ''}`,
       `worst frame ${Math.max(...frameTimes).toFixed(1)} ms (last 2 s)`,
       noclip
         ? `NOCLIP (V) · cam ${camera.position.x.toFixed(2)} ${camera.position.y.toFixed(2)} ${camera.position.z.toFixed(2)}`
@@ -1109,6 +1148,7 @@ if (import.meta.env.DEV) {
       damageNumbers,
       survival,
       social,
+      autoTier,
     },
   })
 }
