@@ -185,6 +185,7 @@ export class Menu {
       this.toggle('Smooth pixels (soft edges, filtered textures)', 'smoothPixels'),
       this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
+      this.slider('Music volume', 'musicVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.toggle('Show FPS & network info', 'showDebug'),
       this.toggle('Text chat', 'chat'),
       this.toggle('Hide swear words in chat', 'chatFilter'),
@@ -338,7 +339,7 @@ export class Menu {
 
   private slider(
     label: string,
-    key: 'sensitivity' | 'fov' | 'screenShake' | 'masterVolume' | 'sfxVolume',
+    key: 'sensitivity' | 'fov' | 'screenShake' | 'masterVolume' | 'sfxVolume' | 'musicVolume',
     min: number,
     max: number,
     step: number,

@@ -5,6 +5,7 @@ import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
 import type { Needs } from './needs.ts'
+import type { RotMood } from './rot.ts'
 import type { OpenBox } from './storage.ts'
 import type { WeatherShared } from './weather.ts'
 
@@ -129,6 +130,8 @@ export interface SurvivalShared {
   drops?: SupplyDrop[]
   /** The weather's seed and clock: everything else follows from them (see weather.ts). */
   weather?: WeatherShared
+  /** The Rot (rot.ts): tonight's mood (absent by day) and the flocks that have taken off. */
+  rot?: { mood?: RotMood; birds: number[] }
 }
 
 export type SurvivalAction =
@@ -166,8 +169,13 @@ export interface Dialog {
 
 export interface Notice {
   /** `story` (and `note`, on paper) is shown big in the middle; the others as a line at the side. */
-  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note'
+  kind: 'info' | 'loot' | 'warn' | 'quest' | 'story' | 'scream' | 'note' | 'sound'
   text: string
+  /** `sound` (heard, not shown): birds taking off (flock index in `flock`), or a car alarm. */
+  sound?: 'birds' | 'alarm'
+  flock?: number
+  /** `sound` alarm: how long it goes on (s). */
+  seconds?: number
   /** `note`: what it is ("Hollis' letter"), shown as its heading. */
   title?: string
   /** `scream`: where it came from (it is heard, not shown). */

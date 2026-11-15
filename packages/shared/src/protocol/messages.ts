@@ -63,6 +63,8 @@ export const ServerMsg = {
   Dialog: 0x93,
   /** Somebody said something, pinged or waved (social.ts). */
   Social: 0x94,
+  /** Survival: how tense your night is (the Rot, for the music) and what just happened. */
+  Tension: 0x9a,
 } as const
 export type ServerMsg = (typeof ServerMsg)[keyof typeof ServerMsg]
 
@@ -304,6 +306,8 @@ export type ServerMessage =
   /** Survival: somebody talks to you (null closes the conversation). */
   | { type: typeof ServerMsg.Dialog; dialog: Dialog | null }
   | { type: typeof ServerMsg.Social; social: SocialEvent }
+  /** `level` 0–1 (sent as a byte), `phase` a RotPhase, `spotted`: one of the dead just saw you. */
+  | { type: typeof ServerMsg.Tension; level: number; phase: number; spotted: boolean }
   | {
       /** Debug: where the server placed everyone when checking your shot. */
       type: typeof ServerMsg.DebugShot
@@ -795,6 +799,11 @@ export function encodeServerMessage(
     case ServerMsg.Social:
       w.str16(JSON.stringify(msg.social))
       break
+    case ServerMsg.Tension:
+      w.u8(Math.round(Math.max(0, Math.min(1, msg.level)) * 255))
+        .u8(msg.phase)
+        .u8(msg.spotted ? 1 : 0)
+      break
     case ServerMsg.Loot:
       w.u16(msg.add.length)
       for (const l of msg.add) {
@@ -947,6 +956,8 @@ export function decodeServerMessage(
       return { type, dialog: JSON.parse(r.str16()) as Dialog | null }
     case ServerMsg.Social:
       return { type, social: JSON.parse(r.str16()) as SocialEvent }
+    case ServerMsg.Tension:
+      return { type, level: r.u8() / 255, phase: r.u8(), spotted: r.u8() === 1 }
     case ServerMsg.Loot: {
       const add: LootItem[] = []
       for (let i = r.u16(); i > 0; i--) {

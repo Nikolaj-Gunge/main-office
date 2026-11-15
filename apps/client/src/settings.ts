@@ -54,6 +54,8 @@ export interface Settings {
   /** 0–1. */
   masterVolume: number
   sfxVolume: number
+  /** The adaptive music (music.ts), apart from the effects. */
+  musicVolume: number
   showStats: boolean
   showDebug: boolean
   /** Aim key toggles scope on/off instead of hold-to-aim (trackpads, two-finger click). */
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   screenShake: prefersReducedMotion() ? 0 : 0.7,
   masterVolume: 0.8,
   sfxVolume: 1,
+  musicVolume: 0.35,
   showStats: false,
   // Off for players; developers turn it on with F3.
   showDebug: false,

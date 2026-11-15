@@ -45,6 +45,7 @@ import {
   ZombieKind,
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
+import type { Point } from '../items.ts'
 
 /** The free seat whose door is nearest `pos` (−1 if the car is full). */
 export function nearestFreeSeat(
@@ -474,6 +475,13 @@ export class Vehicles {
   leave(player: ServerPlayer): void {
     const at = this.seatOf(player)
     if (at) at.car.seats[at.seat] = 0
+  }
+
+  /** Where the cars stand that nobody sits in (and aren't wrecked): for car alarms (rot-world.ts). */
+  parked(): Point[] {
+    return this.cars
+      .filter((c) => !c.wrecked && c.seats.every((s) => s === 0))
+      .map((c) => ({ x: c.state.x, y: c.state.y, z: c.state.z }))
   }
 
   /** How far a car's engine is heard (m) if `player` sits in one that runs; else 0. */
