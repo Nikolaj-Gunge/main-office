@@ -53,6 +53,7 @@ import {
   traumaAt,
 } from './game/game-feel.ts'
 import { LocalPlayer } from './game/local-player.ts'
+import { PartyClient } from './game/party-client.ts'
 import { Recoil } from './game/recoil.ts'
 import { RemotePlayers } from './game/remote-players.ts'
 import { ScreenShake } from './game/screen-shake.ts'
@@ -377,6 +378,7 @@ const net = new Connection({
       if (code === CLOSE_RESTING) showRestingScreen()
       social.reset()
       voice.setJoined(false)
+      party.reset()
       remotes.clear()
       roster.clear()
       worldItems.clear()
@@ -396,7 +398,10 @@ const net = new Connection({
   },
   onMessage: (msg) => {
     combat.onMessage(msg)
-    if (msg.type === ServerMsg.Social) return social.onEvent(msg.social, performance.now())
+    if (msg.type === ServerMsg.Social) {
+      if (party.onEvent(msg.social)) return
+      return social.onEvent(msg.social, performance.now())
+    }
     if (msg.type === ServerMsg.Voice) return voice.onEvent(msg.voice)
     if (survival?.onMessage(msg)) {
       // A Field Notes gun wrap shows on your own guns (field-notes.ts).
@@ -427,6 +432,7 @@ const net = new Connection({
         overlay.setBanner(null)
         everJoined = true
         voice.setJoined(true)
+        party.onWelcome()
         if (debugHitboxes.enabled) net.send({ type: ClientMsg.SetDebug, flags: DebugFlag.LagComp })
         break
       case ServerMsg.PlayerJoined: {
@@ -670,6 +676,33 @@ function socialPress(action: 'ping' | 'chat' | 'emote'): void {
   else if (action === 'chat') social.openChat()
   else social.emote()
 }
+// Camps and trading (party-client.ts): the invite link, camp-mates' markers, the trade window.
+const party = new PartyClient({
+  hudRoot,
+  send: (req) => net.send({ type: ClientMsg.Social, social: req }),
+  myId: () => net.playerId,
+  headOf: (id) => remotes.headOf(id),
+  say: (text) => social.onEvent({ kind: 'system', text }, performance.now()),
+  onTradeOpen: (open) => {
+    uiOpen = open
+    if (open) document.exitPointerLock()
+    else closeMenu()
+  },
+})
+menu.addToPlay(party.panel.root)
+/** The person in the crosshair (within a few metres), for G: trade. */
+function facingPlayer(): { id: number; distance: number } | null {
+  const forward = camera.getWorldDirection(new THREE.Vector3())
+  let best: { id: number; distance: number } | null = null
+  for (const [id, pose] of remotes.visiblePoses()) {
+    if (!roster.has(id)) continue
+    const to = new THREE.Vector3(pose.x, pose.y + 1.1, pose.z).sub(camera.position)
+    const distance = to.length()
+    if (distance > 4 || to.normalize().dot(forward) < 0.9) continue
+    if (!best || distance < best.distance) best = { id, distance }
+  }
+  return best
+}
 // Dead with teammates still up: follow one of them (click for the next, right-click back).
 const spectator = new Spectator(hudRoot)
 const viewRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
@@ -678,6 +711,8 @@ window.addEventListener('mousedown', (e) => {
 })
 /** Teammates you can watch: same team, in a mode that has teams (zombies: the survivors). */
 function teammates(): number[] {
+  // Survival: your camp-mates.
+  if (match?.mode === 'survival') return party.mates().map((m) => m.id)
   const team = myTeam()
   if (!match || team === 0) return []
   return match.players.filter((p) => p.team === team && p.id !== net.playerId).map((p) => p.id)
@@ -812,7 +847,8 @@ window.addEventListener('keydown', (e) => {
   if (menu.isCapturing) return // rebinding a key in the menu
   const action = actionFor(settings.keybinds, e.code)
   const surviving = survival !== null && joined && match?.mode === 'survival'
-  if (surviving && survival && !menu.visible) {
+  if (surviving && e.code === 'Escape' && party.cancelTrade()) return
+  if (surviving && survival && !menu.visible && !party.trade.open) {
     // The backpack, the shop, the map and conversations get first go at every key.
     if (e.code === 'Escape' ? survival.hud.close() : survival.hud.key(e.code)) {
       e.preventDefault()
@@ -829,6 +865,7 @@ window.addEventListener('keydown', (e) => {
       if (action === 'map') return survival.hud.toggleMap()
       if (action === 'journal') return survival.hud.toggleJournal()
       if (action === 'light') return survival.toggleTorch()
+      if (action === 'trade') return party.askTrade(facingPlayer())
     }
   }
   // Chat, ping wheel, wave (keys typed into the chat never get here: they stop at its input).
@@ -1118,6 +1155,10 @@ pixels.setAnimationLoop(() => {
   const stage = match?.coop ? map.coop?.stages[match.coop.stage] : undefined
   social.update(camera, now)
   voice.update(camera, now)
+  const surviving = joined && match?.mode === 'survival'
+  party.update(camera, surviving && !noclip && !menu.visible)
+  party.panel.show(surviving)
+  if (survival?.self) party.setPockets(survival.self.inv, survival.self.money)
   objective.update(
     camera,
     joined && !noclip && match?.phase === 'playing'

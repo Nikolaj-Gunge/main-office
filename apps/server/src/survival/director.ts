@@ -128,6 +128,7 @@ import { type Nav, navFor } from './pathing.ts'
 import { type RotHost, RotWorld } from './rot-world.ts'
 import { Storage, type StorageHost } from './storage.ts'
 import { Story, type StoryHost } from './story.ts'
+import { Trades } from './trade.ts'
 import { Vehicles } from './vehicles.ts'
 import { Workbench, type WorkbenchHost } from './workbench.ts'
 
@@ -157,6 +158,10 @@ const KIT_PLANKS = 3
 const TALK_REACH = 3
 /** The dead exist only within this of somebody (m). */
 const ZED_RANGE = 185
+/** A camp-mate with one of the dead this close isn't somewhere to wake up beside (m). */
+const CAMP_DANGER = 30
+/** A character this young (s) who joins a camp is walked over to it: they've only just woken. */
+const CAMP_NEWBORN = 60
 
 interface Survivor {
   player: ServerPlayer
@@ -367,10 +372,25 @@ export class SurvivalDirector {
       everyone: () => this.survivors.values(),
       notice: (player, kind, text) => this.notice(player, kind, text),
     })
+    this.trades = new Trades({
+      trader: (id) => {
+        const sv = this.survivors.get(id)
+        return sv?.player.state.alive ? sv : null
+      },
+      now: () => this.now,
+      send: (player, social) => this.send(player, { type: ServerMsg.Social, social }),
+      touch: (t) => {
+        const sv = this.survivors.get(t.player.id)
+        if (sv) sv.dirty = true
+      },
+    })
   }
 
   /** The helipad's radio, the hold, and the retired at Haven (see evac.ts). */
   readonly evac: Evac
+
+  /** Trading between players (trade.ts). */
+  readonly trades: Trades
 
   /** Buffs and statuses: rested, wet, cold, sprains, food poisoning (see needs.ts). */
   readonly needs: NeedsKeeper
@@ -523,6 +543,7 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(player.id)
     if (!sv) return
+    this.trades.forget(player.id)
     this.workbench.forget(player)
     this.storage.forget(player)
     this.legacy.forget(player)
@@ -663,6 +684,9 @@ export class SurvivalDirector {
     delete sv.resume
     delete sv.haven
     if (resume) return resume
+    // Somebody new with a camp: they wake beside it (when that's somewhere safe to wake).
+    const camp = this.campSpot(player)
+    if (camp) return camp
     if (!toHaven) return start
     // Somebody new walks in at Haven: by the fire, facing it.
     const haven = this.def.pois.find((p) => p.key === 'haven')
@@ -680,6 +704,40 @@ export class SurvivalDirector {
       if (room > best.room) best = { x, z, room }
     }
     return { pos: [best.x, haven.y + 0.1, best.z], yaw: 0 }
+  }
+
+  /**
+   * Where a new character in a camp wakes: beside its leader (or, for the leader, the first
+   * camp-mate) if they're alive, on foot and none of the dead are near them; else null.
+   */
+  private campSpot(player: ServerPlayer): MapSpawn | null {
+    const parties = this.game.parties
+    const leader = parties.leaderOf(player.id)
+    const order = leader === player.id ? parties.mates(player.id) : [leader]
+    for (const id of order) {
+      const mate = this.game.players.get(id)
+      if (!mate?.state.alive || !this.survivors.has(id)) continue
+      if (this.vehicles.seatOf(mate) !== null) continue
+      const at = mate.state.pos
+      if (this.pool.some((z) => z.state.alive && dist(z.state.pos, at) < CAMP_DANGER)) continue
+      // People pass through each other: their own spot is somewhere to stand.
+      return { pos: [at.x, at.y + 0.05, at.z], yaw: mate.state.yaw }
+    }
+    return null
+  }
+
+  /**
+   * Somebody joined a camp: a character who has only just woken (an invite link, say) is
+   * walked over to it, as if they had woken there.
+   */
+  onCampJoined(player: ServerPlayer): void {
+    const sv = this.survivors.get(player.id)
+    if (!sv || !player.state.alive || (sv.self.age ?? 0) >= CAMP_NEWBORN) return
+    if (this.vehicles.seatOf(player) !== null) return
+    const spot = this.campSpot(player)
+    if (!spot) return
+    player.state.pos = { x: spot.pos[0], y: spot.pos[1], z: spot.pos[2] }
+    player.state.vel = { x: 0, y: 0, z: 0 }
   }
 
   /** What you wake up with: the weapons you carried, loaded as they were. */
@@ -832,6 +890,7 @@ export class SurvivalDirector {
     }
     const sv = this.survivors.get(victim.id)
     if (!sv) return
+    this.trades.forget(victim.id)
     // New and unlucky (the first ten minutes): it costs nothing, this once.
     if (keepsLoot(sv.self.age)) return void this.spare(sv)
     this.note(sv, 'death')
@@ -1069,6 +1128,7 @@ export class SurvivalDirector {
       this.drops.step()
       this.tickDay(people)
       this.rot.tick()
+      this.trades.step()
     }
     if (tick % (SAVE_SECONDS * TICK_RATE) === 0) this.saveAll()
     else if (tick % (WORLD_SAVE_SECONDS * TICK_RATE) === 0) this.saveWorld()
@@ -2418,6 +2478,8 @@ export class SurvivalDirector {
       now: () => this.now,
       random: this.random,
       people: () => [...this.survivors.values()],
+      mates: (p) =>
+        this.game.parties.mates(p.player.id).flatMap((id) => this.survivors.get(id) ?? []),
       count: (p, item) => countOf(p.self.inv, item),
       take: (p, item, n) => {
         takeStack(p.self.inv, item, n)

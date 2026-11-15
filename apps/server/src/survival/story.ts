@@ -16,6 +16,7 @@ import {
   noteText,
   noteTitle,
   openJobs,
+  PARTY_CREDIT_RANGE,
   PEOPLE,
   QUESTS,
   type QuestDef,
@@ -108,6 +109,8 @@ export interface StoryHost {
   rare(): Map<string, number>
   /** Something for Field Notes (field-notes.ts): an item handed over, somebody home, a job done. */
   noted?(p: Person, event: 'deliver' | 'rescue' | 'quest'): void
+  /** The others in their camp (party.ts) who are playing, wherever they are. */
+  mates?(p: Person): Person[]
 }
 
 interface Walker {
@@ -441,6 +444,7 @@ export class Story {
         }
         this.host.take(p, step.item, step.n)
         this.host.noted?.(p, 'deliver')
+        this.shareDelivery(p, q, key)
       }
       if (step.kind === 'talk') for (const [item, n] of step.gives ?? []) this.host.give(p, item, n)
       this.say(p, key, step.say, this.options(p, key))
@@ -453,6 +457,25 @@ export class Story {
       return void this.say(p, key, line, [{ id: 'bye', label: 'Goodbye.' }])
     }
     this.say(p, key, smallTalk(who, j, this.unlocks, this.host.random), this.options(p, key))
+  }
+
+  /**
+   * A delivery counts for the whole camp: camp-mates close by (PARTY_CREDIT_RANGE) waiting on
+   * the same hand-over in the same quest have it done too, without handing anything over.
+   */
+  private shareDelivery(p: Person, q: QuestState, key: string): void {
+    const at = p.player.state.pos
+    for (const mate of this.host.mates?.(p) ?? []) {
+      if (!mate.player.state.alive || dist(mate.player.state.pos, at) > PARTY_CREDIT_RANGE) continue
+      const theirs = mate.self.journal.quests.find((x) => x.id === q.id && x.step === q.step)
+      if (!theirs || this.current(theirs)?.kind !== 'fetch') continue
+      this.advance(mate, theirs)
+      this.host.notice(
+        mate.player,
+        'quest',
+        `${p.player.name} handed it over to ${this.nameOf(key) ?? 'them'} for the camp.`,
+      )
+    }
   }
 
   // --- The job board ------------------------------------------------------------------------

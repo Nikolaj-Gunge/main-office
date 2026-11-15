@@ -3181,3 +3181,276 @@ body {
   color: #6e6450;
   font-size: 12px;
 }
+
+/* --- Camps and trading (party-client.ts, party-hud.ts, trade-window.ts) ------------------ */
+
+/* Camp-mates: name and distance over them, through walls; a mark on the compass. */
+.camp-tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.camp-tag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: #9fd08a;
+  font-size: 12px;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 4px #000;
+}
+
+.camp-tags .camp-tag b {
+  font-size: 10px;
+}
+
+.camp-tag.down {
+  color: #b8735a;
+}
+
+.sv-compass b.sv-compass-mate {
+  bottom: 26px;
+  opacity: 1;
+  color: #9fd08a;
+  font-size: 11px;
+  text-shadow: 0 1px 0 #000;
+}
+
+/* The camp box in the pause menu. */
+.camp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 2px solid #4e5a3e;
+  background: rgb(20 24 16 / 0.7);
+}
+
+.camp-panel h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #9fd08a;
+}
+
+.camp-blurb {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.camp-link {
+  display: flex;
+  gap: 6px;
+}
+
+.camp-link input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  color: #d9d4c4;
+  background: #11130d;
+  border: 1px solid #4e5a3e;
+}
+
+.camp-panel button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  color: #d9d4c4;
+  background: #2c3322;
+  border: 1px solid #6a7a52;
+  cursor: pointer;
+}
+
+.camp-members {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.camp-members li.down {
+  color: #b8735a;
+}
+
+.camp-panel .camp-members em {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.camp-leave {
+  align-self: flex-start;
+}
+
+/* The trade window. */
+.trade {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(820px, 94vw);
+  height: min(460px, 80vh);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  background: rgb(14 14 11 / 0.96);
+  border: 2px solid #6a644e;
+  box-shadow: 6px 6px 0 #000;
+  pointer-events: auto;
+  z-index: 30;
+}
+
+.trade-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 14px;
+  background: #24221a;
+  border-bottom: 2px solid #6a644e;
+  letter-spacing: 3px;
+}
+
+.trade-hint {
+  font-size: 11px;
+  letter-spacing: 0;
+  opacity: 0.6;
+}
+
+.trade-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.trade-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 6px;
+  border-right: 2px solid #2e2b22;
+}
+
+.trade-col:last-child {
+  border-right: 0;
+}
+
+.trade-label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #c9c2a6;
+}
+
+.trade-ok {
+  margin-left: 8px;
+  color: #a8c878;
+  letter-spacing: 1px;
+}
+
+.trade-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.trade-list.table {
+  background: rgb(36 34 26 / 0.6);
+  border: 1px dashed #4a4636;
+  padding: 4px;
+}
+
+.trade-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  background: #1c1b15;
+  border: 1px solid #34312a;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trade-row:hover {
+  border-color: #8a8264;
+}
+
+.trade-row.spent {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.trade-row img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.trade .trade-row span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade .trade-row b {
+  color: #c9c2a6;
+}
+
+.trade-empty {
+  font-size: 12px;
+  opacity: 0.45;
+  padding: 4px;
+}
+
+.trade-cash {
+  font-size: 16px;
+  color: #a8c878;
+}
+
+.trade-cash input {
+  width: 90px;
+  font: inherit;
+  color: #a8c878;
+  background: #11130d;
+  border: 1px solid #4e5a3e;
+  padding: 2px 4px;
+}
+
+.trade-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 2px solid #2e2b22;
+}
+
+.trade-foot button {
+  font: inherit;
+  letter-spacing: 2px;
+  padding: 6px 16px;
+  color: #d9d4c4;
+  background: #2a2820;
+  border: 2px solid #6a644e;
+  cursor: pointer;
+}
+
+.trade-foot .trade-confirm {
+  background: #33402a;
+  border-color: #7d9a5c;
+}
+
+.trade-foot button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
