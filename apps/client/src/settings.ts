@@ -78,11 +78,19 @@ export interface Settings {
    * is asked for only then.
    */
   voice: boolean
+  /**
+   * The clip buffer (hud/clip-buffer.ts): records the last ~20 s, small, for "Keep a clip".
+   * `auto` records on medium and high graphics, not on low.
+   */
+  clips: ClipSetting
   keybinds: Keybinds
 }
 
 export const RENDERERS = ['webgl', 'webgpu'] as const
 export type RendererSetting = (typeof RENDERERS)[number]
+
+export const CLIP_SETTINGS = ['auto', 'on', 'off'] as const
+export type ClipSetting = (typeof CLIP_SETTINGS)[number]
 
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
@@ -119,6 +127,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatFilter: true,
   chatBubbles: true,
   voice: false,
+  clips: 'auto',
   keybinds: withDefaults(undefined),
 }
 

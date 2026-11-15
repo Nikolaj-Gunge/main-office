@@ -47,6 +47,8 @@ export const ACTIONS = [
   { id: 'trade', label: 'Trade with who you face (survival)', button: 0, defaults: ['KeyG'] },
   { id: 'build', label: 'Build mode (survival, with a kit)', button: 0, defaults: ['KeyH'] },
   { id: 'mute', label: 'Mute sound', button: 0, defaults: ['KeyN'] },
+  // The clip buffer (hud/clip-buffer.ts): keeps the last ~20 s for the keepsakes panel.
+  { id: 'clip', label: 'Keep a clip (last 20 s)', button: 0, defaults: ['KeyK'] },
   // Talking without a microphone (social/).
   { id: 'chat', label: 'Chat (Tab switches channel)', button: 0, defaults: ['Enter', 'KeyT'] },
   {
