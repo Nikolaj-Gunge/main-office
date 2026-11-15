@@ -14,6 +14,7 @@ import {
   type LootItem,
   MAX_PLANKS,
   type MapDef,
+  type Notice,
   type Npc,
   type PhysicsWorld,
   PIECES,
@@ -113,6 +114,8 @@ const torch = () => {
 export class SurvivalClient {
   readonly hud: SurvivalHud
   self: SurvivalSelf | null = null
+  /** Every survival notice, before it is shown (keepsakes.ts keeps the Dawn Report). */
+  onNotice: ((n: Notice) => void) | null = null
   shared: SurvivalShared | null = null
   /** What E would do right now ("Take …", "Talk to …"), or null. */
   prompt: string | null = null
@@ -345,6 +348,7 @@ export class SurvivalClient {
         return true
       case ServerMsg.Notice: {
         const n = msg.notice
+        this.onNotice?.(n)
         // Got out on the helicopter: a card of its own, not the usual story line.
         if (n.kind === 'story' && n.title === EVAC_TITLE) {
           this.evac.showCard(n.title, n.text)

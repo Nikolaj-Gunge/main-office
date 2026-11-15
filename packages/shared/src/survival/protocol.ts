@@ -226,6 +226,8 @@ export interface Notice {
   seconds?: number
   /** `note`: what it is ("Hollis' letter"), shown as its heading. */
   title?: string
+  /** The Dawn Report (dawn-report.ts, title DAWN_TITLE): its paste-anywhere line. */
+  share?: string
   /** `scream`: where it came from (it is heard, not shown). */
   at?: { x: number; y: number; z: number }
   /** A one-time hint the client shows as such (onboarding.ts HINTS), not a line in the feed. */

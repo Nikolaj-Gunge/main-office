@@ -239,7 +239,12 @@ export class GameRoom extends DurableObject {
     try {
       const response = await this.settings.fetch('https://settings/presence', {
         method: 'POST',
-        body: JSON.stringify({ world: this.worldId, players }),
+        body: JSON.stringify({
+          world: this.worldId,
+          players,
+          // Which night it is, for invite link previews (share-preview.ts).
+          night: game.match.survivalDirector?.night,
+        }),
       })
       // The answer is the day's total from every world: keeps the cutoff global between syncs.
       this.budget.synced((await response.json()) as BudgetCounts | null)

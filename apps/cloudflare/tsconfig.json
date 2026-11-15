@@ -4,5 +4,7 @@
     "lib": ["ES2023"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests run under Bun (its HTMLRewriter matches the Workers one), not the Workers types.
+  "exclude": ["src/**/*.test.ts"]
 }

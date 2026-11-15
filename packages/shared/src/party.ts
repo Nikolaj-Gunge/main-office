@@ -37,11 +37,6 @@ export function cleanPartyCode(raw: unknown): string | null {
 /** The query parameter an invite link carries. */
 export const PARTY_PARAM = 'camp'
 
-/** "Join my camp": the game's address with the camp code on it. */
-export function inviteLink(origin: string, code: string): string {
-  return `${origin}/?${PARTY_PARAM}=${code}`
-}
-
 /** One camp-mate, as their camp sees them (positions arrive once a second). */
 export interface PartyMember {
   id: number

@@ -1,5 +1,6 @@
 import {
   type CampSave,
+  type DawnReport,
   DEFAULT_WORLD_ID,
   type ObitWall,
   type Retired,
@@ -133,6 +134,10 @@ export interface WorldSave {
   builds?: SavedPiece[]
   /** Haven's record: days, Red Nights, morale, who left, graves (camp.ts). Absent in old saves. */
   camp?: CampSave
+  /** Nights this world has seen through to dawn, and the last one's Dawn Report (absent in
+   * older saves: night 1, no report). */
+  nights?: number
+  dawn?: DawnReport
 }
 
 /** One of the dead that was one of you, as the world remembers them. */

@@ -6,6 +6,8 @@ declare module '*.wasm' {
 declare var __RAPIER_WASM__: WebAssembly.Module
 
 interface Env {
+  /** The client's static files (Workers Assets); the worker reads index.html for /join. */
+  ASSETS: Fetcher
   ROOM: DurableObjectNamespace
   /** Admin settings shared by every room version (see settings.ts). */
   SETTINGS: DurableObjectNamespace

@@ -9,13 +9,19 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="theme-color" content="#14171c" />
     <title>Office FPS</title>
-    <!-- Share previews ("join my camp" links): static, the same for every link. -->
+    <!-- Share previews. Invite links (/join?camp=…) get their own title and words from the
+         Cloudflare worker (apps/cloudflare/src/preview.ts); the picture is the same for all. -->
     <meta name="description" content="Deadwood: a browser survival game. Three kilometres of dark forest, a camp called Haven, and the dead. Free, no install." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Office FPS" />
     <meta property="og:title" content="Join my camp in Deadwood" />
     <meta property="og:description" content="Somebody's holding a spot by the fire for you. Survive the night together — free, in your browser, no install." />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://office-fps.office-fps-cloudflare.workers.dev/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A camp fire in a dark blocky forest at night: Deadwood." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://office-fps.office-fps-cloudflare.workers.dev/og-image.png" />
     <meta name="twitter:title" content="Join my camp in Deadwood" />
     <meta name="twitter:description" content="Somebody's holding a spot by the fire for you. Survive the night together — free, in your browser, no install." />
     <link rel="stylesheet" href="/src/style.css" />
