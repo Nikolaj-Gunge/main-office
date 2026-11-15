@@ -14,6 +14,7 @@ import {
 } from '@office-fps/shared'
 import * as THREE from 'three'
 import { Avatar, type BodyLook } from '../render/avatar.ts'
+import { createLabel } from '../render/labels.ts'
 import { WAVE_SECONDS, waving } from '../render/wave.ts'
 
 interface Remote {
@@ -32,7 +33,17 @@ interface Remote {
   /** How fast they were moving as drawn (m/s), for their ragdoll when they die. */
   velocity: THREE.Vector3
   wasGrounded: boolean
+  /** Survival: the name floating over one of you who turned ("Ray, turned"). */
+  tag?: THREE.Sprite
 }
+
+/** Name tags over the turned: a dead, washed-out red. */
+const TAG_COLOR = '#c9a39a'
+/** How far over the top of the head the tag floats (m). */
+const TAG_LIFT = 0.35
+const TAG_RANGE = 45
+/** Smaller than map labels: readable from a few metres, not a billboard. */
+const TAG_SCALE = 0.35
 
 /** Same stride as your own footsteps (CameraFeel) so everyone sounds alike. */
 const STRIDE = 1.9
@@ -98,7 +109,15 @@ export class RemotePlayers {
     const avatar = new Avatar(name, bodyColor(id, color, kind), lookOf(kind, this.skin), look)
     avatar.root.visible = false // until the first snapshot places it
     this.scene.add(avatar.root)
+    // One of you who turned: their name floats over them, so friends know who it was.
+    const tag = kind !== 0 && look ? createLabel(name, TAG_COLOR) : undefined
+    if (tag) {
+      tag.scale.multiplyScalar(TAG_SCALE)
+      tag.visible = false
+      this.scene.add(tag)
+    }
     this.players.set(id, {
+      ...(tag ? { tag } : {}),
       name,
       color,
       kind,
@@ -117,6 +136,11 @@ export class RemotePlayers {
     if (!p) return
     this.scene.remove(p.avatar.root)
     p.avatar.dispose()
+    if (p.tag) {
+      this.scene.remove(p.tag)
+      p.tag.material.map?.dispose()
+      p.tag.material.dispose()
+    }
     this.players.delete(id)
     this.waves.delete(id)
   }
@@ -204,6 +228,12 @@ export class RemotePlayers {
       p.avatar.adjust =
         waved === undefined ? null : (parts, s) => waving(parts, (nowMs - waved) / 1000, s)
       if (p.shown) p.avatar.update(p.shown, this.poseOf(id, p.shown), nowMs, viewer)
+      if (p.tag) {
+        // Close enough to make out who it was (not through the whole forest).
+        const head = p.avatar.root.visible ? this.headOf(id) : null
+        p.tag.visible = head !== null && (!viewer || head.distanceTo(viewer) < TAG_RANGE)
+        if (head) p.tag.position.set(head.x, head.y + TAG_LIFT, head.z)
+      }
       if (before && p.shown && dt > 0) {
         if (before.alive && p.shown.alive) {
           p.velocity.set(p.shown.x - before.x, p.shown.y - before.y, p.shown.z - before.z)
@@ -337,5 +367,6 @@ function lookOf(kind: number, skin: SkinId): BodyLook {
   if (kind === ZombieKind.AlphaBrute) return 'sawmill'
   if (kind === ZombieKind.AlphaChoir) return 'choir'
   if (kind === ZombieKind.AlphaRunner) return 'teeth'
+  if (kind === ZombieKind.Mimic) return 'mimic'
   return 'zombie'
 }

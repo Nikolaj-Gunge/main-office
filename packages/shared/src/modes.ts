@@ -123,6 +123,8 @@ export const ZombieKind = {
   AlphaChoir: 7,
   /** Old Teeth: a runner that leaps. */
   AlphaRunner: 8,
+  /** Night only and rare: repeats what it heard people say, to bring them closer (lurkers.ts). */
+  Mimic: 9,
 } as const
 export type ZombieKind = (typeof ZombieKind)[keyof typeof ZombieKind]
 

@@ -49,6 +49,7 @@ const ZOMBIE_LOOKS: readonly string[] = [
   'sawmill',
   'choir',
   'teeth',
+  'mimic',
 ]
 const isZombie = (skin: BodyLook): skin is ZombieLook => ZOMBIE_LOOKS.includes(skin)
 

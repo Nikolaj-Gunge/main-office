@@ -63,6 +63,7 @@ export const KINDS: Record<number, KindStats> = {
     sight: 26,
     bash: 30,
   },
+  [ZombieKind.Mimic]: { health: 170, claws: 16, wander: 0.2, chase: 0.95, sight: 16, bash: 12 },
 }
 
 const EYE = 1.6
@@ -130,6 +131,11 @@ export class Zed {
   /** Playing dead: getting up from this time (it twitches first); a crawler never stands. */
   risingAt = 0
   crawler = false
+  /** Lying under a car (lurkers.ts): nothing stirs it but somebody stepping right by. */
+  lurking = false
+  /** Running from a torch (mimics): ignores everyone until `fleeUntil`. */
+  fleeing = false
+  private fleeUntil = 0
   /** Lost you: when it got to where you were (and started sniffing about), or 0. */
   private sniffFrom = 0
   /** The way it's following (pathing.ts), the next point on it, and when to look again. */
@@ -196,6 +202,9 @@ export class Zed {
     this.sniffFrom = 0
     this.risingAt = 0
     this.crawler = false
+    this.lurking = false
+    this.fleeing = false
+    this.fleeUntil = 0
     this.path = []
     this.planAt = 0
     this.planned = null
@@ -215,7 +224,7 @@ export class Zed {
   /** Share of walking speed it moves at right now (the game sets its body up with this). */
   get speedFactor(): number {
     const k = KINDS[this.kind] as KindStats
-    if (this.mood === 'chase' || this.mood === 'lost') return k.chase * this.boost
+    if (this.mood === 'chase' || this.mood === 'lost' || this.fleeing) return k.chase * this.boost
     // Looking into a noise: a careful walk, quicker than a shuffle, nowhere near a run.
     if (this.mood === 'investigate') return Math.max(0.3, Math.min(k.chase, k.wander * 1.4))
     return Math.max(0.2, k.wander)
@@ -224,12 +233,38 @@ export class Zed {
   /** Something made a noise there (or a screamer pointed that way): go and look. */
   alert(at: Point, now: number): void {
     // Playing dead, it doesn't stir for noise: only for somebody right there.
-    if (this.mood === 'chase' || this.mood === 'dead') return
+    if (this.mood === 'chase' || this.mood === 'dead' || this.fleeing) return
     this.mood = 'investigate'
     this.lastKnown = { ...at }
     this.since = now
     this.sniffFrom = 0
     this.planAt = 0
+  }
+
+  /**
+   * Under a car, somebody stepped right by: it has their ankle for `hold` seconds (lurkers.ts
+   * roots them meanwhile), then crawls out after them.
+   */
+  grab(id: number, at: Point, now: number, hold: number): void {
+    this.lurking = false
+    this.mood = 'dead'
+    this.crawler = true
+    this.risingAt = now + hold
+    this.targetId = id
+    this.lastKnown = { ...at }
+  }
+
+  /** Caught in a torch beam (mimics): off into the dark, away from `from`, for `seconds`. */
+  flee(from: Point, me: Point, now: number, seconds: number): void {
+    this.fleeing = true
+    this.fleeUntil = now + seconds
+    this.mood = 'wander'
+    this.targetId = 0
+    this.lastKnown = null
+    this.idleUntil = 0
+    this.planAt = 0
+    const away = Math.atan2(me.z - from.z, me.x - from.x)
+    this.goal = { x: me.x + Math.cos(away) * 35, y: me.y, z: me.z + Math.sin(away) * 35 }
   }
 
   /** Playing dead: somebody came close. It twitches, then gets up after them. */
@@ -258,6 +293,11 @@ export class Zed {
     let seen: Prey | null = null
     let seenD = Number.POSITIVE_INFINITY
     let heard: Prey | null = null
+    if (this.lurking) return null
+    if (this.fleeing) {
+      if (now < this.fleeUntil) return null
+      this.fleeing = false
+    }
     if (this.mood === 'dead') {
       if (this.risingAt > 0) return null
       for (const p of prey) {
@@ -413,7 +453,9 @@ export class Zed {
       }
       if (!this.goal && now >= this.idleUntil && KINDS[this.kind]?.wander) {
         const home: Poi | undefined = def.pois[this.home]
-        const reach = home ? Math.min(home.r, 26) : 40 + this.random() * 60
+        // Mimics keep to where they are calling from (unless something sends them running).
+        const stay = this.kind === ZombieKind.Mimic && !this.fleeing
+        const reach = home ? Math.min(home.r, 26) : stay ? 8 : 40 + this.random() * 60
         const a = this.random() * Math.PI * 2
         const from = home ? { x: home.x, z: home.z } : me
         const r = Math.sqrt(this.random()) * reach

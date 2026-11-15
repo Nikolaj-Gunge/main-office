@@ -27,6 +27,8 @@ export interface SocialHost {
   mates?(id: number): readonly number[]
   /** Somebody waved (survival: a truce offer to whoever they look at). */
   onWave?(player: ServerPlayer): void
+  /** A line was said out loud nearby (survival: the mimics listen). */
+  spoken?(player: ServerPlayer, text: string): void
 }
 
 /** A ping further than this from whoever placed it is refused (m): nobody sees that far. */
@@ -73,6 +75,7 @@ export class SocialRelay {
         const event: SocialEvent = { kind: 'chat', from: from.id, name: from.name, text, channel }
         const range = channel === 'nearby' ? CHAT_NEARBY : Number.POSITIVE_INFINITY
         this.relay(from, event, range, channel === 'team')
+        if (channel === 'nearby') this.host.spoken?.(from, text)
         return
       }
       case 'ping': {

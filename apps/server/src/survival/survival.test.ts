@@ -680,7 +680,7 @@ describe('survival: the bite', () => {
     const risen = [...insides(t).turned.keys()].map((id) => t.game.players.get(id))[0]
     if (!risen) throw new Error('nobody turned')
     expect(risen.state.alive).toBe(true)
-    expect(risen.name).toBe('P0 (turned)')
+    expect(risen.name).toBe('P0, turned')
     expect(Math.hypot(risen.state.pos.x - where.x, risen.state.pos.z - where.z)).toBeLessThan(1)
     expect(t.game.match.gearOf(risen)).toBe(gearLooks(['policevest']))
     // Drawn as you (your face and build, dead): everyone is sent your look with the new name.
@@ -688,7 +688,7 @@ describe('survival: the bite', () => {
     const joined = t.clients[1]?.inbox.findLast(
       (m) => m.type === ServerMsg.PlayerJoined && m.id === risen.id,
     )
-    expect(joined).toMatchObject({ name: 'P0 (turned)', appearance: t.player().appearance })
+    expect(joined).toMatchObject({ name: 'P0, turned', appearance: t.player().appearance })
     const stuff = insides(t).turned.get(risen.id)?.stuff ?? []
     for (const item of ['beans', 'policevest', 'cash', 'glock', 'knife'])
       expect(stuff.some((s) => s.item === item)).toBe(true)

@@ -24,6 +24,7 @@ export const CLAW_TIMING: Record<number, ClawTiming> = {
   [ZombieKind.Brute]: { windup: 0.85, recover: 1.3, track: 0.7 },
   [ZombieKind.Screamer]: { windup: 0.65, recover: 1.0, track: 0.8 },
   [ZombieKind.Stalker]: { windup: 0.25, recover: 0.4, track: 5 },
+  [ZombieKind.Mimic]: { windup: 0.45, recover: 0.8, track: 2 },
 }
 
 /** Starts a wind-up only when facing its prey within this (radians). */
