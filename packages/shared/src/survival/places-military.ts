@@ -1,3 +1,4 @@
+import { EVAC_PAD, EVAC_RADIO, EVAC_RADIO_KEY } from './evac.ts'
 import type { Site } from './kit.ts'
 import {
   armyTent,
@@ -452,6 +453,8 @@ export function radio(s: Site): void {
   pickupWreck(s.sub(8, 18), 3, 'garage')
   crate(s, -18, -18, 0.9, 'military')
   crate(s, -17, -17.2, 0.7, 'garage')
+  // The helipad in the yard's east half: the way out, for whoever brings what it takes.
+  helipad(s.sub(EVAC_PAD[0], EVAC_PAD[1]))
   for (const [x, z] of [
     [-10, 6],
     [10, 6],
@@ -667,4 +670,43 @@ export function crash(s: Site): void {
   ] as const) {
     s.zombie(x, z)
   }
+}
+
+// --- The way out ------------------------------------------------------------------------------
+
+/**
+ * The helipad on the radio tower's hill (evac.ts): a concrete pad with a painted H, landing
+ * lights at the corners, a windsock, and the field radio on its crate that calls the evacuation
+ * helicopter in — if you bring it a battery, a flare and the papers. Centred on the site's
+ * origin; the pad is 10 m square.
+ */
+export function helipad(s: Site): void {
+  const H = 0.12
+  s.block(0, 0, 0, 10, H, 10, 'concrete')
+  // The painted ring (a square of it, this being a blocky world) and the H.
+  for (const e of [-1, 1]) {
+    s.deco(0, H, e * 4, 7.6, 0.01, 0.3, 'plaster')
+    s.deco(e * 4, H, 0, 0.3, 0.01, 7.6, 'plaster')
+    s.deco(e * 1.2, H, 0, 0.5, 0.012, 3.6, 'plaster')
+  }
+  s.deco(0, H, 0, 1.9, 0.012, 0.5, 'plaster')
+  // Landing lights at the corners: dim amber, they still run off a solar panel somewhere.
+  for (const x of [-4.8, 4.8])
+    for (const z of [-4.8, 4.8]) s.deco(x, H, z, 0.22, 0.16, 0.22, 'warnlight')
+  s.light(-4.8, 0.6, 4.8, { color: 0xffa040, intensity: 6, distance: 9, flicker: 0.3 })
+  s.light(4.8, 0.6, -4.8, { color: 0xffa040, intensity: 6, distance: 9, flicker: 0.3 })
+  // The windsock on its pole, off the north-east corner.
+  s.block(6.2, 0, -5.6, 0.12, 4.2, 0.12, 'metal')
+  s.deco(6.2 + 0.7, 3.8, -5.6, 1.3, 0.34, 0.34, 'accent')
+  s.deco(6.2 + 1.55, 3.76, -5.6, 0.5, 0.26, 0.26, 'plaster')
+  // The radio: a field set on an ammo crate by the pad's south-west corner, its whip antenna up.
+  const [rx, rz] = EVAC_RADIO
+  crate(s, rx, rz, 0.8)
+  s.deco(rx, 0.8, rz, 0.5, 0.32, 0.3, 'metal')
+  s.deco(rx, 0.95, rz + 0.16, 0.32, 0.12, 0.02, 'screen')
+  s.deco(rx + 0.18, 1.12, rz - 0.08, 0.03, 2.2, 0.03, 'metal')
+  s.light(rx, 1.4, rz + 0.2, { color: 0x9adf9a, intensity: 2, distance: 3, flicker: 0.4 })
+  s.label(rx, 1.9, rz + 1, 'EVAC')
+  s.interact(EVAC_RADIO_KEY, 'radio', rx, 1, rz, 'Use the field radio')
+  sandbags(s, rx - 1.5, rz - 1, false, 2.4)
 }

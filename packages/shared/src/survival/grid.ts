@@ -152,6 +152,9 @@ const SIZES: Record<string, Size> = {
   toolbox: [3, 2],
   // Made things
   barricadekit: [2, 3],
+  // The way out (evac.ts)
+  evacbattery: [2, 2],
+  flaregun: [2, 1],
 }
 
 /** How many go in one stack (everything not listed: one). */

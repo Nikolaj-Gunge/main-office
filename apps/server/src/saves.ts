@@ -1,4 +1,4 @@
-import type { Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
+import type { Retired, Stored, SurvivalSelf, WeaponId } from '@office-fps/shared'
 
 /**
  * Where saves live: a key → JSON value store. In memory for tests, JSON files for the Bun server
@@ -106,6 +106,8 @@ export interface WorldSave {
   gates: number
   /** Boarded-up gaps: [spot index, planks]. */
   boards: [number, number][]
+  /** Characters who got out on the evacuation helicopter: they live at Haven now (evac.ts). */
+  retired?: Retired[]
 }
 
 export const freshWorld = (epoch = 0): WorldSave => ({
@@ -117,8 +119,17 @@ export const freshWorld = (epoch = 0): WorldSave => ({
   boards: [],
 })
 
+/**
+ * What an account remembers whatever happens to its characters and worlds: a loose object in
+ * which each feature keeps its own part (evac, legacy, notes, cosmetics…). Never versioned as a
+ * whole: each feature reads its part defensively.
+ */
+export type AccountSave = Record<string, unknown>
+
 const WORLD_KEY = 'world'
 const characterKey = (account: string) => `char:${account}`
+const ACCOUNT_PREFIX = 'account:'
+const accountKey = (account: string) => `${ACCOUNT_PREFIX}${account}`
 
 /**
  * Saves behind a store: keeps the world and the characters it has loaded, and writes what
@@ -129,6 +140,7 @@ export class Saves {
   readonly store: SaveStore
   world: WorldSave = freshWorld()
   private readonly characters = new Map<string, CharacterSave>()
+  private readonly accounts = new Map<string, AccountSave>()
   /** Keys waiting to be written ('world' or char:…). */
   private readonly dirty = new Set<string>()
   private writing: Promise<void> = Promise.resolve()
@@ -168,6 +180,35 @@ export class Saves {
     void this.store.delete(characterKey(account))
   }
 
+  /** Reads an account's own record into memory, if it isn't already (before they join). */
+  async loadAccount(account: string): Promise<AccountSave> {
+    const have = this.accounts.get(account)
+    if (have) return have
+    let data: AccountSave = {}
+    try {
+      const raw = await this.store.get(accountKey(account))
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) data = raw as AccountSave
+    } catch (err) {
+      console.warn(`[saves] reading ${accountKey(account)} failed:`, (err as Error).message)
+    }
+    // Somebody may have put to it while it was being read.
+    const now = this.accounts.get(account)
+    if (now) return now
+    this.accounts.set(account, data)
+    return data
+  }
+
+  /** An account's record (empty if it has none, or it wasn't loaded with loadAccount). */
+  account(account: string): AccountSave {
+    return this.accounts.get(account) ?? {}
+  }
+
+  /** Replaces an account's record (written on the next flush). Outlives characters and worlds. */
+  putAccount(account: string, data: AccountSave): void {
+    this.accounts.set(account, data)
+    this.dirty.add(accountKey(account))
+  }
+
   putWorld(world: Omit<WorldSave, 'epoch'>): void {
     this.world = { ...world, epoch: this.world.epoch }
     this.dirty.add(WORLD_KEY)
@@ -180,7 +221,8 @@ export class Saves {
   newWorld(): void {
     this.world = freshWorld(this.world.epoch + 1)
     this.characters.clear()
-    this.dirty.clear()
+    // Accounts outlive worlds: their unwritten changes stay to be written.
+    for (const key of this.dirty) if (!key.startsWith(ACCOUNT_PREFIX)) this.dirty.delete(key)
     this.dirty.add(WORLD_KEY)
   }
 
@@ -202,7 +244,12 @@ export class Saves {
     return this.writing
   }
 
-  private envelope(key: string): Envelope | null {
+  private envelope(key: string): Envelope | AccountSave | null {
+    // Account records are stored as they are (no envelope: they outlive any schema version).
+    if (key.startsWith(ACCOUNT_PREFIX)) {
+      const data = this.accounts.get(key.slice(ACCOUNT_PREFIX.length))
+      return data ? structuredClone(data) : null
+    }
     const data = key === WORLD_KEY ? this.world : this.characters.get(key.slice(5))
     return data ? { v: SAVE_VERSION, data: structuredClone(data) as never } : null
   }

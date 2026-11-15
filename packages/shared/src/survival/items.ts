@@ -383,6 +383,32 @@ add({
   desc: 'An alarm clock taped to a tin of scrap. Wind it and throw it: the dead go to the noise.',
 })
 
+// ── The way out (evac.ts): the three things the helipad's radio needs. Rare, and worth a lot ──
+add({
+  id: 'evacbattery',
+  name: 'Military radio battery',
+  kind: 'tool',
+  weight: 1.4,
+  value: 260,
+  desc: 'A sealed BA-5590, still holding a charge. The helipad radio on the tower hill takes one.',
+})
+add({
+  id: 'flaregun',
+  name: 'Flare gun',
+  kind: 'tool',
+  weight: 0.9,
+  value: 220,
+  desc: 'Orange plastic, one red cartridge. A pilot looks for this. So does everything else.',
+})
+add({
+  id: 'evacpapers',
+  name: 'Evacuation papers',
+  kind: 'tool',
+  weight: 0.05,
+  value: 300,
+  desc: 'Signed and stamped: one seat out, bearer only. The pilot will want to see them.',
+})
+
 export const ITEMS: Readonly<Record<string, ItemDef>> = Object.fromEntries(
   defs.map((d) => [d.id, d]),
 )
@@ -636,6 +662,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['bandage', 3],
       ['medkit', 1],
       ['batteries', 3],
+      ['flaregun', 0.08],
     ],
   },
   military: {
@@ -672,6 +699,8 @@ const TABLES: Record<LootTable, TableDef> = {
       ['pack_military', 0.5],
       ['machete', 1],
       ['batteries', 3],
+      ['evacbattery', 0.12],
+      ['flaregun', 0.12],
     ],
   },
   hunting: {
@@ -843,6 +872,9 @@ const TABLES: Record<LootTable, TableDef> = {
       ['saiga', 1],
       ['barrett', 0.6],
       ['pack_military', 2],
+      ['evacbattery', 0.25],
+      ['flaregun', 0.25],
+      ['evacpapers', 0.15],
     ],
   },
   lab: {
@@ -856,6 +888,7 @@ const TABLES: Record<LootTable, TableDef> = {
       ['gasmask', 1],
       ['adrenaline', 1],
       ['cure', 0.6],
+      ['evacpapers', 0.25],
     ],
   },
   homegun: {

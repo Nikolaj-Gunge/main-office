@@ -1,6 +1,7 @@
 import type { Bio } from './characters.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
+import type { EvacShared } from './evac.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
 import type { ContainerId, ItemDest, ItemRef } from './grid.ts'
 import { ITEMS } from './items.ts'
@@ -129,6 +130,8 @@ export interface SurvivalShared {
   drops?: SupplyDrop[]
   /** The weather's seed and clock: everything else follows from them (see weather.ts). */
   weather?: WeatherShared
+  /** Somebody called in the evacuation helicopter (evac.ts), or none. */
+  evac?: EvacShared
 }
 
 export type SurvivalAction =
