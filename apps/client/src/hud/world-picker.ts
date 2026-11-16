@@ -54,8 +54,8 @@ export class WorldPicker {
   private readonly list: HTMLElement
   private readonly linkRow: HTMLElement
   private readonly linkInput: HTMLInputElement
-  /** Haven Radio (/radio): the chosen world's radio, for a phone (no 3D). */
-  private readonly radioLink: HTMLAnchorElement
+  /** Haven Radio (/radio): the chosen world's radio, for a phone (no 3D). The menu's footer. */
+  readonly radioLink: HTMLAnchorElement
   /** Chosen world, or null for "any". */
   private chosen: string | null = worldFromUrl()
   private reply: WorldsReply | null = null
@@ -115,6 +115,8 @@ export class WorldPicker {
 
   /** Each fresh list (the title screen counts the survivors out tonight from it). */
   onReply: ((reply: WorldsReply) => void) | null = null
+  /** Where PLAY will go, in a few words (the menu writes it under PLAY). */
+  onSummary: ((text: string) => void) | null = null
 
   /** Fetches the head counts and redraws. */
   async refresh(): Promise<void> {
@@ -184,6 +186,9 @@ export class WorldPicker {
     this.linkRow.hidden = !priv
     if (priv) this.linkInput.value = worldLink(priv)
     const radioWorld = this.chosen ?? pick
+    this.onSummary?.(
+      this.chosen ? worldName(this.chosen) : pick ? `Any world → ${worldName(pick)}` : 'Any world',
+    )
     this.radioLink.href = radioWorld ? `/radio?world=${encodeURIComponent(radioWorld)}` : '/radio'
   }
 }
