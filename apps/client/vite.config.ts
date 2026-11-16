@@ -91,6 +91,7 @@ export default defineConfig({
       '/healthz': `http://localhost:${serverPort}`,
       '/worlds': `http://localhost:${serverPort}`,
       '/admin/api': `http://localhost:${serverPort}`,
+      '/radio/': `http://localhost:${serverPort}`,
     },
   },
   build: {
@@ -100,10 +101,11 @@ export default defineConfig({
     // The vendor chunk (three.js + Rapier's JS side) is ~850 kB before compression.
     chunkSizeWarningLimit: 1000,
     rolldownOptions: {
-      // Two pages: the game and the admin page (/admin).
+      // Three pages: the game, the admin page (/admin) and Haven Radio (/radio, no 3D).
       input: {
         main: new URL('index.html', import.meta.url).pathname,
         admin: new URL('admin.html', import.meta.url).pathname,
+        radio: new URL('radio.html', import.meta.url).pathname,
       },
       // Three.js and Rapier in a chunk of their own: it keeps its hash (and stays cached) across
       // deploys that only change the game.

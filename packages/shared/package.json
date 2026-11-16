@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./radio-feed": "./src/radio-feed.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

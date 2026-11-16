@@ -7,6 +7,7 @@
     "./budget": "./src/budget.ts",
     "./game": "./src/game.ts",
     "./loop": "./src/loop.ts",
+    "./radio-feed": "./src/radio-feed.ts",
     "./saves": "./src/saves.ts",
     "./session": "./src/session.ts"
   },

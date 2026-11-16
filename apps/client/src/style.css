@@ -4006,3 +4006,12 @@ body.grabbed #hud::after {
   pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 55%, rgb(110 10 0 / 0.45) 100%);
 }
+
+/* --- Haven Radio link (world picker → /radio, src/radio/) -------------------------------- */
+
+.world-radio-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #fbb954;
+}

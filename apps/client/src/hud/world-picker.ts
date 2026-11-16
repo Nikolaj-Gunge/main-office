@@ -54,6 +54,8 @@ export class WorldPicker {
   private readonly list: HTMLElement
   private readonly linkRow: HTMLElement
   private readonly linkInput: HTMLInputElement
+  /** Haven Radio (/radio): the chosen world's radio, for a phone (no 3D). */
+  private readonly radioLink: HTMLAnchorElement
   /** Chosen world, or null for "any". */
   private chosen: string | null = worldFromUrl()
   private reply: WorldsReply | null = null
@@ -89,7 +91,12 @@ export class WorldPicker {
       })
     })
     this.linkRow.append(this.linkInput, copy)
-    this.root.append(label, this.list, this.linkRow)
+    this.radioLink = document.createElement('a')
+    this.radioLink.className = 'world-radio-link'
+    this.radioLink.target = '_blank'
+    this.radioLink.rel = 'noopener'
+    this.radioLink.textContent = 'Listen on your phone: Haven Radio'
+    this.root.append(label, this.list, this.linkRow, this.radioLink)
     this.render()
     this.apply()
     void this.refresh()
@@ -170,5 +177,7 @@ export class WorldPicker {
     const priv = this.chosen && isPrivateWorld(this.chosen) ? this.chosen : null
     this.linkRow.hidden = !priv
     if (priv) this.linkInput.value = worldLink(priv)
+    const radioWorld = this.chosen ?? pick
+    this.radioLink.href = radioWorld ? `/radio?world=${encodeURIComponent(radioWorld)}` : '/radio'
   }
 }

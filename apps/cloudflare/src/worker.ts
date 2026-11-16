@@ -20,8 +20,9 @@ export { Settings } from './settings.ts'
 export { SaveVault } from './vault.ts'
 
 /**
- * Static client files (game and admin page) are served by Workers Assets before this runs (free,
- * not metered); only the WebSocket, health check, world list and admin API reach the worker.
+ * Static client files (game, admin and radio pages) are served by Workers Assets before this runs (free,
+ * not metered); only the WebSocket, health check, world list, admin API and the radio page's
+ * feed (polled, see radio-feed.ts) reach the worker.
  * `?world=` picks the room (worlds.ts): each world is its own GameRoom instance (idFromName), so
  * no new Durable Object class is needed; without it everything goes to the original world.
  * `/join?camp=…&world=…` (invite links) is the game's page with a link preview of its own
@@ -45,7 +46,12 @@ export default {
         return (await r.json()) as WorldGlance | null
       })
     }
-    if (pathname === WS_PATH || pathname === '/healthz' || pathname.startsWith('/admin/api/')) {
+    if (
+      pathname === WS_PATH ||
+      pathname === '/healthz' ||
+      pathname.startsWith('/admin/api/') ||
+      pathname.startsWith('/radio/')
+    ) {
       // One room per world and protocol version: Cloudflare keeps a running room on its old code
       // while anyone is connected, so a protocol bump must land in a fresh room (old tabs reload).
       const world = routeWorld(url.searchParams.get(WORLD_PARAM))

@@ -16,6 +16,7 @@ import { errorLog } from './errors.ts'
 import { FileStore } from './file-store.ts'
 import { Game } from './game.ts'
 import { GameLoop } from './loop.ts'
+import { RadioDesk } from './radio-feed.ts'
 import { serveStatic } from './static.ts'
 import { WorldHost } from './world-host.ts'
 
@@ -37,6 +38,8 @@ interface HostedWorld {
   game: Game
   loop: GameLoop
   connections: ReturnType<typeof createConnections>
+  /** The /radio page's feed and votes (radio-feed.ts). */
+  radio: RadioDesk
 }
 
 // Survival runs several worlds (worlds.ts), each opened the first time somebody asks for it.
@@ -51,7 +54,13 @@ const worlds = new WorldHost<HostedWorld>(async (id) => {
     `[server] world "${id}", map "${map.name}": ${physics.mapColliders.length} colliders, ` +
       `${game.spawnPointCount} spawn spots, ${map.pickups?.length ?? 0} weapon pickups`,
   )
-  return { id, game, loop, connections: createConnections(game, () => loop.tickMs, budget) }
+  return {
+    id,
+    game,
+    loop,
+    connections: createConnections(game, () => loop.tickMs, budget),
+    radio: new RadioDesk(game, () => id),
+  }
 }, mapId === SURVIVAL_MAP)
 const main = await worlds.get(worlds.route(null))
 const { game } = main
@@ -75,7 +84,8 @@ const server = Bun.serve<WorldSocket>({
       url.pathname === '/worlds' ||
       url.pathname === '/healthz' ||
       url.pathname === WS_PATH ||
-      url.pathname.startsWith('/admin/api/')
+      url.pathname.startsWith('/admin/api/') ||
+      url.pathname.startsWith('/radio/')
     ) {
       budget.http()
     }
@@ -103,6 +113,13 @@ const server = Bun.serve<WorldSocket>({
 
     if (url.pathname.startsWith('/admin/api/')) return admin.handle(req)
     if (url.pathname === '/admin') return serveStatic(clientDist, '/admin.html')
+
+    // Haven Radio (radio-feed.ts): the phone page's feed and votes, and the page itself.
+    if (url.pathname.startsWith('/radio/')) {
+      const world = await worlds.get(worlds.route(url.searchParams.get(WORLD_PARAM)))
+      return world.radio.handle(req, server.requestIP(req)?.address ?? '', budget.resting)
+    }
+    if (url.pathname === '/radio') return serveStatic(clientDist, '/radio.html')
 
     if (url.pathname === WS_PATH) {
       const ip = server.requestIP(req)?.address

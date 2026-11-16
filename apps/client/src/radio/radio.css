@@ -1,0 +1,239 @@
+/* Haven Radio (/radio): the game's pixel menu look, sized for a phone. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: #11121a;
+}
+
+body {
+  min-height: 100vh;
+  background: #11121a;
+  color: #e8e8e8;
+  font:
+    16px / 1.4 "Pixelify Sans",
+    ui-monospace,
+    Menlo,
+    monospace;
+  -webkit-font-smoothing: none;
+}
+
+#radio {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-head h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fbb954;
+  text-shadow: 3px 3px 0 #000;
+  line-height: 1.1;
+}
+
+.radio-sub {
+  margin-top: 4px;
+  color: #b8b8c8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radio-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #000;
+  background: #555;
+}
+
+.radio-dot.on {
+  background: #e05040;
+  animation: radio-blink 1.6s steps(1) infinite;
+}
+
+@keyframes radio-blink {
+  50% {
+    background: #5a1f1a;
+  }
+}
+
+.radio-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.radio-stat,
+.radio-card {
+  background: #1b1d2a;
+  border: 3px solid #f2f2f2;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.radio-stat {
+  padding: 6px 4px;
+  text-align: center;
+  min-width: 0;
+}
+
+.radio-stat-label {
+  font-size: 11px;
+  color: #9a9ab0;
+  text-transform: uppercase;
+}
+
+.radio-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radio-stat.night .radio-stat-value {
+  color: #8fb3ff;
+}
+
+.radio-card {
+  padding: 12px 14px;
+}
+
+.radio-card h2 {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fbb954;
+  margin-bottom: 6px;
+}
+
+.radio-bar {
+  height: 12px;
+  margin: 6px 0;
+  background: #000;
+  border: 2px solid #f2f2f2;
+}
+
+.radio-bar-fill {
+  height: 100%;
+  background: #d9a441;
+}
+
+.radio-bar-fill.low {
+  background: #c0392b;
+}
+
+.radio-bar-fill.high {
+  background: #6dbf5b;
+}
+
+.radio-red {
+  color: #d08080;
+}
+
+.radio-red.now {
+  color: #ff5a4a;
+  font-weight: 700;
+}
+
+.radio-mood {
+  border-color: #8fb3ff;
+}
+
+.radio-lines {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radio-lines li {
+  padding-left: 10px;
+  border-left: 3px solid #4a4d66;
+}
+
+.radio-lines li:first-child {
+  border-left-color: #fbb954;
+  color: #fff;
+}
+
+.radio-hiss,
+.radio-empty {
+  color: #8a8aa0;
+}
+
+.radio-dawn p {
+  margin-top: 6px;
+  color: #d8d8e0;
+}
+
+.radio-dawn-title {
+  color: #b8b8c8;
+}
+
+.radio-vote {
+  border-color: #c0392b;
+}
+
+.radio-vote-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.radio-vote-btn {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 2px solid #f2f2f2;
+  background: #2b2e3f;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 56px;
+}
+
+.radio-vote-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.radio-vote-btn.mine {
+  background: #5a2a24;
+  opacity: 1;
+}
+
+.radio-vote-count {
+  font-size: 12px;
+  color: #b8b8c8;
+}
+
+.radio-vote-note {
+  font-size: 13px;
+  color: #b8b8c8;
+  margin-top: 6px;
+}
+
+.radio-foot {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #8a8aa0;
+}
+
+.radio-join {
+  color: #fbb954;
+}

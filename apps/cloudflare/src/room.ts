@@ -3,6 +3,7 @@ import { AdminApi } from '@office-fps/server/admin'
 import { type BudgetCounts, limitFromEnv, RequestBudget } from '@office-fps/server/budget'
 import { Game } from '@office-fps/server/game'
 import { GameLoop } from '@office-fps/server/loop'
+import { RadioDesk } from '@office-fps/server/radio-feed'
 import { createSession } from '@office-fps/server/session'
 import {
   createPhysicsWorld,
@@ -40,6 +41,7 @@ export class GameRoom extends DurableObject {
   private game: Game | null = null
   private loop: GameLoop | null = null
   private admin: AdminApi | null = null
+  private radio: RadioDesk | null = null
   private sockets = 0
   private lastInput = 0
   /** Today's metered requests (see budget.ts). */
@@ -61,6 +63,7 @@ export class GameRoom extends DurableObject {
       const map = loadMap(DEFAULT_MAP_ID)
       this.game = new Game(map, createPhysicsWorld(map))
       this.loop = new GameLoop(TICK_RATE, () => this.tick())
+      this.radio = new RadioDesk(this.game, () => this.worldId ?? DEFAULT_WORLD_ID)
       // Rules live in the Settings object, so they survive this room being evicted while the
       // office is empty, deploys, and updates that start a new room.
       const settings = this.settings
@@ -127,6 +130,11 @@ export class GameRoom extends DurableObject {
 
     const { pathname } = new URL(request.url)
     if (pathname.startsWith('/admin/api/')) return this.admin.handle(request)
+    // Haven Radio: a polled summary (cached), never a socket or a snapshot (radio-feed.ts).
+    if (pathname.startsWith('/radio/') && this.radio) {
+      const ip = request.headers.get('CF-Connecting-IP') ?? ''
+      return this.radio.handle(request, ip, this.budget.resting)
+    }
     if (pathname === '/healthz') {
       return Response.json({
         ok: true,

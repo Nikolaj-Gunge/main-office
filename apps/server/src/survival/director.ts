@@ -74,6 +74,7 @@ import {
   type PoiKind,
   PROJECT_BOARD_KEY,
   planksFor,
+  type RotMood,
   recipeOf,
   regive,
   rollLoot,
@@ -145,6 +146,7 @@ import { KINDS, kindFor, POOL, type Prey, Zed } from './horde.ts'
 import { Junk, type JunkHost } from './junk.ts'
 import { causeOfDeath, LegacyKeeper } from './legacy.ts'
 import { type LurkerHost, Lurkers } from './lurkers.ts'
+import { MoodVote } from './mood-vote.ts'
 import { NeedsKeeper } from './needs.ts'
 import {
   drainFactor,
@@ -577,6 +579,13 @@ export class SurvivalDirector {
   readonly skills: SkillsKeeper
   /** The night's log, the Dawn Report and how many nights the world has seen (dawn-report.ts). */
   readonly dawnDesk = new DawnDesk()
+  /** Streamer night: /radio listeners vote on the coming night's mood (mood-vote.ts). */
+  readonly moodVote = new MoodVote()
+
+  /** Tonight's Rot mood (null by day). */
+  get mood(): RotMood | null {
+    return this.rot.mood
+  }
 
   /** The night the world is on (1 = its first); for link previews (share-preview.ts). */
   get night(): number {
@@ -1619,6 +1628,9 @@ export class SurvivalDirector {
     if (phase === 'dusk') {
       // Read out on Radio Free Deadwood (radio.ts) to whoever has a radio on.
       this.rot.dusk(this.weatherSeed)
+      // A streamer night: the listeners' pick replaces the seeded mood.
+      const voted = this.moodVote.close(this.rot.mood)
+      if (voted) this.rot.director.mood = voted
       const mood = this.rot.mood
       if (mood) this.radio.say({ kind: 'mood', mood })
       this.game.match.broadcast()

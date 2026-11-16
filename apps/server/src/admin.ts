@@ -58,6 +58,7 @@ export interface AdminOptions {
  *   POST /admin/api/raid          {} → survival: bandit raiders come up the east road now
  *   POST /admin/api/reset-character {"id"} → survival: their character starts over
  *   POST /admin/api/broadcast     {"text"} → a line from the server to everyone
+ *   POST /admin/api/streamer      {"on": bool} → survival: /radio listeners vote on the night's mood
  *   POST /admin/api/client-error  (no password) a browser's uncaught error, rate-limited
  */
 export class AdminApi {
@@ -138,6 +139,15 @@ export class AdminApi {
           return json({ error: 'Not playing survival' }, 409)
         }
         return json(this.state())
+      }
+      case 'POST /admin/api/streamer': {
+        // A streamer night (mood-vote.ts) for this world: in memory, until turned off or restart.
+        const body = (await request.json().catch(() => undefined)) as { on?: unknown } | undefined
+        if (typeof body?.on !== 'boolean') return json({ error: 'on must be true or false' }, 400)
+        const vote = this.game.match.survivalDirector?.moodVote
+        if (!vote) return json({ error: 'Not playing survival' }, 409)
+        vote.setOn(body.on)
+        return json({ streamer: vote.on })
       }
       case 'POST /admin/api/new-round':
         this.game.match.startRound(false)
