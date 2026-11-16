@@ -68,6 +68,7 @@ import { type InterestEntity, pickInterest, SpatialGrid } from './interest.ts'
 import { type Point, type WorldItem, WorldItems } from './items.ts'
 import { type HistoryPose, PoseHistory } from './lagcomp.ts'
 import { MatchRunner } from './match.ts'
+import { MoveLod } from './move-lod.ts'
 import { Parties } from './party.ts'
 import { type SaveStore, Saves } from './saves.ts'
 import { SocialRelay } from './social.ts'
@@ -212,6 +213,8 @@ export class Game {
   private snapshotCount = 0
   private map: MapDef
   private physics: PhysicsWorld
+  /** Lighter movement for the dead nobody is near (move-lod.ts). */
+  readonly moveLod = new MoveLod(TICKS_PER_SNAPSHOT)
   private readonly history = new PoseHistory(
     Math.ceil((1 * TICK_RATE) / TICKS_PER_SNAPSHOT),
     TICKS_PER_SNAPSHOT,
@@ -605,6 +608,7 @@ export class Game {
     this.tick++
     const t0 = performance.now()
     this.thinkBots()
+    this.moveLod.update(this.tick, this.players.values())
     for (const player of this.players.values()) {
       const take = player.queue.length > CATCH_UP_QUEUE ? MAX_COMMANDS_PER_TICK : 1
       const commands = player.queue.splice(0, take)
@@ -617,11 +621,18 @@ export class Game {
           if (usePressed) this.match.onUse(player)
           continue
         }
+        // The dead far from everyone move at snapshot rate (move-lod.ts).
+        const ticks = player.zombie ? this.moveLod.gate(player, command, this.tick) : 1
+        if (ticks === 0) {
+          player.ackSeq = command.seq
+          this.animate(player, 0)
+          continue
+        }
         const bx = player.state.pos.x
         const bz = player.state.pos.z
         const wasGrounded = player.state.grounded
         const fallSpeed = -player.state.vel.y
-        const events = stepPlayer(player.state, command, TICK_DT, player.body)
+        const events = stepPlayer(player.state, command, TICK_DT * ticks, player.body)
         this.animate(player, Math.hypot(player.state.pos.x - bx, player.state.pos.z - bz))
         if (player.state.grounded && !wasGrounded) {
           player.land = Math.max(player.land, Math.min(1, (fallSpeed - 1) / (HARD_LANDING - 1)))
@@ -1018,6 +1029,7 @@ export class Game {
 
   /** Brings a pooled zombie (back) to life here. */
   placeZombie(zombie: ServerPlayer, spawn: MapSpawn, health: number): void {
+    this.moveLod.forget(zombie.id)
     // Walker or runner this time: clients need to know to draw the right one.
     const kind = zombie.zombie?.kind ?? 0
     if (this.zombieLooks.get(zombie.id) !== kind) {
@@ -1068,6 +1080,7 @@ export class Game {
 
   /** Takes a zombie out quietly (no kill, no score): back into the pool. */
   retireZombie(zombie: ServerPlayer): void {
+    this.moveLod.forget(zombie.id)
     zombie.state.alive = false
     zombie.state.vel = { x: 0, y: 0, z: 0 }
     zombie.respawnAt = Number.POSITIVE_INFINITY
