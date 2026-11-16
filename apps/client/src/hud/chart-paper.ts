@@ -1,4 +1,12 @@
-import { CHART_GRID, chartShare, hasCell, textToBits } from '@office-fps/shared'
+import {
+  CHART_CELL,
+  CHART_GRID,
+  chartShare,
+  hasCell,
+  textToBits,
+  WORLD_HALF,
+} from '@office-fps/shared'
+import type { Bounds } from './map-view.ts'
 
 /** Pixels of pencil per map square (the fog's ragged edge is drawn at this grain). */
 const SUB = 3
@@ -96,6 +104,8 @@ export class ChartPaper {
   private fog: HTMLCanvasElement | null = null
   private seenBits: Uint8Array | null = null
   share = 0
+  /** The world rectangle round every square you've drawn (null: none yet). */
+  walked: Bounds | null = null
 
   /** The fog canvas for these maps (redrawn only when they change). */
   fogFor(seen: string, old: string | undefined): HTMLCanvasElement {
@@ -105,6 +115,7 @@ export class ChartPaper {
     const bits = textToBits(seen)
     this.seenBits = bits
     this.share = chartShare(bits)
+    this.walked = walkedBounds(bits)
     this.fog = paintFog(bits, old ? textToBits(old) : null)
     return this.fog
   }
@@ -113,4 +124,24 @@ export class ChartPaper {
   drawn(i: number): boolean {
     return !!this.seenBits && hasCell(this.seenBits, i)
   }
+}
+
+/** The world rectangle round the drawn squares, or null when there are none. */
+function walkedBounds(bits: Uint8Array): Bounds | null {
+  let x0 = CHART_GRID
+  let x1 = -1
+  let z0 = CHART_GRID
+  let z1 = -1
+  for (let i = 0; i < CHART_GRID * CHART_GRID; i++) {
+    if (!hasCell(bits, i)) continue
+    const x = i % CHART_GRID
+    const z = Math.floor(i / CHART_GRID)
+    x0 = Math.min(x0, x)
+    x1 = Math.max(x1, x)
+    z0 = Math.min(z0, z)
+    z1 = Math.max(z1, z)
+  }
+  if (x1 < 0) return null
+  const at = (c: number) => c * CHART_CELL - WORLD_HALF
+  return [at(x0), at(x1 + 1), at(z0), at(z1 + 1)]
 }

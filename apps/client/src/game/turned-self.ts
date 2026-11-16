@@ -20,6 +20,8 @@ export class TurnedSelfView {
   private state: TurnedSelfState | null = null
   private at = 0
   private steering = false
+  /** The state the offer was answered in: its prompt stays down until the server's reply. */
+  private answered: TurnedSelfState | null = null
 
   constructor(
     parent: HTMLElement,
@@ -72,6 +74,7 @@ export class TurnedSelfView {
   private answer(take: boolean): void {
     if (this.state?.offer === undefined) return
     this.prompt.hidden = true
+    this.answered = this.state
     this.send({ a: 'turned', take })
   }
 
@@ -90,7 +93,7 @@ export class TurnedSelfView {
     const st = alive ? null : this.state
     const gone = (nowMs - this.at) / 1000
     const offer = st?.offer !== undefined ? Math.max(0, st.offer - gone) : null
-    this.prompt.hidden = offer === null || offer <= 0
+    this.prompt.hidden = offer === null || offer <= 0 || this.state === this.answered
     if (offer !== null) this.promptCount.textContent = String(Math.ceil(offer))
     const left = st?.left !== undefined ? Math.max(0, st.left - gone) : null
     const steering = left !== null && pose !== null
