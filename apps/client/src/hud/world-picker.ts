@@ -113,6 +113,9 @@ export class WorldPicker {
     return this.net.state === 'open' || this.net.state === 'connecting'
   }
 
+  /** Each fresh list (the title screen counts the survivors out tonight from it). */
+  onReply: ((reply: WorldsReply) => void) | null = null
+
   /** Fetches the head counts and redraws. */
   async refresh(): Promise<void> {
     if (this.fetching) return
@@ -120,7 +123,10 @@ export class WorldPicker {
     this.lastFetch = performance.now()
     const reply = await fetchWorlds()
     this.fetching = false
-    if (reply) this.reply = reply
+    if (reply) {
+      this.reply = reply
+      this.onReply?.(reply)
+    }
     this.apply()
     this.render()
   }

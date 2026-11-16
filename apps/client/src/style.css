@@ -4015,3 +4015,97 @@ body.grabbed #hud::after {
   font-size: 13px;
   color: #fbb954;
 }
+
+/* --- Title screen (hud/title-screen.ts) and lost-context notice (render/context-loss.ts) --- */
+.title-logo {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.menu h1.title-heading {
+  margin-bottom: 4px;
+  text-shadow: none;
+  line-height: 0;
+}
+
+.title-count {
+  margin-bottom: 14px;
+  min-height: 1.2em;
+  color: #9a8e76;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Before PLAY the live woods are the background: the menu steps to the left. */
+.menu.menu-title {
+  justify-content: flex-start;
+  padding-left: 5vw;
+  background: linear-gradient(
+    90deg,
+    rgb(8 8 12 / 0.82) 0%,
+    rgb(8 8 12 / 0.45) 45%,
+    transparent 75%
+  );
+}
+
+.menu.menu-title .menu-card {
+  width: min(480px, 92vw);
+  background: rgb(22 19 15 / 0.88);
+  border-color: #e8dcc0;
+}
+
+/* The game's HUD waits for PLAY. */
+#hud:has(.menu-title) :is(.hud-crosshair, .hud-health, .hud-ammo) {
+  visibility: hidden;
+}
+
+@media (max-width: 720px) {
+  .menu.menu-title {
+    justify-content: center;
+    padding-left: 0;
+    background: rgb(8 8 12 / 0.55);
+  }
+}
+
+.context-lost {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 10 14 / 0.9);
+  color: #f2f2f2;
+  font-family: "Pixelify Sans", ui-monospace, Menlo, monospace;
+}
+
+.context-lost-card {
+  width: min(440px, 92vw);
+  padding: 24px 28px;
+  background: #1b1d2a;
+  border: 3px solid #f2f2f2;
+  box-shadow: 6px 6px 0 #000;
+}
+
+.context-lost-card h2 {
+  margin-bottom: 10px;
+  font-size: 24px;
+}
+
+.context-lost-card p {
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.context-lost-card button {
+  margin-right: 10px;
+  padding: 8px 16px;
+  font: inherit;
+  color: #f2f2f2;
+  background: #b33831;
+  border: 3px solid #f2f2f2;
+  cursor: pointer;
+}

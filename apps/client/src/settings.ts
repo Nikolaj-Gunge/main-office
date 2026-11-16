@@ -7,6 +7,7 @@ import {
 import { prefersReducedMotion } from './game/game-feel.ts'
 import { type Keybinds, withDefaults } from './input/bindings.ts'
 import type { GraphicsSetting } from './render/device-tier.ts'
+import type { SafeSetting } from './render/safe-mode.ts'
 
 export const COLOR_MODES = { off: 0, levels: 1, palette: 2 } as const
 export type ColorMode = keyof typeof COLOR_MODES
@@ -83,6 +84,11 @@ export interface Settings {
    * `auto` records on medium and high graphics, not on low.
    */
   clips: ClipSetting
+  /**
+   * Safe mode (render/safe-mode.ts): the costly passes off. `auto` turns it on for Safari,
+   * Chromebooks and odd GPUs; `?safe=1` forces it for one visit.
+   */
+  safeMode: SafeSetting
   keybinds: Keybinds
 }
 
@@ -128,6 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatBubbles: true,
   voice: false,
   clips: 'auto',
+  safeMode: 'auto',
   keybinds: withDefaults(undefined),
 }
 
