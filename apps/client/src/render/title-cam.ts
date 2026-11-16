@@ -50,3 +50,72 @@ export function titlePose(
   const lz = centre.z + Math.cos(s * 0.027) * 2.5 - dx * aside
   return { x, y, z, lx, ly: ground(centre.x, centre.z) + 1.4, lz }
 }
+
+/** How long PLAY's camera move from the title shot down to your own eyes takes (s). */
+export const EXIT_S = 0.5
+
+/** Eases 0..1 to 0..1, fast then settling (cubic out). */
+export function exitEase(k: number): number {
+  const t = Math.min(1, Math.max(0, k))
+  return 1 - (1 - t) ** 3
+}
+
+/** Position and facing, as plain numbers (a quaternion for the facing). */
+export interface CameraPose {
+  x: number
+  y: number
+  z: number
+  qx: number
+  qy: number
+  qz: number
+  qw: number
+}
+
+/**
+ * PLAY's short move: the last title-shot pose is held, and for EXIT_S after joining the camera
+ * glides from it to where the player's camera already is. It only changes what is drawn (input
+ * and the game run from the first frame), so it never delays play. Low tier and reduced motion
+ * skip it (hold nothing).
+ */
+export class TitleExit {
+  private from: CameraPose | null = null
+  private started = -1
+
+  /** The title shot is on screen: remember where it is (or forget it, `skip`). */
+  hold(pose: CameraPose, skip: boolean): void {
+    this.from = skip ? null : { ...pose }
+    this.started = -1
+  }
+
+  /**
+   * Joined: blends `to` (the player's camera this frame) from the held pose, `now` in ms. Returns
+   * the blended pose, or null once the move is over (or there was none).
+   */
+  blend(to: CameraPose, now: number): CameraPose | null {
+    const from = this.from
+    if (!from) return null
+    if (this.started < 0) this.started = now
+    const k = (now - this.started) / 1000 / EXIT_S
+    if (k >= 1) {
+      this.from = null
+      return null
+    }
+    const e = exitEase(k)
+    // Quaternion nlerp along the short way round: plenty for half a second.
+    const sign = from.qx * to.qx + from.qy * to.qy + from.qz * to.qz + from.qw * to.qw < 0 ? -1 : 1
+    const qx = from.qx + (to.qx * sign - from.qx) * e
+    const qy = from.qy + (to.qy * sign - from.qy) * e
+    const qz = from.qz + (to.qz * sign - from.qz) * e
+    const qw = from.qw + (to.qw * sign - from.qw) * e
+    const n = Math.hypot(qx, qy, qz, qw) || 1
+    return {
+      x: from.x + (to.x - from.x) * e,
+      y: from.y + (to.y - from.y) * e,
+      z: from.z + (to.z - from.z) * e,
+      qx: qx / n,
+      qy: qy / n,
+      qz: qz / n,
+      qw: qw / n,
+    }
+  }
+}

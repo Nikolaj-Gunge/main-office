@@ -1,16 +1,24 @@
 import type { WorldsReply } from '@office-fps/shared'
-import { pixelText } from './share-card.ts'
 
 /** The share card's colours (share-card.ts): ember on the night, a dark red drop shadow. */
 const EMBER = '#d88a3a'
+/** The letters' lower rows, a shade darker: a little weight at the bottom. */
+const EMBER_LOW = '#b0642a'
 const SHADOW = '#5a1c14'
-/** CSS pixels per logo pixel. */
-const LOGO_SCALE = 7
+
+/** DEADWOOD's letters, 5×7 blocks each ('#' is ink), drawn by hand so every block is square. */
+const GLYPHS: Record<string, string[]> = {
+  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+}
 
 /**
- * The title screen (survival): until PLAY, the menu steps aside to the left over a live shot of
- * the woods (render/title-cam.ts), with DEADWOOD in the share card's pixel letters and how many
- * survivors are out tonight. Joining puts the menu back as the pause menu it always was.
+ * The title screen (survival): until PLAY, the menu stands on the left over a live shot of the
+ * woods (render/title-cam.ts), with DEADWOOD in big pixel letters and how many survivors are out
+ * tonight. Joining puts the menu back as the pause menu it always was.
  */
 export class TitleScreen {
   private readonly count = document.createElement('p')
@@ -50,20 +58,37 @@ export class TitleScreen {
   }
 }
 
-/** DEADWOOD in hard-edged pixel letters, the way the share card writes it. */
+/** CSS pixels per logo block for this window: whole numbers only, so blocks stay square. */
+function logoScale(): number {
+  const w = window.innerWidth
+  return w >= 1700 ? 10 : w >= 1200 ? 8 : w >= 700 ? 6 : 5
+}
+
+/** DEADWOOD in hard-edged pixel letters with a one-block drop shadow. */
 function drawLogo(canvas: HTMLCanvasElement): void {
-  // Drawn one font pixel to a canvas pixel, then scaled up by a whole number in CSS (pixelated),
-  // so every block stays square.
-  const px = 1
-  const scratch = document.createElement('canvas').getContext('2d')
-  if (!scratch) return
-  scratch.font = 'bold 8px monospace'
-  canvas.width = Math.ceil(scratch.measureText('DEADWOOD').width) + px
-  canvas.height = 10 + px
+  const word = 'DEADWOOD'
+  canvas.width = word.length * 6 // 5 wide + a gap; the last gap holds the shadow
+  canvas.height = 8
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  pixelText(ctx, 'DEADWOOD', px, px, px, SHADOW)
-  pixelText(ctx, 'DEADWOOD', 0, 0, px, EMBER)
-  canvas.style.width = `${canvas.width * LOGO_SCALE}px`
-  canvas.style.height = `${canvas.height * LOGO_SCALE}px`
+  for (const [pass, dx] of [
+    ['shadow', 1],
+    ['ink', 0],
+  ] as const) {
+    for (const [i, letter] of [...word].entries()) {
+      for (const [row, line] of (GLYPHS[letter] ?? []).entries()) {
+        ctx.fillStyle = pass === 'shadow' ? SHADOW : row >= 5 ? EMBER_LOW : EMBER
+        for (const [col, c] of [...line].entries()) {
+          if (c === '#') ctx.fillRect(i * 6 + col + dx, row + dx, 1, 1)
+        }
+      }
+    }
+  }
+  const size = () => {
+    const scale = logoScale()
+    canvas.style.width = `${canvas.width * scale}px`
+    canvas.style.height = `${canvas.height * scale}px`
+  }
+  size()
+  window.addEventListener('resize', size)
 }

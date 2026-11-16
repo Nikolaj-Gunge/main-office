@@ -110,7 +110,7 @@ import { Ragdolls } from './render/ragdoll.ts'
 import { safeModeOn, safeTier } from './render/safe-mode.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures, setTexelDensity } from './render/textures.ts'
-import { titlePose } from './render/title-cam.ts'
+import { TitleExit, titlePose } from './render/title-cam.ts'
 import { allowTorchShadows } from './render/torch-shadow.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
@@ -138,6 +138,14 @@ const overlay = new Overlay(hudRoot)
 let firstGameFrame = false
 const scoreboard = new Scoreboard(hudRoot)
 const menu = new Menu(hudRoot, settings, () => applySettings())
+// A soft tick on the UI bus for the menu's entries (silent until the first click unlocks audio,
+// and under ?mute=1).
+menu.onSound = (kind) =>
+  audio.play('hit', {
+    bus: 'ui',
+    volume: kind === 'pick' ? 0.22 : 0.08,
+    rate: kind === 'pick' ? 0.7 : 1.4,
+  })
 
 document.getElementById('boot')?.remove()
 
@@ -821,11 +829,15 @@ const title = map.survival ? new TitleScreen(menu.element, menu.heading) : null
 if (mapId === SURVIVAL_MAP) {
   const picker = new WorldPicker(net, () => menu.visible)
   picker.onReply = (reply) => title?.setWorlds(reply)
+  picker.onSummary = (text) => menu.setPlayNote(text)
   menu.addToPlay(picker.root)
+  menu.addToFooter(picker.radioLink)
 }
 /** The title shot circles the start cabin and its campfire (render/title-cam.ts). */
 const titleStart = map.survival?.pois[0]
 const titleCentre = { x: (titleStart?.x ?? 0) + 1, z: (titleStart?.z ?? 0) - 3 }
+/** PLAY's glide from the title shot to the player's view (render/title-cam.ts). */
+const titleExit = new TitleExit()
 const titleGround = (x: number, z: number) =>
   map.survival ? heightAt(map.survival.terrain, x, z) : 0
 
@@ -1239,6 +1251,17 @@ pixels.setAnimationLoop(() => {
     const p = titlePose(now / 1000, titleCentre, titleGround, still, aside)
     camera.position.set(p.x, p.y, p.z)
     camera.lookAt(p.lx, p.ly, p.lz)
+    const q = camera.quaternion
+    titleExit.hold({ x: p.x, y: p.y, z: p.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w }, still)
+  } else if (joined && !noclip) {
+    // PLAY: half a second's glide from the title shot down to your own eyes.
+    const c = camera.position
+    const q = camera.quaternion
+    const b = titleExit.blend({ x: c.x, y: c.y, z: c.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w }, now)
+    if (b) {
+      camera.position.set(b.x, b.y, b.z)
+      camera.quaternion.set(b.qx, b.qy, b.qz, b.qw)
+    }
   }
   if (!noclip && joined) {
     spectator.update(

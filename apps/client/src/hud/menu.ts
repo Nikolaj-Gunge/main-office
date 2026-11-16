@@ -3,6 +3,7 @@ import {
   DEFAULT_APPEARANCE,
   MAX_NAME_LENGTH,
   type ModeId,
+  PROTOCOL_VERSION,
   packAppearance,
   randomAppearance,
 } from '@office-fps/shared'
@@ -33,7 +34,12 @@ const PIXEL_PRESETS: [string, number][] = [
   ['Finest', 1080],
 ]
 
+/** The side panels (null: none open, the world shows through). */
 type Tab = 'play' | 'character' | 'settings' | 'controls'
+/** The SETTINGS panel's groups. */
+type SettingsGroup = 'graphics' | 'audio' | 'controls' | 'game'
+/** How long each tip stays on the bottom line (ms). */
+const TIP_MS = 8000
 
 function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -50,12 +56,15 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 /**
- * The game's front door and pause menu (Esc). One screen with four tabs:
- *   PLAY — name, Play/Resume and how to play
- *   CHARACTER — the character creator (a first visit skips it: PLAY goes straight in with a
- *     random look, and the creator waits here for later)
- *   SETTINGS — mouse, view, pixel size, sound (applied and saved instantly)
+ * The game's front door and pause menu (Esc), laid out like a desktop game's main menu: the logo
+ * and a column of big entries on the left over the live world, and each entry's page opening in
+ * a panel beside it (Back or Esc closes it):
+ *   PLAY / RESUME — straight in (a first visit goes in with a random look; CHARACTER waits)
+ *   WORLDS — the world picker, camp and keepsakes (addToPlay)
+ *   CHARACTER — the character creator
+ *   SETTINGS — graphics, audio, controls and game groups (applied and saved instantly)
  *   CONTROLS — every action, click to rebind
+ * Arrow keys move between entries, Enter picks. One tip at a time rotates along the bottom.
  * The game keeps running behind it — it's multiplayer, there is no real pause.
  */
 const MODE_TIPS: Record<ModeId, string> = {
@@ -71,15 +80,35 @@ const MODE_TIPS: Record<ModeId, string> = {
 }
 
 export class Menu {
-  private readonly modeTip: HTMLLIElement
+  private readonly modeTip: string[] = [MODE_TIPS.ffa]
   /** The tips for the arena modes, and the ones that replace them in survival. */
-  private readonly arenaTips: HTMLLIElement[]
-  private readonly survivalTips: HTMLLIElement[]
+  private readonly arenaTips = [
+    'You spawn with a handgun. Rifles and snipers lie around the office — walk over one to grab it, E to swap.',
+    'Headshots kill instantly with every weapon.',
+    'Hold Tab for scores · Esc for this menu · M mutes',
+  ]
+  private readonly survivalTips = [
+    'You wake with empty hands and $50: a pistol and a knife wait on the table. Ammo is scarce: find it, buy it, or run.',
+    'The dead are few and hard to kill. Noise and light draw them. Crouch to sneak.',
+    'Haven, the survivor camp, is safe: sleep, trade, take jobs · N mutes',
+  ]
+  private survivalMode = false
+  private tipIndex = 0
+  private readonly tipLine = h('p', { class: 'menu-tip-text' })
   private readonly root: HTMLDivElement
   private readonly nameInput: HTMLInputElement
+  /** The first entry: PLAY before joining, RESUME after. */
   private readonly playButton: HTMLButtonElement
+  private readonly playLabel = h('span', { class: 'menu-entry-label' }, 'PLAY')
+  /** Under PLAY: the world it will go to (setPlayNote). */
+  private readonly playNote = h('span', { class: 'menu-entry-note' })
   private readonly status: HTMLParagraphElement
   private readonly tabs = new Map<Tab, { button: HTMLButtonElement; panel: HTMLElement }>()
+  /** The panel beside the entries, and its title. */
+  private readonly side: HTMLElement
+  private readonly sideTitle = h('h2', { class: 'menu-side-title' })
+  private readonly nav: HTMLElement
+  private readonly footer: HTMLElement
   private readonly controlsList: HTMLDivElement
   private readonly settings: Settings
   private readonly onSettingsChange: () => void
@@ -93,60 +122,44 @@ export class Menu {
   private look: Appearance | null = loadAppearance()
   private readonly creator: CharacterCreator
   private onCharacterHandler: ((appearance: number) => void) | null = null
-  private tab: Tab = 'play'
+  private tab: Tab | null = null
   /** This visit joined with a look picked at random (nobody made one yet). */
   private randomLook = false
+  /** A quiet tick for hovering and picking entries (main.ts plays it on the UI bus). */
+  onSound: ((kind: 'hover' | 'pick') => void) | null = null
 
   constructor(parent: HTMLElement, settings: Settings, onSettingsChange: () => void) {
     this.settings = settings
     this.onSettingsChange = onSettingsChange
 
-    // --- Play tab ---
+    // --- Name and the PLAY entry ---
     this.nameInput = h('input', {
       autocomplete: 'nickname',
       spellcheck: 'false',
       maxlength: String(MAX_NAME_LENGTH),
       placeholder: 'Your name',
+      'aria-label': 'Your name',
     })
     this.nameInput.value = localStorage.getItem(NAME_KEY) ?? ''
-    this.playButton = h('button', { class: 'menu-play', type: 'submit' }, 'PLAY')
-    const form = h('form', { class: 'menu-join' }, this.nameInput, this.playButton)
+    // Enter in the name field plays, like the button.
+    const form = h('form', { class: 'menu-join' }, this.nameInput)
     form.addEventListener('submit', (e) => {
       e.preventDefault()
       this.play()
     })
-
-    this.status = h('p', { class: 'menu-status' })
-    this.modeTip = h('li', {}, MODE_TIPS.ffa)
-    this.arenaTips = [
-      h(
-        'li',
-        {},
-        'You spawn with a handgun. Rifles and snipers lie around the office — walk over one to grab it, E to swap.',
-      ),
-      h('li', {}, 'Headshots kill instantly with every weapon.'),
-      h('li', {}, 'Hold Tab for scores · Esc for this menu · M mutes'),
-    ]
-    this.survivalTips = [
-      h(
-        'li',
-        {},
-        'You wake with empty hands and $50: a pistol and a knife wait on the table. Ammo is scarce: find it, buy it, or run.',
-      ),
-      h('li', {}, 'The dead are few and hard to kill. Noise and light draw them. Crouch to sneak.'),
-      h('li', {}, 'Haven, the survivor camp, is safe: sleep, trade, take jobs · N mutes'),
-    ]
-    for (const tip of this.survivalTips) tip.hidden = true
-    const play = h(
-      'section',
-      { class: 'menu-panel' },
-      form,
-      this.playExtras,
-      this.status,
-      h('ul', { class: 'menu-tips' }, this.modeTip, ...this.arenaTips, ...this.survivalTips),
+    this.playButton = h(
+      'button',
+      { type: 'button', class: 'menu-entry menu-play' },
+      this.playLabel,
+      this.playNote,
     )
+    this.playButton.addEventListener('click', () => this.play())
+    this.status = h('p', { class: 'menu-status' })
 
-    // --- Character tab ---
+    // --- Worlds panel: what main.ts adds (world picker, camp, keepsakes) ---
+    const worlds = h('section', { class: 'menu-panel' }, this.playExtras)
+
+    // --- Character panel ---
     this.creator = new CharacterCreator(this.look ?? DEFAULT_APPEARANCE, (look) => {
       this.look = look
       saveAppearance(look)
@@ -160,12 +173,12 @@ export class Menu {
         saveAppearance(this.look)
         this.onCharacterHandler?.(packAppearance(this.look))
       }
-      if (this.joined) this.showTab('play')
+      if (this.joined) this.showTab(null)
       else this.play()
     })
     this.creator.setMode(false, false)
 
-    // --- Settings tab ---
+    // --- Settings panel, in groups ---
     this.clipsRow = this.choice(
       'Clip buffer (K keeps the last 20 s)',
       [
@@ -179,53 +192,108 @@ export class Menu {
       },
     )
     this.clipsRow.hidden = true
-    const settingsPanel = h('section', { class: 'menu-panel menu-settings' })
-    settingsPanel.append(
-      this.slider('Mouse sensitivity', 'sensitivity', 0.2, 8, 0.05, (v) => v.toFixed(2)),
-      this.slider('Field of view', 'fov', 70, 110, 1, (v) => `${v}°`),
-      this.slider('Screen shake', 'screenShake', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.choice(
-        'Pixel size',
-        PIXEL_PRESETS.map(([label, value]) => [label, value]),
-        () => this.settings.pixelHeight,
-        (v) => {
-          this.settings.pixelHeight = v
-        },
-      ),
-      this.choice(
-        'Graphics',
-        GRAPHICS.map(([label], i) => [label, i]),
-        () => GRAPHICS.findIndex(([, g]) => g === this.settings.graphics),
-        (v) => {
-          this.settings.graphics = GRAPHICS[v]?.[1] ?? 'auto'
-        },
-      ),
-      this.choice(
-        'Safe mode (no fog, AO or soft shadows: for Safari, Chromebooks, older GPUs)',
+    const groups: [SettingsGroup, string, HTMLElement[]][] = [
+      [
+        'graphics',
+        'GRAPHICS',
         [
-          ['Auto', 0],
-          ['On', 1],
-          ['Off', 2],
+          this.choice(
+            'Graphics',
+            GRAPHICS.map(([label], i) => [label, i]),
+            () => GRAPHICS.findIndex(([, g]) => g === this.settings.graphics),
+            (v) => {
+              this.settings.graphics = GRAPHICS[v]?.[1] ?? 'auto'
+            },
+          ),
+          this.choice(
+            'Pixel size',
+            PIXEL_PRESETS.map(([label, value]) => [label, value]),
+            () => this.settings.pixelHeight,
+            (v) => {
+              this.settings.pixelHeight = v
+            },
+          ),
+          this.slider('Field of view', 'fov', 70, 110, 1, (v) => `${v}°`),
+          this.slider('Screen shake', 'screenShake', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
+          this.choice(
+            'Safe mode (no fog, AO or soft shadows: for Safari, Chromebooks, older GPUs)',
+            [
+              ['Auto', 0],
+              ['On', 1],
+              ['Off', 2],
+            ],
+            () => SAFE_SETTINGS.indexOf(this.settings.safeMode),
+            (v) => {
+              this.settings.safeMode = SAFE_SETTINGS[v] ?? 'auto'
+            },
+          ),
+          this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),
+          this.toggle('Smooth pixels (soft edges, filtered textures)', 'smoothPixels'),
+          this.toggle('Show FPS & network info', 'showDebug'),
         ],
-        () => SAFE_SETTINGS.indexOf(this.settings.safeMode),
-        (v) => {
-          this.settings.safeMode = SAFE_SETTINGS[v] ?? 'auto'
-        },
-      ),
-      this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),
-      this.toggle('Smooth pixels (soft edges, filtered textures)', 'smoothPixels'),
-      this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.slider('Music volume', 'musicVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.toggle('Show FPS & network info', 'showDebug'),
-      this.toggle('Text chat', 'chat'),
-      this.toggle('Hide swear words in chat', 'chatFilter'),
-      this.toggle('Speech bubbles over people', 'chatBubbles'),
-      this.toggle('Voice chat (push to talk; asks for the microphone)', 'voice'),
-      this.clipsRow,
+      ],
+      [
+        'audio',
+        'AUDIO',
+        [
+          this.slider(
+            'Master volume',
+            'masterVolume',
+            0,
+            1,
+            0.05,
+            (v) => `${Math.round(v * 100)}%`,
+          ),
+          this.slider('Effects volume', 'sfxVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
+          this.slider('Music volume', 'musicVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
+          this.toggle('Voice chat (push to talk; asks for the microphone)', 'voice'),
+        ],
+      ],
+      [
+        'controls',
+        'CONTROLS',
+        [
+          this.slider('Mouse sensitivity', 'sensitivity', 0.2, 8, 0.05, (v) => v.toFixed(2)),
+          this.toggle('Toggle aim (click to scope in / out — good for trackpads)', 'aimToggle'),
+        ],
+      ],
+      [
+        'game',
+        'GAME',
+        [
+          this.toggle('Survival hints (a tip the first time something comes up)', 'hints'),
+          this.toggle('Text chat', 'chat'),
+          this.toggle('Hide swear words in chat', 'chatFilter'),
+          this.toggle('Speech bubbles over people', 'chatBubbles'),
+          this.clipsRow,
+        ],
+      ],
+    ]
+    const groupBar = h('nav', { class: 'menu-tabs' })
+    const groupBodies: HTMLElement[] = []
+    const groupButtons: HTMLButtonElement[] = []
+    for (const [, label, rows] of groups) {
+      const body = h('div', { class: 'menu-group' }, ...rows)
+      const button = h('button', { type: 'button' }, label)
+      button.addEventListener('click', () => {
+        for (const [i, b] of groupButtons.entries()) {
+          b.classList.toggle('active', b === button)
+          ;(groupBodies[i] as HTMLElement).hidden = b !== button
+        }
+      })
+      groupBar.append(button)
+      groupBodies.push(body)
+      groupButtons.push(button)
+    }
+    groupButtons[0]?.click()
+    const settingsPanel = h(
+      'section',
+      { class: 'menu-panel menu-settings' },
+      groupBar,
+      ...groupBodies,
     )
 
-    // --- Controls tab ---
+    // --- Controls panel ---
     this.controlsList = h('div', { class: 'menu-controls' })
     const resetControls = h('button', { type: 'button', class: 'menu-small' }, 'Reset to defaults')
     resetControls.addEventListener('click', () => {
@@ -236,8 +304,6 @@ export class Menu {
     const controls = h(
       'section',
       { class: 'menu-panel' },
-      this.toggle('Toggle aim (click to scope in / out — good for trackpads)', 'aimToggle'),
-      this.toggle('Survival hints (a tip the first time something comes up)', 'hints'),
       h(
         'p',
         { class: 'menu-label' },
@@ -248,35 +314,61 @@ export class Menu {
     )
     this.renderControls()
 
-    // --- Frame ---
-    const tabBar = h('nav', { class: 'menu-tabs' })
+    // --- Frame: entries on the left, the open panel beside them ---
+    this.nav = h('nav', { class: 'menu-nav' }, this.playButton)
     for (const [id, label, panel] of [
-      ['play', 'PLAY', play],
+      ['play', 'WORLDS', worlds],
       ['character', 'CHARACTER', this.creator.element],
       ['settings', 'SETTINGS', settingsPanel],
       ['controls', 'CONTROLS', controls],
     ] as const) {
-      const button = h('button', { type: 'button' }, label)
-      button.addEventListener('click', () => this.showTab(id))
-      tabBar.append(button)
+      const button = h(
+        'button',
+        { type: 'button', class: 'menu-entry' },
+        h('span', { class: 'menu-entry-label' }, label),
+      )
+      button.addEventListener('click', () => this.showTab(this.tab === id ? null : id))
+      this.nav.append(button)
       this.tabs.set(id, { button, panel })
     }
+    for (const b of this.nav.querySelectorAll('button')) {
+      b.addEventListener('mouseenter', () => this.onSound?.('hover'))
+      b.addEventListener('click', () => this.onSound?.('pick'))
+    }
+    const back = h('button', { type: 'button', class: 'menu-back' }, '◂ BACK')
+    back.addEventListener('click', () => this.showTab(null))
+    this.side = h(
+      'section',
+      { class: 'menu-side' },
+      h('header', { class: 'menu-side-head' }, this.sideTitle, back),
+      h('div', { class: 'menu-side-body' }, worlds, this.creator.element, settingsPanel, controls),
+    )
+    this.footer = h(
+      'footer',
+      { class: 'menu-foot' },
+      h('span', { class: 'menu-version' }, `PROTOCOL v${PROTOCOL_VERSION}`),
+      h('span', { class: 'menu-credits' }, 'Made with three.js & Rapier · art in boxes'),
+    )
     this.root = h(
       'div',
       { class: 'menu' },
       h(
         'div',
         { class: 'menu-card' },
-        this.heading,
-        tabBar,
-        play,
-        this.creator.element,
-        settingsPanel,
-        controls,
+        h('div', { class: 'menu-main' }, this.heading, form, this.nav, this.status),
+        this.side,
       ),
+      h('div', { class: 'menu-tip' }, h('span', { class: 'menu-tip-label' }, 'TIP'), this.tipLine),
+      this.footer,
     )
     parent.append(this.root)
-    this.showTab('play')
+    this.showTab(null)
+    this.showTip()
+    setInterval(() => {
+      if (!this.visible || document.visibilityState !== 'visible') return
+      this.tipIndex++
+      this.showTip()
+    }, TIP_MS)
     // Never played here: the name is optional, PLAY is the one thing to press.
     this.root.classList.toggle('menu-first', this.look === null)
     this.nameInput.placeholder = this.look === null ? 'Your name (optional)' : 'Your name'
@@ -288,6 +380,8 @@ export class Menu {
       capture: true,
       passive: false,
     })
+    // Arrows walk the entries, Esc closes an open panel (before the game sees it).
+    window.addEventListener('keydown', (e) => this.navKey(e), true)
   }
 
   /** The game's name at the top (title-screen.ts swaps in a pixel logo). */
@@ -298,7 +392,7 @@ export class Menu {
     return this.root
   }
 
-  /** Under the join form (the world picker, see world-picker.ts). */
+  /** In the WORLDS panel (the world picker, see world-picker.ts). */
   private readonly playExtras = h('div', { class: 'menu-play-extras' })
   /**
    * The clip buffer's setting (hud/clip-buffer.ts). Hidden until the browser is known to have
@@ -306,9 +400,19 @@ export class Menu {
    */
   readonly clipsRow: HTMLElement
 
-  /** Adds something under the join form on the PLAY tab. */
+  /** Adds something to the WORLDS panel. */
   addToPlay(node: HTMLElement): void {
     this.playExtras.append(node)
+  }
+
+  /** Adds a link to the footer line (Haven Radio). */
+  addToFooter(node: HTMLElement): void {
+    this.footer.lastElementChild?.before(node)
+  }
+
+  /** The small line under PLAY: where it goes (the chosen world). */
+  setPlayNote(text: string): void {
+    this.playNote.textContent = text
   }
 
   /** The name typed in the join form. */
@@ -335,6 +439,8 @@ export class Menu {
   }
 
   setVisible(visible: boolean): void {
+    // Opening again starts from the entries, not whatever panel was open last time.
+    if (visible && this.root.hidden) this.showTab(null)
     this.root.hidden = !visible
     if (!visible) this.capturing = null
     this.creator.setActive(visible && this.tab === 'character')
@@ -344,15 +450,20 @@ export class Menu {
   setJoined(joined: boolean): void {
     this.joined = joined
     this.nameInput.disabled = joined
-    this.playButton.textContent = joined ? 'RESUME' : 'PLAY'
+    this.nameInput.parentElement?.toggleAttribute('hidden', joined)
+    this.playLabel.textContent = joined ? 'RESUME' : 'PLAY'
+    this.playNote.hidden = joined
+    this.root.classList.toggle('menu-paused', joined)
     this.creator.setMode(false, joined)
   }
 
   /** The first tip explains the game mode the server runs. */
   setMode(mode: ModeId): void {
-    this.modeTip.textContent = MODE_TIPS[mode]
-    for (const tip of this.arenaTips) tip.hidden = mode === 'survival'
-    for (const tip of this.survivalTips) tip.hidden = mode !== 'survival'
+    this.modeTip[0] = MODE_TIPS[mode]
+    this.survivalMode = mode === 'survival'
+    const worlds = this.tabs.get('play')?.button.firstElementChild
+    if (worlds) worlds.textContent = this.survivalMode ? 'WORLDS' : 'PARTY'
+    this.showTip()
   }
 
   setStatus(text: string): void {
@@ -377,7 +488,7 @@ export class Menu {
   }
 
   private play(): void {
-    // First time on this device: straight in, as somebody random. The CHARACTER tab is there
+    // First time on this device: straight in, as somebody random. The CHARACTER entry is there
     // whenever they want it (and a hint says so once they've had a look around).
     if (!this.joined && this.look === null) {
       this.look = randomAppearance()
@@ -392,16 +503,52 @@ export class Menu {
     this.onPlayHandler?.(name)
   }
 
-  private showTab(tab: Tab): void {
+  /** Opens one panel beside the entries (null closes it). */
+  private showTab(tab: Tab | null): void {
     this.tab = tab
     for (const [id, { button, panel }] of this.tabs) {
       button.classList.toggle('active', id === tab)
       panel.hidden = id !== tab
     }
+    this.side.hidden = tab === null
+    this.sideTitle.textContent = tab ? (this.tabs.get(tab)?.button.textContent ?? '') : ''
     this.root.firstElementChild?.classList.toggle('wide', tab === 'character')
+    this.root.classList.toggle('menu-open', tab !== null)
     this.creator.setActive(!this.root.hidden && tab === 'character')
     this.capturing = null
     this.renderControls()
+  }
+
+  /** The bottom line: one tip at a time for the mode being played. */
+  private showTip(): void {
+    const tips = [...this.modeTip, ...(this.survivalMode ? this.survivalTips : this.arenaTips)]
+    this.tipLine.textContent = tips[this.tipIndex % tips.length] ?? ''
+  }
+
+  /** Keyboard (and gamepad-style) walking of the entries. */
+  private navKey(e: KeyboardEvent): void {
+    if (!this.visible || e.defaultPrevented || this.capturing) return
+    const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range'
+    if (e.code === 'Escape' && this.tab !== null && !e.repeat) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      const was = this.tabs.get(this.tab)?.button
+      this.showTab(null)
+      was?.focus()
+      return
+    }
+    if (typing || (e.code !== 'ArrowDown' && e.code !== 'ArrowUp')) return
+    const entries = [...this.nav.querySelectorAll<HTMLButtonElement>('button')].filter(
+      (b) => !b.hidden,
+    )
+    const at = entries.indexOf(document.activeElement as HTMLButtonElement)
+    // Only when the entries have focus, or nothing does (a slider keeps its arrows).
+    if (at < 0 && document.activeElement !== document.body) return
+    e.preventDefault()
+    const step = e.code === 'ArrowDown' ? 1 : -1
+    const next = at < 0 ? 0 : (at + step + entries.length) % entries.length
+    entries[next]?.focus()
+    this.onSound?.('hover')
   }
 
   private slider(

@@ -4109,3 +4109,452 @@ body.grabbed #hud::after {
   border: 3px solid #f2f2f2;
   cursor: pointer;
 }
+
+/* ── Main menu, desktop-game style (p29, hud/menu.ts) ─────────────────────────────────────── */
+/* The logo and a column of big entries on the left over the live world; each entry's page
+   opens in a panel beside it. One rotating tip and a footer along the bottom. The pause menu
+   (Esc) is the same screen over a darker wash. Overrides the older card rules above. */
+.menu,
+.menu.menu-title {
+  display: block;
+  padding: 0;
+  background: linear-gradient(
+    90deg,
+    rgb(8 7 6 / 0.86) 0%,
+    rgb(8 7 6 / 0.55) 30%,
+    rgb(8 7 6 / 0.12) 58%,
+    transparent 75%
+  );
+  color: #e8dcc0;
+}
+
+.menu.menu-paused {
+  background: linear-gradient(
+    90deg,
+    rgb(8 7 6 / 0.92) 0%,
+    rgb(8 7 6 / 0.66) 38%,
+    rgb(8 7 6 / 0.4) 100%
+  );
+}
+
+.menu .menu-card,
+.menu.menu-title .menu-card,
+.menu .menu-card.wide {
+  position: absolute;
+  top: 8vh;
+  bottom: 110px;
+  left: 6vw;
+  right: 4vw;
+  display: flex;
+  align-items: flex-start;
+  gap: 48px;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.menu-main {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 420px;
+}
+
+.menu h1,
+.menu h1.title-heading {
+  margin: 0;
+  font-size: 56px;
+  letter-spacing: 6px;
+  text-align: left;
+  text-shadow: 5px 5px 0 #5a1c14;
+  color: #d88a3a;
+  line-height: 1;
+}
+
+.menu .title-logo {
+  margin: 0;
+}
+
+.menu .title-count {
+  margin: 12px 0 26px;
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-align: left;
+  color: #a89a7e;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.menu .menu-join {
+  margin: 0 0 14px;
+}
+
+.menu .menu-join[hidden] {
+  display: none;
+}
+
+.menu .menu-join input,
+.menu-first .menu-join input {
+  flex: 0 0 auto;
+  width: 280px;
+  padding: 7px 10px;
+  font-size: 15px;
+  background: rgb(15 13 11 / 0.7);
+  border: 2px solid #4a4236;
+}
+
+.menu .menu-join input:focus {
+  outline: none;
+  border-color: #d88a3a;
+}
+
+.menu-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.menu .menu-nav .menu-entry,
+.menu.menu-first .menu-nav .menu-entry {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4px 0;
+  font-size: 34px;
+  letter-spacing: 4px;
+  line-height: 1.15;
+  text-align: left;
+  color: #b8ac90;
+  background: none;
+  border: none;
+  text-shadow: 3px 3px 0 #000;
+  transition:
+    padding-left 90ms steps(3),
+    color 90ms;
+}
+
+.menu .menu-nav .menu-entry::before {
+  content: "▸";
+  position: absolute;
+  left: -2px;
+  top: 4px;
+  color: #d88a3a;
+  opacity: 0;
+}
+
+.menu .menu-nav .menu-entry:hover,
+.menu .menu-nav .menu-entry:focus-visible,
+.menu .menu-nav .menu-entry.active {
+  padding-left: 28px;
+  color: #f2e6c8;
+  background: none;
+  outline: none;
+}
+
+.menu .menu-nav .menu-entry:hover::before,
+.menu .menu-nav .menu-entry:focus-visible::before,
+.menu .menu-nav .menu-entry.active::before {
+  opacity: 1;
+}
+
+.menu .menu-nav .menu-entry.active {
+  color: #d88a3a;
+}
+
+.menu .menu-nav .menu-play,
+.menu.menu-first .menu-nav .menu-play {
+  margin-bottom: 10px;
+  font-size: 50px;
+  font-weight: 700;
+  color: #e8a050;
+}
+
+.menu .menu-nav .menu-play::before {
+  top: 10px;
+}
+
+.menu-entry-note {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: #8a7e66;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.menu-entry-note:empty {
+  display: none;
+}
+
+.menu .menu-status {
+  margin-top: 14px;
+}
+
+/* The panel beside the entries. */
+.menu-side {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 46vw);
+  max-height: 100%;
+  margin-top: 40px;
+  background: rgb(20 17 14 / 0.94);
+  border: 2px solid #4a4236;
+  box-shadow: 6px 6px 0 #000;
+}
+
+.menu-side[hidden],
+.menu-group[hidden],
+.menu .menu-panel[hidden] {
+  display: none;
+}
+
+.menu-card.wide .menu-side {
+  width: min(780px, 58vw);
+}
+
+.menu-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 2px solid #3a332a;
+}
+
+.menu-side-title {
+  font-size: 22px;
+  letter-spacing: 4px;
+  color: #e8dcc0;
+}
+
+.menu .menu-back {
+  padding: 3px 10px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  background: none;
+  border: 2px solid #4a4236;
+}
+
+.menu .menu-back:hover {
+  background: none;
+  border-color: #d88a3a;
+  color: #d88a3a;
+}
+
+.menu-side-body {
+  overflow: auto;
+  padding: 16px 20px 20px;
+}
+
+/* Settings groups: GRAPHICS / AUDIO / CONTROLS / GAME. */
+.menu-settings .menu-tabs {
+  gap: 4px;
+  margin-bottom: 6px;
+  border-bottom: 2px solid #3a332a;
+}
+
+.menu-settings .menu-tabs button {
+  flex: 0 0 auto;
+  padding: 4px 12px 6px;
+  letter-spacing: 2px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.menu-settings .menu-tabs button:hover {
+  background: none;
+  opacity: 1;
+}
+
+.menu-settings .menu-tabs button.active {
+  background: none;
+  color: #d88a3a;
+  border-bottom-color: #d88a3a;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu .menu-choice button.chosen {
+  border-color: #d88a3a;
+}
+
+.menu .menu-row input[type="range"] {
+  accent-color: #d88a3a;
+}
+
+/* One tip at a time, and the footer. */
+.menu-tip {
+  position: absolute;
+  left: 6vw;
+  right: 6vw;
+  bottom: 54px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 14px;
+  color: #b8ac90;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.menu-tip-label {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #d88a3a;
+  border: 2px solid #5a4630;
+  text-shadow: none;
+}
+
+.menu-foot {
+  position: absolute;
+  left: 6vw;
+  right: 6vw;
+  bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 22px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #6f6656;
+}
+
+.menu-foot .world-radio-link {
+  margin: 0;
+  font-size: 12px;
+  color: #c89a5a;
+}
+
+.menu-credits {
+  margin-left: auto;
+}
+
+/* Shorter windows (1280×720 and the like). */
+@media (max-height: 820px) {
+  .menu .menu-nav .menu-entry,
+  .menu.menu-first .menu-nav .menu-entry {
+    font-size: 28px;
+  }
+  .menu .menu-nav .menu-play,
+  .menu.menu-first .menu-nav .menu-play {
+    font-size: 40px;
+  }
+  .menu .title-count {
+    margin: 8px 0 16px;
+  }
+  .menu-side {
+    margin-top: 20px;
+  }
+}
+
+/* Phones: everything stacked, the page scrolls. */
+@media (max-width: 720px) {
+  .menu,
+  .menu.menu-title {
+    overflow: auto;
+    background: rgb(8 7 6 / 0.62);
+  }
+  .menu .menu-card,
+  .menu.menu-title .menu-card,
+  .menu .menu-card.wide {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 20px 16px 0;
+  }
+  .menu-main {
+    width: auto;
+  }
+  .menu .menu-join input,
+  .menu-first .menu-join input {
+    width: 100%;
+  }
+  .menu .menu-nav .menu-entry,
+  .menu.menu-first .menu-nav .menu-entry {
+    font-size: 24px;
+  }
+  .menu .menu-nav .menu-play,
+  .menu.menu-first .menu-nav .menu-play {
+    font-size: 34px;
+  }
+  .menu-side,
+  .menu-card.wide .menu-side {
+    width: auto;
+    max-height: none;
+    margin-top: 0;
+  }
+  .menu-tip,
+  .menu-foot {
+    position: static;
+    padding: 14px 16px 0;
+  }
+  .menu-foot {
+    padding-bottom: 20px;
+  }
+  .menu-credits {
+    margin-left: 0;
+  }
+}
+
+/* Buttons inside the panel: warm and quiet, the chosen one in ember. */
+.menu .menu-side button,
+.menu .menu-side .world-choice {
+  background: #221d17;
+  border: 2px solid #5a4e3e;
+}
+
+.menu .menu-side button:hover,
+.menu .menu-side .world-choice:hover {
+  background: #2e271f;
+}
+
+.menu .menu-side .world-choice.chosen,
+.menu .menu-side .menu-choice button.chosen {
+  border-color: #d88a3a;
+  background: #2e2218;
+}
+
+.menu .menu-side-body {
+  overflow-x: hidden;
+}
+
+.menu .menu-side .menu-choice {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.menu .menu-side input[type="checkbox"] {
+  accent-color: #d88a3a;
+}
+
+/* In the game the head count is old news. */
+.menu.menu-paused .title-count {
+  visibility: hidden;
+  margin-bottom: 8px;
+}
+
+.menu .menu-side .menu-settings .menu-tabs {
+  flex-wrap: wrap;
+}
+
+.menu .menu-side .menu-settings .menu-tabs button {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+}
+
+.menu .menu-side .menu-settings .menu-tabs button.active {
+  border-bottom-color: #d88a3a;
+}
