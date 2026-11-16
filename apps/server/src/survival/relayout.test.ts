@@ -83,7 +83,7 @@ describe('old saves into the drawn-in county', () => {
     expect(kept.length).toBe(3)
     expect(count.dropped).toBe(1)
     // Still 2 m apart (moved together), and where the base's middle is drawn in to.
-    expect(kept[1]?.x - (kept[0]?.x ?? 0)).toBeCloseTo(2)
+    expect((kept[1]?.x ?? 0) - (kept[0]?.x ?? 0)).toBeCloseTo(2)
     const [nx, nz] = drawIn(x, z)
     expect(kept[1]?.x).toBeCloseTo(nx, 0)
     expect(kept[1]?.z).toBeCloseTo(nz, 0)
