@@ -1,6 +1,8 @@
 import {
   AMMO_BOX,
   bioLine,
+  type ChartArea,
+  chartArea,
   chartCell,
   countOf,
   type Dialog,
@@ -242,12 +244,15 @@ export class SurvivalHud {
   private mapOpen = false
   /** The fog over the map: what this character has drawn (chart-paper.ts). */
   private readonly paper = new ChartPaper()
+  /** The squares the map's "% drawn" counts (shared chart.ts chartArea). */
+  private readonly chartArea: ChartArea
   private sinceMap = 1
   private visible = false
   private clock = 0
 
   constructor(parent: HTMLElement, def: SurvivalDef, send: (action: SurvivalAction) => void) {
     this.def = def
+    this.chartArea = chartArea(def.pois)
     this.send = send
     this.root = el('div', 'sv', parent)
     this.root.hidden = true
@@ -1057,7 +1062,7 @@ export class SurvivalHud {
     }
     // Only what this character has walked is drawn in (chart.ts); older servers send no chart.
     const chart = this.self?.chart
-    const fog = chart ? this.paper.fogFor(chart.seen, this.self?.oldChart) : null
+    const fog = chart ? this.paper.fogFor(chart.seen, this.self?.oldChart, this.chartArea) : null
     const view = mapView(this.def, size, this.paper.walked && fog ? [this.paper.walked] : [])
     const { s, x: ax, z: az } = view
     if (this.mapBase?.dataset.view !== `${view.x0},${view.z0},${view.span}`) this.mapBase = null

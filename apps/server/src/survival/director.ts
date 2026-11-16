@@ -134,7 +134,7 @@ import type { Point } from '../items.ts'
 import type { CharacterSave, TurnedSave } from '../saves.ts'
 import { type AlphaHost, Alphas } from './alphas.ts'
 import { type BanditHost, Bandits } from './bandits.ts'
-import { bountyReward, type Wanted, wantedLines } from './bounties.ts'
+import { BountyBoard, bountyReward, type Wanted, wantedLines } from './bounties.ts'
 import { BASH_BASE, type BuildHost, Building } from './building.ts'
 import { Camp } from './camp.ts'
 import { aimChalk, Chalk } from './chalk.ts'
@@ -167,6 +167,7 @@ import {
 import { type Nav, navFor } from './pathing.ts'
 import { type PvpHost, PvpKeeper } from './pvp.ts'
 import { Radio, type RadioHost } from './radio.ts'
+import { relayoutCharacter, relayoutOn, relayoutWorld } from './relayout.ts'
 import { type RotHost, RotWorld } from './rot-world.ts'
 import { SkillsKeeper } from './skills.ts'
 import { Storage, type StorageHost } from './storage.ts'
@@ -370,6 +371,8 @@ export class SurvivalDirector {
   private readonly turned = new Map<number, Turned>()
   /** Turned bodies from the world save, waiting for the pool to get up again (restoreWorld). */
   private risen: TurnedSave[] = []
+  /** Which bounties Wes has read out (bounties.ts). */
+  private readonly bountyBoard = new BountyBoard()
   /** What Gus has today besides his usual stock (RARE_STOCK): item → how many. */
   private rare = new Map<string, number>()
   private pool: ServerPlayer[] = []
@@ -884,7 +887,10 @@ export class SurvivalDirector {
   /** Back from a save: where they wake (if that's still somewhere to stand) and how they are. */
   private resume(sv: Survivor, saved: CharacterSave): void {
     if (saved.health > 0) sv.health = saved.health
-    const at = saved.pos
+    // Saved before the county was drawn in: where that is now (relayout.ts).
+    const at = this.def
+      ? relayoutCharacter(saved, relayoutOn(this.def, this.game.world.physics))
+      : saved.pos
     const ground = at && this.def ? heightAt(this.def.terrain, at.x, at.z) : 0
     if (at && Number.isFinite(at.x + at.y + at.z) && at.y > ground - 1) {
       sv.resume = { pos: [at.x, at.y + 0.05, at.z], yaw: at.yaw }
@@ -951,6 +957,15 @@ export class SurvivalDirector {
   /** The world as it was saved: the story's progress, the map, the gates and the barricades. */
   restoreWorld(): void {
     if (!this.def) return
+    // A save from before the county was drawn in: its things moved in, once (relayout.ts).
+    if (!this.game.saves.world.drawnIn) {
+      const { world, count } = relayoutWorld(
+        this.game.saves.world,
+        relayoutOn(this.def, this.game.world.physics),
+      )
+      this.game.saves.world = world
+      console.log(`[relayout] world drawn in: ${count.moved} moved, ${count.dropped} let go`)
+    }
     const w = this.game.saves.world
     this.story.restore(w.done, w.unlocks)
     this.evac.restore(w.retired)
@@ -1571,6 +1586,9 @@ export class SurvivalDirector {
       for (const sv of people) this.tickSurvivor(sv)
       for (const sv of people) this.drive(sv)
       for (const sv of people) this.pvp.second(sv.player)
+      // A new slip on Haven's board: Wes reads it out (bounties.ts).
+      for (const w of this.bountyBoard.posted(this.wanted()))
+        this.radio.say({ kind: 'wanted', who: w.name, place: w.place, reward: w.reward })
       this.discover(alive)
       this.stockPlaces(alive)
       this.expireLoot()

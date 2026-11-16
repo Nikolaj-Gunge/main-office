@@ -2,6 +2,8 @@ import {
   bitsToText,
   CHART_MILESTONES,
   type Chart,
+  type ChartArea,
+  chartArea,
   chartShare,
   mergeBits,
   type Notice,
@@ -67,6 +69,8 @@ interface Entry {
 export class Cartographer {
   private readonly host: ChartHost
   private readonly entries = new Map<number, Entry>()
+  /** The squares the "% drawn" counts (worked out from the places on first use). */
+  private area: ChartArea | null = null
 
   constructor(host: ChartHost) {
     this.host = host
@@ -114,7 +118,8 @@ export class Cartographer {
     const e = this.of(sv)
     if (!sv.player.state.alive) return
     const { x, z } = sv.player.state.pos
-    const before = chartShare(e.bits)
+    this.area ??= chartArea(this.host.pois())
+    const before = chartShare(e.bits, this.area)
     let changed = revealAround(e.bits, x, z) > 0
     for (const poi of this.host.pois()) {
       if (e.chart.inked.includes(poi.key)) continue
@@ -127,7 +132,7 @@ export class Cartographer {
       e.rev++
       e.behind = true
       if (!e.quiet) sv.dirty = true
-      const after = chartShare(e.bits)
+      const after = chartShare(e.bits, this.area)
       const mark = CHART_MILESTONES.findLast((m) => before < m && after >= m)
       if (mark !== undefined)
         this.host.notice(

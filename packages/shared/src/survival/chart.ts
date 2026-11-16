@@ -1,4 +1,4 @@
-import { WORLD_HALF, WORLD_SIZE } from './types.ts'
+import { type Poi, WORLD_HALF, WORLD_SIZE } from './types.ts'
 
 /**
  * The map you draw yourself (apps/server/src/survival/chart.ts): Deadwood starts blank on every
@@ -18,7 +18,9 @@ export const CHART_BYTES = (CHART_GRID * CHART_GRID) / 8
 /** How far around you the map fills in as you walk (m). */
 export const CHART_REVEAL = 80
 /** Shares of the county charted that are worth telling (and writing in the journal). */
-export const CHART_MILESTONES = [0.05, 0.1, 0.25, 0.5] as const
+export const CHART_MILESTONES = [0.05, 0.1, 0.25, 0.5, 0.75] as const
+/** Forest counted round the county's outermost places (m): the same margin the map (M) shows. */
+export const CHART_AREA_MARGIN = 160
 
 /** A character's own map (SurvivalSelf.chart): saved with the character. */
 export interface Chart {
@@ -99,8 +101,46 @@ export function countBits(bits: Uint8Array): number {
   return n
 }
 
-/** How much of the county is on the map, 0–1. */
-export const chartShare = (bits: Uint8Array): number => countBits(bits) / (CHART_GRID * CHART_GRID)
+/** A block of map squares (inclusive grid columns / rows): west, east, north, south. */
+export type ChartArea = [number, number, number, number]
+
+/** The whole forest, every square. */
+export const WHOLE_CHART: ChartArea = [0, CHART_GRID - 1, 0, CHART_GRID - 1]
+
+/**
+ * The squares the "% drawn" counts: a square round the county's places (not the hidden ones out
+ * in the deep forest), plus CHART_AREA_MARGIN. The county is drawn in towards Haven (world.ts
+ * drawIn), so counting the whole 3 km forest left most of it empty trees nobody needs to walk.
+ */
+export function chartArea(pois: readonly Poi[]): ChartArea {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
+  for (const p of pois) {
+    if (p.hidden) continue
+    minX = Math.min(minX, p.x - p.r)
+    maxX = Math.max(maxX, p.x + p.r)
+    minZ = Math.min(minZ, p.z - p.r)
+    maxZ = Math.max(maxZ, p.z + p.r)
+  }
+  if (!Number.isFinite(minX)) return WHOLE_CHART
+  const half = Math.max(maxX - minX, maxZ - minZ) / 2 + CHART_AREA_MARGIN
+  const cell = (v: number) =>
+    Math.max(0, Math.min(CHART_GRID - 1, Math.floor((v + WORLD_HALF) / CHART_CELL)))
+  const mx = (minX + maxX) / 2
+  const mz = (minZ + maxZ) / 2
+  return [cell(mx - half), cell(mx + half), cell(mz - half), cell(mz + half)]
+}
+
+/** How much of the county (`area`, default the whole forest) is on the map, 0–1. */
+export function chartShare(bits: Uint8Array, area: ChartArea = WHOLE_CHART): number {
+  const [x0, x1, z0, z1] = area
+  let n = 0
+  for (let z = z0; z <= z1; z++)
+    for (let x = x0; x <= x1; x++) if (hasCell(bits, z * CHART_GRID + x)) n++
+  return n / Math.max(1, (x1 - x0 + 1) * (z1 - z0 + 1))
+}
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 

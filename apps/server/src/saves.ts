@@ -144,6 +144,11 @@ export interface WorldSave {
   marks?: ChalkSave[]
   /** Bloodstain echoes of the dead (survival/echoes.ts); absent in older saves. */
   echoes?: EchoSave[]
+  /**
+   * Things in it are where the drawn-in county has them (survival/relayout.ts, v39). Absent in
+   * saves from before: they're moved in once, on load, and saved with this set.
+   */
+  drawnIn?: true
 }
 
 /** One of the dead that was one of you, as the world remembers them. */
@@ -203,7 +208,7 @@ export class Saves {
   readonly store: SaveStore
   /** Which world (worlds.ts) this is: its own world save, everybody's characters. */
   readonly worldId: string
-  world: WorldSave = freshWorld()
+  world: WorldSave = { ...freshWorld(), drawnIn: true }
   private readonly characters = new Map<string, CharacterSave>()
   private readonly accounts = new Map<string, AccountSave>()
   /** Keys waiting to be written (the world key, char:… or account:…). */
@@ -226,7 +231,10 @@ export class Saves {
   /** Reads the world (call once before anybody plays). */
   async loadWorld(): Promise<void> {
     const data = await this.read(this.worldKey, 'world')
-    this.world = data ? { ...freshWorld(), ...(data as Partial<WorldSave>) } : freshWorld()
+    // A world started now is in the drawn-in county from the start (relayout.ts).
+    this.world = data
+      ? { ...freshWorld(), ...(data as Partial<WorldSave>) }
+      : { ...freshWorld(), drawnIn: true }
   }
 
   /**
@@ -337,7 +345,11 @@ export class Saves {
   }
 
   putWorld(world: Omit<WorldSave, 'epoch'>): void {
-    this.world = { ...world, epoch: this.world.epoch }
+    this.world = {
+      ...world,
+      epoch: this.world.epoch,
+      ...(this.world.drawnIn || world.drawnIn ? { drawnIn: true as const } : {}),
+    }
     this.dirty.add(this.worldKey)
   }
 
@@ -346,7 +358,7 @@ export class Saves {
    * gone (their saves belong to the old epoch and are ignored, then overwritten).
    */
   newWorld(): void {
-    this.world = freshWorld(this.world.epoch + 1)
+    this.world = { ...freshWorld(this.world.epoch + 1), drawnIn: true }
     this.characters.clear()
     // Accounts outlive worlds: their unwritten changes stay to be written.
     for (const key of this.dirty) if (!key.startsWith(ACCOUNT_PREFIX)) this.dirty.delete(key)

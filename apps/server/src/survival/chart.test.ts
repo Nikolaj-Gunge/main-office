@@ -4,8 +4,10 @@ import {
   CHART_BYTES,
   CHART_CELL,
   CHART_GRID,
+  chartArea,
   chartCell,
   charted,
+  chartShare,
   countBits,
   emptyBits,
   mergeBits,
@@ -167,13 +169,32 @@ describe('the cartographer', () => {
     expect(charted(textToBits(out.oldChart), 800, 800)).toBe(true)
   })
 
+  test('the share counts the county round its places, not the whole forest', () => {
+    const area = chartArea(POIS)
+    const bits = emptyBits()
+    // Out in the deep forest, far from every place: not counted.
+    revealAround(bits, -1400, -1400)
+    expect(chartShare(bits, area)).toBe(0)
+    expect(chartShare(bits)).toBeGreaterThan(0)
+    // Everything round the places: all of it.
+    for (let x = -300; x < 1100; x += 40)
+      for (let z = -300; z < 1100; z += 40) revealAround(bits, x, z)
+    expect(chartShare(bits, area)).toBe(1)
+    expect(chartShare(bits)).toBeLessThan(0.5)
+    // Hidden places (out in the deep forest) don't widen it.
+    const hidden = { key: 'stash', name: 'Stash', x: -1400, z: -1400, r: 5, hidden: true } as Poi
+    expect(chartArea([...POIS, hidden])).toEqual(area)
+  })
+
   test('milestones are told', () => {
     const { carto, notices, sv } = world()
-    for (let x = -1500; x < 1500; x += 60)
-      for (let z = -1500; z < -1000; z += 60) {
+    // Walking the county round its places (the forest beyond doesn't count): up to 75%.
+    for (let x = -300; x < 1100; x += 60)
+      for (let z = -300; z < 1100; z += 60) {
         sv.player.state.pos = { x, z }
         carto.second(sv)
       }
     expect(notices.some((n) => n.includes('of Deadwood County drawn in'))).toBe(true)
+    expect(notices.some((n) => n.includes('75%'))).toBe(true)
   })
 })

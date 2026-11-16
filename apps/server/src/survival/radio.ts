@@ -34,6 +34,7 @@ export type RadioEvent =
   | { kind: 'glow' }
   | { kind: 'weather'; weather: WeatherKind }
   | { kind: 'bounty'; who: string; by: string; reward: number }
+  | { kind: 'wanted'; who: string; place: string; reward: number }
 
 export type RadioKind = RadioEvent['kind']
 
@@ -51,6 +52,7 @@ export const RADIO_COOLDOWN: Record<RadioKind, number> = {
   glow: 0,
   weather: 300,
   bounty: 0,
+  wanted: 0,
 }
 /** Higher goes on the air first, and is the last to be dropped from a full queue. */
 const PRIORITY: Record<RadioKind, number> = {
@@ -63,6 +65,7 @@ const PRIORITY: Record<RadioKind, number> = {
   death: 1,
   drop: 1,
   bounty: 2,
+  wanted: 1,
   weather: 0,
 }
 /** News this old (s) that never got on the air is dropped; at most this much waits. */
@@ -106,6 +109,10 @@ export const RADIO_LINES: Record<Exclude<RadioKind, 'mood' | 'weather' | 'glow'>
   bounty: [
     '{who} is at rest. {by} saw to it and took the {reward} dollars off the board. Somebody had to.',
     "The slip for {who} came down today. {by} collected. Don't ask them about it.",
+  ],
+  wanted: [
+    "New slip on Haven's board. {who}, last seen near {place}. {reward} dollars to whoever lets them rest.",
+    '{who} has been walking a full day now. Out by {place}. Haven pays {reward} to end it. Be kind about it.',
   ],
 }
 

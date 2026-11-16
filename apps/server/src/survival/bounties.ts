@@ -37,3 +37,24 @@ export function wantedLines(wanted: readonly Wanted[]): string[] {
         `WANTED: put ${w.name} to rest. Last seen near ${w.place}. $${w.reward} to whoever does.`,
     )
 }
+
+/**
+ * Which slips are new on the board, so Wes can read them out once: a slip counts as just posted
+ * on its first day up (the reward still BOUNTY_BASE), and each name is told only once.
+ */
+export class BountyBoard {
+  private readonly told = new Set<string>()
+
+  /** The wanted not told about yet, now marked told; names no longer wanted are forgotten. */
+  posted(wanted: readonly Wanted[]): Wanted[] {
+    const names = new Set(wanted.map((w) => w.name))
+    for (const name of this.told) if (!names.has(name)) this.told.delete(name)
+    const fresh: Wanted[] = []
+    for (const w of wanted) {
+      if (this.told.has(w.name)) continue
+      this.told.add(w.name)
+      if (w.reward <= BOUNTY_BASE) fresh.push(w)
+    }
+    return fresh
+  }
+}

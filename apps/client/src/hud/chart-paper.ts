@@ -1,6 +1,7 @@
 import {
   CHART_CELL,
   CHART_GRID,
+  type ChartArea,
   chartShare,
   hasCell,
   textToBits,
@@ -108,13 +109,13 @@ export class ChartPaper {
   walked: Bounds | null = null
 
   /** The fog canvas for these maps (redrawn only when they change). */
-  fogFor(seen: string, old: string | undefined): HTMLCanvasElement {
+  fogFor(seen: string, old: string | undefined, area?: ChartArea): HTMLCanvasElement {
     const key = `${seen}|${old ?? ''}`
     if (this.fog && key === this.key) return this.fog
     this.key = key
     const bits = textToBits(seen)
     this.seenBits = bits
-    this.share = chartShare(bits)
+    this.share = chartShare(bits, area)
     this.walked = walkedBounds(bits)
     this.fog = paintFog(bits, old ? textToBits(old) : null)
     return this.fog
