@@ -1,5 +1,6 @@
 import { seeded } from '@office-fps/shared'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { dataTexture, paintSheetMetal, planarUVs } from './pixel-textures.ts'
 import { filterTexture } from './textures.ts'
 
@@ -184,6 +185,7 @@ export class CarView {
       if (z < 0) this.steering.push(mount)
     }
     this.runDown(random, pickup)
+    mergeStatic(t)
     this.root.add(t)
     for (let i = 0; i < PUFFS; i++) {
       const sprite = new THREE.Sprite(
@@ -398,5 +400,38 @@ export class CarView {
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose()
     })
+  }
+}
+
+/**
+ * Bakes a car's fixed boxes (body, glass, bumpers, rust, mud…) into one mesh per material: the
+ * same triangles, UVs and materials, so the car looks exactly the same, in a handful of draw calls
+ * instead of twenty-odd. Wheels (in their own groups, they turn) are left alone.
+ */
+function mergeStatic(group: THREE.Group): void {
+  const sets = new Map<string, THREE.Mesh[]>()
+  for (const child of group.children) {
+    if (!(child instanceof THREE.Mesh) || child.children.length > 0) continue
+    const key = `${(child.material as THREE.Material).uuid}:${child.castShadow}:${child.receiveShadow}`
+    sets.set(key, [...(sets.get(key) ?? []), child])
+  }
+  for (const meshes of sets.values()) {
+    const first = meshes[0]
+    if (!first || meshes.length < 2) continue
+    const geometries = meshes.map((m) => {
+      m.updateMatrix()
+      return m.geometry.clone().applyMatrix4(m.matrix)
+    })
+    const merged = mergeGeometries(geometries)
+    for (const g of geometries) g.dispose()
+    if (!merged) continue
+    const mesh = new THREE.Mesh(merged, first.material)
+    mesh.castShadow = first.castShadow
+    mesh.receiveShadow = first.receiveShadow
+    for (const m of meshes) {
+      m.geometry.dispose()
+      group.remove(m)
+    }
+    group.add(mesh)
   }
 }
