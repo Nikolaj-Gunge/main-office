@@ -179,8 +179,8 @@ export interface SurvivalShared {
   drops?: SupplyDrop[]
   /** The weather's seed and clock: everything else follows from them (see weather.ts). */
   weather?: WeatherShared
-  /** The Rot (rot.ts): tonight's mood (absent by day) and the flocks that have taken off. */
-  rot?: { mood?: RotMood; birds: number[] }
+  /** The Rot (rot.ts): tonight's mood (absent by day), the flocks that have taken off, and The Glow (glow.ts) when the sky is lit. */
+  rot?: { mood?: RotMood; birds: number[]; glow?: true }
   /** Somebody called in the evacuation helicopter (evac.ts), or none. */
   evac?: EvacShared
   /** Who wears an armband or the Oathbreaker mark (pvp.ts packStanding); absent = nobody. */

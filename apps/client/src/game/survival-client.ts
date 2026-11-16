@@ -68,6 +68,7 @@ import { updateMapLod } from '../render/map-mesh.ts'
 import { Night } from '../render/night.ts'
 import { ObituaryView } from '../render/obituary-wall.ts'
 import { fadeShadowEdges } from '../render/shadow-fade.ts'
+import { GLOW_PREVIEW } from '../render/sky-glow.ts'
 import { TorchShadow } from '../render/torch-shadow.ts'
 import { WeatherMarks } from '../render/weather-marks.ts'
 import { WeatherView } from '../render/weather-view.ts'
@@ -596,6 +597,7 @@ export class SurvivalClient {
     this.wilds.setSnow(this.marks.snow)
     // The moon's phase goes by Haven's day count (sky-night.ts).
     this.night.worldDay = this.shared?.camp?.day ?? 0
+    this.night.glow = this.rot.glow || GLOW_PREVIEW
     this.night.update(dt, eye, time, built)
     this.night.tint(RED_SKY, this.camp.redness(time))
     this.camp.update(eye)

@@ -1,10 +1,11 @@
 import * as THREE from 'three'
+import { glowSkyUniforms, SKY_GLOW_GLSL } from './sky-glow.ts'
 import { nightSkyUniforms } from './sky-night.ts'
 
 /**
  * Gradient sky dome. Big enough to sit past the fog, follows the camera every frame. At night it
  * carries a blocky moon and pixel stars (sky-night.ts sets them; nothing shows while their
- * alphas are 0, as on maps without a night).
+ * alphas are 0, as on maps without a night), and on a rare night The Glow (sky-glow.ts).
  */
 export function createSky(top: THREE.ColorRepresentation, horizon: THREE.ColorRepresentation) {
   const material = new THREE.ShaderMaterial({
@@ -15,6 +16,7 @@ export function createSky(top: THREE.ColorRepresentation, horizon: THREE.ColorRe
       topColor: { value: new THREE.Color(top) },
       horizonColor: { value: new THREE.Color(horizon) },
       ...nightSkyUniforms(),
+      ...glowSkyUniforms(),
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -35,11 +37,12 @@ export function createSky(top: THREE.ColorRepresentation, horizon: THREE.ColorRe
       uniform mat3 starTurn;
       varying vec3 vDir;
       ${SKY_NIGHT_GLSL}
+      ${SKY_GLOW_GLSL}
       void main() {
         vec3 d = normalize(vDir);
         float t = pow(clamp(d.y, 0.0, 1.0), 0.6);
         vec3 color = mix(horizonColor, topColor, t);
-        gl_FragColor = vec4(nightSky(color, d), 1.0);
+        gl_FragColor = vec4(nightSky(glowSky(color, d), d), 1.0);
       }
     `,
   })

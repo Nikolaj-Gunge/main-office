@@ -23,6 +23,8 @@ export interface GameRenderer {
   setBias(bias: number): void
   /** Screen-space ambient occlusion samples a pixel (the device tier's); 0: off. */
   setAmbientOcclusion(samples: number): void
+  /** Convex edge highlights (pixel-renderer.ts), 0: off. */
+  setEdgeHighlights(strength: number): void
   resize(): void
   maxAnisotropy(): number
   /** Builds the shaders for everything in the scene now (visible or not); await it if async. */

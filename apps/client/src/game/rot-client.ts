@@ -54,13 +54,17 @@ export class RotClient {
     this.music = new Music(audio)
   }
 
+  /** The sky glows tonight (glow.ts). */
+  glow = false
+
   /** Tonight's extra fog (Fog Night), 0–1. */
   get fog(): number {
     return this.mood ? MOODS[this.mood].fog : 0
   }
 
-  setShared(rot: { mood?: RotMood; birds: number[] } | undefined): void {
+  setShared(rot: { mood?: RotMood; birds: number[]; glow?: true } | undefined): void {
     this.mood = rot?.mood ?? null
+    this.glow = rot?.glow === true
     this.birds.setAway(rot?.birds ?? [])
   }
 

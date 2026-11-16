@@ -10,6 +10,7 @@ import {
 import * as THREE from 'three'
 import { cascadeReaches, cascadeStep, snapToTexel } from './cascades.ts'
 import { flickerLevel } from './lighting.ts'
+import { GLOW_LIGHT, type GlowSkyUniforms } from './sky-glow.ts'
 import {
   applyGrade,
   colourScript,
@@ -115,6 +116,11 @@ export class Night {
   vision = 1
   /** World days since it began (CampShared.day): the moon's phase. */
   worldDay = 0
+  /** Tonight the sky glows (SurvivalShared.rot.glow, sky-glow.ts). */
+  glow = false
+  /** The Glow faded in, 0–1. */
+  private glowLevel = 0
+  private glowClock = 0
   private readonly moon: THREE.DirectionalLight
   private readonly moonDir: THREE.Vector3
   private readonly lights: readonly MapLight[]
@@ -247,6 +253,28 @@ export class Night {
     this.nightSky?.moonColor.value.lerp(color, k * 0.55)
   }
 
+  /**
+   * The Glow (sky-glow.ts): fades in over half a minute once it's dark, hides behind cloud and
+   * fog, and greens the ambient light a touch (more on the ground side: snow, lakes).
+   */
+  private updateGlow(dt: number, day: number): void {
+    const want = this.glow ? Math.max(0, 1 - day * 1.6) : 0
+    this.glowLevel +=
+      Math.sign(want - this.glowLevel) * Math.min(Math.abs(want - this.glowLevel), dt / 30)
+    this.glowClock += dt
+    const uniforms = this.nightSky as unknown as Partial<GlowSkyUniforms> | null
+    const w = this.weather
+    const seen = this.glowLevel * Math.max(0, 1 - w.cloud * 1.2) * Math.max(0, 1 - w.fog * 1.4)
+    if (uniforms?.glowAlpha && uniforms.glowTime) {
+      uniforms.glowAlpha.value = seen
+      uniforms.glowTime.value = this.glowClock
+    }
+    if (seen <= 0) return
+    this.hemi.color.lerp(GLOW_LIGHT, seen * 0.3)
+    this.hemi.groundColor.lerp(GLOW_LIGHT, seen * 0.2)
+    this.hemi.intensity *= 1 + seen * 0.25
+  }
+
   /** The weather to light the world for, from the next update on. */
   setWeather(weather: SkyWeather): void {
     this.weather = weather
@@ -318,6 +346,7 @@ export class Night {
     }
     applyGrade(this.hemi.color, g, graded * 0.5)
     if (this.nightSky) updateNightSky(this.nightSky, u, day, this.worldDay, w)
+    this.updateGlow(dt, day)
 
     // The sun crosses from east to west by day; at night the moon does (sky-night.ts).
     moonDirection(u, this.moonDir)

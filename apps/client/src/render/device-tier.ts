@@ -22,6 +22,8 @@ export interface TierSettings {
   shadowCascades: readonly number[]
   /** Screen-space ambient occlusion samples a pixel (pixel-renderer.ts); 0: off. */
   ao: number
+  /** Convex edge highlights (pixel-renderer.ts setEdgeHighlights): how much brighter; 0: off. */
+  edges: number
   /** Forest chunks in full / simplified / tree cards out to these distances (m), see wilds.ts. */
   forestNear: number
   forestMid: number
@@ -55,6 +57,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     shadowReach: 80,
     shadowCascades: [22, 80, 240],
     ao: 10,
+    edges: 0.3,
     forestNear: 100,
     forestMid: 190,
     forestFar: 450,
@@ -76,6 +79,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     shadowReach: 64,
     shadowCascades: [26, 130],
     ao: 6,
+    edges: 0.3,
     forestNear: 84,
     forestMid: 160,
     forestFar: 380,
@@ -97,6 +101,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     shadowReach: 50,
     shadowCascades: [50],
     ao: 0,
+    edges: 0,
     forestNear: 64,
     forestMid: 128,
     forestFar: 300,
