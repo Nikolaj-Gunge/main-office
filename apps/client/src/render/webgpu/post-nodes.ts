@@ -1,19 +1,22 @@
-import type { Texture, Vector2, Vector3 } from 'three'
+import { type Texture, Vector2, Vector3 } from 'three'
 import {
   abs,
   Break,
   clamp,
   cos,
+  cross,
   dot,
   Fn,
   float,
   floor,
   If,
   Loop,
+  length,
   max,
   min,
   mix,
   mod,
+  normalize,
   perspectiveDepthToViewZ,
   pow,
   screenCoordinate,
@@ -161,6 +164,11 @@ export function createPostUniforms() {
     infectPulse: uniform(0),
     infectTime: uniform(0),
     infectMotion: uniform(1),
+    // Convex edge highlights (setEdgeHighlights): 0 = off, else how much brighter.
+    edgeLight: uniform(0),
+    edgeLightDir: uniform(new Vector3(0, 1, 0)), // view space, towards the sun or moon
+    edgeTint: uniform(new Vector3(1, 1, 1)), // the light's colour, brightest channel 1
+    edgeProj: uniform(new Vector2(1, 1)), // tan(fov/2) × aspect, tan(fov/2)
   }
 }
 
@@ -260,6 +268,13 @@ export function postNode(i: PostInputs, u: PostUniforms): N<'vec4'> {
       )
     })
 
+    // Convex edge highlights (post.frag.glsl's edgeHighlight, line for line). Behind a uniform
+    // switch, so the taps are only made when it is on.
+    If(u.edgeLight.greaterThan(0), () => {
+      const e = edgeHighlight(i, u, viewDepth, resolution).mul(step(overlay.a, 0.5))
+      color.addAssign(e.mul(u.edgeLight).mul(color.add(0.03)).mul(u.edgeTint))
+    })
+
     // 1 px outline where this pixel sits in front of a much farther neighbour. Sampled always
     // (WGSL wants texture reads in uniform control flow), applied only where it should be.
     const texel = vec2(1).div(resolution)
@@ -286,4 +301,76 @@ export function postNode(i: PostInputs, u: PostUniforms): N<'vec4'> {
 
     return vec4(clamp(color, 0, 1), 1)
   })()
+}
+
+/**
+ * The t3ssel8r look: a 1 px lighter line along convex edges on the face that catches more of the
+ * light (see post.frag.glsl). Depth taps by pixel offset (x right, y up, as in GLSL), each made
+ * once; view-space positions from depth like the GLSL viewPos.
+ */
+function edgeHighlight(
+  i: PostInputs,
+  u: PostUniforms,
+  viewDepth: (p: N<'vec2'>) => N<'float'>,
+  resolution: N<'vec2'>,
+): N<'float'> {
+  const vUv = uv()
+  const texel = vec2(1).div(resolution)
+  const taps = new Map<string, N<'vec3'>>()
+  const at = (x: number, y: number): N<'vec3'> => {
+    const key = `${x},${y}`
+    const have = taps.get(key)
+    if (have) return have
+    // uv() runs top-down: the depth is read with y turned over, the position made bottom-up.
+    const d = viewDepth(vUv.add(vec2(x, -y).mul(texel)))
+    const glUv = vec2(vUv.x, vUv.y.oneMinus()).add(vec2(x, y).mul(texel))
+    const p = vec3(glUv.mul(2).sub(1).mul(u.edgeProj).mul(d), d.negate()).toVar()
+    taps.set(key, p)
+    return p
+  }
+  const normalAt = (x: number, y: number) => {
+    const p = at(x, y)
+    const r1 = at(x + 1, y)
+    const l1 = at(x - 1, y)
+    const u1 = at(x, y + 1)
+    const d1 = at(x, y - 1)
+    const bend = (a: N<'vec3'>, b: N<'vec3'>) => abs(a.z.mul(2).sub(b.z).sub(p.z))
+    const across = select(
+      bend(r1, at(x + 2, y)).lessThan(bend(l1, at(x - 2, y))),
+      r1.sub(p),
+      p.sub(l1),
+    )
+    const along = select(
+      bend(u1, at(x, y + 2)).lessThan(bend(d1, at(x, y - 2))),
+      u1.sub(p),
+      p.sub(d1),
+    )
+    return normalize(cross(across, along))
+  }
+  const EDGE_FAR = 70
+  const p = at(0, 0)
+  const d = p.z.negate()
+  const n = normalAt(0, 0)
+  const lit = dot(n, u.edgeLightDir)
+  const hit = float(0).toVar()
+  for (const [x, y] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const q = at(x, y)
+    const v = q.sub(p)
+    const near = step(q.z.negate().sub(d), d.mul(0.12).add(0.15))
+    const turns = step(dot(n, v), length(v).mul(-0.3))
+    const brighter = step(dot(normalAt(x, y), u.edgeLightDir), lit)
+    hit.assign(max(hit, near.mul(turns).mul(brighter)))
+  }
+  const sky = step(1, texture(i.depth, vUv).x)
+  return hit
+    .mul(sky.oneMinus())
+    .mul(step(d, EDGE_FAR))
+    .mul(step(0.15, lit))
+    .mul(smoothstep(0.15, 0.45, lit))
+    .mul(float(1).sub(smoothstep(EDGE_FAR * 0.6, EDGE_FAR, d)))
 }
