@@ -877,6 +877,7 @@ function applyTier() {
   effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
   pixels.maxDpr = t.maxDpr
   pixels.setAmbientOcclusion(t.ao)
+  pixels.setEdgeHighlights(t.edges)
   pixels.resize()
   setTexelDensity(t.texelsPerMeter)
 }

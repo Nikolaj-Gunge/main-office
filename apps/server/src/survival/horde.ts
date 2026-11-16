@@ -170,6 +170,8 @@ export class Zed {
   nextBash = 0
   /** Caught on a spike trap (building.ts): it moves at SPIKE_SLOW of its speed. */
   slowed = false
+  /** The Glow is up (glow.ts): standing about, it stops and stares at the sky, and for longer. */
+  skyward = false
   private speed = 0
   /** Winding up, clawing and (after a miss) recovering. */
   private readonly attack = new ClawAttack()
@@ -457,11 +459,17 @@ export class Zed {
       if (this.goal && Math.hypot(this.goal.x - me.x, this.goal.z - me.z) < 1.5) {
         this.goal = null
         this.mood = 'idle'
-        this.idleUntil = now + 2 + this.random() * 9
+        this.idleUntil = now + 2 + this.random() * (this.skyward ? 25 : 9)
       }
       if (!this.goal && now < this.idleUntil) {
-        // Standing about: swaying on its feet, head lolling.
-        this.yaw += Math.sin(now * 0.8 + self.id * 1.7) * 0.25 * TICK_DT
+        if (this.skyward) {
+          // Head tipped back, staring up at the lights, barely moving.
+          this.pitch += (0.85 - this.pitch) * Math.min(1, TICK_DT * 1.5)
+          this.yaw += Math.sin(now * 0.2 + self.id) * 0.04 * TICK_DT
+        } else {
+          // Standing about: swaying on its feet, head lolling.
+          this.yaw += Math.sin(now * 0.8 + self.id * 1.7) * 0.25 * TICK_DT
+        }
       }
       if (!this.goal && now >= this.idleUntil && KINDS[this.kind]?.wander) {
         const home: Poi | undefined = def.pois[this.home]

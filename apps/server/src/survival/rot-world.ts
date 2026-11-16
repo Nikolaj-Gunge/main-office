@@ -6,6 +6,7 @@ import {
   BIRDS_SHOT,
   type Flock,
   flocksOf,
+  glowFor,
   heightAt,
   infectionStage,
   MOODS,
@@ -15,6 +16,7 @@ import {
   type SurvivalDef,
   type SurvivalSelf,
   WEAPONS,
+  type WeatherKind,
   ZombieKind,
 } from '@office-fps/shared'
 import type { Game, ServerPlayer } from '../game.ts'
@@ -74,6 +76,8 @@ export class RotWorld {
   private readonly away = new Map<number, number>()
   private alarms: { at: Point; until: number; next: number }[] = []
   private night = 0
+  /** Tonight the sky glows (glow.ts). */
+  glow = false
 
   constructor(private readonly host: RotHost) {
     this.director = new Rot(host.random)
@@ -84,6 +88,7 @@ export class RotWorld {
     this.away.clear()
     this.alarms = []
     this.night = 0
+    this.glow = false
     this.director.endNight()
   }
 
@@ -95,24 +100,32 @@ export class RotWorld {
     return this.flocks
   }
 
-  /** Dusk: a new night and its mood. Returns what the Haven radio says about it. */
-  dusk(seed: number): string {
-    const mood = this.director.startNight(seed, this.night++)
+  /** Dusk: a new night and its mood (and whether the sky glows, glow.ts, in this weather). */
+  dusk(seed: number, weather: WeatherKind): string {
+    const night = this.night++
+    const mood = this.director.startNight(seed, night)
+    this.glow = glowFor(seed, night, mood, weather)
     return MOODS[mood].news
   }
 
   dawn(): void {
     this.director.endNight()
+    this.glow = false
   }
 
   /** Woken up in the middle of the night (a new world): it has a mood, unannounced. */
-  midnight(seed: number): void {
-    this.director.startNight(seed, this.night++)
+  midnight(seed: number, weather: WeatherKind): void {
+    const night = this.night++
+    this.glow = glowFor(seed, night, this.director.startNight(seed, night), weather)
   }
 
   /** What every client is told (SurvivalShared.rot). */
-  shared(): { mood?: RotMood; birds: number[] } {
-    return { ...(this.mood ? { mood: this.mood } : {}), birds: [...this.away.keys()] }
+  shared(): { mood?: RotMood; birds: number[]; glow?: true } {
+    return {
+      ...(this.mood ? { mood: this.mood } : {}),
+      birds: [...this.away.keys()],
+      ...(this.glow ? { glow: true as const } : {}),
+    }
   }
 
   hurt(victim: ServerPlayer, amount: number): void {

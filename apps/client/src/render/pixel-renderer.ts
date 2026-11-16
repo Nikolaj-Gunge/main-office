@@ -126,6 +126,9 @@ function createPostUniforms(
     aoSamples: { value: 0 },
     aoProj: { value: new THREE.Vector2(1, 1) },
     aoFar: { value: 120 },
+    edgeLight: { value: 0 },
+    edgeLightDir: { value: new THREE.Vector3(0, 1, 0) },
+    edgeTint: { value: new THREE.Vector3(1, 1, 1) },
   }
 }
 
@@ -168,6 +171,8 @@ export class PixelRenderer implements GameRenderer {
   private bloomEnabled = true
   /** Smooth mode: soft upscaling, fractional pixel size, and an FXAA pass after the post pass. */
   private smooth = false
+  private edgeStrength = 0
+  private keys: THREE.DirectionalLight[] = []
   private readonly postTarget: THREE.WebGLRenderTarget
   private readonly fxaaMaterial: THREE.ShaderMaterial
   /** The mist pass (volumetric-fog.ts), made the first time there is mist to draw. */
@@ -297,6 +302,29 @@ export class PixelRenderer implements GameRenderer {
     this.uniforms.aoSamples.value = Math.max(0, Math.min(12, Math.round(samples)))
   }
 
+  /**
+   * Convex edge highlights (0: off, the Low tier): a 1 px line `strength` brighter, in the
+   * light's colour, on edges that turn away from the sun or moon.
+   */
+  setEdgeHighlights(strength: number): void {
+    this.edgeStrength = Math.max(0, strength)
+  }
+
+  /**
+   * The scene's sun or moon, for the edge highlights: the brightest shadow-casting directional
+   * light (the further shadow cascades are lights of their own, dark).
+   */
+  private keyLight(scene: THREE.Scene): THREE.DirectionalLight | null {
+    if (this.keys[0]?.parent !== scene) {
+      this.keys = []
+      for (const o of scene.children)
+        if (o instanceof THREE.DirectionalLight && o.castShadow) this.keys.push(o)
+    }
+    let best: THREE.DirectionalLight | null = null
+    for (const l of this.keys) if (!best || l.intensity > best.intensity) best = l
+    return best
+  }
+
   /** Survival's bite on screen (see game/infection.ts); null: none. */
   setInfection(fx: { level: number; pulse: number; time: number; motion: number } | null): void {
     const u = this.uniforms
@@ -388,6 +416,17 @@ export class PixelRenderer implements GameRenderer {
     // View-space reconstruction for the AO, and where the fog has swallowed it.
     const tanHalf = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom
     this.uniforms.aoProj.value.set(tanHalf * camera.aspect, tanHalf)
+    const key = this.edgeStrength > 0 ? this.keyLight(scene) : null
+    const u = this.uniforms
+    u.edgeLight.value = key && key.intensity > 0 ? this.edgeStrength : 0
+    if (key) {
+      u.edgeLightDir.value
+        .subVectors(key.position, key.target.position)
+        .transformDirection(camera.matrixWorldInverse)
+      const c = key.color
+      const top = Math.max(c.r, c.g, c.b, 1e-3)
+      u.edgeTint.value.set(c.r / top, c.g / top, c.b / top)
+    }
     const sceneFog = scene.fog as THREE.Fog | null
     this.uniforms.aoFar.value =
       sceneFog && 'far' in sceneFog ? Math.min(160, sceneFog.far * 0.6) : 120

@@ -34,6 +34,10 @@ uniform float fogOn;
 uniform int aoSamples;
 uniform vec2 aoProj;        // tan(fov/2) × aspect, tan(fov/2): view-space from depth
 uniform float aoFar;        // AO gone by here (m): lost in the fog
+// Convex edge highlights (pixel-renderer.ts setEdgeHighlights): 0 = off, else how much brighter.
+uniform float edgeLight;
+uniform vec3 edgeLightDir;  // view space, towards the sun or moon
+uniform vec3 edgeTint;      // the light's colour, brightest channel 1
 
 varying vec2 vUv;
 
@@ -125,6 +129,49 @@ float ambientOcclusion(vec2 uv) {
   return max(0.4, floor(clamp(ao, 0.0, 1.0) * 5.0 + 0.4) / 5.0);
 }
 
+// The surface's normal at uv (view space, towards the camera), from the depth either side: on
+// each axis the side whose next tap carries on along the same plane, so creases stay sharp.
+vec3 edgeNormal(vec2 uv, vec3 p, vec2 texel) {
+  vec2 tx = vec2(texel.x, 0.0);
+  vec2 ty = vec2(0.0, texel.y);
+  vec3 r1 = viewPos(uv + tx);
+  vec3 l1 = viewPos(uv - tx);
+  vec3 u1 = viewPos(uv + ty);
+  vec3 d1 = viewPos(uv - ty);
+  float rBend = abs(2.0 * r1.z - viewPos(uv + 2.0 * tx).z - p.z);
+  float lBend = abs(2.0 * l1.z - viewPos(uv - 2.0 * tx).z - p.z);
+  float uBend = abs(2.0 * u1.z - viewPos(uv + 2.0 * ty).z - p.z);
+  float dBend = abs(2.0 * d1.z - viewPos(uv - 2.0 * ty).z - p.z);
+  return normalize(cross(rBend < lBend ? r1 - p : p - l1, uBend < dBend ? u1 - p : p - d1));
+}
+
+// The t3ssel8r look: a 1 px lighter line along convex edges (box corners, steps, roof ridges)
+// on the face that catches more of the light. A neighbour lying behind this pixel's plane means
+// the surface turns away here; silhouettes against something far off are the outlines' job.
+float edgeHighlight(vec2 uv) {
+  if (texture2D(tDepth, uv).x >= 1.0) return 0.0;
+  vec3 p = viewPos(uv);
+  float d = -p.z;
+  const float EDGE_FAR = 70.0;
+  if (d > EDGE_FAR) return 0.0;
+  vec2 texel = 1.0 / resolution;
+  vec3 n = edgeNormal(uv, p, texel);
+  float lit = dot(n, edgeLightDir);
+  if (lit < 0.15) return 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 o = i == 0 ? vec2(texel.x, 0.0) : i == 1 ? vec2(-texel.x, 0.0) :
+      i == 2 ? vec2(0.0, texel.y) : vec2(0.0, -texel.y);
+    vec3 q = viewPos(uv + o);
+    if (-q.z - d > 0.12 * d + 0.15) continue;
+    vec3 v = q - p;
+    if (dot(n, v) > -0.3 * length(v)) continue;
+    // Only the brighter of the two faces gets the line, so it stays one pixel wide.
+    if (dot(edgeNormal(uv + o, q, texel), edgeLightDir) > lit) continue;
+    return smoothstep(0.15, 0.45, lit) * (1.0 - smoothstep(EDGE_FAR * 0.6, EDGE_FAR, d));
+  }
+  return 0.0;
+}
+
 // The world's occlusion at this pixel (set once in main()).
 float worldAo = 1.0;
 
@@ -183,6 +230,11 @@ void main() {
     color = mix(color, vec3(0.38, 0.0, 0.02), throb * 0.8);
     float last = smoothstep(0.8, 1.0, infection) * (0.8 + 0.2 * infectPulse);
     color = mix(color, color * vec3(1.3, 0.4, 0.35) + vec3(0.07, 0.0, 0.0), last * 0.75);
+  }
+
+  if (edgeLight > 0.0 && overlay.a < 0.5) {
+    float e = edgeHighlight(vUv);
+    color += e * edgeLight * (color + 0.03) * edgeTint;
   }
 
   // 1 px outline where this pixel sits in front of a much farther neighbour (silhouette edges).

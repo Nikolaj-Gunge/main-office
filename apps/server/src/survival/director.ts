@@ -753,7 +753,7 @@ export class SurvivalDirector {
     this.drops.reset()
     this.vehicles.reset(def)
     this.rot.reset()
-    if (dayPhase(this.time) === 'night') this.rot.midnight(this.weatherSeed)
+    if (dayPhase(this.time) === 'night') this.rot.midnight(this.weatherSeed, this.weather.kind)
     for (let i = 0; i < POOL; i++) {
       const zombie = this.game.addZombie(new Zed(this.random))
       if (zombie) this.pool.push(zombie)
@@ -1655,12 +1655,13 @@ export class SurvivalDirector {
     if (phase === 'dawn') this.rot.dawn()
     if (phase === 'dusk') {
       // Read out on Radio Free Deadwood (radio.ts) to whoever has a radio on.
-      this.rot.dusk(this.weatherSeed)
+      this.rot.dusk(this.weatherSeed, this.weather.kind)
       // A streamer night: the listeners' pick replaces the seeded mood.
       const voted = this.moodVote.close(this.rot.mood)
       if (voted) this.rot.director.mood = voted
       const mood = this.rot.mood
       if (mood) this.radio.say({ kind: 'mood', mood })
+      if (this.rot.glow) this.radio.say({ kind: 'glow' })
       this.game.match.broadcast()
     }
   }
@@ -2828,6 +2829,8 @@ export class SurvivalDirector {
             flashAt(this.weatherSeed, this.weatherClock, this.weatherPin ?? undefined),
           ) * this.rot.director.moodDef.sight
       }
+      // The Glow (glow.ts): the ones with nothing to do stand and stare up at it.
+      zed.skyward = this.rot.glow
       if (stalker) zed.watch(z, prey, clear)
       if ((tick + z.id) % 15 >= 4 && stalker) continue
       const was = zed.mood

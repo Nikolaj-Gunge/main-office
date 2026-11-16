@@ -176,6 +176,7 @@ export class GpuPixelRenderer implements GameRenderer {
 
   /** The WebGL path's ambient occlusion has no TSL twin yet: WebGPU draws without it. */
   setAmbientOcclusion(_samples: number): void {}
+  setEdgeHighlights(_strength: number): void {}
 
   setBias(bias: number): void {
     if (bias === this.bias) return

@@ -1,4 +1,5 @@
 import {
+  GLOW_NEWS,
   MOODS,
   type Notice,
   type RotMood,
@@ -30,6 +31,7 @@ export type RadioEvent =
   | { kind: 'alpha'; alpha: string; by: string; place: string }
   | { kind: 'alphaBack'; alpha: string; place: string }
   | { kind: 'mood'; mood: RotMood }
+  | { kind: 'glow' }
   | { kind: 'weather'; weather: WeatherKind }
   | { kind: 'bounty'; who: string; by: string; reward: number }
 
@@ -46,6 +48,7 @@ export const RADIO_COOLDOWN: Record<RadioKind, number> = {
   alpha: 0,
   alphaBack: 60,
   mood: 0,
+  glow: 0,
   weather: 300,
   bounty: 0,
 }
@@ -55,6 +58,7 @@ const PRIORITY: Record<RadioKind, number> = {
   evac: 3,
   siege: 3,
   mood: 2,
+  glow: 2,
   alphaBack: 2,
   death: 1,
   drop: 1,
@@ -68,7 +72,7 @@ export const RADIO_QUEUE = 4
 export const RADIO_NEAR = 25
 
 /** What Wes says, by kind: {who}, {near}, {place}, {alpha}, {by} are filled in. */
-export const RADIO_LINES: Record<Exclude<RadioKind, 'mood' | 'weather'>, string[]> = {
+export const RADIO_LINES: Record<Exclude<RadioKind, 'mood' | 'weather' | 'glow'>, string[]> = {
   death: [
     "{who} didn't make it.",
     'Another name for the board tonight. {who}.',
@@ -155,6 +159,8 @@ export function radioTemplates(e: RadioEvent): string[] {
   switch (e.kind) {
     case 'mood':
       return [MOODS[e.mood].news]
+    case 'glow':
+      return GLOW_NEWS
     case 'weather':
       return WEATHER_LINES[e.weather]
     case 'siege':
