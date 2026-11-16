@@ -223,9 +223,18 @@ const ROADS: RoadPlan[] = [
   dirt([-820, -260], [-1050, 100], [-1210, 440]),
 ]
 
-const LAKES = [{ x: 420, z: 110, r: 85 }].map((l) => {
-  const [x, z] = drawIn(l.x, l.z)
-  return { ...l, x, z }
+/**
+ * Miller's Lake sits east of the fishing shack, its shore some 50 m off as it always was: drawing
+ * its middle in like a place would put the shack, the camp around it and the dock under water.
+ * (A little smaller than the old 85 m, so the drawn-in Pinewatch road clears its shore.)
+ */
+const LAKES = [{ x: 400, z: 110, r: 70, by: [280, 110] as const }].map(({ by, ...l }) => {
+  const [bx, bz] = drawIn(by[0], by[1])
+  return {
+    ...l,
+    x: Math.round((bx + l.x - by[0]) * 10) / 10,
+    z: Math.round((bz + l.z - by[1]) * 10) / 10,
+  }
 })
 
 const SCATTER_NAMES: Record<ScatterKind, (variant: number) => string> = {
