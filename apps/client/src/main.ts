@@ -310,7 +310,13 @@ const turnedSelf = survival
   ? new TurnedSelfView(hudRoot, (action) => net.send({ type: ClientMsg.Action, action }))
   : null
 /** A walker has hold of you (survival): mash E (game/grabbed.ts). */
-const grabbed = survival ? new GrabbedView(hudRoot) : null
+const grabbed = survival
+  ? new GrabbedView(
+      hudRoot,
+      (code) => actionFor(settings.keybinds, code) === 'use',
+      () => keyLabel(settings.keybinds.use[0] ?? 'KeyE'),
+    )
+  : null
 // People sitting in cars aren't drawn (the car is), nor the body you're steering.
 if (survival) remotes.hidden = (id) => survival.vehicles.isSeated(id) || id === turnedSelf?.body
 const debugHitboxes = new DebugHitboxes(scene)

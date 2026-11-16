@@ -12,7 +12,12 @@ export class GrabbedView {
   private by: number | null = null
   private presses = 0
 
-  constructor(parent: HTMLElement) {
+  /** `isUse`: whether a key is bound to Use; `useKey`: its label (E unless rebound). */
+  constructor(
+    parent: HTMLElement,
+    private readonly isUse: (code: string) => boolean = (code) => code === 'KeyE',
+    private readonly useKey: () => string = () => 'E',
+  ) {
     this.box = document.createElement('div')
     this.box.className = 'grabbed-prompt'
     this.box.hidden = true
@@ -23,7 +28,7 @@ export class GrabbedView {
     this.fill = this.box.querySelector('.grabbed-fill') as HTMLDivElement
     parent.append(this.box)
     window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (this.by === null || e.repeat || e.code !== 'KeyE') return
+      if (this.by === null || e.repeat || !this.isUse(e.code)) return
       this.presses++
       this.fill.style.width = `${Math.min(100, (this.presses / MASH_PRESSES) * 100)}%`
     })
@@ -38,6 +43,8 @@ export class GrabbedView {
     this.presses = 0
     this.fill.style.width = '0%'
     this.box.hidden = next === null
+    const key = this.box.querySelector('.grabbed-key')
+    if (started && key) key.textContent = this.useKey()
     document.body.classList.toggle('grabbed', next !== null)
     return started
   }
