@@ -26,6 +26,7 @@ import {
   type Slot,
   vertexColored,
 } from './body-kit.ts'
+import { FusedFigure } from './fused-figure.ts'
 import { gearBodies, lowerBody, showsUnder } from './gear-looks.ts'
 import { createLabel } from './labels.ts'
 import { build, defaultOutfit, lookFor, type Outfit, personBody, undeadSkin } from './person.ts'
@@ -486,6 +487,8 @@ export class Avatar {
   readonly appearance?: Appearance
   /** Changes the drawn pose on top of the replicated one (a wave); looks only, not hitboxes. */
   adjust: ((parts: BodyPart[], size: number) => BodyPart[]) | null = null
+  /** The boxes baked into a few skinned meshes (fused-figure.ts); null while being built. */
+  private fusion: FusedFigure | null = null
 
   /** @param outfit office clothes or survival's tank top (default: what this map wears) */
   constructor(
@@ -523,10 +526,13 @@ export class Avatar {
     this.root.add(this.gunGroup)
     this.setWeapon(WeaponId.Rifle)
     this.setGear(0)
+    this.fusion = new FusedFigure(this.root, [...Object.values(this.parts), this.gunGroup])
+    this.fusion.build()
     this.root.name = `avatar:${name}`
   }
 
   private setWeapon(id: WeaponId): void {
+    this.fusion?.clear()
     this.weapon = id
     const length = GUN_LENGTH[id]
     this.gun.geometry = gunGeometry[id] as THREE.BoxGeometry
@@ -536,13 +542,16 @@ export class Avatar {
     this.gun.position.set(0, 0, 0.22 - length / 2)
     this.muzzle.position.set(0, 0, 0.22 - length)
     this.glint.position.set(0, 0.07, -0.05)
+    this.fusion?.build()
   }
 
   /** Swaps the worn pieces (only when the replicated value changes). */
   private setGear(gear: number): void {
     this.gear = gear
+    this.fusion?.clear()
     for (const mesh of [...this.gearMeshes, ...this.legMeshes]) mesh.removeFromParent()
     ;[this.gearMeshes, this.legMeshes] = dress(this.parts, gear, this.material, this.lower)
+    this.fusion?.build()
   }
 
   /**
@@ -576,6 +585,9 @@ export class Avatar {
     }
     // Spawn protection: blink so attackers know shots won't count yet.
     const blink = s.protected && Math.floor(timeMs / 150) % 2 === 0
+    // Worn gear blinks on its own, so the protected are drawn unbaked.
+    if (s.protected) this.fusion?.clear()
+    else if (this.fusion && !this.fusion.fused) this.fusion.build()
     this.material.opacity = blink ? 0.35 : 1
     for (const mesh of this.gearMeshes) mesh.visible = !blink
 
@@ -630,6 +642,7 @@ export class Avatar {
       const group = p.name === 'gun' ? this.gunGroup : this.parts[p.name]
       placePart(group, p, size)
     }
+    this.fusion?.follow(this.parts.chest.position, size)
   }
 
   /**
@@ -654,6 +667,7 @@ export class Avatar {
   setStanding(armband: number | null, oathbreaker: boolean): void {
     if (armband !== this.armbandColor) {
       this.armbandColor = armband
+      this.fusion?.clear()
       if (this.armband) {
         this.armband.removeFromParent()
         ;(this.armband.material as THREE.Material).dispose()
@@ -671,6 +685,7 @@ export class Avatar {
         this.armband.name = 'armband'
         this.parts.armL.add(this.armband)
       }
+      this.fusion?.build()
     }
     if (oathbreaker !== (this.oathTag !== null)) {
       if (this.oathTag) {
@@ -701,6 +716,7 @@ export class Avatar {
 
   dispose(): void {
     this.setStanding(null, false)
+    this.fusion?.clear()
     this.material.dispose()
     ;(this.glint.material as THREE.SpriteMaterial).dispose()
   }

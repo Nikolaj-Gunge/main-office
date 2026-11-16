@@ -1,5 +1,8 @@
 import { BackSide, type Color, type Matrix3, type Vector3 } from 'three'
 import {
+  abs,
+  asin,
+  atan,
   cameraProjectionMatrix,
   clamp,
   cos,
@@ -10,13 +13,17 @@ import {
   fract,
   If,
   length,
+  max,
   mix,
+  mod,
   modelViewMatrix,
   normalize,
   positionLocal,
   pow,
   renderGroup,
+  screenCoordinate,
   select,
+  sin,
   smoothstep,
   sqrt,
   step,
@@ -39,6 +46,9 @@ interface NightUniforms {
   moonColor?: { value: Color }
   starAlpha?: { value: number }
   starTurn?: { value: Matrix3 }
+  /** The Glow (sky-glow.ts). */
+  glowAlpha?: { value: number }
+  glowTime?: { value: number }
 }
 
 /** sky.ts's skyHash: a number 0–1 from a cell. */
@@ -46,6 +56,79 @@ const skyHash = (q: Node<'vec3'>): Node<'float'> => {
   const a = fract(q.mul(vec3(0.1031, 0.103, 0.0973)))
   const p = a.add(dot(a, a.yxz.add(33.33)))
   return fract(p.x.add(p.y).mul(p.z))
+}
+
+/**
+ * sky-glow.ts's curtains over `color`, line for line (GLSL there): two bands hanging from a
+ * wandering hem over the north, in coarse cells of sky, cut into hard dithered steps.
+ */
+function glowSky(
+  color: Node<'vec3'>,
+  d: Node<'vec3'>,
+  glowAlpha: Node<'float'>,
+  glowTime: Node<'float'>,
+): void {
+  const band = (
+    az: Node<'float'>,
+    el: Node<'float'>,
+    base: number,
+    height: number,
+    seed: number,
+  ) => {
+    const t = glowTime
+    const edge = sin(az.mul(2.3).add(seed).add(t.mul(0.031)))
+      .mul(0.07)
+      .add(
+        sin(
+          az
+            .mul(5.7)
+            .sub(t.mul(0.047))
+            .add(seed * 2),
+        ).mul(0.035),
+      )
+      .add(base)
+    const above = el.sub(edge)
+    const inside = step(-0.02, above).mul(step(above, height))
+    const hem = clamp(above.add(0.02).div(0.02), 0, 1)
+    const rise = above.div(height).oneMinus()
+    const col = floor(
+      az
+        .mul(34)
+        .add(t.mul(0.08))
+        .add(seed * 13),
+    )
+    const ray = skyHash(vec3(col, seed, floor(t.mul(0.15).add(seed))))
+      .mul(0.55)
+      .add(0.45)
+    return inside.mul(hem).mul(rise).mul(rise).mul(ray)
+  }
+  If(glowAlpha.greaterThan(0).and(d.y.greaterThan(0.02)), () => {
+    // North is -z. Snap the angles to coarse cells of sky.
+    const CELL = 0.011
+    const az = floor(atan(d.x, d.z.negate()).div(CELL)).add(0.5).mul(CELL)
+    const el = floor(asin(clamp(d.y, 0, 1)).div(CELL))
+      .add(0.5)
+      .mul(CELL)
+    const spread = clamp(abs(az).div(1.9).oneMinus(), 0, 1)
+    const a = band(az, el, 0.2, 0.42, 1)
+    const b = band(az.add(0.6), el, 0.34, 0.3, 4).mul(0.7)
+    const lit = max(a, b).mul(spread).mul(glowAlpha)
+    // The 4×4 Bayer grid, as gl_FragCoord counts (from the bottom; the pattern only).
+    const p = mod(floor(screenCoordinate.xy), 4)
+    const m2 = (q: Node<'vec2'>) => abs(q.x.sub(q.y)).mul(2).add(q.y)
+    const bayer = m2(mod(p, 2))
+      .mul(4)
+      .add(m2(floor(p.div(2))))
+    const steps = floor(lit.mul(4).add(bayer.add(0.5).div(16))).div(4)
+    // Green at the hem, teal and a little violet up high.
+    const up = clamp(el.sub(0.2).div(0.5), 0, 1)
+    const tone = mix(
+      mix(vec3(0.07, 0.2, 0.11), vec3(0.05, 0.12, 0.15), up),
+      vec3(0.09, 0.06, 0.13),
+      smoothstep(0.7, 1, up),
+    )
+    color.addAssign(tone.mul(steps))
+  })
 }
 
 /**
@@ -81,9 +164,12 @@ export function skyNodeMaterial(
     const moonPhase = uniform(0).onRenderUpdate(() => u.moonPhase?.value ?? 0)
     const moonAlpha = uniform(0).onRenderUpdate(() => u.moonAlpha?.value ?? 0)
     const starAlpha = uniform(0).onRenderUpdate(() => u.starAlpha?.value ?? 0)
+    const glowAlpha = uniform(0).onRenderUpdate(() => u.glowAlpha?.value ?? 0)
+    const glowTime = uniform(0).onRenderUpdate(() => u.glowTime?.value ?? 0)
     material.colorNode = Fn(() => {
       const d = normalize(dir)
       const color = vec3(gradient).toVar()
+      if (u.glowAlpha) glowSky(color, d, glowAlpha, glowTime)
       If(starAlpha.greaterThan(0).and(d.y.greaterThan(0)), () => {
         const s = starTurn.mul(d) as unknown as Node<'vec3'>
         const cell = floor(s.mul(70))

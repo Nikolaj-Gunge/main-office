@@ -176,7 +176,39 @@ export class GpuPixelRenderer implements GameRenderer {
 
   /** The WebGL path's ambient occlusion has no TSL twin yet: WebGPU draws without it. */
   setAmbientOcclusion(_samples: number): void {}
-  setEdgeHighlights(_strength: number): void {}
+  /** Convex edge highlights (0: off), as the WebGL path's: see PixelRenderer. */
+  setEdgeHighlights(strength: number): void {
+    this.edgeStrength = Math.max(0, strength)
+  }
+  private edgeStrength = 0
+  private keys: THREE.DirectionalLight[] = []
+
+  /** The sun or moon: the brightest shadow-casting directional light (as PixelRenderer). */
+  private keyLight(scene: THREE.Scene): THREE.DirectionalLight | null {
+    if (this.keys[0]?.parent !== scene) {
+      this.keys = []
+      for (const o of scene.children)
+        if (o instanceof THREE.DirectionalLight && o.castShadow) this.keys.push(o)
+    }
+    let best: THREE.DirectionalLight | null = null
+    for (const l of this.keys) if (!best || l.intensity > best.intensity) best = l
+    return best
+  }
+
+  private syncEdges(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
+    const u = this.uniforms
+    const key = this.edgeStrength > 0 ? this.keyLight(scene) : null
+    u.edgeLight.value = key && key.intensity > 0 ? this.edgeStrength : 0
+    if (!key) return
+    const tanHalf = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom
+    u.edgeProj.value.set(tanHalf * camera.aspect, tanHalf)
+    u.edgeLightDir.value
+      .subVectors(key.position, key.target.position)
+      .transformDirection(camera.matrixWorldInverse)
+    const c = key.color
+    const top = Math.max(c.r, c.g, c.b, 1e-3)
+    u.edgeTint.value.set(c.r / top, c.g / top, c.b / top)
+  }
 
   setBias(bias: number): void {
     if (bias === this.bias) return
@@ -251,6 +283,7 @@ export class GpuPixelRenderer implements GameRenderer {
     this.uniforms.cameraFar.value = camera.far
     this.uniforms.outlineFar.value = outlineFar(scene)
     this.syncShadows(scene)
+    this.syncEdges(scene, camera)
 
     const r = this.renderer
     r.setRenderTarget(this.target)
