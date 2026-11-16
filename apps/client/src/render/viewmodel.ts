@@ -154,7 +154,8 @@ function handgun(): GunModel {
     muzzle,
     ejectPort,
     hip: new THREE.Vector3(0.15, -0.15, -0.38),
-    ads: new THREE.Vector3(0, -0.071, -0.24),
+    // Sight tops (y 0.033) sit on screen centre: the dot rests on the front post.
+    ads: new THREE.Vector3(0, -0.034, -0.24),
     // Snappy flip, back on target quickly.
     recoil: { back: 0.03, climb: 0.2, roll: 0.06, side: 0.03, recover: 20 },
     action: action(slide, 0.035, 0.09, true),
