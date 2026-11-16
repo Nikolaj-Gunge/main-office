@@ -1,5 +1,6 @@
 import { CAMP_FOLK } from './camp-folk.ts'
 import { DAWN, DUSK, NIGHTFALL } from './daytime.ts'
+import type { StainShared } from './echoes.ts'
 import { type ProjectShared, type ProjectsSave, readProjects } from './projects.ts'
 import type { Stack } from './protocol.ts'
 
@@ -256,4 +257,6 @@ export interface CampShared {
   remains?: RemainsShared[]
   /** Haven's community projects (projects.ts): how far along, and the plaques. */
   projects?: ProjectShared[]
+  /** Faint bloodstains where people fell lately: E plays their echo (echoes.ts). */
+  stains?: StainShared[]
 }

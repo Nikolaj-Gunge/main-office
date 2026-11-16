@@ -31,6 +31,7 @@ export type RadioEvent =
   | { kind: 'alphaBack'; alpha: string; place: string }
   | { kind: 'mood'; mood: RotMood }
   | { kind: 'weather'; weather: WeatherKind }
+  | { kind: 'bounty'; who: string; by: string; reward: number }
 
 export type RadioKind = RadioEvent['kind']
 
@@ -46,6 +47,7 @@ export const RADIO_COOLDOWN: Record<RadioKind, number> = {
   alphaBack: 60,
   mood: 0,
   weather: 300,
+  bounty: 0,
 }
 /** Higher goes on the air first, and is the last to be dropped from a full queue. */
 const PRIORITY: Record<RadioKind, number> = {
@@ -56,6 +58,7 @@ const PRIORITY: Record<RadioKind, number> = {
   alphaBack: 2,
   death: 1,
   drop: 1,
+  bounty: 2,
   weather: 0,
 }
 /** News this old (s) that never got on the air is dropped; at most this much waits. */
@@ -95,6 +98,10 @@ export const RADIO_LINES: Record<Exclude<RadioKind, 'mood' | 'weather'>, string[
   alphaBack: [
     'Something big moving at {place} again. Sounds like {alpha}. They never stay dead long.',
     '{alpha} is back at {place}. Or something that wants the name. Stay clear.',
+  ],
+  bounty: [
+    '{who} is at rest. {by} saw to it and took the {reward} dollars off the board. Somebody had to.',
+    "The slip for {who} came down today. {by} collected. Don't ask them about it.",
   ],
 }
 

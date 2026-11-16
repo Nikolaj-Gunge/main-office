@@ -115,6 +115,8 @@ export interface StoryHost {
   sieged?(poi: string, held: boolean): void
   /** What Haven's morale does (camp.ts): prices, Lena's fee, what more Gus stocks. */
   camp?(): { price: number; heal: number; stock: [string, number][] }
+  /** Bounties on the long-lived turned, as slips for the job board (bounties.ts). */
+  wanted?(): string[]
 }
 
 interface Walker {
@@ -493,10 +495,12 @@ export class Story {
   board(p: Person): void {
     this.talking.set(p.player.id, JOB_BOARD)
     const jobs = this.jobsFor(p)
-    const text =
+    const wanted = this.host.wanted?.() ?? []
+    const text = `${
       jobs.length === 0
         ? "Nothing pinned up that you haven't done or aren't already doing. Check back later."
         : "Slips pinned under a little roof, in a dozen hands. Tear one off and it's yours."
+    }${wanted.length > 0 ? `\n\n${wanted.join('\n')}` : ''}`
     this.say(p, JOB_BOARD, text, [
       ...jobs.map((d) => ({
         id: `job:${d.id}`,

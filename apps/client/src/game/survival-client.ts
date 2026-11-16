@@ -4,6 +4,7 @@ import {
   countOf,
   DAY_SECONDS,
   daylight,
+  doneProjects,
   type EffectId,
   EVAC_TITLE,
   effectsOf,
@@ -36,6 +37,7 @@ import {
   seeded,
   setBarricades,
   setBuilds,
+  setProjects,
   spotCentre,
   syncForest,
   traitFactor,
@@ -57,6 +59,7 @@ import { CampFolk } from '../render/camp-folk.ts'
 import { CampView, RED_SKY } from '../render/camp-view.ts'
 import { ChalkMarks } from '../render/chalk-marks.ts'
 import type { Tier, TierSettings } from '../render/device-tier.ts'
+import { EchoesView } from '../render/echoes-view.ts'
 import { EvacView } from '../render/evac-view.ts'
 import { Atmosphere, type FogFrame } from '../render/fog-atmosphere.ts'
 import { HavenGateView } from '../render/haven-gate-view.ts'
@@ -169,6 +172,8 @@ export class SurvivalClient {
   private readonly folk: CampFolk
   /** Haven's banner, morale board, won stalls, graves and Red Night sky (camp-view.ts). */
   private readonly camp: CampView
+  /** Bloodstains where people fell, and their echoes played back (echoes-view.ts). */
+  private readonly echoes = new EchoesView()
   /** Rain, mist, lightning and the rest (what the weather is comes from the server). */
   readonly weather: WeatherView
   /** Haven's gate on its chain, and the winch (haven-gate-view.ts). */
@@ -237,6 +242,7 @@ export class SurvivalClient {
     this.folk = new CampFolk(o.def, o.audio)
     this.camp = new CampView(o.def, o.audio)
     this.camp.addTo(o.scene)
+    o.scene.add(this.echoes.root)
     this.junk = new JunkView(o.def, o.audio)
     o.scene.add(this.junk.root)
     o.scene.add(this.folk.root)
@@ -376,6 +382,7 @@ export class SurvivalClient {
       case ServerMsg.Notice: {
         const n = msg.notice
         this.onNotice?.(n)
+        if (n.echo) this.echoes.play(n.echo)
         // Got out on the helicopter: a card of its own, not the usual story line.
         if (n.kind === 'story' && n.title === EVAC_TITLE) {
           this.evac.showCard(n.title, n.text)
@@ -426,6 +433,9 @@ export class SurvivalClient {
     this.heli.apply(shared.drops)
     this.evac.apply(shared.evac)
     this.camp.apply(shared.camp)
+    this.echoes.apply(shared.camp?.stains)
+    // Haven's finished projects are solid (physics/projects.ts), as on the server.
+    setProjects(this.physics, this.def, doneProjects(shared.camp?.projects))
     this.folk.setGone(shared.camp?.gone ?? [])
     this.weather.setShared(shared.weather)
     this.applyWalkers(shared.walkers ?? [])
@@ -497,6 +507,7 @@ export class SurvivalClient {
     this.heli.clear()
     this.evac.clear()
     this.camp.clear()
+    this.echoes.clear()
     this.self = null
     this.vehicles.clear()
     this.infection.set(null)
@@ -599,6 +610,7 @@ export class SurvivalClient {
     this.night.update(dt, eye, time, built)
     this.night.tint(RED_SKY, this.camp.redness(time))
     this.camp.update(eye)
+    this.echoes.update(dt)
     this.cullDistant(eye.x, eye.z, (this.scene.fog as THREE.Fog | null)?.far ?? 1000)
     this.leaves.update(dt, eye)
     this.heli.update(dt, eye)
@@ -889,6 +901,7 @@ export class SurvivalClient {
     if (thing) return thing.label
     const grave = this.camp.prompt(state.pos, state.crouched, shovel, false)
     if (grave) return grave
+    if (this.echoes.near(state.pos)) return 'Touch the stain'
     const inv = this.self?.inv ?? []
     const car = this.vehicles.prompt(state.pos, (item) => countOf(inv, item) > 0)
     if (car) return car

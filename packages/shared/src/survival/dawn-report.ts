@@ -24,7 +24,7 @@ export interface NightLog {
   /** Put down, by who did it (character names). */
   kills: Record<string, number>
   /** The turned (somebody's dead self) put down: whose it was, and who did it. */
-  turnedDown: { name: string; by: string | null }[]
+  turnedDown: { name: string; by: string | null; reward?: number }[]
   /** People who were out there at some point tonight (names). */
   present: string[]
 }
@@ -103,9 +103,11 @@ export function composeDawnReport(
     lines.push(`Got out on the helicopter: ${list(log.out)}. They live at Haven now.`)
   for (const t of log.turnedDown.slice(0, 3))
     lines.push(
-      t.by
-        ? `${t.by} put down what was left of ${t.name}.`
-        : `What was left of ${t.name} was put down.`,
+      t.by && t.reward
+        ? `${t.by} put down what was left of ${t.name} and collected the $${t.reward} bounty.`
+        : t.by
+          ? `${t.by} put down what was left of ${t.name}.`
+          : `What was left of ${t.name} was put down.`,
     )
 
   // The dead put down, and who did the most of it.

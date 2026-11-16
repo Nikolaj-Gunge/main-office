@@ -24,6 +24,8 @@ import {
   DUSK,
   daylight,
   dayPhase,
+  doneProjects,
+  ECHO_RATE,
   type EquipSlot,
   EVAC_RADIO_KEY,
   EVAC_TITLE,
@@ -91,6 +93,7 @@ import {
   secondFind,
   seeded,
   setBarricades,
+  setProjects,
   sightScale,
   slotFor,
   spotBlock,
@@ -130,12 +133,14 @@ import type { Point } from '../items.ts'
 import type { CharacterSave, TurnedSave } from '../saves.ts'
 import { type AlphaHost, Alphas } from './alphas.ts'
 import { type BanditHost, Bandits } from './bandits.ts'
+import { bountyReward, type Wanted, wantedLines } from './bounties.ts'
 import { BASH_BASE, type BuildHost, Building } from './building.ts'
 import { Camp } from './camp.ts'
 import { aimChalk, Chalk } from './chalk.ts'
 import { Cartographer } from './chart.ts'
 import { DawnDesk } from './dawn-report.ts'
 import { type DropHost, Drops } from './drops.ts'
+import { Echoes, echoCaption } from './echoes.ts'
 import { Evac, evacAccount } from './evac.ts'
 import { FieldNotesKeeper } from './field-notes.ts'
 import { type FirstShotHost, FirstShotLesson } from './first-shot.ts'
@@ -238,6 +243,8 @@ interface Survivor {
 interface Turned {
   stuff: Stack[]
   look: number
+  /** World day they turned (bounties.ts). */
+  since: number
 }
 
 /** The name a survivor's turned body goes by (over its head, and in the crosshair). */
@@ -577,6 +584,8 @@ export class SurvivalDirector {
   readonly skills: SkillsKeeper
   /** The night's log, the Dawn Report and how many nights the world has seen (dawn-report.ts). */
   readonly dawnDesk = new DawnDesk()
+  /** Bloodstain echoes: the last seconds of the dead, where they fell (echoes.ts). */
+  readonly echoes = new Echoes()
 
   /** The night the world is on (1 = its first); for link previews (share-preview.ts). */
   get night(): number {
@@ -809,6 +818,7 @@ export class SurvivalDirector {
     const sv = this.survivors.get(player.id)
     if (!sv) return
     this.turnedSelf.left(player)
+    this.echoes.forget(player.id)
     this.grabs.forget(player)
     this.trades.forget(player.id)
     this.workbench.forget(player)
@@ -918,6 +928,7 @@ export class SurvivalDirector {
       nights: this.dawnDesk.nights,
       ...(this.dawnDesk.report ? { dawn: this.dawnDesk.report } : {}),
       marks: this.chalk.save(),
+      echoes: this.echoes.save(),
     }
     const json = JSON.stringify(world)
     if (json !== this.savedWorld) {
@@ -938,6 +949,7 @@ export class SurvivalDirector {
     // Those who turned get up again where they were once there's somebody about (populate).
     this.risen = (w.turned ?? []).filter((t) => t && typeof t.name === 'string')
     this.camp.restore(w.camp)
+    this.echoes.restore(w.echoes)
     this.dawnDesk.restore(w.nights, w.dawn)
     this.def.pois.forEach((poi, i) => {
       if (w.found.includes(poi.key)) this.found.add(i)
@@ -1224,6 +1236,8 @@ export class SurvivalDirector {
       this.turnedSelf.bodyKilled(victim)
       this.grabs.killed(victim)
       const was = this.turned.get(victim.id)
+      const named = victim.name.replace(/(, turned| \(turned\))$/, '')
+      const reward = was ? this.payBounty(named, was, killer) : 0
       if (was) {
         // One of you: everything they carried is still on them.
         this.turned.delete(victim.id)
@@ -1238,12 +1252,11 @@ export class SurvivalDirector {
       const by = this.survivors.get(killer.id)
       if (by) bumpLife(by.self, 'kills')
       // Somebody once (one of you, or one of Haven's gone): their body can be buried by name.
-      const named = victim.name.replace(/(, turned| \(turned\))$/, '')
       this.camp.downed(named === victim.name ? '' : named, victim.state.pos)
       // For the Dawn Report.
       const byName = by ? (by.self.bio?.name ?? killer.name) : null
       this.dawnDesk.putDown(byName)
-      if (was) this.dawnDesk.turnedDown(victim.name, byName)
+      if (was) this.dawnDesk.turnedDown(named, byName, reward)
       const place = this.places[zed.home]
       if (place && !zed.hunter) place.kills.push(this.game.tick)
       if (place && zed.hunter && place.woken > 0) place.woken--
@@ -1274,6 +1287,7 @@ export class SurvivalDirector {
     const was = sv.self.bio?.name
     this.radio.say({ kind: 'death', who: was ?? victim.name, turned: sv.turning })
     const at = { ...victim.state.pos }
+    this.echoes.died(victim.id, was ?? victim.name, at, this.camp.day, this.now)
     if (!sv.turning) this.camp.died(was ?? victim.name, at)
     const stuff = belongings(sv.self, victim.state)
     const look = gearOf(sv.self)
@@ -1448,7 +1462,14 @@ export class SurvivalDirector {
       }
       return null
     }
-    this.raise(zombie, { name: who, appearance: victim.appearance, look, stuff, ...at })
+    this.raise(zombie, {
+      name: who,
+      appearance: victim.appearance,
+      look,
+      stuff,
+      since: this.camp.day,
+      ...at,
+    })
     zombie.zombie?.face(victim.state.yaw)
     for (const sv of this.survivors.values()) {
       if (sv.player === victim) continue
@@ -1468,7 +1489,7 @@ export class SurvivalDirector {
   /** Puts one of you who turned on its feet: their clothes, their name, their things. */
   private raise(zombie: ServerPlayer, t: TurnedSave): void {
     this.place(zombie, ZombieKind.Walker, -1, false, t)
-    this.turned.set(zombie.id, { stuff: t.stuff, look: t.look })
+    this.turned.set(zombie.id, { stuff: t.stuff, look: t.look, since: t.since ?? this.camp.day })
     this.game.nameZombie(zombie, turnedName(t.name), t.appearance)
   }
 
@@ -1484,6 +1505,7 @@ export class SurvivalDirector {
         ...(z.appearance !== undefined ? { appearance: z.appearance } : {}),
         look: t.look,
         stuff: t.stuff.map((s) => ({ ...s })),
+        since: t.since,
         x: Math.round(p.x * 10) / 10,
         y: Math.round(p.y * 10) / 10,
         z: Math.round(p.z * 10) / 10,
@@ -1557,6 +1579,11 @@ export class SurvivalDirector {
       if (tick % (60 * TICK_RATE) === 0) this.chalk.prune()
     }
     if (tick % 3 === 1) this.junk.step(alive.map((sv) => sv.player))
+    if (tick % (TICK_RATE / ECHO_RATE) === 2)
+      for (const sv of alive) {
+        const s = sv.player.state
+        this.echoes.sample(sv.player.id, s.pos, s.yaw, s.crouched)
+      }
     if (this.junkDirty && this.now - this.junkSentAt > 1) {
       this.junkDirty = false
       this.junkSentAt = this.now
@@ -2002,6 +2029,8 @@ export class SurvivalDirector {
     }
     if (spot >= 0 && (!thing || spotScore >= best)) return void this.board(sv, spot)
     if (thing) return void this.useThing(sv, thing)
+    // A faint bloodstain, or a grave: the last moments of whoever fell there (echoes.ts).
+    if (this.playEcho(sv)) return
     // Beside a car: fix it with what you carry, or get in.
     const pack = {
       has: (item: string) => countOf(sv.self.inv, item) > 0,
@@ -2975,7 +3004,9 @@ export class SurvivalDirector {
    */
   onSpoken(player: ServerPlayer, text: string): void {
     const sv = this.survivors.get(player.id)
-    if (sv?.player.state.alive) this.lurkers.heard(sv.player.state.pos, text)
+    if (!sv?.player.state.alive) return
+    this.lurkers.heard(sv.player.state.pos, text)
+    this.echoes.said(player.id, text, this.now)
   }
 
   /** What the crawlers under cars and the mimics (lurkers.ts) get to do here. */
@@ -3333,6 +3364,7 @@ export class SurvivalDirector {
           held,
         }),
       camp: () => this.camp.terms(),
+      wanted: () => wantedLines(this.wanted()),
       def: () => this.def,
       now: () => this.now,
       random: this.random,
@@ -3638,7 +3670,54 @@ export class SurvivalDirector {
   /** Haven (camp.ts), and a Red Night's bar under the compass unless the story has one up. */
   private campShared(): Pick<SurvivalShared, 'camp' | 'siege'> {
     const siege = this.story.shared().siege ?? this.camp.siege()
-    return { camp: this.camp.shared(), ...(siege ? { siege } : {}) }
+    const camp = this.camp.shared()
+    // Finished projects are solid (physics/projects.ts); the client does the same from this.
+    setProjects(this.game.world.physics, this.def, doneProjects(camp.projects))
+    const stains = this.echoes.stains(camp.day)
+    if (stains.length > 0) camp.stains = stains
+    return { camp, ...(siege ? { siege } : {}) }
+  }
+
+  // --- Bounties on the long-lived turned (bounties.ts) ---------------------------------------
+
+  /** The turned with a bounty on them now: who, where last seen, and for how much. */
+  wanted(): Wanted[] {
+    const out: Wanted[] = []
+    for (const [id, t] of this.turned) {
+      const z = this.game.players.get(id)
+      const reward = bountyReward(t.since, this.camp.day)
+      if (!z?.state.alive || reward <= 0) continue
+      out.push({
+        name: z.name.replace(/, turned$/, ''),
+        place: this.placeNear(z.state.pos),
+        reward,
+      })
+    }
+    return out
+  }
+
+  /** Somebody put down a turned with a bounty on them: they're paid, and Wes says so. */
+  private payBounty(name: string, t: Turned, killer: ServerPlayer): number {
+    const reward = bountyReward(t.since, this.camp.day)
+    if (reward <= 0) return 0
+    const by = this.survivors.get(killer.id)
+    if (!by || killer.zombie) return 0
+    by.self.money += reward
+    by.dirty = true
+    this.notice(killer, 'story', `${name} can rest now. Haven's bounty is yours: $${reward}.`)
+    this.radio.say({ kind: 'bounty', who: name, by: by.self.bio?.name ?? killer.name, reward })
+    return reward
+  }
+
+  /** E on a stain or at a grave: play the echo there, if there is one. */
+  private playEcho(sv: Survivor): boolean {
+    const echo = this.echoes.near(sv.player.state.pos, this.camp.day, this.camp.shared().graves)
+    if (!echo) return false
+    this.send(sv.player, {
+      type: ServerMsg.Notice,
+      notice: { kind: 'info', text: echoCaption(echo), echo },
+    })
+    return true
   }
 
   /** For the admin: raiders come up the east road now. Null when done, or why not. */
