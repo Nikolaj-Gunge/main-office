@@ -2,6 +2,7 @@ import {
   type CampSave,
   type DawnReport,
   DEFAULT_WORLD_ID,
+  type EchoSave,
   type ObitWall,
   type Retired,
   type Stored,
@@ -141,6 +142,8 @@ export interface WorldSave {
   dawn?: DawnReport
   /** Chalk marks left for strangers (survival/chalk.ts); absent in older saves. */
   marks?: ChalkSave[]
+  /** Bloodstain echoes of the dead (survival/echoes.ts); absent in older saves. */
+  echoes?: EchoSave[]
 }
 
 /** One of the dead that was one of you, as the world remembers them. */
@@ -150,6 +153,8 @@ export interface TurnedSave {
   /** Worn gear (gearLooks), so they're drawn in their clothes. */
   look: number
   stuff: { item: string; n: number; ammo?: number }[]
+  /** World day they turned (bounties.ts); absent in older saves. */
+  since?: number
   x: number
   y: number
   z: number

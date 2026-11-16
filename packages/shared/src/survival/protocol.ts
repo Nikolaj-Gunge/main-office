@@ -4,6 +4,7 @@ import type { Bio } from './characters.ts'
 import type { Chart } from './chart.ts'
 import type { Busy } from './crafting.ts'
 import type { SupplyDrop } from './drops.ts'
+import type { EchoReplay } from './echoes.ts'
 import type { EvacShared } from './evac.ts'
 import type { CosmeticKind, FieldNotes } from './field-notes.ts'
 import { BAREFOOT_NOISE, GEAR, type WearSlot } from './gear.ts'
@@ -271,6 +272,8 @@ export interface Notice {
   at?: { x: number; y: number; z: number }
   /** A one-time hint the client shows as such (onboarding.ts HINTS), not a line in the feed. */
   hint?: 'gunfire'
+  /** A death's last seconds to play back as a pale ghost (echoes.ts), with the text as caption. */
+  echo?: EchoReplay
 }
 
 /** Something lying in the world to pick up. */

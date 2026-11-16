@@ -176,6 +176,11 @@ export class Camp {
     return this.state.morale
   }
 
+  /** The world's day (counted from dawn to dawn). */
+  get day(): number {
+    return this.state.day
+  }
+
   /** The Red Night's phase now, or null. */
   get phase(): RedPhase | null {
     return redPhase(this.state.day, this.state.nextRed, this.host.time())

@@ -63,8 +63,8 @@ export class DawnDesk {
   }
 
   /** Somebody's turned self put down. */
-  turnedDown(name: string, by: string | null): void {
-    this.log.turnedDown.push({ name, by })
+  turnedDown(name: string, by: string | null, reward = 0): void {
+    this.log.turnedDown.push({ name, by, ...(reward > 0 ? { reward } : {}) })
   }
 
   /**
