@@ -30,13 +30,12 @@ import {
   stepGoal,
   WEAPONS,
   type WeaponId,
-  WORLD_HALF,
-  WORLD_SIZE,
 } from '@office-fps/shared'
 import { BusyRing } from './busy-ring.ts'
 import { ChartPaper } from './chart-paper.ts'
 import { InventoryScreen } from './inventory-screen.ts'
 import { effectText } from './item-text.ts'
+import { type MapView, mapView, viewOf } from './map-view.ts'
 import { NeedsHud } from './needs-hud.ts'
 import { type Fallback, fallbackStep } from './next-step.ts'
 import { markerSpot } from './objective-marker.ts'
@@ -1013,14 +1012,14 @@ export class SurvivalHud {
 
   // --- The map -------------------------------------------------------------------------------
 
-  /** Roads and lakes never change: painted once. */
-  private paintBase(size: number): HTMLCanvasElement {
+  /** Roads and lakes never change: painted once (again when the sheet grows to fit your walks). */
+  private paintBase(size: number, view: MapView): HTMLCanvasElement {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = size
+    canvas.dataset.view = `${view.x0},${view.z0},${view.span}`
     const g = canvas.getContext('2d')
     if (!g) return canvas
-    const s = size / WORLD_SIZE
-    const at = (v: number) => (v + WORLD_HALF) * s
+    const { s, x: ax, z: az } = view
     g.fillStyle = '#14180f'
     g.fillRect(0, 0, size, size)
     // Paper grain.
@@ -1031,7 +1030,7 @@ export class SurvivalHud {
     g.fillStyle = '#1d3a4f'
     for (const lake of this.def.lakes) {
       g.beginPath()
-      g.arc(at(lake.x), at(lake.z), (lake.r + 8) * s, 0, Math.PI * 2)
+      g.arc(ax(lake.x), az(lake.z), (lake.r + 8) * s, 0, Math.PI * 2)
       g.fill()
     }
     g.lineJoin = 'round'
@@ -1041,8 +1040,8 @@ export class SurvivalHud {
       g.setLineDash(road.kind === 'asphalt' ? [] : [5, 4])
       g.beginPath()
       road.line.forEach((p, i) => {
-        if (i === 0) g.moveTo(at(p.x), at(p.z))
-        else g.lineTo(at(p.x), at(p.z))
+        if (i === 0) g.moveTo(ax(p.x), az(p.z))
+        else g.lineTo(ax(p.x), az(p.z))
       })
       g.stroke()
     }
@@ -1056,30 +1055,32 @@ export class SurvivalHud {
       this.map.width = this.map.height = size
       this.mapBase = null
     }
-    this.mapBase ??= this.paintBase(size)
-    const g = this.map.getContext('2d')
-    if (!g) return
-    const s = size / WORLD_SIZE
-    const at = (v: number) => (v + WORLD_HALF) * s
-    g.drawImage(this.mapBase, 0, 0)
     // Only what this character has walked is drawn in (chart.ts); older servers send no chart.
     const chart = this.self?.chart
-    if (chart) {
+    const fog = chart ? this.paper.fogFor(chart.seen, this.self?.oldChart) : null
+    const view = mapView(this.def, size, this.paper.walked && fog ? [this.paper.walked] : [])
+    const { s, x: ax, z: az } = view
+    if (this.mapBase?.dataset.view !== `${view.x0},${view.z0},${view.span}`) this.mapBase = null
+    this.mapBase ??= this.paintBase(size, view)
+    const g = this.map.getContext('2d')
+    if (!g) return
+    g.drawImage(this.mapBase, 0, 0)
+    if (fog) {
       g.imageSmoothingEnabled = false
-      g.drawImage(this.paper.fogFor(chart.seen, this.self?.oldChart), 0, 0, size, size)
+      g.drawImage(fog, ...viewOf(view, fog.width), 0, 0, size, size)
     }
     g.textAlign = 'center'
     const found = new Set(this.shared?.found ?? [])
     const inked = new Set(chart?.inked ?? [])
     this.def.pois.forEach((poi, i) => {
       if (!chart) {
-        if (found.has(i)) this.drawPlace(g, poi, at(poi.x), at(poi.z))
+        if (found.has(i)) this.drawPlace(g, poi, ax(poi.x), az(poi.z))
         return
       }
       // Been there: inked. Seen it, or heard of it: pencilled in.
       const ink = poi.safe === true || inked.has(poi.key)
       if (!ink && !found.has(i) && !this.paper.drawn(chartCell(poi.x, poi.z))) return
-      this.drawPlace(g, poi, at(poi.x), at(poi.z), !ink)
+      this.drawPlace(g, poi, ax(poi.x), az(poi.z), !ink)
     })
     // A dashed line from you to the story's next stop.
     const goal = this.goal(ctx.pos)
@@ -1089,8 +1090,8 @@ export class SurvivalHud {
       g.strokeStyle = 'rgb(255 176 48 / 0.7)'
       g.lineWidth = 2
       g.beginPath()
-      g.moveTo(at(ctx.pos.x), at(ctx.pos.z))
-      g.lineTo(at(goal.x), at(goal.z))
+      g.moveTo(ax(ctx.pos.x), az(ctx.pos.z))
+      g.lineTo(ax(goal.x), az(goal.z))
       g.stroke()
       g.restore()
     }
@@ -1105,12 +1106,12 @@ export class SurvivalHud {
         if (goal.area > 0) {
           // A search area: a dashed circle as big as the place.
           g.setLineDash([4, 4])
-          g.arc(at(x), at(z), Math.max(8, goal.area * s), 0, Math.PI * 2)
+          g.arc(ax(x), az(z), Math.max(8, goal.area * s), 0, Math.PI * 2)
           g.stroke()
           g.setLineDash([])
           continue
         }
-        g.arc(at(x), at(z), story ? 9 + 2 * Math.sin(this.clock * 4) : 5, 0, Math.PI * 2)
+        g.arc(ax(x), az(z), story ? 9 + 2 * Math.sin(this.clock * 4) : 5, 0, Math.PI * 2)
         g.stroke()
       }
     }
@@ -1120,11 +1121,14 @@ export class SurvivalHud {
       g.fillStyle = '#ff4030'
       g.font = 'bold 18px "Pixelify Sans", monospace'
       g.textAlign = 'center'
-      g.fillText('✚', at(d.x), at(d.z) + 6)
+      g.fillText('✚', ax(d.x), az(d.z) + 6)
     }
     // You: an arrow pointing where you look.
     g.save()
-    g.translate(at(ctx.pos.x), at(ctx.pos.z))
+    g.translate(
+      Math.max(10, Math.min(size - 10, ax(ctx.pos.x))),
+      Math.max(10, Math.min(size - 10, az(ctx.pos.z))),
+    )
     g.rotate(-ctx.yaw)
     g.fillStyle = '#ffffff'
     g.strokeStyle = '#000'
