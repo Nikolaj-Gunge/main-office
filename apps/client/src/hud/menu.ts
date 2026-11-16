@@ -8,6 +8,7 @@ import {
 } from '@office-fps/shared'
 import { ACTIONS, type ActionId, keyLabel, rebind, withDefaults } from '../input/bindings.ts'
 import type { GraphicsSetting } from '../render/device-tier.ts'
+import { SAFE_SETTINGS } from '../render/safe-mode.ts'
 import { CLIP_SETTINGS, loadAppearance, type Settings, saveAppearance } from '../settings.ts'
 import { CharacterCreator } from './character-creator.ts'
 
@@ -199,6 +200,18 @@ export class Menu {
           this.settings.graphics = GRAPHICS[v]?.[1] ?? 'auto'
         },
       ),
+      this.choice(
+        'Safe mode (no fog, AO or soft shadows: for Safari, Chromebooks, older GPUs)',
+        [
+          ['Auto', 0],
+          ['On', 1],
+          ['Off', 2],
+        ],
+        () => SAFE_SETTINGS.indexOf(this.settings.safeMode),
+        (v) => {
+          this.settings.safeMode = SAFE_SETTINGS[v] ?? 'auto'
+        },
+      ),
       this.toggle('Automatic quality (coarser pixels when slow)', 'autoQuality'),
       this.toggle('Smooth pixels (soft edges, filtered textures)', 'smoothPixels'),
       this.slider('Master volume', 'masterVolume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
@@ -254,7 +267,7 @@ export class Menu {
       h(
         'div',
         { class: 'menu-card' },
-        h('h1', {}, 'OFFICE FPS'),
+        this.heading,
         tabBar,
         play,
         this.creator.element,
@@ -275,6 +288,14 @@ export class Menu {
       capture: true,
       passive: false,
     })
+  }
+
+  /** The game's name at the top (title-screen.ts swaps in a pixel logo). */
+  readonly heading = h('h1', {}, 'OFFICE FPS')
+
+  /** The whole menu (title-screen.ts dresses it while nobody has joined yet). */
+  get element(): HTMLElement {
+    return this.root
   }
 
   /** Under the join form (the world picker, see world-picker.ts). */

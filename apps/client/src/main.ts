@@ -13,6 +13,7 @@ import {
   goalZones,
   HAVEN_GATE,
   HitZone,
+  heightAt,
   INFECTED_SPEED,
   InputBatcher,
   initPhysics,
@@ -48,6 +49,7 @@ import { FreeFly } from './game/free-fly.ts'
 import {
   casingCap,
   footstepTone,
+  prefersReducedMotion,
   SPRINT_FOV_KICK,
   SprintKick,
   setRumbleSink,
@@ -74,6 +76,7 @@ import { ObjectiveMarker } from './hud/objective-marker.ts'
 import { Overlay } from './hud/overlay.ts'
 import { showRestingScreen } from './hud/resting-screen.ts'
 import { Scoreboard, type ScorePlayer } from './hud/scoreboard.ts'
+import { TitleScreen } from './hud/title-screen.ts'
 import { WorldPicker } from './hud/world-picker.ts'
 import { actionFor, keyLabel } from './input/bindings.ts'
 import { Keyboard } from './input/keyboard.ts'
@@ -85,6 +88,7 @@ import { registerServiceWorker, wantsServiceWorker } from './pwa/pwa.ts'
 import { AutoQuality } from './render/auto-quality.ts'
 import { Avatar } from './render/avatar.ts'
 import { allowCascades } from './render/cascades.ts'
+import { watchContextLoss } from './render/context-loss.ts'
 import { CoopZoneMarker } from './render/coop-zone.ts'
 import { updateCorn } from './render/corn.ts'
 import { DamageNumbers } from './render/damage-numbers.ts'
@@ -93,6 +97,7 @@ import {
   AutoTier,
   effectiveTier,
   readDevice,
+  safeReasons,
   TIER_SETTINGS,
   type Tier,
 } from './render/device-tier.ts'
@@ -102,8 +107,10 @@ import { createLighting, gradeLighting } from './render/lighting.ts'
 import { buildMapObject, swingLamps } from './render/map-mesh.ts'
 import { setMapOutfit } from './render/person.ts'
 import { Ragdolls } from './render/ragdoll.ts'
+import { safeModeOn, safeTier } from './render/safe-mode.ts'
 import { createSky, createSkyline } from './render/sky.ts'
 import { setSmoothTextures, setTexelDensity } from './render/textures.ts'
+import { titlePose } from './render/title-cam.ts'
 import { allowTorchShadows } from './render/torch-shadow.ts'
 import { Viewmodel } from './render/viewmodel.ts'
 import { syncWindUniforms, tickWind, wind } from './render/wind.ts'
@@ -759,7 +766,10 @@ if (clips && keepsakes) {
 /** Turns the clip buffer on or off for the setting and the device tier. */
 function applyClips(): void {
   if (!clips) return
-  const on = clipsOk && (settings.clips === 'on' || (settings.clips === 'auto' && tier !== 'low'))
+  const on =
+    clipsOk &&
+    !safeApplied &&
+    (settings.clips === 'on' || (settings.clips === 'auto' && tier !== 'low'))
   if (on === clips.enabled) return
   clips.enabled = on
   if (!on) clips.stop()
@@ -800,7 +810,18 @@ function waypointText(goal: CoopGoal): string {
 const goalAt = new THREE.Vector3()
 
 // Survival runs several worlds (worlds.ts): pick one (or a private link) on the PLAY tab.
-if (mapId === SURVIVAL_MAP) menu.addToPlay(new WorldPicker(net, () => menu.visible).root)
+// Before PLAY the menu stands over a live shot of the woods (hud/title-screen.ts).
+const title = map.survival ? new TitleScreen(menu.element, menu.heading) : null
+if (mapId === SURVIVAL_MAP) {
+  const picker = new WorldPicker(net, () => menu.visible)
+  picker.onReply = (reply) => title?.setWorlds(reply)
+  menu.addToPlay(picker.root)
+}
+/** The title shot circles the start cabin and its campfire (render/title-cam.ts). */
+const titleStart = map.survival?.pois[0]
+const titleCentre = { x: (titleStart?.x ?? 0) + 1, z: (titleStart?.z ?? 0) - 3 }
+const titleGround = (x: number, z: number) =>
+  map.survival ? heightAt(map.survival.terrain, x, z) : 0
 
 // After the admin switches map the page reloads into it: rejoin without the Play click (the
 // mouse still needs one click to lock — browsers require it).
@@ -856,23 +877,34 @@ let qualityFor = ''
 
 /** What this machine is (asked once, on a scratch context: works for either renderer). */
 function deviceInfo() {
-  const gl = document.createElement('canvas').getContext('webgl')
+  // WebGL 2 when there is one (what the game draws with): its float-target check is the real one.
+  const scratch = document.createElement('canvas')
+  const gl = scratch.getContext('webgl2') ?? scratch.getContext('webgl')
   const info = readDevice(gl)
   gl?.getExtension('WEBGL_lose_context')?.loseContext()
   return info
 }
 // Device tier: how much of the world to draw. Auto works it out once and remembers it.
-const autoTier = new AutoTier(deviceInfo(), localStorage)
+const device = deviceInfo()
+const autoTier = new AutoTier(device, localStorage)
 let tier: Tier | null = null
+/** Why this machine starts in safe mode (Safari, ChromeOS, an odd GPU…), and whether it's on. */
+const safeWhy = safeReasons(device)
+let safeApplied = false
+if (safeWhy.length > 0) console.info(`[device] safe mode auto: ${safeWhy.join(', ')}`)
+watchContextLoss(canvas, safeModeOn(settings.safeMode, safeWhy, location.search))
 
 /** Applies the graphics setting's tier (when it changed). */
 function applyTier() {
   const next = effectiveTier(settings.graphics, autoTier.tier)
-  if (next === tier) return
+  // Safe mode (render/safe-mode.ts): one shadow map, no AO, no mist, no torch shadow, no clips.
+  const safe = safeModeOn(settings.safeMode, safeWhy, location.search)
+  if (next === tier && safe === safeApplied) return
   tier = next
-  const t = TIER_SETTINGS[next]
+  safeApplied = safe
+  const t = safe ? safeTier(TIER_SETTINGS[next]) : TIER_SETTINGS[next]
   survival?.setTier(t)
-  survival?.setFogTier(next)
+  survival?.setFogTier(safe ? 'low' : next)
   effects.decalCap = t.decals
   effects.casingCap = Math.min(t.casings, casingCap(autoQuality.bias))
   pixels.maxDpr = t.maxDpr
@@ -1191,6 +1223,16 @@ pixels.setAnimationLoop(() => {
     camera.rotation.z += s.roll
   }
   if (!player.state.alive) recoil.reset()
+  // Not joined yet: the title screen's slow shot of the woods instead of the inside of a cabin.
+  const titleShot = title !== null && !joined && !noclip
+  title?.set(titleShot && menu.visible)
+  if (titleShot) {
+    const still = tier === 'low' || prefersReducedMotion()
+    const aside = pixels.size.x > pixels.size.y * 1.2 ? 0.3 : 0
+    const p = titlePose(now / 1000, titleCentre, titleGround, still, aside)
+    camera.position.set(p.x, p.y, p.z)
+    camera.lookAt(p.lx, p.ly, p.lz)
+  }
   if (!noclip && joined) {
     spectator.update(
       dt,
@@ -1289,7 +1331,7 @@ pixels.setAnimationLoop(() => {
   )
 
   sky.position.copy(camera.position)
-  pixels.render(scene, camera, noclip || seated ? undefined : viewmodel)
+  pixels.render(scene, camera, noclip || seated || titleShot ? undefined : viewmodel)
   // Time to the first frame in the game (load-time checks read it: performance.getEntriesByName).
   if (joined && !firstGameFrame) {
     firstGameFrame = true

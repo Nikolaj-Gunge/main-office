@@ -124,6 +124,14 @@ export interface DeviceInfo {
   cores: number | null
   mobile: boolean
   ios: boolean
+  /** Safari (or another WebKit browser that isn't Chrome) on a Mac. */
+  safari?: boolean
+  /** A Chromebook (ChromeOS: often 4 GB and a small Intel/ARM GPU). */
+  chromeos?: boolean
+  /** Can draw into float textures (what the post passes want); false on some old/odd GPUs. */
+  floatTargets?: boolean
+  /** The largest texture side the GPU takes (MAX_TEXTURE_SIZE), null if unknown. */
+  maxTexture?: number | null
 }
 
 type GL = WebGLRenderingContext | WebGL2RenderingContext
@@ -131,9 +139,19 @@ type GL = WebGLRenderingContext | WebGL2RenderingContext
 /** Reads the machine (`gl`: the game's context, for the GPU's name). */
 export function readDevice(gl: GL | null): DeviceInfo {
   let gpu = ''
+  let floatTargets = true
+  let maxTexture: number | null = null
   if (gl) {
     const info = gl.getExtension('WEBGL_debug_renderer_info')
     gpu = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '')
+    const webgl2 =
+      typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext
+    floatTargets = webgl2
+      ? gl.getExtension('EXT_color_buffer_float') !== null ||
+        gl.getExtension('EXT_color_buffer_half_float') !== null
+      : gl.getExtension('OES_texture_half_float') !== null ||
+        gl.getExtension('OES_texture_float') !== null
+    maxTexture = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || null
   }
   const nav = navigator as Navigator & {
     deviceMemory?: number
@@ -143,12 +161,18 @@ export function readDevice(gl: GL | null): DeviceInfo {
   // iPads ask for desktop pages and say "Macintosh"; touch gives them away.
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1)
   const mobile = ios || nav.userAgentData?.mobile === true || /Android|Mobi/i.test(ua)
+  // Every browser on iOS is WebKit; on a Mac, Safari is the one without Chrome/Firefox in its name.
+  const safari = !ios && /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/.test(ua)
   return {
     gpu,
     memory: nav.deviceMemory ?? null,
     cores: nav.hardwareConcurrency || null,
     mobile,
     ios,
+    safari,
+    chromeos: /\bCrOS\b/.test(ua),
+    floatTargets,
+    maxTexture,
   }
 }
 
@@ -163,14 +187,34 @@ const STRONG =
 /** The tier a machine starts at, before any frame is drawn. */
 export function tierFromDevice(d: DeviceInfo): Tier {
   if (SOFTWARE.test(d.gpu)) return 'low'
+  // A GPU that can't draw into float textures or takes only small ones is old or odd: go easy.
+  if (d.floatTargets === false || (d.maxTexture != null && d.maxTexture < 4096)) return 'low'
+  // Chromebooks: mostly 4 GB with a small GPU; only the big ones get more.
+  if (d.chromeos) return STRONG.test(d.gpu) ? 'medium' : 'low'
   const small = (d.memory !== null && d.memory <= 4) || (d.cores !== null && d.cores <= 4)
   if (d.ios) return 'low'
   if (d.mobile) return small || WEAK.test(d.gpu) || d.gpu === '' ? 'low' : 'medium'
-  if (STRONG.test(d.gpu)) return small ? 'medium' : 'high'
+  // Safari's WebGL runs the same scene slower than Chrome on the same Mac: medium at most.
+  if (STRONG.test(d.gpu)) return small || d.safari ? 'medium' : 'high'
   if (WEAK.test(d.gpu)) return d.memory !== null && d.memory <= 2 ? 'low' : 'medium'
   // An unknown GPU (or one the browser won't name): judge by the rest.
   if (d.memory !== null && d.memory >= 8 && d.cores !== null && d.cores >= 8) return 'high'
   return small ? 'low' : 'medium'
+}
+
+/**
+ * Why this machine should start in safe mode (the costly passes off, see safe-mode.ts):
+ * empty when there's no reason to.
+ */
+export function safeReasons(d: DeviceInfo): string[] {
+  const why: string[] = []
+  if (SOFTWARE.test(d.gpu)) why.push('software rendering')
+  if (d.ios) why.push('iOS')
+  if (d.safari) why.push('Safari')
+  if (d.chromeos) why.push('ChromeOS')
+  if (d.floatTargets === false) why.push('no float textures')
+  if (d.maxTexture != null && d.maxTexture < 4096) why.push(`max texture ${d.maxTexture}`)
+  return why
 }
 
 /** One tier down (low stays low). */
